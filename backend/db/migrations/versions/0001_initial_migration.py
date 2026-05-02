@@ -18,25 +18,18 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create ENUM types for postgres
-    userrole_enum = postgresql.ENUM('ADMIN', 'VIEWER', name='userrole')
-    userrole_enum.create(op.get_bind())
-
-    cloudtype_enum = postgresql.ENUM('AWS', 'GCP', 'OPENSTACK', name='cloudtype')
-    cloudtype_enum.create(op.get_bind())
-
-    resourcetype_enum = postgresql.ENUM('VM', 'STORAGE', 'NETWORK', name='resourcetype')
-    resourcetype_enum.create(op.get_bind())
-
-    resourcestatus_enum = postgresql.ENUM('PENDING', 'RUNNING', 'STOPPED', 'TERMINATED', 'ERROR', name='resourcestatus')
-    resourcestatus_enum.create(op.get_bind())
+    # Create ENUM types for postgres if they don't exist
+    op.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userrole') THEN CREATE TYPE userrole AS ENUM ('ADMIN', 'VIEWER'); END IF; END $$;")
+    op.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'cloudtype') THEN CREATE TYPE cloudtype AS ENUM ('AWS', 'GCP', 'OPENSTACK'); END IF; END $$;")
+    op.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'resourcetype') THEN CREATE TYPE resourcetype AS ENUM ('VM', 'STORAGE', 'NETWORK'); END IF; END $$;")
+    op.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'resourcestatus') THEN CREATE TYPE resourcestatus AS ENUM ('PENDING', 'RUNNING', 'STOPPED', 'TERMINATED', 'ERROR'); END IF; END $$;")
 
     # Create users table
     op.create_table('users',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('email', sa.String(), nullable=False),
     sa.Column('hashed_password', sa.String(), nullable=False),
-    sa.Column('role', sa.Enum('ADMIN', 'VIEWER', name='userrole'), nullable=False),
+    sa.Column('role', postgresql.ENUM('ADMIN', 'VIEWER', name='userrole', create_type=False), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.PrimaryKeyConstraint('id')
@@ -63,7 +56,7 @@ def upgrade() -> None:
     op.create_table('cloud_credentials',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('cloud', sa.Enum('AWS', 'GCP', 'OPENSTACK', name='cloudtype'), nullable=False),
+    sa.Column('cloud', postgresql.ENUM('AWS', 'GCP', 'OPENSTACK', name='cloudtype', create_type=False), nullable=False),
     sa.Column('encrypted_credentials', sa.String(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
@@ -74,11 +67,11 @@ def upgrade() -> None:
     # Create resources table
     op.create_table('resources',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('cloud', sa.Enum('AWS', 'GCP', 'OPENSTACK', name='cloudtype'), nullable=False),
-    sa.Column('type', sa.Enum('VM', 'STORAGE', 'NETWORK', name='resourcetype'), nullable=False),
+    sa.Column('cloud', postgresql.ENUM('AWS', 'GCP', 'OPENSTACK', name='cloudtype', create_type=False), nullable=False),
+    sa.Column('type', postgresql.ENUM('VM', 'STORAGE', 'NETWORK', name='resourcetype', create_type=False), nullable=False),
     sa.Column('external_id', sa.String(), nullable=False),
     sa.Column('name', sa.String(), nullable=False),
-    sa.Column('status', sa.Enum('PENDING', 'RUNNING', 'STOPPED', 'TERMINATED', 'ERROR', name='resourcestatus'), nullable=False),
+    sa.Column('status', postgresql.ENUM('PENDING', 'RUNNING', 'STOPPED', 'TERMINATED', 'ERROR', name='resourcestatus', create_type=False), nullable=False),
     sa.Column('metadata', sa.JSON(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.PrimaryKeyConstraint('id')
@@ -94,7 +87,7 @@ def upgrade() -> None:
     sa.Column('user_id', sa.Integer(), nullable=True),
     sa.Column('action', sa.String(), nullable=False),
     sa.Column('resource_id', sa.Integer(), nullable=True),
-    sa.Column('cloud', sa.Enum('AWS', 'GCP', 'OPENSTACK', name='cloudtype'), nullable=True),
+    sa.Column('cloud', postgresql.ENUM('AWS', 'GCP', 'OPENSTACK', name='cloudtype', create_type=False), nullable=True),
     sa.Column('timestamp', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('ip_address', sa.String(), nullable=True),
     sa.ForeignKeyConstraint(['resource_id'], ['resources.id'], ondelete='SET NULL'),

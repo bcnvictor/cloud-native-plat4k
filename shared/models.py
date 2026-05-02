@@ -56,7 +56,6 @@ class ResourceResponse(ResourceBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
         from_attributes = True
 
 
@@ -71,7 +70,6 @@ class UserResponse(UserBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
         from_attributes = True
 
 
@@ -92,7 +90,6 @@ class APIKeyResponse(BaseModel):
     revoked: bool
 
     class Config:
-        orm_mode = True
         from_attributes = True
 
 
@@ -110,7 +107,6 @@ class CredentialResponse(CredentialBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
         from_attributes = True
 
 
@@ -124,5 +120,4 @@ class AuditLogResponse(BaseModel):
     ip_address: Optional[str]
 
     class Config:
-        orm_mode = True
         from_attributes = True

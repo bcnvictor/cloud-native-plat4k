@@ -1,11 +1,9 @@
-version: '3.8'
-
 # Development overrides
 services:
   pgadmin:
     image: dpage/pgadmin4
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@cnp.local
+      PGADMIN_DEFAULT_EMAIL: admin@4k.com
       PGADMIN_DEFAULT_PASSWORD: admin
     ports:
       - "5050:80"

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authApi } from '@/api/auth';
+import type { ApiKey } from '@/types';
 import { Trash2, Plus, Copy, Check } from 'lucide-react';
 
 export const ApiKeys = () => {
@@ -12,7 +13,7 @@ export const ApiKeys = () => {
   const { data: keys, isLoading } = useQuery({
     queryKey: ['apikeys'],
     queryFn: () => authApi.getApiKeys(),
-  });
+  }) as { data: ApiKey[] | undefined; isLoading: boolean };
 
   const createMutation = useMutation({
     mutationFn: (label: string) => authApi.createApiKey(label),
@@ -108,7 +109,7 @@ export const ApiKeys = () => {
 
       <div className="bg-white shadow overflow-hidden sm:rounded-lg">
         <ul className="divide-y divide-gray-200">
-          {keys?.filter(k => !k.revoked).map((key) => (
+          {keys?.filter((key) => !key.revoked).map((key) => (
             <li key={key.id}>
               <div className="px-4 py-4 flex items-center sm:px-6">
                 <div className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between">
@@ -136,7 +137,7 @@ export const ApiKeys = () => {
               </div>
             </li>
           ))}
-          {keys?.filter(k => !k.revoked).length === 0 && (
+          {keys?.filter((key) => !key.revoked).length === 0 && (
             <li className="px-4 py-8 text-center text-gray-500">
               No active API keys found.
             </li>
