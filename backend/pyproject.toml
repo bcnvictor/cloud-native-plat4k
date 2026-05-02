@@ -13,7 +13,8 @@ dependencies = [
     "asyncpg",
     "alembic",
     "python-jose[cryptography]",
-    "passlib[bcrypt]",
+    "passlib==1.7.4",
+    "bcrypt==3.2.2",
     "pydantic-settings",
     "pydantic[email]",
     "cryptography",
@@ -21,3 +22,7 @@ dependencies = [
     "slowapi",
     "boto3"
 ]
+
+[tool.setuptools]
+package-dir = {"backend" = "."}
+packages = ["backend", "backend.api", "backend.core", "backend.db", "backend.providers", "backend.services", "backend.api.schemas"]
