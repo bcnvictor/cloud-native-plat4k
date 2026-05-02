@@ -164,3 +164,11 @@ Les outputs vous donneront le FQDN/l'IP de la VM Azure créée ainsi que le chem
 - **Backend** : S'assurer que le code est typé. Utilisez Alembic pour toute modification du schéma de la BDD.
 - **Frontend** : Utilisation de TypeScript obligatoire. Centraliser le state global dans Zustand, et utiliser TanStack Query pour la communication API.
 - **Nouvel Adaptateur Cloud** : Pour ajouter un cloud (ex: Azure, DigitalOcean), étendez la classe abstraite `CloudProvider` dans `backend/providers/base.py` et modifiez le type Enum associé dans `shared/models.py`.
+
+## Support
+
+Acceder au psql de la DB (en changeant "db-1" par le nom du container qui heberge la db) :
+
+```bash
+docker exec -it $(docker ps -qf "name=db-1") psql -U cnpuser -d cnp
+```
