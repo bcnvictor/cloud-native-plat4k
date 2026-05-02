@@ -16,3 +16,7 @@ dependencies = [
 
 [project.scripts]
 cnp = "cli.main:app"
+
+[tool.setuptools]
+package-dir = {"cli" = "."}
+packages = ["cli", "cli.commands", "cli.core"]
