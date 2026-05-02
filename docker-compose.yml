@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cnpuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cnppass}
+      POSTGRES_DB: ${POSTGRES_DB:-cnp}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cnpuser} -d ${POSTGRES_DB:-cnp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cnp_net
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_SERVER=db
+      - POSTGRES_USER=${POSTGRES_USER:-cnpuser}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-cnppass}
+      - POSTGRES_DB=${POSTGRES_DB:-cnp}
+      - SECRET_KEY=${SECRET_KEY:-change_this_to_a_secure_random_string_of_at_least_32_characters}
+      - BACKEND_CORS_ORIGINS=["http://localhost:3000","http://localhost"]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - cnp_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - cnp_net
+
+networks:
+  cnp_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
