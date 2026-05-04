@@ -9,4 +9,4 @@ build/
 *.tfstate.*
 .terraform.lock.hcl
 *.pem
-*/cnp_cli.egg-info/
+*.egg-info/
