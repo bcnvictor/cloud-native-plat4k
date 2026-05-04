@@ -178,6 +178,15 @@ terraform apply -var="admin_ip=VOTRE_IP_PUBLIQUE"
 
 Les outputs vous donneront le FQDN/l'IP de la VM Azure créée ainsi que le chemin vers la clé privée SSH générée localement.
 
+## 📐 Architecture Decision Records (ADR)
+
+Les décisions d'architecture importantes sont documentées dans [`docs/adr/`](docs/adr/).
+
+| N° | Titre | Statut |
+|----|-------|--------|
+| [0000](docs/adr/0000-template.md) | Template ADR | — |
+| [0001](docs/adr/0001-architecture-initiale.md) | Architecture initiale de la CNP (v1) | Accepted |
+
 ## 🤝 Guide de contribution
 
 - **Backend** : S'assurer que le code est typé. Utilisez Alembic pour toute modification du schéma de la BDD.
