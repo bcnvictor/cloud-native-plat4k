@@ -37,7 +37,12 @@ export const Login = () => {
       });
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Login failed');
+      const detail = err.response?.data?.detail;
+      if (Array.isArray(detail)) {
+        setError(detail.map((e: any) => e.msg).join('. '));
+      } else {
+        setError(typeof detail === 'string' ? detail : 'Login failed');
+      }
     } finally {
       setLoading(false);
     }

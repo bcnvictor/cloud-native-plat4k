@@ -11,5 +11,5 @@ class TokenPayload(BaseModel):
     sub: str = None
 
 class LoginPayload(BaseModel):
-    email: EmailStr
+    email: str
     password: str
