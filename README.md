@@ -52,7 +52,27 @@ python3 -m pip install -e ./cli
 
 ## 🛠️ Setup from scratch (Docker Compose)
 
-Le moyen le plus simple de lancer la CNP localement pour le développement est d'utiliser Docker Compose.
+### Démarrage rapide avec `start.sh`
+
+Un script `start.sh` est fourni à la racine du dépôt pour automatiser l'ensemble du setup :
+
+```bash
+# Démarrage standard (build + migrations)
+./start.sh
+
+# Premier lancement : crée aussi un admin par défaut (admin@cnp.local / admin)
+CNP_CREATE_ADMIN=1 ./start.sh
+
+# Avec des credentials admin personnalisés
+CNP_CREATE_ADMIN=1 CNP_ADMIN_EMAIL=you@example.com CNP_ADMIN_PASSWORD=secret ./start.sh
+```
+
+Le script :
+- copie `.env.example` → `.env` s'il n'existe pas encore (pensez à changer `SECRET_KEY`) ;
+- lance `docker compose up -d --build` ;
+- applique les migrations Alembic.
+
+### Étapes manuelles (alternative)
 
 1. Clonez ce dépôt.
 2. Copiez le fichier d'environnement d'exemple :
@@ -63,7 +83,7 @@ Le moyen le plus simple de lancer la CNP localement pour le développement est d
 
    _Note : Le `SECRET_KEY` dans le fichier `.env` doit faire au moins 32 caractères pour le chiffrement des credentials cloud (via Fernet)._
 
-3. Installez les dépendances locales si vous comptez développer hors de Docker, puis lancez les conteneurs :
+3. (Optionnel) Installez les dépendances locales si vous comptez développer hors de Docker :
 
    ```bash
    cd frontend && npm install
@@ -75,20 +95,19 @@ Le moyen le plus simple de lancer la CNP localement pour le développement est d
 4. Lancez les conteneurs :
 
    ```bash
-   docker-compose up -d --build
+   docker compose up -d --build
    ```
 
-5. Appliquez les migrations de base de données (si ce n'est pas fait automatiquement). Le script de migration initial est fourni.
+5. Appliquez les migrations de base de données :
 
    ```bash
-   docker-compose exec backend alembic upgrade head
+   docker compose exec backend alembic upgrade head
    ```
 
 6. (Optionnel) Créez le premier utilisateur admin :
-   Puisque l'application nécessite une connexion, vous pouvez créer un utilisateur via la base de données ou directement depuis une session shell du backend :
 
    ```bash
-   docker-compose exec backend python -c "
+   docker compose exec backend python -c "
    import asyncio
    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
    from backend.core.config import settings
