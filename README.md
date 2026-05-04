@@ -96,13 +96,13 @@ Le moyen le plus simple de lancer la CNP localement pour le développement est d
    from backend.core.security import get_password_hash
 
    async def create_admin():
-   engine = create_async_engine(settings.async_database_uri)
-   AsyncSessionLocal = async_sessionmaker(engine)
-   async with AsyncSessionLocal() as db:
-   admin = User(email='admin@cnp.local', hashed_password=get_password_hash('admin'), role='ADMIN')
-   db.add(admin)
-   await db.commit()
-   await engine.dispose()
+       engine = create_async_engine(settings.async_database_uri)
+       AsyncSessionLocal = async_sessionmaker(engine)
+       async with AsyncSessionLocal() as db:
+           admin = User(email='admin@cnp.local', hashed_password=get_password_hash('admin'), role='ADMIN')
+           db.add(admin)
+           await db.commit()
+       await engine.dispose()
 
    asyncio.run(create_admin())"
    ```

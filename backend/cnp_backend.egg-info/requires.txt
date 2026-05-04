@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+asyncpg
+alembic
+python-jose[cryptography]
+passlib==1.7.4
+bcrypt==3.2.2
+pydantic-settings
+pydantic[email]
+cryptography
+psycopg2-binary
+slowapi
+boto3

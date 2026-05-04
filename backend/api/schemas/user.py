@@ -2,14 +2,14 @@
 User related schemas.
 """
 from shared.models import UserBase, UserResponse, UserRole
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional
 
 class UserCreate(UserBase):
     password: str
 
 class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
