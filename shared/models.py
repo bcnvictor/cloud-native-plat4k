@@ -3,7 +3,7 @@ Shared Pydantic models for both the FastAPI backend and the Typer CLI.
 This avoids duplicating code between the client and server.
 """
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
@@ -60,7 +60,7 @@ class ResourceResponse(ResourceBase):
 
 
 class UserBase(BaseModel):
-    email: EmailStr
+    email: str
     role: UserRole = UserRole.VIEWER
     is_active: bool = True
 
