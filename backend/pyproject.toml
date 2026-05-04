@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cnp-backend"
+version = "0.1.0"
+description = "Cloud Native Platform Backend"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy",
+    "asyncpg",
+    "alembic",
+    "python-jose[cryptography]",
+    "passlib==1.7.4",
+    "bcrypt==3.2.2",
+    "pydantic-settings",
+    "pydantic[email]",
+    "cryptography",
+    "psycopg2-binary",
+    "slowapi",
+    "boto3"
+]
+
+[tool.setuptools]
+package-dir = {"backend" = "."}
+packages = ["backend", "backend.api", "backend.core", "backend.db", "backend.providers", "backend.services", "backend.api.schemas"]
