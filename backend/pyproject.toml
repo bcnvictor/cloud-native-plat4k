@@ -20,9 +20,10 @@ dependencies = [
     "cryptography",
     "psycopg2-binary",
     "slowapi",
-    "boto3"
+    "kubernetes",
+    "httpx"
 ]
 
 [tool.setuptools]
 package-dir = {"backend" = "."}
-packages = ["backend", "backend.api", "backend.core", "backend.db", "backend.providers", "backend.services", "backend.api.schemas"]
+packages = ["backend", "backend.api", "backend.core", "backend.db", "backend.k8s", "backend.services", "backend.api.schemas"]
