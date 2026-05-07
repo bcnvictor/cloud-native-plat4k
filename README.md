@@ -2,7 +2,7 @@
 
 Cette Cloud Native Platform (CNP) est un projet étudiant visant à abstraire et unifier la gestion de ressources cloud (Machines Virtuelles, Stockage, Réseau) sur plusieurs fournisseurs : AWS, Google Cloud Platform (GCP) et OpenStack.
 
-## 🚀 Architecture
+## Architecture
 
 Le projet est divisé en plusieurs composants :
 
@@ -20,7 +20,7 @@ Pour lancer le projet localement, vous aurez besoin de :
 - [Python 3.11+](https://www.python.org/downloads/) (pour le CLI en local)
 - [Node.js 20+](https://nodejs.org/) (optionnel, pour développer le frontend hors de Docker)
 
-## 🧰 Installation locale des dépendances
+## Installation locale des dépendances
 
 Si vous travaillez sur le projet hors de Docker, installez d'abord les dépendances de chaque composant.
 
@@ -50,7 +50,7 @@ python3 -m pip install -e ./backend
 python3 -m pip install -e ./cli
 ```
 
-## 🛠️ Setup from scratch (Docker Compose)
+## Setup from scratch (Docker Compose)
 
 ### Démarrage rapide avec `start.sh`
 
@@ -128,7 +128,7 @@ Le script :
 
 La plateforme sera alors accessible sur [http://localhost](http://localhost) et l'API sur [http://localhost:8000/api/v1](http://localhost:8000/api/v1). L'interface d'administration pgAdmin est disponible sur [http://localhost:5050](http://localhost:5050).
 
-## 💻 CLI
+## CLI
 
 Le CLI permet d'interagir avec la CNP depuis un terminal en s'authentifiant via une clé API (X-API-Key).
 
@@ -165,7 +165,7 @@ pip install -e ./cli
 
 Pour la liste complète des commandes, tapez `cnp --help`.
 
-## ☁️ Infrastructure de déploiement de la CNP (Terraform)
+## Infrastructure de déploiement de la CNP (Terraform)
 
 Si vous souhaitez héberger votre CNP sur une vraie VM cloud, des templates Terraform sont fournis. Ils déploient les ressources nécessaires sur **Azure** (VM, VNet, Subnet, NSG, IP Publique).
 
@@ -178,7 +178,7 @@ terraform apply -var="admin_ip=VOTRE_IP_PUBLIQUE"
 
 Les outputs vous donneront le FQDN/l'IP de la VM Azure créée ainsi que le chemin vers la clé privée SSH générée localement.
 
-## 📐 Architecture Decision Records (ADR)
+## Architecture Decision Records (ADR)
 
 Les décisions d'architecture importantes sont documentées dans [`docs/adr/`](docs/adr/).
 
@@ -186,8 +186,10 @@ Les décisions d'architecture importantes sont documentées dans [`docs/adr/`](d
 |----|-------|--------|
 | [0000](docs/adr/0000-template.md) | Template ADR | — |
 | [0001](docs/adr/0001-architecture-initiale.md) | Architecture initiale de la CNP (v1) | Accepted |
+| [0002](docs/adr/0002-pivot-idp.md) | Pivot vers une IDP et refacto structurel| Accepted |
+| [0003](docs/adr/0003-git-hosting.md) | Provisionnement git pour les applications scaffoldées | Accepted |
 
-## 🤝 Guide de contribution
+## Guide de contribution
 
 - **Backend** : S'assurer que le code est typé. Utilisez Alembic pour toute modification du schéma de la BDD.
 - **Frontend** : Utilisation de TypeScript obligatoire. Centraliser le state global dans Zustand, et utiliser TanStack Query pour la communication API.
