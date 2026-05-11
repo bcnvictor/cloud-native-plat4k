@@ -1,0 +1,11 @@
+# State Terraform - contient l'état réel de l'infra, ne pas commiter
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# Le kubeconfig exporté localement
+kubeconfig.yaml
+
+# tfvars peut contenir des secrets selon le setup - à adapter selon le projet
+# terraform.tfvars
