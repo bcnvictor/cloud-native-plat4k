@@ -1,4 +1,5 @@
 import json
+import base64
 from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -7,21 +8,25 @@ from backend.db.models import CloudCredential
 from shared.models import CloudType, CredentialCreate
 from backend.core.config import settings
 
-# A real app might use a KMS, here we derive a simple symmetric key from the JWT SECRET_KEY
-# Ensure SECRET_KEY is long enough for Fernet (requires 32 url-safe base64-encoded bytes)
-import base64
-_key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode('utf-8')[:32].ljust(32, b'0'))
-f = Fernet(_key)
+
+def _build_fernet() -> Fernet:
+    if settings.ENCRYPTION_KEY:
+        return Fernet(settings.ENCRYPTION_KEY.encode())
+    # Legacy fallback: derive from SECRET_KEY so existing deployments keep working
+    key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode('utf-8')[:32].ljust(32, b'0'))
+    return Fernet(key)
+
 
 class CredentialService:
     def __init__(self, db: AsyncSession):
         self.db = db
+        self._fernet = _build_fernet()
 
     def _encrypt(self, data: dict) -> str:
-        return f.encrypt(json.dumps(data).encode()).decode()
+        return self._fernet.encrypt(json.dumps(data).encode()).decode()
 
     def _decrypt(self, token: str) -> dict:
-        return json.loads(f.decrypt(token.encode()).decode())
+        return json.loads(self._fernet.decrypt(token.encode()).decode())
 
     async def get_credentials(self, user_id: int, cloud: CloudType) -> dict:
         result = await self.db.execute(
