@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from backend.core.config import settings
 from backend.db.session import get_db
 from backend.services.auth_service import AuthService
 from backend.api.schemas.auth import LoginPayload, Token
@@ -29,9 +30,9 @@ async def login(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        max_age=7 * 24 * 60 * 60, # 7 days
+        max_age=7 * 24 * 60 * 60,
         samesite="lax",
-        secure=False # Should be True in prod
+        secure=settings.SECURE_COOKIES,
     )
 
     return {"access_token": access_token, "token_type": "bearer"}

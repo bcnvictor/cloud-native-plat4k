@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
 
     # SECURITY
-    SECRET_KEY: str  # Must be set in .env
+    SECRET_KEY: str  # Must be set in .env — JWT signing only
+    ENCRYPTION_KEY: Optional[str] = None  # Fernet key for credential encryption; if unset, falls back to SECRET_KEY derivation
+    SECURE_COOKIES: bool = False
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
