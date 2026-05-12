@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     # SECURITY
     SECRET_KEY: str  # Must be set in .env
+    ENCRYPTION_KEY: Optional[str] = None  # Fernet key for creds encryption; falls back to SECRET_KEY derivation
+    SECURE_COOKIES: bool = False
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
