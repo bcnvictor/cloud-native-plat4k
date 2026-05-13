@@ -121,3 +121,90 @@ class AuditLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── IDP entities ──────────────────────────────────────────────────────────────
+
+class ApplicationStatus(str, Enum):
+    ONBOARDING = "onboarding"
+    READY = "ready"
+    DEPLOYED = "deployed"
+
+
+class DeploymentStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class ApplicationBase(BaseModel):
+    name: str
+    repo_url: Optional[str] = None
+    owner: str
+
+
+class ApplicationCreate(ApplicationBase):
+    pass
+
+
+class ApplicationUpdate(BaseModel):
+    name: Optional[str] = None
+    repo_url: Optional[str] = None
+    owner: Optional[str] = None
+    status: Optional[ApplicationStatus] = None
+
+
+class ApplicationResponse(ApplicationBase):
+    id: int
+    status: ApplicationStatus
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ClusterConnectionBase(BaseModel):
+    name: str
+    endpoint: str
+    kubeconfig_secret_ref: str
+
+
+class ClusterConnectionCreate(ClusterConnectionBase):
+    pass
+
+
+class ClusterConnectionUpdate(BaseModel):
+    name: Optional[str] = None
+    endpoint: Optional[str] = None
+    kubeconfig_secret_ref: Optional[str] = None
+
+
+class ClusterConnectionResponse(ClusterConnectionBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class DeploymentBase(BaseModel):
+    application_id: int
+    cluster_id: int
+    version: str
+
+
+class DeploymentCreate(DeploymentBase):
+    pass
+
+
+class DeploymentResponse(DeploymentBase):
+    id: int
+    status: DeploymentStatus
+    deployed_at: datetime
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
