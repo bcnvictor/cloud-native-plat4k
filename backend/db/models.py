@@ -5,7 +5,7 @@ SQLAlchemy models for the backend database.
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum, JSON
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
-from shared.models import CloudType, ResourceType, ResourceStatus, UserRole
+from shared.models import CloudType, ResourceType, ResourceStatus, UserRole, ApplicationStatus, DeploymentStatus
 
 Base = declarative_base()
 
@@ -76,3 +76,55 @@ class AuditLog(Base):
     ip_address = Column(String, nullable=True)
 
     user = relationship("User", back_populates="audit_logs")
+
+
+# ── IDP entities ──────────────────────────────────────────────────────────────
+
+class Application(Base):
+    __tablename__ = "applications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    repo_url = Column(String, nullable=True)
+    owner = Column(String, nullable=False)
+    status = Column(
+        SQLEnum(ApplicationStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=ApplicationStatus.ONBOARDING,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+
+    deployments = relationship("Deployment", back_populates="application", cascade="all, delete-orphan")
+
+
+class ClusterConnection(Base):
+    __tablename__ = "cluster_connections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True)
+    endpoint = Column(String, nullable=False)
+    kubeconfig_secret_ref = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+
+    deployments = relationship("Deployment", back_populates="cluster")
+
+
+class Deployment(Base):
+    __tablename__ = "deployments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    cluster_id = Column(Integer, ForeignKey("cluster_connections.id", ondelete="RESTRICT"), nullable=False, index=True)
+    version = Column(String, nullable=False)
+    status = Column(
+        SQLEnum(DeploymentStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=DeploymentStatus.PENDING,
+    )
+    deployed_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    application = relationship("Application", back_populates="deployments")
+    cluster = relationship("ClusterConnection", back_populates="deployments")
