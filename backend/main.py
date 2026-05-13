@@ -6,6 +6,7 @@ from slowapi.errors import RateLimitExceeded
 
 from backend.core.config import settings
 from backend.api.routes import auth, users, resources, credentials, audit, health
+from backend.api.routes import gitlab
 
 # Rate limiting setup
 def get_identifier(request: Request):
@@ -41,3 +42,4 @@ app.include_router(resources.router, prefix=f"{settings.API_V1_STR}/resources", 
 app.include_router(credentials.router, prefix=f"{settings.API_V1_STR}/credentials", tags=["credentials"])
 app.include_router(audit.router, prefix=f"{settings.API_V1_STR}/audit", tags=["audit"])
 app.include_router(health.router, prefix=f"{settings.API_V1_STR}/health", tags=["health"])
+app.include_router(gitlab.router, prefix=f"{settings.API_V1_STR}/gitlab", tags=["gitlab"])

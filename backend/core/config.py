@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     POSTGRES_DB: str
     POSTGRES_PORT: str = "5432"
 
+    # GitLab
+    GITLAB_BASE_URL: str = "https://gitlab.cri.epita.fr"
+    GITLAB_TOKEN: Optional[str] = None
+    GITLAB_NAMESPACE: Optional[str] = None
+
     # Logging
     LOG_LEVEL: str = "INFO"
 
