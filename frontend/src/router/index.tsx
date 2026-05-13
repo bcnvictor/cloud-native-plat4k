@@ -9,6 +9,7 @@ import { Credentials } from '@/pages/Credentials';
 import { ApiKeys } from '@/pages/ApiKeys';
 import { Users } from '@/pages/admin/Users';
 import { Audit } from '@/pages/admin/Audit';
+import { MyProjects } from '@/pages/MyProjects';
 
 export const router = createBrowserRouter([
   {
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
           { path: 'resources/:id', element: <ResourceDetail /> },
           { path: 'credentials', element: <Credentials /> },
           { path: 'apikeys', element: <ApiKeys /> },
+          { path: 'projects', element: <MyProjects /> },
         ],
       },
     ],
