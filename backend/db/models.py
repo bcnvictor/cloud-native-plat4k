@@ -22,6 +22,7 @@ class User(Base):
 
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
     credentials = relationship("CloudCredential", back_populates="user", cascade="all, delete-orphan")
+    gitlab_credential = relationship("GitLabCredential", back_populates="user", uselist=False, cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="user")
 
 
@@ -62,6 +63,19 @@ class CloudCredential(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="credentials")
+
+
+class GitLabCredential(Base):
+    __tablename__ = "gitlab_credentials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    encrypted_token = Column(String, nullable=False)
+    namespace = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="gitlab_credential")
 
 
 class AuditLog(Base):
