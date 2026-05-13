@@ -8,7 +8,8 @@ import {
   ShieldAlert,
   Users,
   LogOut,
-  Database
+  Database,
+  FolderGit2,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -31,6 +32,10 @@ export const Layout = () => {
     { name: 'Resources', path: '/resources', icon: Server },
     { name: 'Credentials', path: '/credentials', icon: Key },
     { name: 'API Keys', path: '/apikeys', icon: Database },
+  ];
+
+  const developerItems = [
+    { name: 'My Projects', path: '/projects', icon: FolderGit2 },
   ];
 
   const adminItems = [
@@ -66,6 +71,31 @@ export const Layout = () => {
               </Link>
             );
           })}
+
+          <>
+            <div className="mt-8 mb-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              Developer
+            </div>
+            {developerItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = location.pathname.startsWith(item.path);
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={clsx(
+                    'flex items-center px-4 py-2 text-sm font-medium rounded-md',
+                    isActive
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  )}
+                >
+                  <Icon className={clsx('mr-3 h-5 w-5', isActive ? 'text-blue-700' : 'text-gray-400')} />
+                  {item.name}
+                </Link>
+              );
+            })}
+          </>
 
           {user?.role === 'admin' && (
             <>
