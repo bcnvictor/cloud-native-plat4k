@@ -5,7 +5,8 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from backend.core.config import settings
-from backend.api.routes import auth, users, audit, health
+from backend.api.routes import auth, users, resources, credentials, audit, health
+from backend.api.routes import gitlab
 from backend.api.routes import apps, clusters, deployments
 
 # Rate limiting setup
@@ -43,3 +44,4 @@ app.include_router(clusters.router, prefix=f"{settings.API_V1_STR}/clusters", ta
 app.include_router(deployments.router, prefix=f"{settings.API_V1_STR}/deployments", tags=["deployments"])
 app.include_router(audit.router, prefix=f"{settings.API_V1_STR}/audit", tags=["audit"])
 app.include_router(health.router, prefix=f"{settings.API_V1_STR}/health", tags=["health"])
+app.include_router(gitlab.router, prefix=f"{settings.API_V1_STR}/gitlab", tags=["gitlab"])

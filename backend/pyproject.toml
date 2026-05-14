@@ -21,9 +21,10 @@ dependencies = [
     "psycopg2-binary",
     "slowapi",
     "kubernetes",
-    "httpx"
+    "httpx",
+    "python-gitlab"
 ]
 
 [tool.setuptools]
 package-dir = {"backend" = "."}
-packages = ["backend", "backend.api", "backend.core", "backend.db", "backend.k8s", "backend.services", "backend.api.schemas"]
+packages = ["backend", "backend.api", "backend.core", "backend.db", "backend.k8s", "backend.gitlab", "backend.services", "backend.api.schemas"]
