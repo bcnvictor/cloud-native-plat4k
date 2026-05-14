@@ -253,15 +253,13 @@ export const Credentials = () => {
 
             <form onSubmit={handleSaveGitlab} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Token <span className="text-gray-400 font-normal">(commence par glpat-)</span>
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Token</label>
                 <div className="mt-1 relative">
                   <input
                     type={showPat ? 'text' : 'password'}
                     value={pat}
                     onChange={(e) => setPat(e.target.value)}
-                    placeholder={gitlabCred?.configured ? '••••••••••••••••••••• (laisser vide pour ne pas changer)' : 'glpat-xxxxxxxxxxxxxxxxxxxx'}
+                    placeholder={gitlabCred?.configured ? '••••••••••••••••••••• (laisser vide pour ne pas changer)' : 'votre-personal-access-token'}
                     className="block w-full pr-10 shadow-sm focus:ring-orange-500 focus:border-orange-500 sm:text-sm border border-gray-300 rounded-md py-2 px-3 font-mono"
                   />
                   <button
