@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     POSTGRES_DB: str
     POSTGRES_PORT: str = "5432"
 
+    # Kubernetes
+    KUBECONFIG_PATH: Optional[str] = None  # Path to kubeconfig file mounted as secret; falls back to in-cluster config
+
     # Logging
     LOG_LEVEL: str = "INFO"
 
