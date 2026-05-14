@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     GITLAB_TOKEN: Optional[str] = None
     GITLAB_NAMESPACE: Optional[str] = None
 
+    # Kubernetes
+    KUBECONFIG_PATH: Optional[str] = None
+
     # Logging
     LOG_LEVEL: str = "INFO"
 
