@@ -15,17 +15,16 @@ router = APIRouter()
 
 @router.post("/login", response_model=Token)
 async def login(
-    payload: LoginPayload,
     response: Response,
     request: Request,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    form_data: OAuth2PasswordRequestForm = Depends()
 ):
-    # apply rate limit on login explicitly or rely on global
     auth_service = AuthService(db)
+    payload = LoginPayload(email=form_data.username, password=form_data.password)
     user = await auth_service.authenticate_user(payload)
     access_token, refresh_token = auth_service.create_tokens(user.id)
 
-    # Set httpOnly cookie for refresh token
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
