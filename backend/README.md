@@ -78,18 +78,18 @@ Chaque couche a une responsabilité unique : les routes ne contiennent pas de lo
 
 La configuration est lue depuis les variables d'environnement (ou le fichier `.env` à la racine du projet) via **pydantic-settings** (`core/config.py`).
 
-| Variable | Description | Valeur par défaut |
-|---|---|---|
-| `SECRET_KEY` | Clé secrète JWT et dérivation Fernet (min. 32 caractères) | — (obligatoire) |
-| `POSTGRES_SERVER` | Hôte PostgreSQL | — |
-| `POSTGRES_USER` | Utilisateur PostgreSQL | — |
-| `POSTGRES_PASSWORD` | Mot de passe PostgreSQL | — |
-| `POSTGRES_DB` | Nom de la base | — |
-| `POSTGRES_PORT` | Port PostgreSQL | `5432` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Durée de vie du JWT access token | `15` |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | Durée de vie du refresh token | `7` |
-| `BACKEND_CORS_ORIGINS` | Liste JSON des origines CORS autorisées | `[]` |
-| `LOG_LEVEL` | Niveau de log (`DEBUG`, `INFO`…) | `INFO` |
+| Variable                      | Description                                               | Valeur par défaut |
+| ----------------------------- | --------------------------------------------------------- | ----------------- |
+| `SECRET_KEY`                  | Clé secrète JWT et dérivation Fernet (min. 32 caractères) | — (obligatoire)   |
+| `POSTGRES_SERVER`             | Hôte PostgreSQL                                           | —                 |
+| `POSTGRES_USER`               | Utilisateur PostgreSQL                                    | —                 |
+| `POSTGRES_PASSWORD`           | Mot de passe PostgreSQL                                   | —                 |
+| `POSTGRES_DB`                 | Nom de la base                                            | —                 |
+| `POSTGRES_PORT`               | Port PostgreSQL                                           | `5432`            |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Durée de vie du JWT access token                          | `15`              |
+| `REFRESH_TOKEN_EXPIRE_DAYS`   | Durée de vie du refresh token                             | `7`               |
+| `BACKEND_CORS_ORIGINS`        | Liste JSON des origines CORS autorisées                   | `[]`              |
+| `LOG_LEVEL`                   | Niveau de log (`DEBUG`, `INFO`…)                          | `INFO`            |
 
 ---
 
@@ -124,13 +124,13 @@ La dépendance `require_role(UserRole.ADMIN)` injectée dans une route restreint
 
 ### Tables
 
-| Table | Description |
-|---|---|
-| `users` | Comptes utilisateurs (email, mot de passe bcrypt, rôle, statut actif) |
-| `api_keys` | Clés API liées à un utilisateur (hachées SHA-256, révocables) |
+| Table               | Description                                                                |
+| ------------------- | -------------------------------------------------------------------------- |
+| `users`             | Comptes utilisateurs (email, mot de passe bcrypt, rôle, statut actif)      |
+| `api_keys`          | Clés API liées à un utilisateur (hachées SHA-256, révocables)              |
 | `cloud_credentials` | Credentials cloud chiffrés par Fernet, un enregistrement par (user, cloud) |
-| `resources` | Ressources cloud créées via la plateforme (VM, stockage, réseau) |
-| `audit_logs` | Journal des actions utilisateur (création/suppression de ressources) |
+| `resources`         | Ressources cloud créées via la plateforme (VM, stockage, réseau)           |
+| `audit_logs`        | Journal des actions utilisateur (création/suppression de ressources)       |
 
 ### Migrations Alembic
 
@@ -140,10 +140,11 @@ Les migrations se trouvent dans `db/migrations/versions/`. Pour les appliquer de
 docker-compose exec backend alembic -c backend/alembic.ini upgrade head
 ```
 
-Pour créer une nouvelle migration après modification des modèles :
+Pour créer une nouvelle migration :
 
 ```bash
-docker-compose exec backend alembic -c backend/alembic.ini revision --autogenerate -m "description"
+docker compose exec backend alembic -c backend/alembic.ini revision --autogenerate -m "description" &&
+docker compose cp backend:$(docker compose exec -T backend sh -lc 'ls -t /app/backend/db/migrations/versions/*.py | head -n 1') backend/db/migrations/versions/
 ```
 
 ---
@@ -154,45 +155,45 @@ La documentation interactive est disponible sur `http://localhost:8000/api/v1/op
 
 ### Auth — `/api/v1/auth`
 
-| Méthode | Route | Auth requise | Description |
-|---|---|---|---|
-| `POST` | `/login` | Non | Connexion email/mot de passe → access token + refresh cookie |
-| `POST` | `/refresh` | Cookie refresh | Renouvelle l'access token |
-| `POST` | `/logout` | Non | Supprime le cookie refresh |
-| `GET` | `/apikeys` | JWT/APIKey | Liste les API keys de l'utilisateur courant |
-| `POST` | `/apikeys` | JWT/APIKey | Crée une API key (retourne la valeur brute une seule fois) |
-| `DELETE` | `/apikeys/{id}` | JWT/APIKey | Révoque une API key |
+| Méthode  | Route           | Auth requise   | Description                                                  |
+| -------- | --------------- | -------------- | ------------------------------------------------------------ |
+| `POST`   | `/login`        | Non            | Connexion email/mot de passe → access token + refresh cookie |
+| `POST`   | `/refresh`      | Cookie refresh | Renouvelle l'access token                                    |
+| `POST`   | `/logout`       | Non            | Supprime le cookie refresh                                   |
+| `GET`    | `/apikeys`      | JWT/APIKey     | Liste les API keys de l'utilisateur courant                  |
+| `POST`   | `/apikeys`      | JWT/APIKey     | Crée une API key (retourne la valeur brute une seule fois)   |
+| `DELETE` | `/apikeys/{id}` | JWT/APIKey     | Révoque une API key                                          |
 
 ### Users — `/api/v1/users` (admin seulement)
 
-| Méthode | Route | Description |
-|---|---|---|
-| `GET` | `/` | Liste tous les utilisateurs |
-| `POST` | `/` | Crée un utilisateur |
-| `GET` | `/{user_id}` | Détail d'un utilisateur |
+| Méthode | Route        | Description                 |
+| ------- | ------------ | --------------------------- |
+| `GET`   | `/`          | Liste tous les utilisateurs |
+| `POST`  | `/`          | Crée un utilisateur         |
+| `GET`   | `/{user_id}` | Détail d'un utilisateur     |
 
 ### Resources — `/api/v1/resources`
 
-| Méthode | Route | Auth | Description |
-|---|---|---|---|
-| `GET` | `/` | Viewer+ | Liste les ressources (filtres : `cloud`, `type`, `status`) |
-| `GET` | `/{id}` | Viewer+ | Détail d'une ressource |
-| `POST` | `/` | Admin | Crée une ressource sur le cloud cible |
-| `DELETE` | `/{id}` | Admin | Supprime une ressource (sur le cloud et en base) |
+| Méthode  | Route   | Auth    | Description                                                |
+| -------- | ------- | ------- | ---------------------------------------------------------- |
+| `GET`    | `/`     | Viewer+ | Liste les ressources (filtres : `cloud`, `type`, `status`) |
+| `GET`    | `/{id}` | Viewer+ | Détail d'une ressource                                     |
+| `POST`   | `/`     | Admin   | Crée une ressource sur le cloud cible                      |
+| `DELETE` | `/{id}` | Admin   | Supprime une ressource (sur le cloud et en base)           |
 
 ### Credentials — `/api/v1/credentials`
 
-| Méthode | Route | Description |
-|---|---|---|
-| `GET` | `/` | Liste les clouds pour lesquels l'utilisateur a des credentials |
-| `POST` | `/` | Ajoute ou met à jour des credentials pour un cloud |
-| `DELETE` | `/{id}` | Supprime des credentials |
+| Méthode  | Route   | Description                                                    |
+| -------- | ------- | -------------------------------------------------------------- |
+| `GET`    | `/`     | Liste les clouds pour lesquels l'utilisateur a des credentials |
+| `POST`   | `/`     | Ajoute ou met à jour des credentials pour un cloud             |
+| `DELETE` | `/{id}` | Supprime des credentials                                       |
 
 ### Audit — `/api/v1/audit` (admin seulement)
 
-| Méthode | Route | Description |
-|---|---|---|
-| `GET` | `/` | Liste les 100 derniers logs d'audit (paramètres `limit`, `offset`) |
+| Méthode | Route | Description                                                        |
+| ------- | ----- | ------------------------------------------------------------------ |
+| `GET`   | `/`   | Liste les 100 derniers logs d'audit (paramètres `limit`, `offset`) |
 
 ---
 
@@ -216,13 +217,13 @@ Chaque provider (`aws.py`, `gcp.py`, `openstack.py`) implémente cette interface
 
 ## Sécurité
 
-| Mécanisme | Implémentation |
-|---|---|
-| Hachage des mots de passe | bcrypt via `passlib` |
-| Hachage des API keys | SHA-256 (`hashlib`) pour lookup rapide en base |
+| Mécanisme                         | Implémentation                                                                         |
+| --------------------------------- | -------------------------------------------------------------------------------------- |
+| Hachage des mots de passe         | bcrypt via `passlib`                                                                   |
+| Hachage des API keys              | SHA-256 (`hashlib`) pour lookup rapide en base                                         |
 | Chiffrement des credentials cloud | Fernet symétrique (`cryptography`), clé dérivée des 32 premiers octets de `SECRET_KEY` |
-| Tokens JWT | HS256 via `python-jose`, claims `sub`, `exp`, `type` |
-| Rate limiting | `slowapi` (100 req/min par défaut, par IP ou par API key) |
+| Tokens JWT                        | HS256 via `python-jose`, claims `sub`, `exp`, `type`                                   |
+| Rate limiting                     | `slowapi` (100 req/min par défaut, par IP ou par API key)                              |
 
 ---
 
