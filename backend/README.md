@@ -140,11 +140,11 @@ Les migrations se trouvent dans `db/migrations/versions/`. Pour les appliquer de
 docker-compose exec backend alembic -c backend/alembic.ini upgrade head
 ```
 
-Pour créer une nouvelle migration après modification des modèles :
+Pour créer une nouvelle migration :
 
 ```bash
-docker compose exec backend ls /app/backend/db/migrations/versions
-docker compose cp backend:/app/backend/db/migrations/versions/2a0baeaac32c_description.py backend/db/migrations/versions/
+docker compose exec backend alembic -c backend/alembic.ini revision --autogenerate -m "description" &&
+docker compose cp backend:$(docker compose exec -T backend sh -lc 'ls -t /app/backend/db/migrations/versions/*.py | head -n 1') backend/db/migrations/versions/
 ```
 
 ---
