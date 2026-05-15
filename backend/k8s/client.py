@@ -53,5 +53,35 @@ class KubernetesClient:
         except ApiException as e:
             raise RuntimeError(f"Kubernetes healthcheck failed: {e.status} {e.reason}") from e
 
+    def apply_deployment(self, namespace: str, deployment: client.V1Deployment) -> None:
+        name = deployment.metadata.name
+        try:
+            self.apps_v1.create_namespaced_deployment(namespace=namespace, body=deployment)
+            logger.info("Created deployment %s/%s", namespace, name)
+        except ApiException as e:
+            if e.status == 409:
+                self.apps_v1.patch_namespaced_deployment(namespace=namespace, name=name, body=deployment)
+                logger.info("Patched existing deployment %s/%s", namespace, name)
+            else:
+                raise
+
+    def apply_service(self, namespace: str, service: client.V1Service) -> None:
+        name = service.metadata.name
+        try:
+            self.core_v1.create_namespaced_service(namespace=namespace, body=service)
+            logger.info("Created service %s/%s", namespace, name)
+        except ApiException as e:
+            if e.status == 409:
+                existing = self.core_v1.read_namespaced_service(name=name, namespace=namespace)
+                service.metadata.resource_version = existing.metadata.resource_version
+                self.core_v1.replace_namespaced_service(namespace=namespace, name=name, body=service)
+                logger.info("Replaced existing service %s/%s", namespace, name)
+            else:
+                raise
+
+    def get_deployment_ready(self, namespace: str, name: str) -> bool:
+        dep = self.apps_v1.read_namespaced_deployment(name=name, namespace=namespace)
+        return (dep.status.ready_replicas or 0) >= 1
+
 
 k8s_client = KubernetesClient()
