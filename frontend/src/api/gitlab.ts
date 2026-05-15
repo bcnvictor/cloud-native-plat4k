@@ -12,6 +12,14 @@ export interface GitLabCredential {
   configured: boolean;
 }
 
+export interface GitLabProject {
+  id: number;
+  name: string;
+  path_with_namespace: string;
+  web_url: string;
+  last_activity_at: string | null;
+}
+
 export const gitlabApi = {
   getCredentials: async () => {
     const { data } = await api.get<GitLabCredential>('/gitlab/credentials');
@@ -29,6 +37,11 @@ export const gitlabApi = {
 
   healthcheck: async () => {
     const { data } = await api.get<GitLabHealthcheck>('/gitlab/healthcheck');
+    return data;
+  },
+
+  listProjects: async () => {
+    const { data } = await api.get<GitLabProject[]>('/gitlab/projects');
     return data;
   },
 };

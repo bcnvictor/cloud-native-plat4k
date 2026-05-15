@@ -1,5 +1,6 @@
 import json
 import base64
+from datetime import datetime, timezone, timedelta
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -11,6 +12,7 @@ from backend.core.config import settings
 from backend.db.models import GitLabCredential, User
 from backend.db.session import get_db
 from backend.gitlab.client import GitLabClient
+from backend.services.gitlab_oauth_service import GitLabOAuthService
 
 router = APIRouter()
 
@@ -40,6 +42,43 @@ async def _get_user_gitlab_cred(user_id: int, db: AsyncSession) -> GitLabCredent
     return result.scalar_one_or_none()
 
 
+def _token_expired(expires_at: datetime | None) -> bool:
+    if not expires_at:
+        return False
+    skew = timedelta(seconds=60)
+    return expires_at <= datetime.now(timezone.utc) + skew
+
+
+async def _ensure_access_token(cred: GitLabCredential, db: AsyncSession) -> str:
+    access_token = _decrypt(cred.encrypted_token)
+    if not _token_expired(cred.token_expires_at):
+        return access_token
+    if not cred.encrypted_refresh_token:
+        raise HTTPException(status_code=401, detail="GitLab OAuth token expired; reconnect required")
+
+    refresh_token = _decrypt(cred.encrypted_refresh_token)
+    oauth = GitLabOAuthService()
+    token_data = await oauth.refresh_access_token(refresh_token)
+    new_access = token_data.get("access_token")
+    if not new_access:
+        raise HTTPException(status_code=401, detail="GitLab OAuth refresh failed")
+
+    new_refresh = token_data.get("refresh_token") or refresh_token
+    expires_at = None
+    expires_in = token_data.get("expires_in")
+    if expires_in:
+        created_at = token_data.get("created_at")
+        base_time = datetime.fromtimestamp(created_at, tz=timezone.utc) if created_at else datetime.now(timezone.utc)
+        expires_at = base_time + timedelta(seconds=int(expires_in))
+
+    cred.encrypted_token = _encrypt(new_access)
+    cred.encrypted_refresh_token = _encrypt(new_refresh)
+    cred.token_expires_at = expires_at
+    await db.commit()
+
+    return new_access
+
+
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 class GitLabCredentialCreate(BaseModel):
@@ -53,6 +92,14 @@ class GitLabCredentialResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class GitLabProject(BaseModel):
+    id: int
+    name: str
+    path_with_namespace: str
+    web_url: str
+    last_activity_at: str | None = None
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -97,11 +144,15 @@ async def save_gitlab_credentials(
     if cred:
         cred.encrypted_token = encrypted
         cred.namespace = payload.namespace.strip()
+        cred.encrypted_refresh_token = None
+        cred.token_expires_at = None
     else:
         cred = GitLabCredential(
             user_id=current_user.id,
             encrypted_token=encrypted,
             namespace=payload.namespace.strip(),
+            encrypted_refresh_token=None,
+            token_expires_at=None,
         )
         db.add(cred)
 
@@ -136,9 +187,31 @@ async def gitlab_healthcheck(
             "detail": "Aucun token GitLab configuré. Renseignez votre PAT dans la section Credentials.",
         }
     try:
-        token = _decrypt(cred.encrypted_token)
+        token = await _ensure_access_token(cred, db)
+    except HTTPException as exc:
+        return {"status": "error", "detail": exc.detail}
     except Exception:
         return {"status": "error", "detail": "Impossible de déchiffrer le token stocké."}
 
     client = GitLabClient(token=token, namespace=cred.namespace)
     return client.healthcheck()
+
+
+@router.get("/projects", response_model=list[GitLabProject])
+async def list_gitlab_projects(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Liste les projets GitLab accessibles par l'utilisateur courant."""
+    cred = await _get_user_gitlab_cred(current_user.id, db)
+    if not cred:
+        raise HTTPException(status_code=409, detail="Aucun token GitLab configuré")
+    try:
+        token = await _ensure_access_token(cred, db)
+    except HTTPException as exc:
+        raise exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Impossible de déchiffrer le token stocké")
+
+    client = GitLabClient(token=token, namespace=cred.namespace)
+    return client.list_projects()

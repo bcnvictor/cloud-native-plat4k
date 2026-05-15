@@ -33,6 +33,12 @@ services:
       - SECRET_KEY=${SECRET_KEY:-change_this_to_a_secure_random_string_of_at_least_32_characters}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
       - SECURE_COOKIES=${SECURE_COOKIES:-false}
+      - GITLAB_OAUTH_CLIENT_ID=${GITLAB_OAUTH_CLIENT_ID:-}
+      - GITLAB_OAUTH_CLIENT_SECRET=${GITLAB_OAUTH_CLIENT_SECRET:-}
+      - GITLAB_OAUTH_REDIRECT_URI=${GITLAB_OAUTH_REDIRECT_URI:-}
+      - GITLAB_OAUTH_SCOPES=${GITLAB_OAUTH_SCOPES:-api read_user}
+      - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://localhost}
+      - CLI_REDIRECT_BASE_URL=${CLI_REDIRECT_BASE_URL:-http://localhost:8765}
       - BACKEND_CORS_ORIGINS=["http://localhost:3000","http://localhost"]
     depends_on:
       db:

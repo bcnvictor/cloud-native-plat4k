@@ -71,6 +71,8 @@ class GitLabCredential(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
     encrypted_token = Column(String, nullable=False)
+    encrypted_refresh_token = Column(String, nullable=True)
+    token_expires_at = Column(DateTime(timezone=True), nullable=True)
     namespace = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
