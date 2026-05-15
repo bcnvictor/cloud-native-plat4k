@@ -7,7 +7,6 @@ from cli.core.output import print_error, print_success, console
 import requests
 import webbrowser
 import threading
-import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -58,19 +57,19 @@ def oauth_login(
     api_url: str = typer.Option("http://localhost:8000/api/v1", help="Base URL for the CNP API"),
     callback_port: int = typer.Option(8765, help="Local port for OAuth callback"),
 ):
-    """Open browser to start GitLab OAuth flow, then auto-capture token via local callback."""
+    """Open browser to start GitLab OAuth flow, then exchange refresh token for access."""
     try:
-        token_box = {"token": None, "email": None}
+        token_box = {"refresh_token": None, "email": None}
         event = threading.Event()
 
         class CallbackHandler(BaseHTTPRequestHandler):
             def do_GET(self):
                 parsed = urlparse(self.path)
                 params = parse_qs(parsed.query)
-                token = params.get("access_token", [None])[0]
+                refresh_token = params.get("refresh_token", [None])[0]
                 email = params.get("email", [None])[0]
-                if token:
-                    token_box["token"] = token
+                if refresh_token:
+                    token_box["refresh_token"] = refresh_token
                     token_box["email"] = email
                     event.set()
                     self.send_response(200)
@@ -81,7 +80,7 @@ def oauth_login(
                     self.send_response(400)
                     self.send_header("Content-Type", "text/plain")
                     self.end_headers()
-                    self.wfile.write(b"Missing access_token")
+                    self.wfile.write(b"Missing refresh_token")
 
             def log_message(self, format, *args):
                 return
@@ -101,13 +100,20 @@ def oauth_login(
             raise typer.Exit(code=1)
 
         server.shutdown()
-        token = token_box["token"]
-        if not token:
-            print_error("No access token received")
+        refresh_token = token_box["refresh_token"]
+        if not refresh_token:
+            print_error("No refresh token received")
             raise typer.Exit(code=1)
 
         session = requests.Session()
-        session.headers.update({"Authorization": f"Bearer {token}"})
+        refresh_res = session.post(
+            f"{api_url}/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+        refresh_res.raise_for_status()
+        access_token = refresh_res.json()["access_token"]
+
+        session.headers.update({"Authorization": f"Bearer {access_token}"})
         hostname = socket.gethostname()
         res = session.post(f"{api_url}/auth/apikeys?label=CLI-{hostname}")
         res.raise_for_status()
