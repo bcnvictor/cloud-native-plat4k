@@ -42,6 +42,8 @@ class Settings(BaseSettings):
 
     # Kubernetes
     KUBECONFIG_PATH: Optional[str] = None
+    K8S_TARGET_NAMESPACE: str = "default"
+    K8S_IMAGE_PULL_SECRET: Optional[str] = None
 
     # Logging
     LOG_LEVEL: str = "INFO"
