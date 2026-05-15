@@ -2,7 +2,10 @@ import { api } from './client';
 
 export const authApi = {
   login: async (email: string, password: string) => {
-    const { data } = await api.post('/auth/login', { email, password });
+    const params = new URLSearchParams();
+    params.append('username', email);
+    params.append('password', password);
+    const { data } = await api.post('/auth/login', params);
     return data; // { access_token, token_type }
   },
 
