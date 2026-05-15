@@ -147,6 +147,8 @@ docker compose exec backend alembic -c backend/alembic.ini revision --autogenera
 docker compose cp backend:$(docker compose exec -T backend sh -lc 'ls -t /app/backend/db/migrations/versions/*.py | head -n 1') backend/db/migrations/versions/
 ```
 
+**Convention de nommage** : les migrations utilisent des identifiants de révision **auto-générés** par Alembic (ex: `a3f8c1d2e456_description.py`). Ne pas créer les fichiers de migration à la main ni numéroter manuellement — utiliser exclusivement `--autogenerate` pour éviter les conflits de merge. Les migrations `0001` à `0006` sont historiques et font exception.
+
 ---
 
 ## Endpoints API
