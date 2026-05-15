@@ -8,7 +8,7 @@ from backend.db.session import get_db
 from backend.services.auth_service import AuthService
 from backend.services.gitlab_oauth_service import GitLabOAuthService
 from backend.services.credential_service import _build_fernet
-from backend.api.schemas.auth import LoginPayload, Token
+from backend.api.schemas.auth import LoginPayload, Token, RefreshTokenPayload
 from backend.api.deps import get_current_user
 from backend.db.models import User, APIKey
 from shared.models import APIKeyCreateResponse, APIKeyResponse
@@ -44,8 +44,14 @@ async def login(
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
+async def refresh_token(
+    request: Request,
+    payload: RefreshTokenPayload | None = None,
+    db: AsyncSession = Depends(get_db)
+):
     refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token and payload:
+        refresh_token = payload.refresh_token
     if not refresh_token:
         from backend.core.exceptions import UnauthorizedException
         raise UnauthorizedException("No refresh token found")
@@ -208,7 +214,13 @@ async def gitlab_callback(request: Request, response: Response, db: AsyncSession
     }
 
     if is_cli:
-        # For CLI, use query params so the local HTTP server can read them.
+        # For CLI, return refresh token only (access token can be refreshed on-demand).
+        payload = {
+            "refresh_token": refresh_jwt,
+            "user_id": str(user.id),
+            "email": email,
+            "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+        }
         redirect_url = f"{return_to}?{urlencode(payload)}"
     else:
         # For browser app, use fragment to avoid logging in backend/proxy logs.
