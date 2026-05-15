@@ -1,15 +1,21 @@
-from fastapi import APIRouter, Depends, Response, Request
+from fastapi import APIRouter, Depends, Response, Request, HTTPException
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.core.config import settings
 from backend.db.session import get_db
 from backend.services.auth_service import AuthService
+from backend.services.gitlab_oauth_service import GitLabOAuthService
+from backend.services.credential_service import _build_fernet
 from backend.api.schemas.auth import LoginPayload, Token
 from backend.api.deps import get_current_user
 from backend.db.models import User, APIKey
 from shared.models import APIKeyCreateResponse, APIKeyResponse
 from typing import List
+from fastapi.responses import RedirectResponse
+import secrets
+from urllib.parse import urlencode, urlparse
 
 router = APIRouter()
 
@@ -92,3 +98,132 @@ async def revoke_api_key(
         api_key.revoked = True
         await db.commit()
     return {"msg": "API Key revoked"}
+
+
+# ── GitLab OAuth SSO ──────────────────────────────────────────────────────────
+
+
+def _is_allowed_return_to(value: str | None) -> bool:
+    if not value:
+        return False
+    value = value.strip()
+    if not value:
+        return False
+    frontend = settings.FRONTEND_BASE_URL.rstrip("/")
+    cli_base = settings.CLI_REDIRECT_BASE_URL.rstrip("/")
+    return value.startswith(frontend) or value.startswith(cli_base)
+
+
+@router.get("/gitlab/authorize")
+async def gitlab_authorize(return_to: str | None = None):
+    if not (settings.GITLAB_OAUTH_CLIENT_ID and settings.GITLAB_OAUTH_CLIENT_SECRET and settings.GITLAB_OAUTH_REDIRECT_URI):
+        raise HTTPException(status_code=500, detail="GitLab OAuth not configured")
+    state = secrets.token_urlsafe(16)
+    oauth = GitLabOAuthService()
+    url = oauth.generate_authorization_url(state)
+    redirect = RedirectResponse(url)
+    redirect.set_cookie("oauth_state", state, httponly=True, samesite="lax", secure=settings.SECURE_COOKIES)
+    if _is_allowed_return_to(return_to):
+        redirect.set_cookie("oauth_return_to", return_to, httponly=True, samesite="lax", secure=settings.SECURE_COOKIES)
+    return redirect
+
+
+@router.get("/gitlab/callback")
+async def gitlab_callback(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    cookie_state = request.cookies.get("oauth_state")
+    from backend.core.exceptions import UnauthorizedException
+
+    if not code or not state or state != cookie_state:
+        raise UnauthorizedException("Invalid OAuth state or missing code")
+
+    oauth = GitLabOAuthService()
+    token_data = await oauth.exchange_code(code)
+    access_token = token_data.get("access_token")
+    refresh_token = token_data.get("refresh_token")
+    if not access_token:
+        raise UnauthorizedException("GitLab OAuth did not return an access token")
+
+    profile = await oauth.get_user(access_token)
+    email = profile.get("email")
+    username = profile.get("username") or profile.get("name") or ""
+    if not email:
+        raise UnauthorizedException("GitLab account has no email")
+
+    # find or create user
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if not user:
+        from backend.core.security import get_password_hash
+        new_user = User(email=email, hashed_password=get_password_hash(secrets.token_urlsafe(24)))
+        db.add(new_user)
+        await db.commit()
+        await db.refresh(new_user)
+        user = new_user
+
+    # store/update GitLabCredential
+    fernet = _build_fernet()
+    encrypted = fernet.encrypt(access_token.encode()).decode()
+    encrypted_refresh = fernet.encrypt(refresh_token.encode()).decode() if refresh_token else None
+    expires_at = None
+    expires_in = token_data.get("expires_in")
+    if expires_in:
+        created_at = token_data.get("created_at")
+        base_time = datetime.fromtimestamp(created_at, tz=timezone.utc) if created_at else datetime.now(timezone.utc)
+        expires_at = base_time + timedelta(seconds=int(expires_in))
+    from backend.db.models import GitLabCredential
+    result = await db.execute(select(GitLabCredential).where(GitLabCredential.user_id == user.id))
+    cred = result.scalar_one_or_none()
+    if cred:
+        cred.encrypted_token = encrypted
+        cred.encrypted_refresh_token = encrypted_refresh
+        cred.token_expires_at = expires_at
+        cred.namespace = username
+    else:
+        cred = GitLabCredential(
+            user_id=user.id,
+            encrypted_token=encrypted,
+            encrypted_refresh_token=encrypted_refresh,
+            token_expires_at=expires_at,
+            namespace=username,
+        )
+        db.add(cred)
+    await db.commit()
+    await db.refresh(user)
+
+    # create JWT tokens and set refresh cookie
+    auth_service = AuthService(db)
+    access_jwt, refresh_jwt = auth_service.create_tokens(user.id)
+    return_to = request.cookies.get("oauth_return_to")
+    if not _is_allowed_return_to(return_to):
+        return_to = f"{settings.FRONTEND_BASE_URL}/oauth/callback"
+
+    is_cli = return_to.startswith(settings.CLI_REDIRECT_BASE_URL.rstrip("/"))
+    payload = {
+        "access_token": access_jwt,
+        "user_id": str(user.id),
+        "email": email,
+        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+    }
+
+    if is_cli:
+        # For CLI, use query params so the local HTTP server can read them.
+        redirect_url = f"{return_to}?{urlencode(payload)}"
+    else:
+        # For browser app, use fragment to avoid logging in backend/proxy logs.
+        redirect_url = f"{return_to}#{urlencode(payload)}"
+
+    redirect = RedirectResponse(redirect_url)
+    # ensure refresh cookie is set on the redirect response
+    redirect.set_cookie(
+        key="refresh_token",
+        value=refresh_jwt,
+        httponly=True,
+        max_age=7 * 24 * 60 * 60,
+        samesite="lax",
+        secure=settings.SECURE_COOKIES,
+    )
+    redirect.delete_cookie("oauth_return_to")
+    redirect.delete_cookie("oauth_state")
+    return redirect

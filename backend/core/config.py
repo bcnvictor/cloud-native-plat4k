@@ -34,12 +34,21 @@ class Settings(BaseSettings):
     GITLAB_BASE_URL: str = "https://gitlab.cri.epita.fr"
     GITLAB_TOKEN: Optional[str] = None
     GITLAB_NAMESPACE: Optional[str] = None
+    # GitLab OAuth (SSO)
+    GITLAB_OAUTH_CLIENT_ID: Optional[str] = None
+    GITLAB_OAUTH_CLIENT_SECRET: Optional[str] = None
+    GITLAB_OAUTH_REDIRECT_URI: Optional[str] = None
+    GITLAB_OAUTH_SCOPES: str = "api read_user offline_access"
 
     # Kubernetes
     KUBECONFIG_PATH: Optional[str] = None
 
     # Logging
     LOG_LEVEL: str = "INFO"
+
+    # Frontend
+    FRONTEND_BASE_URL: str = "http://localhost"
+    CLI_REDIRECT_BASE_URL: str = "http://localhost:8765"
 
     @property
     def sync_database_uri(self) -> str:

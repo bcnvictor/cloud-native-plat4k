@@ -1,64 +1,8 @@
 import { useState } from 'react';
 import { FolderGit2, GitBranch, Plus, Download } from 'lucide-react';
 import { clsx } from 'clsx';
-
-type Origin = 'scaffolded' | 'imported';
-type ProjectStatus = 'deployed' | 'pending' | 'error';
-
-interface Project {
-  id: string;
-  name: string;
-  origin: Origin;
-  repo: string;
-  status: ProjectStatus;
-  createdAt: string;
-}
-
-const MOCK_PROJECTS: Project[] = [
-  {
-    id: '1',
-    name: 'api-gateway-service',
-    origin: 'scaffolded',
-    repo: 'gitlab.company.com/team-backend/api-gateway-service',
-    status: 'deployed',
-    createdAt: '2024-03-15',
-  },
-  {
-    id: '2',
-    name: 'frontend-dashboard',
-    origin: 'scaffolded',
-    repo: 'gitlab.company.com/team-frontend/frontend-dashboard',
-    status: 'pending',
-    createdAt: '2024-04-02',
-  },
-  {
-    id: '3',
-    name: 'legacy-auth-service',
-    origin: 'imported',
-    repo: 'gitlab.company.com/team-platform/legacy-auth-service',
-    status: 'error',
-    createdAt: '2024-02-20',
-  },
-  {
-    id: '4',
-    name: 'data-pipeline-worker',
-    origin: 'imported',
-    repo: 'gitlab.company.com/team-data/data-pipeline-worker',
-    status: 'deployed',
-    createdAt: '2024-04-18',
-  },
-];
-
-const ORIGIN_BADGE: Record<Origin, string> = {
-  scaffolded: 'bg-green-100 text-green-800',
-  imported: 'bg-indigo-100 text-indigo-800',
-};
-
-const STATUS_BADGE: Record<ProjectStatus, string> = {
-  deployed: 'bg-green-100 text-green-800',
-  pending: 'bg-yellow-100 text-yellow-800',
-  error: 'bg-red-100 text-red-800',
-};
+import { useQuery } from '@tanstack/react-query';
+import { gitlabApi, GitLabProject } from '@/api/gitlab';
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', {
@@ -68,9 +12,24 @@ function formatDate(iso: string) {
   });
 }
 
+const ACTIVITY_BADGE: Record<'active' | 'stale', string> = {
+  active: 'bg-green-100 text-green-800',
+  stale: 'bg-gray-100 text-gray-800',
+};
+
+function getActivityStatus(lastActivity?: string | null) {
+  if (!lastActivity) return 'stale' as const;
+  const date = new Date(lastActivity);
+  const diffDays = (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24);
+  return diffDays <= 30 ? 'active' : 'stale';
+}
+
 export const MyProjects = () => {
   const [toast, setToast] = useState<string | null>(null);
-  const projects = MOCK_PROJECTS;
+  const { data: projects = [], isLoading, isError } = useQuery({
+    queryKey: ['gitlab-projects'],
+    queryFn: () => gitlabApi.listProjects(),
+  });
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -98,6 +57,18 @@ export const MyProjects = () => {
     </div>
   );
 
+  if (isLoading) {
+    return <div>Loading GitLab projects...</div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+        Unable to load GitLab projects. Ensure GitLab is connected.
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="mb-8 flex items-center justify-between">
@@ -109,14 +80,14 @@ export const MyProjects = () => {
         <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-200 bg-white py-20 text-center">
           <FolderGit2 className="mb-4 h-12 w-12 text-gray-300" />
           <h3 className="mb-1 text-sm font-semibold text-gray-900">No projects yet</h3>
-          <p className="mb-6 text-sm text-gray-500">
-            Get started by scaffolding a new project or importing an existing repository.
-          </p>
+          <p className="mb-6 text-sm text-gray-500">No GitLab repositories found.</p>
           <ActionButtons />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
+          {projects.map((project: GitLabProject) => {
+            const activity = getActivityStatus(project.last_activity_at);
+            return (
             <div
               key={project.id}
               className="flex flex-col overflow-hidden rounded-lg bg-white shadow"
@@ -129,28 +100,30 @@ export const MyProjects = () => {
                   <span
                     className={clsx(
                       'flex-shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize',
-                      ORIGIN_BADGE[project.origin]
+                      ACTIVITY_BADGE[activity]
                     )}
                   >
-                    {project.origin}
+                    {activity}
                   </span>
                 </div>
 
                 <div className="mb-4 flex items-center gap-1.5 text-xs text-gray-500">
                   <GitBranch className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
-                  <span className="truncate">{project.repo}</span>
+                  <span className="truncate">{project.path_with_namespace}</span>
                 </div>
 
                 <div className="mt-auto flex items-center justify-between">
-                  <span
-                    className={clsx(
-                      'rounded-full px-2.5 py-0.5 text-xs font-medium capitalize',
-                      STATUS_BADGE[project.status]
-                    )}
-                  >
-                    {project.status}
+                  <span className="text-xs text-gray-400">
+                    {project.last_activity_at ? formatDate(project.last_activity_at) : 'No activity'}
                   </span>
-                  <span className="text-xs text-gray-400">{formatDate(project.createdAt)}</span>
+                  <a
+                    href={project.web_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-medium text-blue-600 hover:text-blue-500"
+                  >
+                    Open
+                  </a>
                 </div>
               </div>
 
@@ -160,7 +133,8 @@ export const MyProjects = () => {
                 </button>
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
 

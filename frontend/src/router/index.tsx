@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router-dom';
 import { ProtectedRoute } from './ProtectedRoute';
 import { Layout } from '@/components/Layout';
 import { Login } from '@/pages/Login';
+import { OAuthCallback } from '@/pages/OAuthCallback';
 import { Dashboard } from '@/pages/Dashboard';
 import { Resources } from '@/pages/Resources';
 import { ResourceDetail } from '@/pages/ResourceDetail';
@@ -15,6 +16,10 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: <Login />,
+  },
+  {
+    path: '/oauth/callback',
+    element: <OAuthCallback />,
   },
   {
     path: '/',

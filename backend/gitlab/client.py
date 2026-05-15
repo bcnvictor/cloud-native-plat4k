@@ -4,7 +4,8 @@ from gitlab.exceptions import GitlabAuthenticationError, GitlabGetError
 
 class GitLabClient:
     def __init__(self, token: str, namespace: str, base_url: str = "https://gitlab.cri.epita.fr"):
-        self._gl = gitlab.Gitlab(url=base_url, private_token=token)
+        # OAuth access tokens must be passed as oauth_token, not private_token
+        self._gl = gitlab.Gitlab(url=base_url, oauth_token=token)
         self.namespace = namespace
         self.base_url = base_url
 
@@ -38,3 +39,17 @@ class GitLabClient:
         except Exception:
             pass
         return None
+
+    def list_projects(self) -> list[dict]:
+        """List projects accessible by the authenticated user."""
+        projects = self._gl.projects.list(membership=True, per_page=100, all=True)
+        return [
+            {
+                "id": p.id,
+                "name": p.name,
+                "path_with_namespace": p.path_with_namespace,
+                "web_url": p.web_url,
+                "last_activity_at": p.last_activity_at,
+            }
+            for p in projects
+        ]

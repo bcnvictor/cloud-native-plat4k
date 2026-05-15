@@ -103,6 +103,19 @@ export const Login = () => {
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </div>
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                // Redirect browser to backend OAuth authorize endpoint
+                const base = import.meta.env.VITE_API_URL || '/api/v1';
+                window.location.href = `${base}/auth/gitlab/authorize`;
+              }}
+              className="group relative w-full flex justify-center py-2 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 mt-2"
+            >
+              Sign in with GitLab
+            </button>
+          </div>
         </form>
       </div>
     </div>
