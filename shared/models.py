@@ -142,6 +142,7 @@ class ApplicationBase(BaseModel):
     name: str
     repo_url: Optional[str] = None
     owner: str
+    origin: Optional[str] = None
 
 
 class ApplicationCreate(ApplicationBase):
@@ -152,6 +153,7 @@ class ApplicationUpdate(BaseModel):
     name: Optional[str] = None
     repo_url: Optional[str] = None
     owner: Optional[str] = None
+    origin: Optional[str] = None
     status: Optional[ApplicationStatus] = None
 
 
