@@ -22,7 +22,8 @@ dependencies = [
     "slowapi",
     "kubernetes",
     "httpx",
-    "python-gitlab"
+    "python-gitlab",
+    "python-multipart"
 ]
 
 [tool.setuptools]
