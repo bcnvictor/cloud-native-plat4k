@@ -93,6 +93,14 @@ Négatif / Dette :
 - La migration Alembic `0006` utilise un identifiant numérique manuel (`0006`) ; les suivantes
   devront utiliser `--autogenerate` comme documenté dans `backend/README.md`
 
+Négatif / Dette (suite) :
+- Le `cluster_id` passé dans `POST /deployments` n'est **pas** utilisé pour déterminer la cible
+  du déploiement K8s réel : le client est un singleton global configuré au démarrage via
+  `KUBECONFIG_PATH`. Le déploiement se fait toujours sur le cluster configuré localement,
+  quelle que soit la valeur de `cluster_id`. Un utilisateur qui enregistre un second cluster
+  via l'API et déclenche un déploiement en le ciblant obtiendra un résultat trompeur.
+  Résolution future : instancier un client K8s par `ClusterConnection` à partir de son
+  `kubeconfig_secret_ref` plutôt qu'un singleton global.
+
 Neutre :
-- Un seul cluster est supporté par déploiement (le champ `cluster_id` est présent mais le client
-  K8s est un singleton global configuré au démarrage — pas de multi-cluster dynamique)
+- Un seul cluster est supporté en pratique (voir point ci-dessus sur `cluster_id`)
