@@ -99,3 +99,155 @@ kubectl top nodes                          # métriques CPU/RAM (après déploie
 2. Déployer kube-prometheus-stack (monitoring)
 3. Déployer la CNP elle-même (backend + frontend) dans le namespace `cnp`
 4. Créer les namespaces `dev` et `prod` pour les apps utilisateurs
+
+---
+
+## Démo : déploiement end-to-end via API
+
+Ce scénario déploie l'app de démo (`cnp-test`) sur le cluster AKS via l'API CNP, sans aucun `kubectl apply` manuel.
+
+### Prérequis
+
+- Cluster AKS démarré (`kubectl get nodes` → 2 nodes Ready)
+- Backend CNP accessible (ex: `http://localhost:8000`)
+- `KUBECONFIG_PATH` configuré dans le `.env` du backend
+- Secret imagePullSecret présent dans le namespace `default` (voir ci-dessous)
+- Un compte admin CNP (email + mot de passe)
+
+### 0. (Une fois) Créer l'imagePullSecret pour le registry EPITA
+
+```bash
+kubectl create secret docker-registry epita-registry \
+  --docker-server=registry.cri.epita.fr \
+  --docker-username=<votre-login-epita> \
+  --docker-password=<votre-token-gitlab> \
+  --namespace=default
+```
+
+Puis configurer dans le `.env` du backend :
+```
+K8S_IMAGE_PULL_SECRET=epita-registry
+K8S_TARGET_NAMESPACE=default
+```
+
+### 1. S'authentifier et récupérer un token
+
+```bash
+export CNP_URL=http://localhost:8000/api/v1
+export CNP_TOKEN=$(curl -s -X POST "$CNP_URL/auth/login" \
+  -d "username=admin@cnp.local&password=admin" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+echo "Token: $CNP_TOKEN"
+```
+
+### 2. Enregistrer le cluster AKS
+
+```bash
+curl -s -X POST "$CNP_URL/clusters/" \
+  -H "Authorization: Bearer $CNP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "cnp-aks",
+    "endpoint": "https://cnp-aks.hcp.swedencentral.azmk8s.io",
+    "kubeconfig_secret_ref": "kubeconfig-aks"
+  }' | python3 -m json.tool
+```
+
+> Récupérer l'`id` du cluster retourné (ex: `1`) → `$CLUSTER_ID`
+
+```bash
+export CLUSTER_ID=1
+```
+
+### 3. Enregistrer l'app de démo
+
+```bash
+export APP_ID=$(curl -s -X POST "$CNP_URL/apps/" \
+  -H "Authorization: Bearer $CNP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "cnp-demo-app",
+    "repo_url": "registry.cri.epita.fr/victor.biancini/cnp-test",
+    "owner": "victor",
+    "origin": "imported"
+  }' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+echo "App ID: $APP_ID"
+```
+
+### 4. Déclencher le déploiement
+
+```bash
+curl -s -X POST "$CNP_URL/deployments/" \
+  -H "Authorization: Bearer $CNP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"application_id\": $APP_ID,
+    \"cluster_id\": $CLUSTER_ID,
+    \"version\": \"0.1.0\"
+  }" | python3 -m json.tool
+```
+
+Le champ `status` doit passer à `running`. Si `failed`, vérifier les logs du backend.
+
+### 5. Vérifier le déploiement sur le cluster
+
+```bash
+kubectl get deployment cnp-demo-app -n default
+kubectl get pod -l app=cnp-demo-app -n default
+kubectl get svc cnp-demo-app -n default
+```
+
+Attendre que le pod soit en état `Running` (≈ 30–60 s selon le pull de l'image).
+
+### 6. Accéder à l'app via port-forward
+
+```bash
+kubectl port-forward svc/cnp-demo-app 8080:80 -n default
+```
+
+Dans un autre terminal :
+```bash
+curl http://localhost:8080/health   # → {"status": "ok"}
+curl http://localhost:8080/         # → {"app": "cnp-demo-app", "version": "0.1.0"}
+```
+
+### 7. Rejouer le scénario complet (script one-shot)
+
+```bash
+# scripts/demo.sh
+set -euo pipefail
+
+CNP_URL=${CNP_URL:-http://localhost:8000/api/v1}
+CNP_ADMIN_EMAIL=${CNP_ADMIN_EMAIL:-admin@cnp.local}
+CNP_ADMIN_PASSWORD=${CNP_ADMIN_PASSWORD:-admin}
+
+TOKEN=$(curl -s -X POST "$CNP_URL/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\": \"$CNP_ADMIN_EMAIL\", \"password\": \"$CNP_ADMIN_PASSWORD\"}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+CLUSTER_ID=$(curl -s -X POST "$CNP_URL/clusters/" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"cnp-aks","endpoint":"https://cnp-aks.hcp.swedencentral.azmk8s.io","kubeconfig_secret_ref":"kubeconfig-aks"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+APP_ID=$(curl -s -X POST "$CNP_URL/apps/" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"cnp-demo-app","repo_url":"registry.cri.epita.fr/victor.biancini/cnp-test","owner":"victor","origin":"imported"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+curl -s -X POST "$CNP_URL/deployments/" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"application_id\":$APP_ID,\"cluster_id\":$CLUSTER_ID,\"version\":\"0.1.0\"}" \
+  | python3 -m json.tool
+
+echo ""
+echo "Déploiement lancé. Attendre ~60s puis :"
+echo "  kubectl port-forward svc/cnp-demo-app 8080:80 -n default"
+echo "  curl http://localhost:8080/health"
+```
