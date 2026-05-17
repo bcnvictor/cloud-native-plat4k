@@ -1,6 +1,8 @@
 import logging
+from functools import partial
 from typing import Optional
 
+import anyio
 from fastapi import HTTPException, status
 from kubernetes.client.exceptions import ApiException
 from sqlalchemy import select
@@ -92,8 +94,12 @@ class DeploymentService:
             )
             k8s_service = build_service(name=resource_name, namespace=namespace)
 
-            k8s_client.apply_deployment(namespace, k8s_deployment)
-            k8s_client.apply_service(namespace, k8s_service)
+            await anyio.to_thread.run_sync(
+                partial(k8s_client.apply_deployment, namespace, k8s_deployment)
+            )
+            await anyio.to_thread.run_sync(
+                partial(k8s_client.apply_service, namespace, k8s_service)
+            )
 
             deployment.status = DeploymentStatus.RUNNING
             app.status = ApplicationStatus.DEPLOYED
