@@ -62,9 +62,7 @@ Positif :
 Négatif / Dette :
 - Les tables `resources` et `cloud_credentials` restent en base (migrations déjà appliquées) mais
   ne sont plus exposées via l'API ; un nettoyage ultérieur (migration de suppression) sera nécessaire
-- `POST /deployments` est un stub : sans orchestration Kubernetes réelle, le statut restera `pending`
-  jusqu'au branchement du client K8s
-
+- ~~`POST /deployments` est un stub~~ —> résolu en ADR-0008
 Neutre :
 - L'`owner` d'une `Application` est un champ `String` libre (email ou identifiant équipe) ;
   une FK vers `users` pourra être ajoutée quand le modèle d'appartenance sera précisé
