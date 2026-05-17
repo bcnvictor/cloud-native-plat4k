@@ -103,6 +103,7 @@ class Application(Base):
     name = Column(String, nullable=False)
     repo_url = Column(String, nullable=True)
     owner = Column(String, nullable=False)
+    origin = Column(String, nullable=True)
     status = Column(
         SQLEnum(ApplicationStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
