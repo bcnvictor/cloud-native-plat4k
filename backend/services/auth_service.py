@@ -26,9 +26,10 @@ class AuthService:
 
         return user
 
-    def create_tokens(self, user_id: int) -> Tuple[str, str]:
-        access_token = create_access_token(subject=user_id)
-        refresh_token = create_refresh_token(subject=user_id)
+    def create_tokens(self, user: User) -> Tuple[str, str]:
+        role = user.role.value if hasattr(user.role, "value") else str(user.role)
+        access_token = create_access_token(subject=user.id, role=role)
+        refresh_token = create_refresh_token(subject=user.id)
         return access_token, refresh_token
 
     async def create_api_key(self, user_id: int, label: str) -> APIKeyCreateResponse:

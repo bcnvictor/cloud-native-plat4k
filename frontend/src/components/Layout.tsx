@@ -61,10 +61,6 @@ export const Layout = () => {
           {navItem('/resources', 'ti-layout-grid', 'Applications', ['/resources', '/'])}
           {navItem('/dashboard', 'ti-activity', 'Monitoring', ['/dashboard'])}
           {navItem('/projects', 'ti-git-branch', 'Mes projets')}
-          <div className="sb-sep" />
-          {navItem('/docs', 'ti-book', 'Documentation')}
-          <div className="sb-sep" />
-          {navItem('/credentials', 'ti-settings', 'Paramètres', ['/credentials', '/apikeys'])}
           {user?.role === 'admin' && (
             <>
               <div className="sb-sep" />
@@ -72,6 +68,9 @@ export const Layout = () => {
               {navItem('/admin/audit', 'ti-shield-check', 'Audit')}
             </>
           )}
+          <div className="sb-sep" />
+          {navItem('/docs', 'ti-book', 'Documentation')}
+          {navItem('/credentials', 'ti-settings', 'Paramètres', ['/credentials', '/apikeys'])}
         </nav>
 
         <div className="sb-user">
