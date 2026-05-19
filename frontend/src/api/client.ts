@@ -16,38 +16,34 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor to handle 401 and refresh token
+// Shared in-flight refresh promise — prevents concurrent 401s from each triggering an independent refresh
+let refreshPromise: Promise<string> | null = null;
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    // If error is 401 and we haven't retried yet
     if (error.response?.status === 401 && !originalRequest._retry && originalRequest.url !== '/auth/login') {
       originalRequest._retry = true;
 
       try {
-        // Attempt to refresh
-        const res = await axios.post(
-          `${import.meta.env.VITE_API_URL || '/api/v1'}/auth/refresh`,
-          {},
-          { withCredentials: true }
-        );
-
-        const { access_token } = res.data;
-        const user = useAuthStore.getState().user;
-
-        // Update store with new token
-        if (user) {
-            useAuthStore.getState().setAuth(access_token, user);
+        if (!refreshPromise) {
+          refreshPromise = axios
+            .post(`${import.meta.env.VITE_API_URL || '/api/v1'}/auth/refresh`, {}, { withCredentials: true })
+            .then((res) => res.data.access_token)
+            .finally(() => { refreshPromise = null; });
         }
 
-        // Retry original request with new token
+        const access_token = await refreshPromise;
+        const user = useAuthStore.getState().user;
+        if (user) {
+          useAuthStore.getState().setAuth(access_token, user);
+        }
+
         originalRequest.headers.Authorization = `Bearer ${access_token}`;
         return api(originalRequest);
-
       } catch (refreshError) {
-        // Refresh failed, clear auth and force login
         useAuthStore.getState().clearAuth();
         window.location.href = '/login';
         return Promise.reject(refreshError);

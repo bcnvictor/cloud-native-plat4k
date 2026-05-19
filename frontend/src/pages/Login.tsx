@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '@/api/auth';
 import { useAuthStore } from '@/store/auth';
-import { Cloud } from 'lucide-react';
 import { jwtDecode } from 'jwt-decode';
+import { HexLogo } from '@/components/HexLogo';
+import type { UserRole } from '@/types';
 
 export const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
 
@@ -17,107 +19,113 @@ export const Login = () => {
     e.preventDefault();
     setError('');
     setLoading(true);
-
     try {
       const data = await authApi.login(email, password);
-      // We decode the token just to get user info if needed, or we can fetch a /me route.
-      // Since our token has 'sub', we can set a minimal user here, or ideally we'd fetch profile.
-      // For simplicity, we just store what we have.
       const payload: any = jwtDecode(data.access_token);
-
-      // Let's assume a viewer role by default if we don't have a /me route
-      // In a real app we'd call GET /users/me here.
-      // For this student project we will just hardcode role logic or let the UI fail gracefully if not admin
       setAuth(data.access_token, {
         id: parseInt(payload.sub),
         email,
-        role: email.includes('admin') ? 'admin' : 'viewer', // hack for student proj without /me
+        role: ((payload.role as UserRole) ?? 'viewer'),
         is_active: true,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
       });
-      navigate('/dashboard');
+      navigate('/');
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      if (Array.isArray(detail)) {
-        setError(detail.map((e: any) => e.msg).join('. '));
-      } else {
-        setError(typeof detail === 'string' ? detail : 'Login failed');
-      }
+      if (Array.isArray(detail)) setError(detail.map((e: any) => e.msg).join('. '));
+      else setError(typeof detail === 'string' ? detail : 'Connexion échouée');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleGitLab = () => {
+    const base = import.meta.env.VITE_API_URL || '/api/v1';
+    window.location.href = `${base}/auth/gitlab/authorize`;
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-blue-100">
-            <Cloud className="h-8 w-8 text-blue-600" />
+    <div className="login-page">
+      <div className="login-box">
+        <div className="login-logo">
+          <div className="login-logo-icon"><HexLogo size={18} /></div>
+          <div>
+            <div className="login-logo-name">CNP</div>
+            <div className="login-logo-sub">Cloud Native Plat4k</div>
           </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Sign in to your account
-          </h2>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+
+        <div className="login-title">Connexion</div>
+        <div className="login-sub">Accédez à votre espace développeur</div>
+
+        <form className="login-form" onSubmit={handleSubmit}>
           {error && (
-            <div className="bg-red-50 text-red-500 p-3 rounded-md text-sm text-center">
+            <div className="login-error">
+              <i className="ti ti-alert-circle" aria-hidden="true" style={{ marginRight: 6 }} />
               {error}
             </div>
           )}
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div>
-              <label htmlFor="email-address" className="sr-only">Email address</label>
-              <input
-                id="email-address"
-                name="email"
-                type="email"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="sr-only">Password</label>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="email">Adresse email</label>
+            <input
+              id="email"
+              type="email"
+              required
+              className="form-input"
+              placeholder="vous@epita.fr"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              autoComplete="email"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="password">Mot de passe</label>
+            <div className="form-input-wrap">
               <input
                 id="password"
-                name="password"
-                type="password"
+                type={showPwd ? 'text' : 'password'}
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
+                className="form-input"
+                placeholder="••••••••"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={e => setPassword(e.target.value)}
+                autoComplete="current-password"
               />
+              <button
+                type="button"
+                className="form-input-action"
+                onClick={() => setShowPwd(v => !v)}
+                tabIndex={-1}
+              >
+                <i className={`ti ${showPwd ? 'ti-eye-off' : 'ti-eye'}`} aria-hidden="true" />
+              </button>
             </div>
           </div>
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              {loading ? 'Signing in...' : 'Sign in'}
-            </button>
-          </div>
-          <div>
-            <button
-              type="button"
-              onClick={() => {
-                // Redirect browser to backend OAuth authorize endpoint
-                const base = import.meta.env.VITE_API_URL || '/api/v1';
-                window.location.href = `${base}/auth/gitlab/authorize`;
-              }}
-              className="group relative w-full flex justify-center py-2 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 mt-2"
-            >
-              Sign in with GitLab
-            </button>
-          </div>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={loading}
+            style={{ width: '100%', justifyContent: 'center', padding: '9px 16px' }}
+          >
+            {loading ? (
+              <><i className="ti ti-loader-2" style={{ animation: 'spin 1s linear infinite' }} aria-hidden="true" /> Connexion…</>
+            ) : (
+              'Se connecter'
+            )}
+          </button>
+
+          <div className="login-divider">ou</div>
+
+          <button type="button" className="login-gitlab-btn" onClick={handleGitLab}>
+            <i className="ti ti-brand-gitlab" aria-hidden="true" style={{ fontSize: 16 }} />
+            Continuer avec GitLab EPITA
+          </button>
         </form>
       </div>
+
     </div>
   );
 };

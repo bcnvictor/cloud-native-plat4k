@@ -3,6 +3,30 @@ export type ResourceType = 'vm' | 'storage' | 'network';
 export type ResourceStatus = 'pending' | 'running' | 'stopped' | 'terminated' | 'error';
 export type UserRole = 'admin' | 'viewer';
 
+export type ApplicationStatus = 'onboarding' | 'ready' | 'deployed';
+export type DeploymentStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+
+export interface Application {
+  id: number;
+  name: string;
+  repo_url: string | null;
+  owner: string;
+  origin: string | null;
+  status: ApplicationStatus;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface Deployment {
+  id: number;
+  application_id: number;
+  cluster_id: number;
+  version: string;
+  status: DeploymentStatus;
+  deployed_at: string;
+  created_at: string;
+}
+
 export interface User {
   id: number;
   email: string;
