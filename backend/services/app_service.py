@@ -54,15 +54,27 @@ class AppService:
             raise HTTPException(status_code=503, detail="Kubernetes client not configured")
 
         namespace = settings.K8S_TARGET_NAMESPACE
-        k8s_deps = await anyio.to_thread.run_sync(
-            partial(k8s_client.list_namespace_deployments, namespace)
+
+        # Point 3 : timeout sur l'appel bloquant K8s
+        with anyio.move_on_after(10) as cancel_scope:
+            k8s_deps = await anyio.to_thread.run_sync(
+                partial(k8s_client.list_namespace_deployments, namespace),
+                cancellable=True,
+            )
+        if cancel_scope.cancelled_caught:
+            raise HTTPException(status_code=504, detail="K8s API timeout")
+
+        # Point 1 : une seule requête pour tous les noms
+        names = [dep.metadata.name for dep in k8s_deps]
+        result = await self.db.execute(
+            select(Application).where(Application.name.in_(names))
         )
+        existing_by_name = {app.name: app for app in result.scalars()}
 
         synced: list[Application] = []
         for dep in k8s_deps:
             name = dep.metadata.name
-            result = await self.db.execute(select(Application).where(Application.name == name))
-            existing = result.scalar_one_or_none()
+            existing = existing_by_name.get(name)
 
             ready_replicas = dep.status.ready_replicas or 0
             app_status = ApplicationStatus.DEPLOYED if ready_replicas >= 1 else ApplicationStatus.ONBOARDING
@@ -82,7 +94,9 @@ class AppService:
                 logger.info("Synced new app from K8s: %s", name)
                 synced.append(app)
             else:
-                existing.status = app_status
+                # Point 2 : ne pas écraser un statut READY avec ONBOARDING
+                if app_status == ApplicationStatus.DEPLOYED or existing.status != ApplicationStatus.READY:
+                    existing.status = app_status
                 logger.info("Updated app status from K8s: %s → %s", name, app_status.value)
                 synced.append(existing)
 
