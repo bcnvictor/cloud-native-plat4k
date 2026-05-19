@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { ApiKey } from '@/types';
 
 export const authApi = {
   login: async (email: string, password: string) => {
@@ -13,8 +14,8 @@ export const authApi = {
     await api.post('/auth/logout');
   },
 
-  getApiKeys: async () => {
-    const { data } = await api.get('/auth/apikeys');
+  getApiKeys: async (): Promise<ApiKey[]> => {
+    const { data } = await api.get<ApiKey[]>('/auth/apikeys');
     return data;
   },
 

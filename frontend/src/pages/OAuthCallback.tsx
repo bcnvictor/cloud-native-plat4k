@@ -8,6 +8,8 @@ export const OAuthCallback = () => {
   const setAuth = useAuthStore((state) => state.setAuth);
 
   useEffect(() => {
+    let cancelled = false;
+
     const hash = window.location.hash.startsWith('#')
       ? window.location.hash.slice(1)
       : window.location.hash;
@@ -20,24 +22,29 @@ export const OAuthCallback = () => {
     }
 
     const email = params.get('email') || '';
-    const role = (params.get('role') || 'viewer') as 'admin' | 'viewer';
     const userIdParam = params.get('user_id');
 
     try {
       const payload: any = jwtDecode(accessToken);
       const userId = userIdParam ? parseInt(userIdParam, 10) : parseInt(payload.sub);
-      setAuth(accessToken, {
-        id: userId,
-        email: email || 'gitlab-user',
-        role,
-        is_active: true,
-        created_at: new Date().toISOString(),
-      });
-      navigate('/dashboard');
+      // Prefer role from signed JWT payload; fall back to URL param as last resort
+      const role = ((payload.role ?? params.get('role') ?? 'viewer') as 'admin' | 'viewer');
+      if (!cancelled) {
+        setAuth(accessToken, {
+          id: userId,
+          email: email || 'gitlab-user',
+          role,
+          is_active: true,
+          created_at: new Date().toISOString(),
+        });
+        navigate('/');
+      }
     } catch {
-      navigate('/login');
+      if (!cancelled) navigate('/login');
     }
+
+    return () => { cancelled = true; };
   }, [navigate, setAuth]);
 
-  return <div className="min-h-screen flex items-center justify-center">Signing you in...</div>;
+  return <div className="loading-state">Connexion en cours…</div>;
 };
