@@ -83,5 +83,8 @@ class KubernetesClient:
         dep = self.apps_v1.read_namespaced_deployment(name=name, namespace=namespace)
         return (dep.status.ready_replicas or 0) >= 1
 
+    def list_namespace_deployments(self, namespace: str) -> list[client.V1Deployment]:
+        return self.apps_v1.list_namespaced_deployment(namespace=namespace).items
+
 
 k8s_client = KubernetesClient()
