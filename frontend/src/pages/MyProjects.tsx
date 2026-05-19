@@ -1,31 +1,29 @@
 import { useState } from 'react';
-import { FolderGit2, GitBranch, Plus, Download } from 'lucide-react';
-import { clsx } from 'clsx';
 import { useQuery } from '@tanstack/react-query';
 import { gitlabApi, GitLabProject } from '@/api/gitlab';
+import { timeAgo } from '@/utils/timeAgo';
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
+const TEMPLATES = [
+  { name: 'FastAPI — Python', desc: 'API REST async avec FastAPI, SQLAlchemy et Dockerfile prêt à déployer.', tags: ['Python', 'FastAPI', 'Docker'], available: true, icon: 'PY', iconBg: 'rgba(59,130,246,0.1)', iconColor: '#3B82F6' },
+  { name: 'React — TypeScript', desc: 'SPA React avec Vite, TailwindCSS et Nginx en production.', tags: ['TypeScript', 'Vite'], available: false, icon: 'RE', iconBg: 'rgba(6,182,212,0.1)', iconColor: '#06B6D4' },
+  { name: 'Node.js — Worker', desc: 'Worker async avec Bull, Redis et gestion de jobs en file.', tags: ['Node.js', 'Redis'], available: false, icon: 'NJ', iconBg: 'rgba(16,185,129,0.1)', iconColor: '#10B981' },
+  { name: 'Go — Microservice', desc: 'Service Go minimaliste avec chi router et healthcheck intégré.', tags: ['Go', 'chi'], available: false, icon: 'GO', iconBg: 'rgba(99,102,241,0.1)', iconColor: '#6366F1' },
+  { name: 'Next.js — Fullstack', desc: 'Application fullstack avec App Router et déploiement conteneurisé.', tags: ['Next.js', 'SSR'], available: false, icon: 'NX', iconBg: 'rgba(0,0,0,0.06)', iconColor: '#374151' },
+  { name: 'Spring Boot — Java', desc: 'Service Java avec Spring Boot et build Maven multi-stage.', tags: ['Java', 'Spring'], available: false, icon: 'JV', iconBg: 'rgba(239,68,68,0.08)', iconColor: '#EF4444' },
+];
 
-const ACTIVITY_BADGE: Record<'active' | 'stale', string> = {
-  active: 'bg-green-100 text-green-800',
-  stale: 'bg-gray-100 text-gray-800',
+const LANG_COLORS: Record<string, string> = {
+  Python: '#3B82F6',
+  TypeScript: '#06B6D4',
+  JavaScript: '#F59E0B',
+  Go: '#6366F1',
+  Java: '#EF4444',
+  Ruby: '#DC2626',
 };
-
-function getActivityStatus(lastActivity?: string | null) {
-  if (!lastActivity) return 'stale' as const;
-  const date = new Date(lastActivity);
-  const diffDays = (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24);
-  return diffDays <= 30 ? 'active' : 'stale';
-}
 
 export const MyProjects = () => {
   const [toast, setToast] = useState<string | null>(null);
+
   const { data: projects = [], isLoading, isError } = useQuery({
     queryKey: ['gitlab-projects'],
     queryFn: () => gitlabApi.listProjects(),
@@ -36,113 +34,120 @@ export const MyProjects = () => {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const handleComingSoon = () => showToast('Coming soon');
-
-  const ActionButtons = () => (
-    <div className="flex items-center gap-3">
-      <button
-        onClick={handleComingSoon}
-        className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-      >
-        <Download className="h-4 w-4" />
-        Import existing repo
-      </button>
-      <button
-        onClick={handleComingSoon}
-        className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
-      >
-        <Plus className="h-4 w-4" />
-        Scaffold new project
-      </button>
-    </div>
-  );
-
-  if (isLoading) {
-    return <div>Loading GitLab projects...</div>;
-  }
-
-  if (isError) {
-    return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">
-        Unable to load GitLab projects. Ensure GitLab is connected.
-      </div>
-    );
-  }
-
   return (
     <>
-      <div className="mb-8 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900">My Projects</h1>
-        <ActionButtons />
+      <div className="topbar">
+        <span className="topbar-title">Templates &amp; Repos</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost" onClick={() => showToast('Coming soon')}>
+            <i className="ti ti-download" aria-hidden="true" />Importer un repo
+          </button>
+          <button className="btn btn-primary" onClick={() => showToast('Coming soon')}>
+            <i className="ti ti-plus" aria-hidden="true" />Scaffolder
+          </button>
+        </div>
       </div>
 
-      {projects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-200 bg-white py-20 text-center">
-          <FolderGit2 className="mb-4 h-12 w-12 text-gray-300" />
-          <h3 className="mb-1 text-sm font-semibold text-gray-900">No projects yet</h3>
-          <p className="mb-6 text-sm text-gray-500">No GitLab repositories found.</p>
-          <ActionButtons />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project: GitLabProject) => {
-            const activity = getActivityStatus(project.last_activity_at);
-            return (
-            <div
-              key={project.id}
-              className="flex flex-col overflow-hidden rounded-lg bg-white shadow"
-            >
-              <div className="flex flex-1 flex-col p-5">
-                <div className="mb-3 flex items-start justify-between gap-2">
-                  <h3 className="truncate text-sm font-semibold text-gray-900">
-                    {project.name}
-                  </h3>
-                  <span
-                    className={clsx(
-                      'flex-shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize',
-                      ACTIVITY_BADGE[activity]
-                    )}
-                  >
-                    {activity}
-                  </span>
+      <div className="page-content">
+        {/* Templates */}
+        <div>
+          <div className="section-header">
+            <div>
+              <span className="section-title-text">Templates</span>
+              <span className="section-sub">Scaffoldez une nouvelle application en quelques secondes</span>
+            </div>
+          </div>
+          <div className="templates-grid">
+            {TEMPLATES.map(t => (
+              <div
+                key={t.name}
+                className={`template-card ${t.available ? 'available' : 'coming'}`}
+                onClick={() => t.available && showToast('Coming soon')}
+              >
+                <div className="template-icon" style={{ background: t.iconBg, color: t.iconColor }}>
+                  {t.icon}
                 </div>
-
-                <div className="mb-4 flex items-center gap-1.5 text-xs text-gray-500">
-                  <GitBranch className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
-                  <span className="truncate">{project.path_with_namespace}</span>
+                <div>
+                  <div className="template-name">{t.name}</div>
+                  <div className="template-desc">{t.desc}</div>
                 </div>
-
-                <div className="mt-auto flex items-center justify-between">
-                  <span className="text-xs text-gray-400">
-                    {project.last_activity_at ? formatDate(project.last_activity_at) : 'No activity'}
-                  </span>
-                  <a
-                    href={project.web_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs font-medium text-blue-600 hover:text-blue-500"
-                  >
-                    Open
-                  </a>
+                <div className="template-footer">
+                  <div className="template-tags">
+                    {t.tags.map(tg => <span key={tg} className="tag">{tg}</span>)}
+                  </div>
+                  {t.available
+                    ? <span className="use-btn">Utiliser <i className="ti ti-arrow-right" aria-hidden="true" /></span>
+                    : <span className="coming-badge">bientôt</span>}
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
 
-              <div className="border-t border-gray-100 px-5 py-3">
-                <button className="text-sm font-medium text-blue-600 hover:text-blue-500">
-                  View details
-                </button>
+        {/* Repos */}
+        <div>
+          <div className="section-header">
+            <div>
+              <span className="section-title-text">Repositories GitLab</span>
+              <span className="section-sub">Vos repos disponibles</span>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="loading-state">
+              <i className="ti ti-loader-2" aria-hidden="true" style={{ fontSize: 16 }} />
+              Chargement des projets GitLab…
+            </div>
+          ) : isError ? (
+            <div className="alert error">
+              <i className="ti ti-alert-circle" aria-hidden="true" />
+              Impossible de charger les projets. Vérifiez que GitLab est connecté dans Paramètres.
+            </div>
+          ) : projects.length === 0 ? (
+            <div className="card">
+              <div className="empty-state">
+                <i className="ti ti-git-branch" />
+                <div className="empty-state-title">Aucun projet GitLab</div>
+                <div className="empty-state-desc">Connectez votre compte GitLab dans Paramètres pour voir vos repos.</div>
               </div>
             </div>
-          );
-          })}
+          ) : (
+            <div className="repos-list">
+              {projects.map((p: GitLabProject) => {
+                const lang = (p as any).language ?? 'Python';
+                const color = LANG_COLORS[lang] ?? '#94A3B8';
+                return (
+                  <div key={p.id} className="repo-row">
+                    <i className="ti ti-git-branch" style={{ color: 'var(--text-muted)', fontSize: 15 }} aria-hidden="true" />
+                    <div className="repo-info">
+                      <div className="repo-name">{p.name}</div>
+                      <div className="repo-url">{p.path_with_namespace}</div>
+                    </div>
+                    <div className="repo-meta">
+                      <span className="repo-lang">
+                        <span className="lang-dot" style={{ background: color }} />{lang}
+                      </span>
+                      <span className="repo-updated">{timeAgo(p.last_activity_at)}</span>
+                    </div>
+                    <a
+                      href={p.web_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="import-btn imported"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <i className="ti ti-external-link" style={{ fontSize: 11 }} aria-hidden="true" />
+                      Ouvrir
+                    </a>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-gray-900 px-4 py-3 text-sm text-white shadow-lg">
-          {toast}
-        </div>
-      )}
+      {toast && <div className="toast">{toast}</div>}
     </>
   );
 };

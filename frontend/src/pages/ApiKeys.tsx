@@ -1,22 +1,22 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authApi } from '@/api/auth';
-import type { ApiKey } from '@/types';
-import { Trash2, Plus, Copy, Check } from 'lucide-react';
+import { SettingsLayout } from '@/components/SettingsLayout';
 
 export const ApiKeys = () => {
   const queryClient = useQueryClient();
   const [label, setLabel] = useState('');
   const [newKey, setNewKey] = useState<{ raw: string; label: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [revokingId, setRevokingId] = useState<number | null>(null);
 
   const { data: keys, isLoading } = useQuery({
     queryKey: ['apikeys'],
     queryFn: () => authApi.getApiKeys(),
-  }) as { data: ApiKey[] | undefined; isLoading: boolean };
+  });
 
   const createMutation = useMutation({
-    mutationFn: (label: string) => authApi.createApiKey(label),
+    mutationFn: (lbl: string) => authApi.createApiKey(lbl),
     onSuccess: (data) => {
       setNewKey({ raw: data.api_key, label: data.label });
       setLabel('');
@@ -27,123 +27,121 @@ export const ApiKeys = () => {
   const revokeMutation = useMutation({
     mutationFn: (id: number) => authApi.revokeApiKey(id),
     onSuccess: () => {
+      setRevokingId(null);
       queryClient.invalidateQueries({ queryKey: ['apikeys'] });
     },
+    onError: () => setRevokingId(null),
   });
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
-    if (label.trim()) {
-      createMutation.mutate(label);
-    }
+    if (label.trim()) createMutation.mutate(label.trim());
   };
 
-  const copyToClipboard = () => {
-    if (newKey) {
-      navigator.clipboard.writeText(newKey.raw);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+  const copyKey = () => {
+    if (!newKey) return;
+    navigator.clipboard.writeText(newKey.raw);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  if (isLoading) return <div>Loading...</div>;
+  const activeKeys = keys?.filter(k => !k.revoked) ?? [];
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-gray-900">API Keys</h1>
-        <p className="mt-2 text-sm text-gray-700">Manage API keys for CLI access.</p>
-      </div>
-
-      <div className="bg-white shadow sm:rounded-lg mb-8 p-6">
-        <h3 className="text-lg leading-6 font-medium text-gray-900">Create New Key</h3>
-        <form className="mt-5 sm:flex sm:items-center" onSubmit={handleCreate}>
-          <div className="w-full sm:max-w-xs">
-            <label htmlFor="label" className="sr-only">Key Label</label>
-            <input
-              type="text"
-              name="label"
-              id="label"
-              className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md"
-              placeholder="e.g. My CLI Macbook"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={!label.trim() || createMutation.isPending}
-            className="mt-3 w-full inline-flex items-center justify-center px-4 py-2 border border-transparent shadow-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Generate
-          </button>
-        </form>
+    <SettingsLayout
+      title="Token d'accès"
+      description="Clés API utilisées par le CLI CNP. Ne pas partager."
+    >
+      {/* Create form */}
+      <div className="card">
+        <div className="card-header">Générer une clé</div>
+        <div style={{ padding: '16px' }}>
+          <form onSubmit={handleCreate}>
+            <div className="form-row">
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label" htmlFor="key-label">Label de la clé</label>
+                <input
+                  id="key-label"
+                  type="text"
+                  className="form-input"
+                  placeholder="ex. Mon MacBook CLI"
+                  value={label}
+                  onChange={e => setLabel(e.target.value)}
+                />
+              </div>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={!label.trim() || createMutation.isPending}
+                style={{ flexShrink: 0 }}
+              >
+                <i className="ti ti-plus" aria-hidden="true" />
+                {createMutation.isPending ? 'Génération…' : 'Générer'}
+              </button>
+            </div>
+          </form>
+        </div>
 
         {newKey && (
-          <div className="mt-6 bg-yellow-50 border-l-4 border-yellow-400 p-4">
-            <div className="flex">
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-yellow-800">
-                  Save your new API key!
-                </h3>
-                <div className="mt-2 text-sm text-yellow-700">
-                  <p>This key will only be shown once. Please copy it now.</p>
-                </div>
-                <div className="mt-4 flex items-center space-x-2">
-                  <code className="px-3 py-2 bg-white border border-yellow-200 rounded text-sm font-mono flex-1">
-                    {newKey.raw}
-                  </code>
-                  <button
-                    onClick={copyToClipboard}
-                    className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-yellow-700 bg-yellow-100 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
-                  >
-                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </button>
-                </div>
+          <div style={{ padding: '0 16px 16px' }}>
+            <div className="new-key-reveal">
+              <div className="new-key-title">
+                <i className="ti ti-alert-triangle" style={{ marginRight: 6 }} aria-hidden="true" />
+                Copiez cette clé maintenant !
+              </div>
+              <div className="new-key-sub">
+                Elle ne sera plus affichée après fermeture. Label : <strong>{newKey.label}</strong>
+              </div>
+              <div className="new-key-row">
+                <div className="new-key-code">{newKey.raw}</div>
+                <button className="btn btn-ghost btn-sm" onClick={copyKey}>
+                  <i className={`ti ${copied ? 'ti-check' : 'ti-copy'}`} aria-hidden="true" />
+                  {copied ? 'Copié !' : 'Copier'}
+                </button>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-        <ul className="divide-y divide-gray-200">
-          {keys?.filter((key) => !key.revoked).map((key) => (
-            <li key={key.id}>
-              <div className="px-4 py-4 flex items-center sm:px-6">
-                <div className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between">
-                  <div>
-                    <h4 className="text-sm font-medium text-blue-600 truncate">{key.label}</h4>
-                    <p className="mt-1 flex items-center text-sm text-gray-500">
-                      Created on {new Date(key.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="mt-4 flex-shrink-0 sm:mt-0 sm:ml-5">
-                    <p className="text-sm text-gray-500">
-                      Last used: {key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : 'Never'}
-                    </p>
-                  </div>
+      {/* Keys list */}
+      <div className="card">
+        <div className="card-header">Clés actives</div>
+
+        {isLoading ? (
+          <div className="loading-state" style={{ padding: 24 }}>Chargement…</div>
+        ) : activeKeys.length === 0 ? (
+          <div style={{ padding: '24px 16px', fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+            Aucune clé API active.
+          </div>
+        ) : (
+          activeKeys.map(key => (
+            <div key={key.id} className="token-row">
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 2 }}>
+                  {key.label}
                 </div>
-                <div className="ml-5 flex-shrink-0">
-                  <button
-                    onClick={() => revokeMutation.mutate(key.id)}
-                    className="p-2 text-red-600 hover:text-red-900 rounded-md hover:bg-red-50"
-                    title="Revoke Key"
-                  >
-                    <Trash2 className="h-5 w-5" />
-                  </button>
+                <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-muted)' }}>
+                  Créé le {new Date(key.created_at).toLocaleDateString('fr-FR')}
+                  {key.last_used_at && (
+                    <> · Dernière utilisation : {new Date(key.last_used_at).toLocaleDateString('fr-FR')}</>
+                  )}
                 </div>
               </div>
-            </li>
-          ))}
-          {keys?.filter((key) => !key.revoked).length === 0 && (
-            <li className="px-4 py-8 text-center text-gray-500">
-              No active API keys found.
-            </li>
-          )}
-        </ul>
+              <div className="token-actions">
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => { setRevokingId(key.id); revokeMutation.mutate(key.id); }}
+                  disabled={revokingId === key.id}
+                  style={{ color: 'var(--red)', borderColor: 'rgba(239,68,68,0.25)' }}
+                >
+                  <i className="ti ti-trash" aria-hidden="true" />Révoquer
+                </button>
+              </div>
+            </div>
+          ))
+        )}
       </div>
-    </div>
+    </SettingsLayout>
   );
 };
