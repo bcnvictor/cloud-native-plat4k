@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.core.config import settings
+from backend.core.exceptions import UnauthorizedException
 from backend.db.session import get_db
 from backend.services.auth_service import AuthService
 from backend.services.gitlab_oauth_service import GitLabOAuthService
@@ -31,7 +32,7 @@ async def login(
     auth_service = AuthService(db)
     payload = LoginPayload(email=form_data.username, password=form_data.password)
     user = await auth_service.authenticate_user(payload)
-    access_token, refresh_token = auth_service.create_tokens(user.id)
+    access_token, refresh_token = auth_service.create_tokens(user)
 
     response.set_cookie(
         key="refresh_token",
@@ -54,7 +55,6 @@ async def refresh_token(
     if not refresh_token and payload:
         refresh_token = payload.refresh_token
     if not refresh_token:
-        from backend.core.exceptions import UnauthorizedException
         raise UnauthorizedException("No refresh token found")
 
     from jose import jwt, JWTError
@@ -68,7 +68,11 @@ async def refresh_token(
         raise UnauthorizedException("Invalid refresh token")
 
     auth_service = AuthService(db)
-    access_token, _ = auth_service.create_tokens(int(user_id))
+    result = await db.execute(select(User).where(User.id == int(user_id)))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise UnauthorizedException("User not found")
+    access_token, _ = auth_service.create_tokens(user)
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.post("/logout")
@@ -140,7 +144,6 @@ async def gitlab_callback(request: Request, response: Response, db: AsyncSession
     code = request.query_params.get("code")
     state = request.query_params.get("state")
     cookie_state = request.cookies.get("oauth_state")
-    from backend.core.exceptions import UnauthorizedException
 
     if not code or not state or state != cookie_state:
         raise UnauthorizedException("Invalid OAuth state or missing code")
@@ -201,7 +204,7 @@ async def gitlab_callback(request: Request, response: Response, db: AsyncSession
 
     # create JWT tokens and set refresh cookie
     auth_service = AuthService(db)
-    access_jwt, refresh_jwt = auth_service.create_tokens(user.id)
+    access_jwt, refresh_jwt = auth_service.create_tokens(user)
     return_to = request.cookies.get("oauth_return_to")
     if not _is_allowed_return_to(return_to):
         return_to = f"{settings.FRONTEND_BASE_URL}/oauth/callback"

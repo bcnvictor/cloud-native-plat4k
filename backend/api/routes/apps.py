@@ -28,6 +28,15 @@ async def get_app(
     return await AppService(db).get_app(app_id)
 
 
+@router.post("/sync", response_model=List[ApplicationResponse])
+async def sync_apps_from_k8s(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Discover K8s Deployments in the configured namespace and import them into the database."""
+    return await AppService(db).sync_from_k8s()
+
+
 @router.post("/", response_model=ApplicationResponse, status_code=201)
 async def create_app(
     payload: ApplicationCreate,

@@ -11,6 +11,7 @@ import { ApiKeys } from '@/pages/ApiKeys';
 import { Users } from '@/pages/admin/Users';
 import { Audit } from '@/pages/admin/Audit';
 import { MyProjects } from '@/pages/MyProjects';
+import { Docs } from '@/pages/Docs';
 
 export const router = createBrowserRouter([
   {
@@ -28,13 +29,14 @@ export const router = createBrowserRouter([
       {
         element: <Layout />,
         children: [
-          { index: true, element: <Dashboard /> },
+          { index: true, element: <Resources /> },
           { path: 'dashboard', element: <Dashboard /> },
           { path: 'resources', element: <Resources /> },
           { path: 'resources/:id', element: <ResourceDetail /> },
           { path: 'credentials', element: <Credentials /> },
           { path: 'apikeys', element: <ApiKeys /> },
           { path: 'projects', element: <MyProjects /> },
+          { path: 'docs', element: <Docs /> },
         ],
       },
     ],
