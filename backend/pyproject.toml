@@ -30,3 +30,20 @@ dependencies = [
 [tool.setuptools]
 package-dir = {"backend" = "."}
 packages = ["backend", "backend.api", "backend.core", "backend.db", "backend.k8s", "backend.gitlab", "backend.services", "backend.api.schemas"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]   # pycodestyle errors, pyflakes, isort
+ignore = ["E501"]           # line length géré par le formateur
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+strict = false
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+asyncio_mode = "auto"
