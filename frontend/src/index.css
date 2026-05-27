@@ -36,8 +36,7 @@ button, input, select, textarea { font-family: var(--font); }
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 .sb-logo { padding: 20px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
 .sb-logo-mark { display: flex; align-items: center; gap: 10px; }
-.sb-logo-icon { width: 30px; height: 30px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
-.sb-logo-icon svg { width: 16px; height: 16px; fill: white; }
+.sb-logo-icon { width: 30px; height: 30px; border-radius: 8px; display: block; flex-shrink: 0; }
 .sb-logo-name { font-size: 14px; font-weight: 600; color: var(--text-sidebar); letter-spacing: -0.01em; }
 .sb-logo-sub { font-size: 10px; color: var(--text-sidebar-muted); font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; }
 .sb-nav { padding: 12px 10px; flex: 1; display: flex; flex-direction: column; gap: 2px; }
@@ -294,8 +293,7 @@ button, input, select, textarea { font-family: var(--font); }
 .login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg-base); }
 .login-box { width: 360px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; padding: 32px; }
 .login-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
-.login-logo-icon { width: 36px; height: 36px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; }
-.login-logo-icon svg { width: 18px; height: 18px; fill: white; }
+.login-logo-icon { width: 36px; height: 36px; border-radius: 10px; display: block; flex-shrink: 0; }
 .login-logo-name { font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; }
 .login-logo-sub { font-size: 10px; color: var(--text-muted); }
 .login-title { font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; letter-spacing: -0.02em; }

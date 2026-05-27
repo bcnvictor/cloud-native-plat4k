@@ -1,7 +1,6 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/store/auth';
 import { authApi } from '@/api/auth';
-import { HexLogo } from '@/components/HexLogo';
 
 function initials(email: string): string {
   const name = email.split('@')[0];
@@ -49,7 +48,7 @@ export const Layout = () => {
       <aside className="cnp-sidebar">
         <div className="sb-logo">
           <div className="sb-logo-mark">
-            <div className="sb-logo-icon"><HexLogo size={16} /></div>
+            <img src="/logo.png" alt="Plat4k" className="sb-logo-icon" />
             <div>
               <div className="sb-logo-name">CNP</div>
               <div className="sb-logo-sub">Cloud Native Plat4k</div>
