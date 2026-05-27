@@ -48,7 +48,7 @@ export const Layout = () => {
       <aside className="cnp-sidebar">
         <div className="sb-logo">
           <div className="sb-logo-mark">
-            <img src="/logo.png" alt="Plat4k" className="sb-logo-icon" />
+            <img src="/logo.png" alt="Plat4k" className="sb-logo-icon" width="30" height="30" />
             <div>
               <div className="sb-logo-name">CNP</div>
               <div className="sb-logo-sub">Cloud Native Plat4k</div>

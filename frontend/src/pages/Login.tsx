@@ -47,7 +47,7 @@ export const Login = () => {
     <div className="login-page">
       <div className="login-box">
         <div className="login-logo">
-          <img src="/logo.png" alt="Plat4k" className="login-logo-icon" />
+          <img src="/logo.png" alt="Plat4k" className="login-logo-icon" width="36" height="36" />
           <div>
             <div className="login-logo-name">CNP</div>
             <div className="login-logo-sub">Cloud Native Plat4k</div>
