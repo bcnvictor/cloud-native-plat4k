@@ -41,27 +41,32 @@ fi
 
 # ── Démarrage des conteneurs ──────────────────────────────────────────────────
 if [ "$MODE" = "restart" ]; then
-  info "Redémarrage rapide de tous les conteneurs (sans rebuild)..."
+  warn "Mode restart : les conteneurs redémarrent sans rebuild."
+  warn "Si tu as des changements de code ou de config (nginx, Dockerfile...), utilise ./start.sh à la place."
   dc restart
 else
   info "Build et démarrage de tous les conteneurs..."
   dc up -d --build
 fi
 
-# ── Migrations Alembic (seulement si rebuild) ─────────────────────────────────
-if [ "$MODE" != "restart" ]; then
-  info "Application des migrations Alembic..."
-  dc exec backend alembic -c /app/backend/alembic.ini upgrade head
+# ── Migrations Alembic ────────────────────────────────────────────────────────
+# Toujours lancées : idempotentes et nécessaires après chaque pull avec migration
+info "Application des migrations Alembic..."
+dc exec -T backend alembic -c /app/backend/alembic.ini upgrade head
 
-  # ── Utilisateur admin (optionnel) ───────────────────────────────────────────
-  ADMIN_EMAIL="${CNP_ADMIN_EMAIL:-admin@cnp.local}"
-  ADMIN_PASS="${CNP_ADMIN_PASSWORD:-admin}"
-  CNP_CREATE_ADMIN_MODE="${CNP_CREATE_ADMIN:-auto}"
+# ── Utilisateur admin (optionnel) ─────────────────────────────────────────────
+ADMIN_EMAIL="${CNP_ADMIN_EMAIL:-admin@cnp.local}"
+ADMIN_PASS="${CNP_ADMIN_PASSWORD:-admin}"
+CNP_CREATE_ADMIN_MODE="${CNP_CREATE_ADMIN:-auto}"
 
-  if [ "$CNP_CREATE_ADMIN_MODE" != "0" ]; then
-    info "Initialisation de l'utilisateur admin ($ADMIN_EMAIL)..."
-    dc exec backend python -c "
-import asyncio
+if [ "$CNP_CREATE_ADMIN_MODE" != "0" ]; then
+  info "Initialisation de l'utilisateur admin ($ADMIN_EMAIL)..."
+  dc exec -T backend env \
+    CNP_ADMIN_EMAIL="$ADMIN_EMAIL" \
+    CNP_ADMIN_PASSWORD="$ADMIN_PASS" \
+    CNP_CREATE_ADMIN_FORCE="$( [ "$CNP_CREATE_ADMIN_MODE" = "1" ] && echo "1" || echo "0" )" \
+    python -c "
+import asyncio, os
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from backend.core.config import settings
@@ -69,9 +74,9 @@ from backend.db.models import User
 from backend.core.security import get_password_hash
 from shared.models import UserRole
 
-EMAIL = '${ADMIN_EMAIL}'
-PASSWORD = '${ADMIN_PASS}'
-FORCE = '${CNP_CREATE_ADMIN_MODE}' == '1'
+EMAIL = os.environ['CNP_ADMIN_EMAIL']
+PASSWORD = os.environ['CNP_ADMIN_PASSWORD']
+FORCE = os.environ.get('CNP_CREATE_ADMIN_FORCE') == '1'
 
 async def create_admin():
     engine = create_async_engine(settings.async_database_uri)
@@ -79,7 +84,6 @@ async def create_admin():
     async with session() as db:
         total_users = (await db.execute(select(func.count(User.id)))).scalar_one()
 
-        # In auto mode, only bootstrap when the instance has no users yet.
         if not FORCE and total_users > 0:
             print('Admin bootstrap skipped: users already exist.')
             await engine.dispose()
@@ -106,8 +110,7 @@ async def create_admin():
 
 asyncio.run(create_admin())
 "
-    info "Admin prêt : $ADMIN_EMAIL / $ADMIN_PASS"
-  fi
+  info "Admin prêt : $ADMIN_EMAIL / $ADMIN_PASS"
 fi
 
 # ── Résumé ────────────────────────────────────────────────────────────────────
