@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { authApi } from '@/api/auth';
 import { useAuthStore } from '@/store/auth';
 import { jwtDecode } from 'jwt-decode';
-import { HexLogo } from '@/components/HexLogo';
 import type { UserRole } from '@/types';
 
 export const Login = () => {
@@ -48,7 +47,7 @@ export const Login = () => {
     <div className="login-page">
       <div className="login-box">
         <div className="login-logo">
-          <div className="login-logo-icon"><HexLogo size={18} /></div>
+          <img src="/logo.png" alt="Plat4k" className="login-logo-icon" />
           <div>
             <div className="login-logo-name">CNP</div>
             <div className="login-logo-sub">Cloud Native Plat4k</div>
