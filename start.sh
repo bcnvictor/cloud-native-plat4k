@@ -23,6 +23,15 @@ dc() {
   fi
 }
 
+# ── Arguments ─────────────────────────────────────────────────────────────────
+#   ./start.sh         → rebuild + démarrer tout
+#   ./start.sh restart → redémarrer tout SANS rebuild (rapide)
+
+MODE="${1:-build}"
+if [ "$MODE" != "build" ] && [ "$MODE" != "restart" ]; then
+  error "Argument inconnu : $MODE — Usage : ./start.sh [restart]"
+fi
+
 # ── Fichier .env ──────────────────────────────────────────────────────────────
 if [ ! -f "$ROOT/.env" ]; then
   warn ".env absent — copie depuis .env.example"
@@ -31,21 +40,27 @@ if [ ! -f "$ROOT/.env" ]; then
 fi
 
 # ── Démarrage des conteneurs ──────────────────────────────────────────────────
-info "Build et démarrage des conteneurs..."
-dc up -d --build
+if [ "$MODE" = "restart" ]; then
+  info "Redémarrage rapide de tous les conteneurs (sans rebuild)..."
+  dc restart
+else
+  info "Build et démarrage de tous les conteneurs..."
+  dc up -d --build
+fi
 
-# ── Migrations Alembic ────────────────────────────────────────────────────────
-info "Application des migrations Alembic..."
-dc exec backend alembic -c /app/backend/alembic.ini upgrade head
+# ── Migrations Alembic (seulement si rebuild) ─────────────────────────────────
+if [ "$MODE" != "restart" ]; then
+  info "Application des migrations Alembic..."
+  dc exec backend alembic -c /app/backend/alembic.ini upgrade head
 
-# ── Utilisateur admin (optionnel) ─────────────────────────────────────────────
-ADMIN_EMAIL="${CNP_ADMIN_EMAIL:-admin@cnp.local}"
-ADMIN_PASS="${CNP_ADMIN_PASSWORD:-admin}"
-CNP_CREATE_ADMIN_MODE="${CNP_CREATE_ADMIN:-auto}"
+  # ── Utilisateur admin (optionnel) ───────────────────────────────────────────
+  ADMIN_EMAIL="${CNP_ADMIN_EMAIL:-admin@cnp.local}"
+  ADMIN_PASS="${CNP_ADMIN_PASSWORD:-admin}"
+  CNP_CREATE_ADMIN_MODE="${CNP_CREATE_ADMIN:-auto}"
 
-if [ "$CNP_CREATE_ADMIN_MODE" != "0" ]; then
-  info "Initialisation de l'utilisateur admin ($ADMIN_EMAIL)..."
-  dc exec backend python -c "
+  if [ "$CNP_CREATE_ADMIN_MODE" != "0" ]; then
+    info "Initialisation de l'utilisateur admin ($ADMIN_EMAIL)..."
+    dc exec backend python -c "
 import asyncio
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -91,7 +106,8 @@ async def create_admin():
 
 asyncio.run(create_admin())
 "
-  info "Admin prêt : $ADMIN_EMAIL / $ADMIN_PASS"
+    info "Admin prêt : $ADMIN_EMAIL / $ADMIN_PASS"
+  fi
 fi
 
 # ── Résumé ────────────────────────────────────────────────────────────────────
@@ -104,3 +120,7 @@ echo ""
 info "Pour créer un admin au premier lancement :"
 echo -e "  CNP_CREATE_ADMIN=auto ./start.sh"
 echo -e "  CNP_CREATE_ADMIN=1 CNP_ADMIN_EMAIL=you@example.com CNP_ADMIN_PASSWORD=secret ./start.sh"
+echo ""
+info "Usage : ./start.sh [restart]"
+echo -e "  ./start.sh         → rebuild tout (après un changement de code)"
+echo -e "  ./start.sh restart → redémarrer sans rebuild (si les conteneurs plantent)"
