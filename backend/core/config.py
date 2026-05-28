@@ -43,8 +43,10 @@ class Settings(BaseSettings):
     GITLAB_BOT_TOKEN: Optional[str] = None
     GITLAB_BOT_NAMESPACE: Optional[str] = None  # namespace owning cnp-ci-templates
 
-    # CNP API public URL (used in generated CI callback URLs)
+    # CNP API public URL (used in webhook registration)
     CNP_API_BASE_URL: str = "http://localhost:8000"
+    # GitLab webhook secret (sent as X-Gitlab-Token to verify incoming webhook calls)
+    GITLAB_WEBHOOK_SECRET: Optional[str] = None
 
     # Kubernetes
     KUBECONFIG_PATH: Optional[str] = None

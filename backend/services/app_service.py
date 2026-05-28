@@ -87,6 +87,7 @@ class AppService:
         # Inject CI pipeline — records outcome in ci_injected
         if bot and app.repo_url and app.origin in ("scaffolded", "imported"):
             try:
+                webhook_url = f"{settings.CNP_API_BASE_URL}{settings.API_V1_STR}/webhooks/gitlab"
                 await anyio.to_thread.run_sync(
                     lambda: inject_ci(
                         app_id=app.id,
@@ -95,6 +96,8 @@ class AppService:
                         origin=app.origin,
                         framework=app.framework or "generic",
                         client=bot,
+                        webhook_url=webhook_url,
+                        webhook_secret=settings.GITLAB_WEBHOOK_SECRET or "",
                     ),
                     cancellable=True,
                 )
