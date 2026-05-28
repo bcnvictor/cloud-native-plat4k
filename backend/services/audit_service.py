@@ -1,8 +1,11 @@
 from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
-from backend.db.models import AuditLog
+
 from shared.models import CloudType
+from sqlalchemy import desc, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.db.models import AuditLog
+
 
 class AuditService:
     def __init__(self, db: AsyncSession):

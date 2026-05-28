@@ -2,10 +2,18 @@
 SQLAlchemy models for the backend database.
 """
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum, JSON
+from shared.models import (
+    ApplicationStatus,
+    CloudType,
+    DeploymentStatus,
+    ResourceStatus,
+    ResourceType,
+    UserRole,
+)
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
-from shared.models import CloudType, ResourceType, ResourceStatus, UserRole, ApplicationStatus, DeploymentStatus
 
 Base = declarative_base()
 

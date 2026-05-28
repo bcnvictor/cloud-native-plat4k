@@ -1,5 +1,5 @@
 import gitlab
-from gitlab.exceptions import GitlabAuthenticationError, GitlabGetError, GitlabCreateError
+from gitlab.exceptions import GitlabAuthenticationError, GitlabCreateError, GitlabGetError
 
 from backend.core.config import settings
 
