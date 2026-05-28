@@ -1,6 +1,6 @@
 # Test — CI Injector (4K-39)
 
-## Prérequis
+## Prérequis 
 
 - Stack CNP démarrée (`./start.sh`)
 - `.env` contient `GITLAB_BOT_TOKEN`, `GITLAB_BOT_NAMESPACE=victor.biancini`, `CNP_API_BASE_URL`
