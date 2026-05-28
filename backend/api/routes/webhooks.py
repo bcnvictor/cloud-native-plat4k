@@ -1,3 +1,4 @@
+import hmac
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -21,7 +22,7 @@ async def gitlab_pipeline_webhook(
 ):
     """Receive GitLab pipeline events and update last_pipeline_status on matching apps."""
     if settings.GITLAB_WEBHOOK_SECRET:
-        if x_gitlab_token != settings.GITLAB_WEBHOOK_SECRET:
+        if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, settings.GITLAB_WEBHOOK_SECRET):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook token")
 
     payload = await request.json()
@@ -40,7 +41,7 @@ async def gitlab_pipeline_webhook(
             Application.repo_url.in_([project_web_url, project_web_url + ".git"])
         )
     )
-    app = result.scalar_one_or_none()
+    app = result.scalars().first()
 
     if app is None:
         logger.debug("Webhook received for unknown repo %s — ignored", project_web_url)

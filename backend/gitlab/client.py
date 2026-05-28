@@ -123,7 +123,7 @@ class GitLabClient:
             "url": webhook_url,
             "pipeline_events": True,
             "token": secret_token,
-            "enable_ssl_verification": False,
+            "enable_ssl_verification": not webhook_url.startswith("http://"),
         })
 
     def create_mr(
