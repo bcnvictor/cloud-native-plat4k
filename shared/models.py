@@ -143,6 +143,7 @@ class ApplicationBase(BaseModel):
     repo_url: Optional[str] = None
     owner: str
     origin: Optional[str] = None
+    framework: Optional[str] = None
 
 
 class ApplicationCreate(ApplicationBase):
@@ -154,12 +155,14 @@ class ApplicationUpdate(BaseModel):
     repo_url: Optional[str] = None
     owner: Optional[str] = None
     origin: Optional[str] = None
+    framework: Optional[str] = None
     status: Optional[ApplicationStatus] = None
 
 
 class ApplicationResponse(ApplicationBase):
     id: int
     status: ApplicationStatus
+    ci_injected: Optional[bool] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

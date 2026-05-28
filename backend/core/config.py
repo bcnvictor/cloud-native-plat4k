@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     GITLAB_OAUTH_CLIENT_SECRET: Optional[str] = None
     GITLAB_OAUTH_REDIRECT_URI: Optional[str] = None
     GITLAB_OAUTH_SCOPES: str = "api read_user offline_access"
+    # GitLab bot (CI injection)
+    GITLAB_BOT_TOKEN: Optional[str] = None
+    GITLAB_BOT_NAMESPACE: Optional[str] = None  # namespace owning cnp-ci-templates
+
+    # CNP API public URL (used in generated CI callback URLs)
+    CNP_API_BASE_URL: str = "http://localhost:8000"
 
     # Kubernetes
     KUBECONFIG_PATH: Optional[str] = None
