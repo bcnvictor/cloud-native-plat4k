@@ -112,6 +112,20 @@ class GitLabClient:
         except GitlabGetError:
             return False
 
+    def register_webhook(self, project_path: str, webhook_url: str, secret_token: str = "") -> None:
+        """Register a pipeline webhook on the project. No-op if already registered."""
+        project = self.get_project(project_path)
+        existing = project.hooks.list(all=True)
+        for hook in existing:
+            if hook.url == webhook_url:
+                return
+        project.hooks.create({
+            "url": webhook_url,
+            "pipeline_events": True,
+            "token": secret_token,
+            "enable_ssl_verification": False,
+        })
+
     def create_mr(
         self,
         project_path: str,

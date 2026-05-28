@@ -17,6 +17,8 @@ def inject_ci(
     origin: str,
     framework: str,
     client: GitLabClient,
+    webhook_url: str | None = None,
+    webhook_secret: str = "",
 ) -> None:
     """Inject .gitlab-ci.yml into the app repo.
 
@@ -61,3 +63,10 @@ def inject_ci(
             ),
         )
         logger.info("CI MR opened on %s: %s", project_path, mr.get("web_url"))
+
+    if webhook_url:
+        try:
+            client.register_webhook(project_path, webhook_url, webhook_secret)
+            logger.info("Pipeline webhook registered on %s → %s", project_path, webhook_url)
+        except Exception:
+            logger.warning("Webhook registration failed on %s (non-fatal)", project_path, exc_info=True)

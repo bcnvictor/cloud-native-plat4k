@@ -163,6 +163,7 @@ class ApplicationResponse(ApplicationBase):
     id: int
     status: ApplicationStatus
     ci_injected: Optional[bool] = None
+    last_pipeline_status: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
