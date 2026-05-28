@@ -18,6 +18,7 @@ export interface GitLabProject {
   path_with_namespace: string;
   web_url: string;
   last_activity_at: string | null;
+  language?: string | null;
 }
 
 export const gitlabApi = {
