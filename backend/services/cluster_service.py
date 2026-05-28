@@ -1,10 +1,10 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from fastapi import HTTPException, status
+from shared.models import ClusterConnectionCreate, ClusterConnectionUpdate
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import ClusterConnection
-from shared.models import ClusterConnectionCreate, ClusterConnectionUpdate
 
 
 class ClusterService:

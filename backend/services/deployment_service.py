@@ -5,6 +5,7 @@ from typing import Optional
 import anyio
 from fastapi import HTTPException, status
 from kubernetes.client.exceptions import ApiException
+from shared.models import ApplicationStatus, DeploymentCreate, DeploymentStatus
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +13,6 @@ from backend.core.config import settings
 from backend.db.models import Application, ClusterConnection, Deployment
 from backend.k8s.client import k8s_client
 from backend.k8s.manifests import build_deployment, build_service, sanitize_k8s_name
-from shared.models import ApplicationStatus, DeploymentCreate, DeploymentStatus
 
 logger = logging.getLogger(__name__)
 

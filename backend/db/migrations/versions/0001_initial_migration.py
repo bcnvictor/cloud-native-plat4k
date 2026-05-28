@@ -5,10 +5,9 @@ Revises:
 Create Date: 2024-05-02 12:00:00.000000
 
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-from shared.models import CloudType, ResourceType, ResourceStatus, UserRole
 
 # revision identifiers, used by Alembic.
 revision = '0001'

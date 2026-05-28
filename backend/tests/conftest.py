@@ -1,4 +1,3 @@
-import pytest
 
 
 # Fixtures partagées entre tous les tests.
