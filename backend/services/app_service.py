@@ -9,22 +9,9 @@ from fastapi import HTTPException, status
 from backend.db.models import Application
 from backend.k8s.client import k8s_client
 from backend.core.config import settings
-from backend.gitlab.client import GitLabClient
-from backend.ci.detector import detect_framework, extract_project_path
-from backend.ci.injector import inject_ci
 from shared.models import ApplicationCreate, ApplicationUpdate, ApplicationStatus
 
 logger = logging.getLogger(__name__)
-
-
-def _get_bot_client() -> GitLabClient | None:
-    if not settings.GITLAB_BOT_TOKEN:
-        return None
-    return GitLabClient(
-        token=settings.GITLAB_BOT_TOKEN,
-        namespace=settings.GITLAB_BOT_NAMESPACE or "",
-        use_private_token=True,
-    )
 
 
 class AppService:
@@ -43,71 +30,10 @@ class AppService:
         return app
 
     async def create_app(self, payload: ApplicationCreate) -> Application:
-        data = payload.model_dump()
-        bot = _get_bot_client()
-
-        # Validate repo exists before touching the DB
-        if data.get("repo_url"):
-            if not bot:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="GitLab bot not configured (GITLAB_BOT_TOKEN manquant) — impossible de valider le repo ou d'injecter la CI",
-                )
-            else:
-                project_path = extract_project_path(data["repo_url"])
-                try:
-                    await anyio.to_thread.run_sync(
-                        lambda: bot.get_project(project_path),
-                        cancellable=True,
-                    )
-                except Exception:
-                    raise HTTPException(
-                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                        detail=f"GitLab repo not found or not accessible: {data['repo_url']}",
-                    )
-
-        # Auto-detect framework when not manually set
-        if bot and data.get("repo_url") and not data.get("framework"):
-            try:
-                data["framework"] = await anyio.to_thread.run_sync(
-                    lambda: detect_framework(bot, data["repo_url"]),
-                    cancellable=True,
-                )
-            except Exception:
-                data["framework"] = "generic"
-
-        if not data.get("framework"):
-            data["framework"] = "generic"
-
-        app = Application(**data)
+        app = Application(**payload.model_dump())
         self.db.add(app)
         await self.db.commit()
         await self.db.refresh(app)
-
-        # Inject CI pipeline — records outcome in ci_injected
-        if bot and app.repo_url and app.origin in ("scaffolded", "imported"):
-            try:
-                webhook_url = f"{settings.CNP_API_BASE_URL}{settings.API_V1_STR}/webhooks/gitlab"
-                await anyio.to_thread.run_sync(
-                    lambda: inject_ci(
-                        app_id=app.id,
-                        app_name=app.name,
-                        repo_url=app.repo_url,
-                        origin=app.origin,
-                        framework=app.framework or "generic",
-                        client=bot,
-                        webhook_url=webhook_url,
-                        webhook_secret=settings.GITLAB_WEBHOOK_SECRET or "",
-                    ),
-                    cancellable=True,
-                )
-                app.ci_injected = True
-            except Exception:
-                logger.exception("CI injection failed for app %s (%s)", app.id, app.repo_url)
-                app.ci_injected = False
-            await self.db.commit()
-            await self.db.refresh(app)
-
         return app
 
     async def update_app(self, app_id: int, payload: ApplicationUpdate) -> Application:

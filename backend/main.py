@@ -8,7 +8,6 @@ from backend.core.config import settings
 from backend.api.routes import auth, users, resources, credentials, audit, health
 from backend.api.routes import gitlab
 from backend.api.routes import apps, clusters, deployments
-from backend.api.routes import webhooks
 
 # Rate limiting setup
 def get_identifier(request: Request):
@@ -50,4 +49,3 @@ app.include_router(credentials.router, prefix=f"{settings.API_V1_STR}/credential
 app.include_router(audit.router, prefix=f"{settings.API_V1_STR}/audit", tags=["audit"])
 app.include_router(health.router, prefix=f"{settings.API_V1_STR}/health", tags=["health"])
 app.include_router(gitlab.router, prefix=f"{settings.API_V1_STR}/gitlab", tags=["gitlab"])
-app.include_router(webhooks.router, prefix=f"{settings.API_V1_STR}/webhooks", tags=["webhooks"])
