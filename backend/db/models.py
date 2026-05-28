@@ -104,6 +104,8 @@ class Application(Base):
     repo_url = Column(String, nullable=True)
     owner = Column(String, nullable=False)
     origin = Column(String, nullable=True)
+    framework = Column(String, nullable=True)
+    ci_injected = Column(Boolean, nullable=True)
     status = Column(
         SQLEnum(ApplicationStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
