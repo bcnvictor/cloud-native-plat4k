@@ -48,7 +48,9 @@ services:
       - CNP_API_BASE_URL=${CNP_API_BASE_URL:-http://localhost:8000}
       - GITLAB_WEBHOOK_SECRET=${GITLAB_WEBHOOK_SECRET:-}
       - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus-operated.monitoring.svc.cluster.local:9090}
-      - LOKI_URL=${LOKI_URL:-http://loki-gateway.monitoring.svc.cluster.local}
+      - LOKI_URL=${LOKI_URL:-http://loki.monitoring.svc.cluster.local:3100}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ~/.kube/config:/tmp/kubeconfig:ro
     depends_on:
