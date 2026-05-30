@@ -21,9 +21,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy backend and shared
+# Copy backend, shared and grafana dashboards
 COPY ./backend /app/backend
 COPY ./shared /app/shared
+COPY ./infra/grafana /app/infra/grafana
 COPY ./backend/pyproject.toml /app/backend/pyproject.toml
 COPY ./shared/pyproject.toml /app/shared/pyproject.toml
 
