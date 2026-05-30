@@ -4,8 +4,10 @@ _ALLOWED_FRAMEWORKS = {"python", "generic"}
 
 
 def _ci_templates_project() -> str:
+    if settings.GITLAB_CI_PROJECT:
+        return settings.GITLAB_CI_PROJECT
     ns = settings.GITLAB_BOT_NAMESPACE or "cnp"
-    return f"{ns}/cnp-ci-templates"
+    return f"{ns}/cnp-ci-modules"
 
 
 def _yaml_escape(value: str) -> str:

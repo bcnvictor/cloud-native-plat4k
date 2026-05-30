@@ -1,15 +1,19 @@
 import gitlab
 from gitlab.exceptions import GitlabAuthenticationError, GitlabGetError, GitlabCreateError
 
+from backend.core.config import settings
+
 
 class GitLabClient:
     def __init__(
         self,
         token: str,
         namespace: str,
-        base_url: str = "https://gitlab.cri.epita.fr",
+        base_url: str | None = None,
         use_private_token: bool = False,
     ):
+        if base_url is None:
+            base_url = settings.GITLAB_BASE_URL
         if use_private_token:
             self._gl = gitlab.Gitlab(url=base_url, private_token=token)
         else:
