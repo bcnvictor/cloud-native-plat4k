@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     K8S_TARGET_NAMESPACE: str = "default"
     K8S_IMAGE_PULL_SECRET: Optional[str] = None
 
+    # Monitoring
+    PROMETHEUS_URL: str = "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+    LOKI_URL: str = "http://loki.monitoring.svc.cluster.local:3100"
+
     # Logging
     LOG_LEVEL: str = "INFO"
 
