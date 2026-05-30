@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if k8s_client.is_configured():
+    if k8s_client.is_configured() and FINOPS_DASHBOARD_JSON is not None:
         try:
             k8s_client.apply_configmap(
                 namespace="monitoring",
