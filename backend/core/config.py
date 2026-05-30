@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
     # Monitoring
     PROMETHEUS_URL: str = "http://prometheus-operated.monitoring.svc.cluster.local:9090"
-    LOKI_URL: str = "http://loki-gateway.monitoring.svc.cluster.local"
+    LOKI_URL: str = "http://loki.monitoring.svc.cluster.local:3100"
 
     # Logging
     LOG_LEVEL: str = "INFO"
