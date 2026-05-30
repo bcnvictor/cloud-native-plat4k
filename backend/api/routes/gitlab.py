@@ -16,8 +16,7 @@ from backend.services.gitlab_oauth_service import GitLabOAuthService
 
 router = APIRouter()
 
-GITLAB_BASE_URL = "https://gitlab.cri.epita.fr"
-PAT_URL = f"{GITLAB_BASE_URL}/-/user_settings/personal_access_tokens"
+PAT_URL = f"{settings.GITLAB_BASE_URL.rstrip('/')}/-/user_settings/personal_access_tokens"
 
 
 def _fernet() -> Fernet:
@@ -106,7 +105,7 @@ class GitLabProject(BaseModel):
 
 @router.get("/setup-guide")
 async def gitlab_setup_guide(current_user: User = Depends(get_current_user)):
-    """Retourne le lien et les instructions pour créer un PAT sur gitlab.cri.epita.fr."""
+    """Retourne le lien et les instructions pour créer un PAT sur l'instance GitLab configurée."""
     return {
         "pat_url": PAT_URL,
         "required_scopes": ["api", "write_repository"],
