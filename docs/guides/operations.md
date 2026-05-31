@@ -135,7 +135,8 @@ K8S_TARGET_NAMESPACE=default
 ```bash
 export CNP_URL=http://localhost:8000/api/v1
 export CNP_TOKEN=$(curl -s -X POST "$CNP_URL/auth/login" \
-  -d "username=admin@cnp.local&password=admin" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@cnp.local","password":"admin"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 echo "Token: $CNP_TOKEN"
@@ -190,6 +191,8 @@ curl -s -X POST "$CNP_URL/deployments/" \
 ```
 
 Le champ `status` doit passer à `running`. Si `failed`, vérifier les logs du backend.
+
+> **Limitation connue** : le champ `cluster_id` est accepté par l'API mais n'est pas encore utilisé pour router le déploiement. Le backend utilise un singleton global initialisé au démarrage via `KUBECONFIG_PATH`. Tous les déploiements atterrissent donc sur le même cluster, quelle que soit la valeur de `cluster_id`. Voir ADR-0008 pour le détail et la dette associée.
 
 ### 5. Vérifier le déploiement sur le cluster
 
