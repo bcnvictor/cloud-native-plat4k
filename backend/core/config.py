@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     GITLAB_OAUTH_CLIENT_ID: Optional[str] = None
     GITLAB_OAUTH_CLIENT_SECRET: Optional[str] = None
     GITLAB_OAUTH_REDIRECT_URI: Optional[str] = None
-    GITLAB_OAUTH_SCOPES: str = "api read_user offline_access"
+    GITLAB_OAUTH_SCOPES: str = "api read_user"
     # GitLab bot (CI injection)
     GITLAB_BOT_TOKEN: Optional[str] = None
     GITLAB_BOT_NAMESPACE: Optional[str] = None  # groupe parent du bot (ex: 4k-cnp-2027)
