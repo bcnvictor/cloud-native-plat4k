@@ -13,7 +13,8 @@
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
-  -d 'username=admin@cnp.local&password=admin' \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@cnp.local","password":"admin"}' \
   | jq -r '.access_token')
 ```
 
