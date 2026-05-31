@@ -36,7 +36,7 @@ services:
       - GITLAB_OAUTH_CLIENT_ID=${GITLAB_OAUTH_CLIENT_ID:-}
       - GITLAB_OAUTH_CLIENT_SECRET=${GITLAB_OAUTH_CLIENT_SECRET:-}
       - GITLAB_OAUTH_REDIRECT_URI=${GITLAB_OAUTH_REDIRECT_URI:-}
-      - GITLAB_OAUTH_SCOPES=${GITLAB_OAUTH_SCOPES:-api read_user offline_access}
+      - GITLAB_OAUTH_SCOPES=${GITLAB_OAUTH_SCOPES:-api read_user}
       - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://localhost}
       - CLI_REDIRECT_BASE_URL=${CLI_REDIRECT_BASE_URL:-http://localhost:8765}
       - BACKEND_CORS_ORIGINS=["http://localhost:3000","http://localhost"]
