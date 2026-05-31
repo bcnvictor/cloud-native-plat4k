@@ -11,6 +11,7 @@
 #   CNP_ADMIN_EMAIL     Email de l'admin CNP         (défaut: admin@cnp.local)
 #   CNP_ADMIN_PASSWORD  Mot de passe de l'admin CNP  (défaut: admin)
 #   CLUSTER_ENDPOINT    Endpoint de l'API AKS        (défaut: https://cnp-aks.hcp.swedencentral.azmk8s.io)
+#   DEMO_REPO           Chemin registry de l'app de démo (défaut: registry.gitlab.com/4k-cnp-2027/cnp-apps/demo-1)
 #   IMAGE_VERSION       Tag de l'image à déployer    (défaut: 0.1.0)
 
 set -euo pipefail
@@ -19,6 +20,7 @@ CNP_URL="${CNP_URL:-http://localhost:8000/api/v1}"
 CNP_ADMIN_EMAIL="${CNP_ADMIN_EMAIL:-admin@cnp.local}"
 CNP_ADMIN_PASSWORD="${CNP_ADMIN_PASSWORD:-admin}"
 CLUSTER_ENDPOINT="${CLUSTER_ENDPOINT:-https://cnp-aks.hcp.swedencentral.azmk8s.io}"
+DEMO_REPO="${DEMO_REPO:-registry.gitlab.com/4k-cnp-2027/cnp-apps/demo-1}"
 IMAGE_VERSION="${IMAGE_VERSION:-0.1.0}"
 
 # Helper : POST, retourne la réponse même en cas de 409 (already exists)
@@ -70,7 +72,7 @@ echo "      OK (cluster id=$CLUSTER_ID)"
 echo "[3/4] Enregistrement de l'app de démo..."
 APP_RESP=$(curl -s -X POST "$CNP_URL/apps/" \
   "${AUTH[@]}" \
-  -d '{"name":"cnp-demo-app","repo_url":"registry.cri.epita.fr/victor.biancini/cnp-test","owner":"victor","origin":"imported"}')
+  -d "{\"name\":\"cnp-demo-app\",\"repo_url\":\"$DEMO_REPO\",\"owner\":\"victor\",\"origin\":\"imported\"}")
 APP_ID=$(echo "$APP_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || true)
 if [ -z "$APP_ID" ]; then
   APP_ID=$(curl -sf "$CNP_URL/apps/" "${AUTH[@]}" \
