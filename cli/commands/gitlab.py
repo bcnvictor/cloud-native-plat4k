@@ -2,9 +2,9 @@ import typer
 from cli.core.client import client
 from cli.core.output import print_error, print_success, console
 
-GITLAB_PAT_URL = "https://gitlab.cri.epita.fr/-/user_settings/personal_access_tokens"
+GITLAB_PAT_URL = "https://gitlab.com/-/user_settings/personal_access_tokens"
 
-app = typer.Typer(help="Manage GitLab EPITA credentials.")
+app = typer.Typer(help="Manage GitLab credentials.")
 
 
 @app.command("set")
@@ -51,7 +51,7 @@ def remove_credentials(
 
 @app.command("guide")
 def guide():
-    """Show how to create a Personal Access Token on gitlab.cri.epita.fr."""
+    """Show how to create a Personal Access Token on gitlab.com."""
     console.print("\n[bold orange1]GitLab Personal Access Token — guide[/bold orange1]\n")
     console.print(f"[bold]1.[/bold] Ouvrir la page des tokens :")
     console.print(f"   [blue underline]{GITLAB_PAT_URL}[/blue underline]\n")
