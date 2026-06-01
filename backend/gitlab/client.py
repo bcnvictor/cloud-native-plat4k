@@ -99,6 +99,34 @@ class GitLabClient:
                 "commit_message": commit_message,
             })
 
+    def push_multiple_files(
+        self,
+        project_path: str,
+        branch: str,
+        commit_message: str,
+        actions: list[dict],
+    ) -> None:
+        """Create or update multiple files in a single commit using the Commits API.
+        
+        `actions` should be a list of dictionaries, e.g.:
+        [
+            {"action": "create", "file_path": "path/to/file", "content": "file content"},
+            {"action": "update", "file_path": "path/to/file2", "content": "file content"}
+        ]
+        To handle files that might exist, you can use 'update' action instead of 'create' if needed,
+        but for initial provisioning 'create' is usually fine.
+        If an action might fail due to existence, the API will return a 400 error.
+        We will wrap the call and try to handle basic create vs update if needed, but the caller
+        is responsible for providing valid actions.
+        """
+        project = self.get_project(project_path)
+        # Attempt to create the commit
+        project.commits.create({
+            "branch": branch,
+            "commit_message": commit_message,
+            "actions": actions
+        })
+
     def create_branch(self, project_path: str, branch: str, ref: str = "main") -> None:
         """Create a branch from ref. Silently ignores if branch already exists."""
         project = self.get_project(project_path)
