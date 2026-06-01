@@ -38,10 +38,12 @@ class Settings(BaseSettings):
     GITLAB_OAUTH_CLIENT_SECRET: Optional[str] = None
     GITLAB_OAUTH_REDIRECT_URI: Optional[str] = None
     GITLAB_OAUTH_SCOPES: str = "api read_user"
-    # GitLab bot (CI injection)
+    # GitLab bot (CI injection & GitOps commits)
     GITLAB_BOT_TOKEN: Optional[str] = None
     GITLAB_BOT_NAMESPACE: Optional[str] = None  # groupe parent du bot (ex: 4k-cnp-2027)
     GITLAB_CI_PROJECT: Optional[str] = None     # chemin complet du repo CI (ex: 4k-cnp-2027/cnp-ci-modules)
+    # GitOps — URL du dépôt cnp-gitops (injecté dans les .gitlab-ci.yml générés)
+    GITOPS_REPO_URL: str = "https://gitlab.com/4k-cnp-2027/cnp-gitops.git"
 
     # CNP API public URL (used in webhook registration)
     CNP_API_BASE_URL: str = "http://localhost:8000"
