@@ -42,12 +42,26 @@ class AppService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
         return app
 
-    async def create_app(self, payload: ApplicationCreate) -> Application:
-        data = payload.model_dump()
+    async def create_app(self, payload: ApplicationCreate, user=None) -> Application:
+        data = payload.model_dump(exclude={"scaffolding"})
+        # Scaffolding flow : If `origin=scaffolded`, create the GitLab repository first
+        if payload.origin == "scaffolded" and not data.get("repo_url"):
+            if user is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Scaffolding requires an authenticated user",
+                )
+            from backend.services.scaffolding_service import ScaffoldingService
+            scaffolding_service = ScaffoldingService(self.db)
+            repo_url = await scaffolding_service.scaffold(user, payload)
+            data["repo_url"] = repo_url
+            # We override the framework because we know which template is being used
+            if not data.get("framework"):
+                data["framework"] = "python-fastapi"
         bot = _get_bot_client()
 
-        # Validate repo exists before touching the DB
-        if data.get("repo_url"):
+        # Validate repo exists before touching the DB (skip for scaffolded apps — repo just created)
+        if data.get("repo_url") and payload.origin != "scaffolded":
             if not bot:
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

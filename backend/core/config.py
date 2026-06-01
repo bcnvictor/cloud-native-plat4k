@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     GITLAB_BASE_URL: str = "https://gitlab.cri.epita.fr"
     GITLAB_TOKEN: Optional[str] = None
     GITLAB_NAMESPACE: Optional[str] = None
+    # Scaffolding
+    CNP_TEMPLATE_REPO_PATH: str = "romane.masset/python-fastapi"
     # GitLab OAuth (SSO)
     GITLAB_OAUTH_CLIENT_ID: Optional[str] = None
     GITLAB_OAUTH_CLIENT_SECRET: Optional[str] = None

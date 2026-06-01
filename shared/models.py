@@ -146,8 +146,17 @@ class ApplicationBase(BaseModel):
     framework: Optional[str] = None
 
 
+class ScaffoldingParams(BaseModel):
+    """Settings for generating the values.yaml file during scaffolding."""
+    port: int = 8000
+    image_repository: Optional[str] = None
+    image_tag: str = "latest"
+    replicas: int = 1
+    env: Dict[str, str] = {}
+
+
 class ApplicationCreate(ApplicationBase):
-    pass
+    scaffolding: Optional[ScaffoldingParams] = None
 
 
 class ApplicationUpdate(BaseModel):
