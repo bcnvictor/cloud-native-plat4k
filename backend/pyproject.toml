@@ -23,7 +23,8 @@ dependencies = [
     "kubernetes",
     "httpx",
     "python-gitlab",
-    "python-multipart"
+    "python-multipart",
+    "pyyaml"
 ]
 
 [tool.setuptools]

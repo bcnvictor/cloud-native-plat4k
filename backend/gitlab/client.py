@@ -36,15 +36,12 @@ class GitLabClient:
             return {"status": "error", "detail": f"Unexpected error: {e}"}
 
     def get_namespace_id(self) -> int | None:
-        """Resolve namespace to its numeric ID (group or user)."""
+        """Resolve namespace to its numeric ID via the namespaces API."""
         try:
-            groups = self._gl.groups.list(search=self.namespace)
-            for g in groups:
-                if g.full_path == self.namespace:
-                    return g.id
-            users = self._gl.users.list(username=self.namespace)
-            if users:
-                return users[0].id
+            namespaces = self._gl.namespaces.list(search=self.namespace, all=True)
+            for ns in namespaces:
+                if ns.full_path == self.namespace or ns.path == self.namespace:
+                    return ns.id
         except Exception:
             pass
         return None
@@ -143,3 +140,34 @@ class GitLabClient:
             "description": description,
         })
         return {"iid": mr.iid, "web_url": mr.web_url}
+    
+    def create_project(self, name: str, namespace_id: int, initialize_with_readme: bool = True) -> dict:
+        """Creates a new GitLab project in the specified namespace."""
+        project = self._gl.projects.create({
+            "name": name,
+            "path": name,
+            "namespace_id": namespace_id,
+            "initialize_with_readme": initialize_with_readme,
+            "default_branch": "main",
+            "visibility": "private",
+        })
+        return {
+            "id": project.id,
+            "name": project.name,
+            "path_with_namespace": project.path_with_namespace,
+            "web_url": project.web_url,
+        }
+
+    def read_file(self, project_path: str, file_path: str, ref: str = "main") -> str:
+        """Reads the contents of a file from the repository (decoded in UTF-8)."""
+        project = self.get_project(project_path)
+        raw = project.files.raw(file_path=file_path, ref=ref)
+        if isinstance(raw, bytes):
+            return raw.decode("utf-8")
+        return raw
+
+    def list_tree_recursive(self, project_path: str, ref: str = "main") -> list[dict]:
+        """List all files in the repo recursively."""
+        project = self.get_project(project_path)
+        items = project.repository_tree(ref=ref, recursive=True, all=True)
+        return [{"name": i["name"], "type": i["type"], "path": i["path"]} for i in items]

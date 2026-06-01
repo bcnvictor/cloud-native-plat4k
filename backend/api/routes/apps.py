@@ -43,7 +43,7 @@ async def create_app(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
-    return await AppService(db).create_app(payload)
+    return await AppService(db).create_app(payload, user=current_user)
 
 
 @router.put("/{app_id}", response_model=ApplicationResponse)
