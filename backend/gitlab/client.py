@@ -44,7 +44,7 @@ class GitLabClient:
         try:
             namespaces = self._gl.namespaces.list(search=self.namespace, all=True)
             for ns in namespaces:
-                if ns.full_path == self.namespace or ns.path == self.namespace:
+                if ns.full_path == self.namespace:
                     return ns.id
         except Exception:
             pass
@@ -145,11 +145,28 @@ class GitLabClient:
         })
         return {"iid": mr.iid, "web_url": mr.web_url}
     
+    @staticmethod
+    def _slugify(name: str) -> str:
+        import re
+        slug = name.lower()
+        slug = re.sub(r"[^a-z0-9_.-]", "-", slug)
+        slug = re.sub(r"-{2,}", "-", slug)
+        slug = slug.strip("-_.")
+        return slug or "app"
+
+    def delete_project(self, project_path: str) -> None:
+        """Delete a GitLab project by its full path. No-op if not found."""
+        try:
+            project = self.get_project(project_path)
+            project.delete()
+        except GitlabGetError:
+            pass
+
     def create_project(self, name: str, namespace_id: int, initialize_with_readme: bool = True) -> dict:
         """Creates a new GitLab project in the specified namespace."""
         project = self._gl.projects.create({
             "name": name,
-            "path": name,
+            "path": self._slugify(name),
             "namespace_id": namespace_id,
             "initialize_with_readme": initialize_with_readme,
             "default_branch": "main",

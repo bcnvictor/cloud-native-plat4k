@@ -31,11 +31,13 @@ class Settings(BaseSettings):
     POSTGRES_PORT: str = "5432"
 
     # GitLab
-    GITLAB_BASE_URL: str = "https://gitlab.cri.epita.fr"
+    GITLAB_BASE_URL: str = "https://gitlab.com"
     GITLAB_TOKEN: Optional[str] = None
     GITLAB_NAMESPACE: Optional[str] = None
     # Scaffolding
-    CNP_TEMPLATE_REPO_PATH: str = "romane.masset/python-fastapi"
+    CNP_TEMPLATE_REPO_PATH: Optional[str] = None  # chemin GitLab du repo template (ex: 4k-cnp-2027/cnp-templates/python-fastapi)
+    GITLAB_APPS_NAMESPACE: Optional[str] = None  # subgroup for scaffolded apps, defaults to {GITLAB_BOT_NAMESPACE}/cnp-apps
+    GITLAB_REGISTRY_URL: str = "registry.gitlab.com"  # override for self-hosted instances
     # GitLab OAuth (SSO)
     GITLAB_OAUTH_CLIENT_ID: Optional[str] = None
     GITLAB_OAUTH_CLIENT_SECRET: Optional[str] = None
