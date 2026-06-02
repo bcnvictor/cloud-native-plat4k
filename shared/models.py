@@ -156,7 +156,23 @@ class ScaffoldingParams(BaseModel):
 
 
 class ApplicationCreate(ApplicationBase):
+    pass
+
+
+class ApplicationScaffoldRequest(BaseModel):
+    """Payload for POST /apps/scaffold — creates a new app from a CNP template."""
+    name: str
+    owner: str
+    template: str  # name of the template repo in GITLAB_TEMPLATES_NAMESPACE (ex: "python-fastapi")
     scaffolding: Optional[ScaffoldingParams] = None
+
+
+class ApplicationImportRequest(BaseModel):
+    """Payload for POST /apps/import — imports an existing GitLab repo."""
+    name: str
+    owner: str
+    repo_url: str
+    framework: Optional[str] = None
 
 
 class ApplicationUpdate(BaseModel):

@@ -12,7 +12,7 @@ from backend.core.config import settings
 from backend.gitlab.client import GitLabClient
 from backend.ci.detector import detect_framework, extract_project_path
 from backend.ci.injector import inject_ci
-from shared.models import ApplicationCreate, ApplicationUpdate, ApplicationStatus
+from shared.models import ApplicationCreate, ApplicationImportRequest, ApplicationScaffoldRequest, ApplicationUpdate, ApplicationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -42,66 +42,69 @@ class AppService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
         return app
 
-    async def create_app(self, payload: ApplicationCreate, user=None) -> Application:
-        data = payload.model_dump(exclude={"scaffolding"})
-        # Scaffolding flow : If `origin=scaffolded`, create the GitLab repository first
-        repo_was_scaffolded = False
-        scaffolded_project_path: str | None = None
-        if payload.origin == "scaffolded" and not data.get("repo_url"):
-            if user is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Scaffolding requires an authenticated user",
-                )
-            from backend.services.scaffolding_service import ScaffoldingService
-            scaffolding_service = ScaffoldingService(self.db)
-            repo_url, scaffolded_project_path = await scaffolding_service.scaffold(user, payload)
-            data["repo_url"] = repo_url
-            repo_was_scaffolded = True
-            # We override the framework because we know which template is being used
-            if not data.get("framework"):
-                data["framework"] = "python-fastapi"
+    async def scaffold_app(self, payload: ApplicationScaffoldRequest) -> Application:
+        from backend.services.scaffolding_service import ScaffoldingService
+        svc = ScaffoldingService(self.db)
+        repo_url, project_path = await svc.scaffold(
+            app_name=payload.name,
+            template=payload.template,
+            scaffolding_params=payload.scaffolding,
+        )
+        data = {
+            "name": payload.name,
+            "owner": payload.owner,
+            "repo_url": repo_url,
+            "origin": "scaffolded",
+            "framework": payload.template,
+        }
+        return await self._save_app(data, scaffolded_project_path=project_path)
+
+    async def import_app(self, payload: ApplicationImportRequest) -> Application:
         bot = _get_bot_client()
+        if not bot:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="GITLAB_BOT_TOKEN not configured — cannot validate repo or inject CI",
+            )
+        project_path = extract_project_path(payload.repo_url)
+        try:
+            await anyio.to_thread.run_sync(
+                lambda: bot.get_project(project_path), cancellable=True
+            )
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"GitLab repo not found or not accessible: {payload.repo_url}",
+            )
 
-        # Validate repo exists before touching the DB (skip only if we just created it via scaffold)
-        if data.get("repo_url") and not repo_was_scaffolded:
-            if not bot:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="GitLab bot not configured (GITLAB_BOT_TOKEN manquant) — impossible de valider le repo ou d'injecter la CI",
-                )
-            else:
-                project_path = extract_project_path(data["repo_url"])
-                try:
-                    await anyio.to_thread.run_sync(
-                        lambda: bot.get_project(project_path),
-                        cancellable=True,
-                    )
-                except Exception:
-                    raise HTTPException(
-                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                        detail=f"GitLab repo not found or not accessible: {data['repo_url']}",
-                    )
-
-        # Auto-detect framework when not manually set
-        if bot and data.get("repo_url") and not data.get("framework"):
+        framework = payload.framework
+        if not framework:
             try:
-                data["framework"] = await anyio.to_thread.run_sync(
-                    lambda: detect_framework(bot, data["repo_url"]),
-                    cancellable=True,
+                framework = await anyio.to_thread.run_sync(
+                    lambda: detect_framework(bot, payload.repo_url), cancellable=True
                 )
             except Exception:
-                data["framework"] = "generic"
+                framework = "generic"
 
-        if not data.get("framework"):
-            data["framework"] = "generic"
+        data = {
+            "name": payload.name,
+            "owner": payload.owner,
+            "repo_url": payload.repo_url,
+            "origin": "imported",
+            "framework": framework or "generic",
+        }
+        return await self._save_app(data)
 
+    async def create_app(self, payload: ApplicationCreate) -> Application:
+        return await self._save_app(payload.model_dump())
+
+    async def _save_app(self, data: dict, scaffolded_project_path: str | None = None) -> Application:
         app = Application(**data)
         self.db.add(app)
         try:
             await self.db.commit()
         except Exception:
-            if repo_was_scaffolded and scaffolded_project_path:
+            if scaffolded_project_path:
                 from backend.services.scaffolding_service import ScaffoldingService
                 await ScaffoldingService(self.db).cleanup_project(scaffolded_project_path)
             raise HTTPException(
@@ -110,7 +113,7 @@ class AppService:
             )
         await self.db.refresh(app)
 
-        # Inject CI pipeline — records outcome in ci_injected
+        bot = _get_bot_client()
         if bot and app.repo_url and app.origin in ("scaffolded", "imported"):
             try:
                 webhook_url = f"{settings.CNP_API_BASE_URL}{settings.API_V1_STR}/webhooks/gitlab"
