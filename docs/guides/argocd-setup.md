@@ -4,7 +4,7 @@ Ce guide documente l'installation d'ArgoCD sur le cluster AKS et les scénarios 
 
 ## 1. Installation Initiale d'ArgoCD
 
-Prérequis : Vous devez être connecté au cluster AKS (via `az aks get-credentials`).
+Prérequis : Vous devez être connecté au cluster AKS (via `az aks get-credentials`). ArgoCD **v2.6 minimum** est requis — la feature `sources[]` avec `ref:` (utilisée dans tous nos manifestes d'application) n'existe pas avant cette version.
 
 ```bash
 # 1. Création du namespace dédié
@@ -73,5 +73,6 @@ Ces scénarios ont été conçus pour prouver la résilience de notre architectu
 
 ## Apprentissages et Notes
 - **Pas de branche par environnement** : Le modèle *Multiple Sources* avec un dossier par application (`apps/`) s'est révélé beaucoup plus stable et facile à tracer que le branching par environnement.
+- **Mécanisme `$ref` dans Multiple Sources** : Quand une source porte `ref: <nom>`, elle devient une source de référence (pas de déploiement direct) et expose son contenu sous la variable `$<nom>`. Les autres sources peuvent alors l'utiliser dans leurs `valueFiles` (ex: `$gitops/apps/my-app/values-staging.yaml`). `$<nom>` pointe toujours sur la **racine** du repo référencé, indépendamment de tout champ `path`. Cette feature requiert ArgoCD v2.6+.
 - L'utilisation des finalizers est vitale pour éviter de laisser des ressources orphelines, surtout sur un cluster AKS aux ressources limitées.
 - **Sécurité** : Aucune clé Kubernetes n'a eu besoin d'être exportée vers GitLab pour le déploiement. L'AKS vient tirer l'état lui-même.
