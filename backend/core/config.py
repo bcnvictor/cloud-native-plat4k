@@ -33,15 +33,19 @@ class Settings(BaseSettings):
     # GitLab
     GITLAB_BASE_URL: str = "https://gitlab.com"
     GITLAB_TOKEN: Optional[str] = None
+    GITLAB_NAMESPACE: Optional[str] = None
+    # Scaffolding
+    GITLAB_TEMPLATES_NAMESPACE: Optional[str] = None  # subgroup contenant les repos templates (ex: 4k-cnp-2027/cnp-templates)
+    GITLAB_APPS_NAMESPACE: Optional[str] = None  # subgroup for scaffolded apps, defaults to {GITLAB_BOT_NAMESPACE}/cnp-apps
+    GITLAB_REGISTRY_URL: str = "registry.gitlab.com"  # override for self-hosted instances
     # GitLab OAuth (SSO)
     GITLAB_OAUTH_CLIENT_ID: Optional[str] = None
     GITLAB_OAUTH_CLIENT_SECRET: Optional[str] = None
     GITLAB_OAUTH_REDIRECT_URI: Optional[str] = None
-    GITLAB_OAUTH_SCOPES: str = "api read_user"
+    GITLAB_OAUTH_SCOPES: str = "api read_user offline_access"
     # GitLab bot (CI injection)
     GITLAB_BOT_TOKEN: Optional[str] = None
-    GITLAB_BOT_NAMESPACE: Optional[str] = None  # groupe parent du bot (ex: 4k-cnp-2027)
-    GITLAB_CI_PROJECT: Optional[str] = None     # chemin complet du repo CI (ex: 4k-cnp-2027/cnp-ci-modules)
+    GITLAB_BOT_NAMESPACE: Optional[str] = None  # namespace owning cnp-ci-templates
 
     # CNP API public URL (used in webhook registration)
     CNP_API_BASE_URL: str = "http://localhost:8000"
@@ -52,10 +56,6 @@ class Settings(BaseSettings):
     KUBECONFIG_PATH: Optional[str] = None
     K8S_TARGET_NAMESPACE: str = "default"
     K8S_IMAGE_PULL_SECRET: Optional[str] = None
-
-    # Monitoring
-    PROMETHEUS_URL: str = "http://prometheus-operated.monitoring.svc.cluster.local:9090"
-    LOKI_URL: str = "http://loki.monitoring.svc.cluster.local:3100"
 
     # Logging
     LOG_LEVEL: str = "INFO"

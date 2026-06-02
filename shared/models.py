@@ -146,8 +146,33 @@ class ApplicationBase(BaseModel):
     framework: Optional[str] = None
 
 
+class ScaffoldingParams(BaseModel):
+    """Settings for generating the values.yaml file during scaffolding."""
+    port: int = 8000
+    image_repository: Optional[str] = None
+    image_tag: str = "latest"
+    replicas: int = 1
+    env: Dict[str, str] = {}
+
+
 class ApplicationCreate(ApplicationBase):
     pass
+
+
+class ApplicationScaffoldRequest(BaseModel):
+    """Payload for POST /apps/scaffold — creates a new app from a CNP template."""
+    name: str
+    owner: str
+    template: str  # name of the template repo in GITLAB_TEMPLATES_NAMESPACE (ex: "python-fastapi")
+    scaffolding: Optional[ScaffoldingParams] = None
+
+
+class ApplicationImportRequest(BaseModel):
+    """Payload for POST /apps/import — imports an existing GitLab repo."""
+    name: str
+    owner: str
+    repo_url: str
+    framework: Optional[str] = None
 
 
 class ApplicationUpdate(BaseModel):
