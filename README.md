@@ -126,7 +126,7 @@ Le script :
    asyncio.run(create_admin())"
    ```
 
-La plateforme sera alors accessible sur [http://localhost](http://localhost) et l'API sur [http://localhost:8000/api/v1](http://localhost:8000/api/v1). L'interface d'administration pgAdmin est disponible sur [http://localhost:5050](http://localhost:5050).
+La plateforme sera alors accessible sur [http://localhost](http://localhost) et l'API sur [http://localhost:8000/api/v1](http://localhost:8000/api/v1).
 
 ## CLI
 
@@ -170,7 +170,7 @@ Pour la liste complète des commandes, tapez `cnp --help`.
 Si vous souhaitez héberger votre CNP sur une vraie VM cloud, des templates Terraform sont fournis. Ils déploient les ressources nécessaires sur **Azure** (VM, VNet, Subnet, NSG, IP Publique).
 
 ```bash
-cd terraform
+cd infra/aks
 terraform init
 terraform plan -var="admin_ip=VOTRE_IP_PUBLIQUE"
 terraform apply -var="admin_ip=VOTRE_IP_PUBLIQUE"

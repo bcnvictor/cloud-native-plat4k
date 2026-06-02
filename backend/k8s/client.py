@@ -27,7 +27,7 @@ class KubernetesClient:
 
             self._core_v1 = client.CoreV1Api()
             self._apps_v1 = client.AppsV1Api()
-        except ConfigException as e:
+        except (ConfigException, OSError) as e:
             logger.warning("Kubernetes config unavailable, client disabled: %s", e)
 
     @property
@@ -85,6 +85,23 @@ class KubernetesClient:
 
     def list_namespace_deployments(self, namespace: str) -> list[client.V1Deployment]:
         return self.apps_v1.list_namespaced_deployment(namespace=namespace).items
+
+    def apply_configmap(self, namespace: str, name: str, data: dict[str, str], labels: dict[str, str] | None = None) -> None:
+        body = client.V1ConfigMap(
+            api_version="v1",
+            kind="ConfigMap",
+            metadata=client.V1ObjectMeta(name=name, namespace=namespace, labels=labels or {}),
+            data=data,
+        )
+        try:
+            self.core_v1.create_namespaced_config_map(namespace=namespace, body=body)
+            logger.info("Created configmap %s/%s", namespace, name)
+        except ApiException as e:
+            if e.status == 409:
+                self.core_v1.patch_namespaced_config_map(namespace=namespace, name=name, body=body)
+                logger.info("Patched existing configmap %s/%s", namespace, name)
+            else:
+                raise
 
 
 k8s_client = KubernetesClient()

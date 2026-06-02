@@ -12,6 +12,8 @@ _PYTHON_INDICATORS = {"requirements.txt", "pyproject.toml", "setup.py", "setup.c
 
 def extract_project_path(repo_url: str) -> str:
     """Extract 'namespace/project' from a full GitLab URL."""
+    if "://" not in repo_url:
+        repo_url = "https://" + repo_url
     path = urlparse(repo_url).path.lstrip("/")
     if path.endswith(".git"):
         path = path[:-4]
