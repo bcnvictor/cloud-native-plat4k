@@ -45,6 +45,8 @@ class AppService:
     async def create_app(self, payload: ApplicationCreate, user=None) -> Application:
         data = payload.model_dump(exclude={"scaffolding"})
         # Scaffolding flow : If `origin=scaffolded`, create the GitLab repository first
+        repo_was_scaffolded = False
+        scaffolded_project_path: str | None = None
         if payload.origin == "scaffolded" and not data.get("repo_url"):
             if user is None:
                 raise HTTPException(
@@ -53,15 +55,16 @@ class AppService:
                 )
             from backend.services.scaffolding_service import ScaffoldingService
             scaffolding_service = ScaffoldingService(self.db)
-            repo_url = await scaffolding_service.scaffold(user, payload)
+            repo_url, scaffolded_project_path = await scaffolding_service.scaffold(user, payload)
             data["repo_url"] = repo_url
+            repo_was_scaffolded = True
             # We override the framework because we know which template is being used
             if not data.get("framework"):
                 data["framework"] = "python-fastapi"
         bot = _get_bot_client()
 
-        # Validate repo exists before touching the DB (skip for scaffolded apps — repo just created)
-        if data.get("repo_url") and payload.origin != "scaffolded":
+        # Validate repo exists before touching the DB (skip only if we just created it via scaffold)
+        if data.get("repo_url") and not repo_was_scaffolded:
             if not bot:
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -95,7 +98,16 @@ class AppService:
 
         app = Application(**data)
         self.db.add(app)
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except Exception:
+            if repo_was_scaffolded and scaffolded_project_path:
+                from backend.services.scaffolding_service import ScaffoldingService
+                await ScaffoldingService(self.db).cleanup_project(scaffolded_project_path)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to save the application — the GitLab project has been deleted.",
+            )
         await self.db.refresh(app)
 
         # Inject CI pipeline — records outcome in ci_injected

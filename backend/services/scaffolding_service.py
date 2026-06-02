@@ -2,17 +2,18 @@
 Scaffolding service: creates a new GitLab repository from a Helm template,
 generates the values.yaml and Chart.yaml files based on user settings, and pushes
 all the content to the new repository.
+
+Projects are created in GITLAB_APPS_NAMESPACE (defaults to {GITLAB_BOT_NAMESPACE}/cnp-apps)
+using the bot token — the user's personal GitLab credentials are not required.
 """
 import logging
 from functools import partial
-from typing import Optional
 
 import anyio
 import yaml
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.routes.gitlab import _get_user_gitlab_cred, _ensure_access_token
 from backend.core.config import settings
 from backend.db.models import User
 from backend.gitlab.client import GitLabClient
@@ -23,24 +24,37 @@ logger = logging.getLogger(__name__)
 SKIP_FILES = {"chart/values.yaml", "chart/Chart.yaml"}
 
 
+def _get_bot_client() -> GitLabClient:
+    if not settings.GITLAB_BOT_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Scaffolding requires GITLAB_BOT_TOKEN to be configured.",
+        )
+    apps_namespace = settings.GITLAB_APPS_NAMESPACE or f"{settings.GITLAB_BOT_NAMESPACE}/cnp-apps"
+    return GitLabClient(
+        token=settings.GITLAB_BOT_TOKEN,
+        namespace=apps_namespace,
+        use_private_token=True,
+    )
+
+
 class ScaffoldingService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def scaffold(self, user: User, payload: ApplicationCreate) -> str:
+    async def scaffold(self, user: User, payload: ApplicationCreate) -> tuple[str, str]:
         """
-        Runs the entire workflow and returns the URL of the new GitLab repository.
+        Runs the entire workflow and returns (repo_url, project_path_with_namespace).
+        Creates the project in GITLAB_APPS_NAMESPACE using the bot token.
         """
-        cred = await _get_user_gitlab_cred(user.id, self.db)
-        if not cred:
+        if not settings.CNP_TEMPLATE_REPO_PATH:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="No GitLab tokens have been configured for this user. Sign in via OAuth or set up a PAT.",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="CNP_TEMPLATE_REPO_PATH is not configured.",
             )
-        token = await _ensure_access_token(cred, self.db)
-        namespace = cred.namespace
 
-        client = GitLabClient(token=token, namespace=namespace, use_private_token=True)
+        client = _get_bot_client()
+        apps_namespace = client.namespace
 
         try:
             await anyio.to_thread.run_sync(
@@ -60,7 +74,7 @@ class ScaffoldingService:
         if namespace_id is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"GitLab namespace '{namespace}' not found",
+                detail=f"GitLab namespace '{apps_namespace}' not found",
             )
 
         try:
@@ -121,7 +135,7 @@ class ScaffoldingService:
                 )
 
         scaffolding = payload.scaffolding or ScaffoldingParams()
-        values_yaml = self._build_values_yaml(payload.name, namespace, scaffolding)
+        values_yaml = self._build_values_yaml(payload.name, apps_namespace, scaffolding)
         await anyio.to_thread.run_sync(
             partial(
                 client.push_file,
@@ -145,15 +159,25 @@ class ScaffoldingService:
             cancellable=True,
         )
 
-        return repo_url
+        return repo_url, new_project_path
+
+    async def cleanup_project(self, project_path: str) -> None:
+        """Delete the scaffolded GitLab project on rollback. Best-effort — never raises."""
+        try:
+            client = _get_bot_client()
+            await anyio.to_thread.run_sync(
+                partial(client.delete_project, project_path), cancellable=True
+            )
+            logger.info("Rolled back scaffolded project: %s", project_path)
+        except Exception:
+            logger.exception("Rollback failed for project %s — manual cleanup required", project_path)
 
     def _build_values_yaml(self, app_name: str, namespace: str, scaffolding: ScaffoldingParams) -> str:
         """Generates the YAML content of `values.yaml` based on the parameters."""
         if scaffolding.image_repository:
             image_repo = scaffolding.image_repository
         else:
-            host = settings.GITLAB_BASE_URL.replace("https://", "").replace("http://", "")
-            registry_host = host.replace("gitlab.", "registry.")
+            registry_host = settings.GITLAB_REGISTRY_URL.rstrip("/")
             image_repo = f"{registry_host}/{namespace}/{app_name}"
 
         data = {
