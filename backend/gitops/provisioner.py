@@ -111,37 +111,15 @@ def provision_gitops(app_name: str, repo_url: str, client: GitLabClient) -> None
     
     actions = []
     
-    # We use "create" action for the commit API. If the app is already provisioned,
-    # this will fail. We could check existence first, but the Commits API fails atomically,
-    # which is exactly what we want to avoid corrupting state.
-    
-    # 1. argocd/app_name/staging.yaml
-    actions.append({
-        "action": "create",
-        "file_path": f"argocd/{app_name}/staging.yaml",
-        "content": _generate_argocd_application(app_name, repo_url, "staging")
-    })
-    
-    # 2. argocd/app_name/prod.yaml
-    actions.append({
-        "action": "create",
-        "file_path": f"argocd/{app_name}/prod.yaml",
-        "content": _generate_argocd_application(app_name, repo_url, "prod")
-    })
-    
-    # 3. apps/app_name/values-staging.yaml
-    actions.append({
-        "action": "create",
-        "file_path": f"apps/{app_name}/values-staging.yaml",
-        "content": _generate_helm_values(app_name, repo_url, "staging")
-    })
-    
-    # 4. apps/app_name/values-prod.yaml
-    actions.append({
-        "action": "create",
-        "file_path": f"apps/{app_name}/values-prod.yaml",
-        "content": _generate_helm_values(app_name, repo_url, "prod")
-    })
+    # "upsert" creates the file if absent, overwrites if present — one atomic commit either
+    # way. This makes provisioning idempotent: safe to retry or re-onboard without errors.
+    for file_path, content in [
+        (f"argocd/{app_name}/staging.yaml",      _generate_argocd_application(app_name, repo_url, "staging")),
+        (f"argocd/{app_name}/prod.yaml",          _generate_argocd_application(app_name, repo_url, "prod")),
+        (f"apps/{app_name}/values-staging.yaml",  _generate_helm_values(app_name, repo_url, "staging")),
+        (f"apps/{app_name}/values-prod.yaml",     _generate_helm_values(app_name, repo_url, "prod")),
+    ]:
+        actions.append({"action": "upsert", "file_path": file_path, "content": content})
     
     logger.info("Provisioning GitOps repository for %s in %s", app_name, gitops_project_path)
     client.push_multiple_files(
