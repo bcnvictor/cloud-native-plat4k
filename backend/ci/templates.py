@@ -2,6 +2,12 @@ from backend.core.config import settings
 
 _ALLOWED_FRAMEWORKS = {"python", "generic"}
 
+# Maps template/framework names to their CI framework key
+_FRAMEWORK_ALIASES = {
+    "python-fastapi": "python",
+    "python-flask": "python",
+}
+
 
 def _ci_templates_project() -> str:
     if settings.GITLAB_CI_PROJECT:
@@ -17,6 +23,7 @@ def _yaml_escape(value: str) -> str:
 
 def generate_gitlab_ci(app_name: str, app_id: int, framework: str) -> str:
     """Generate the minimal .gitlab-ci.yml to inject into a user repo."""
+    framework = _FRAMEWORK_ALIASES.get(framework, framework)
     if framework not in _ALLOWED_FRAMEWORKS:
         raise ValueError(f"Unknown framework '{framework}' — allowed: {_ALLOWED_FRAMEWORKS}")
 
