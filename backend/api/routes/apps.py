@@ -49,7 +49,7 @@ async def get_app(
 async def scaffold_app(
     payload: ApplicationScaffoldRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN)),
+    current_user: User = Depends(require_role(UserRole.DEV)),
 ):
     """Create a new app from a CNP template (scaffolding)."""
     return await AppService(db).scaffold_app(payload)
@@ -59,7 +59,7 @@ async def scaffold_app(
 async def import_app(
     payload: ApplicationImportRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN)),
+    current_user: User = Depends(require_role(UserRole.DEV)),
 ):
     """Import an existing GitLab repo as a CNP app."""
     return await AppService(db).import_app(payload)

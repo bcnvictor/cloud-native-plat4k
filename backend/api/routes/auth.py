@@ -166,7 +166,8 @@ async def gitlab_callback(request: Request, response: Response, db: AsyncSession
     user = result.scalar_one_or_none()
     if not user:
         from backend.core.security import get_password_hash
-        new_user = User(email=email, hashed_password=get_password_hash(secrets.token_urlsafe(24)))
+        from shared.models import UserRole
+        new_user = User(email=email, hashed_password=get_password_hash(secrets.token_urlsafe(24)), role=UserRole.DEV)
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
