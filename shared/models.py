@@ -31,6 +31,7 @@ class ResourceStatus(str, Enum):
 
 class UserRole(str, Enum):
     ADMIN = "admin"
+    DEV = "dev"
     VIEWER = "viewer"
 
 

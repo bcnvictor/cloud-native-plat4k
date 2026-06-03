@@ -114,19 +114,19 @@ Ce scénario déploie l'app de démo (`cnp-test`) sur le cluster AKS via l'API C
 - Secret imagePullSecret présent dans le namespace `default` (voir ci-dessous)
 - Un compte admin CNP (email + mot de passe)
 
-### 0. (Une fois) Créer l'imagePullSecret pour le registry EPITA
+### 0. (Une fois) Créer l'imagePullSecret pour le registry GitLab
 
 ```bash
-kubectl create secret docker-registry epita-registry \
-  --docker-server=registry.cri.epita.fr \
-  --docker-username=<votre-login-epita> \
+kubectl create secret docker-registry gitlab-registry \
+  --docker-server=registry.gitlab.com \
+  --docker-username=<votre-login-gitlab> \
   --docker-password=<votre-token-gitlab> \
   --namespace=default
 ```
 
 Puis configurer dans le `.env` du backend :
 ```
-K8S_IMAGE_PULL_SECRET=epita-registry
+K8S_IMAGE_PULL_SECRET=gitlab-registry
 K8S_TARGET_NAMESPACE=default
 ```
 
@@ -169,7 +169,7 @@ export APP_ID=$(curl -s -X POST "$CNP_URL/apps/" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "cnp-demo-app",
-    "repo_url": "registry.cri.epita.fr/victor.biancini/cnp-test",
+    "repo_url": "https://gitlab.com/4k-cnp-2027/cnp-apps/cnp-test",
     "owner": "victor",
     "origin": "imported"
   }' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
@@ -240,7 +240,7 @@ CLUSTER_ID=$(curl -s -X POST "$CNP_URL/clusters/" \
 APP_ID=$(curl -s -X POST "$CNP_URL/apps/" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"cnp-demo-app","repo_url":"registry.cri.epita.fr/victor.biancini/cnp-test","owner":"victor","origin":"imported"}' \
+  -d '{"name":"cnp-demo-app","repo_url":"https://gitlab.com/4k-cnp-2027/cnp-apps/cnp-test","owner":"victor","origin":"imported"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
 curl -s -X POST "$CNP_URL/deployments/" \
