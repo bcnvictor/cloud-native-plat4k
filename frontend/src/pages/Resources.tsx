@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { appsApi } from '@/api/apps';
+import { appsApi, AppTemplate } from '@/api/apps';
 import { clustersApi } from '@/api/clusters';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { Application, ResourceStatus } from '@/types';
@@ -84,6 +84,7 @@ function PodBar({ status, pods, maxPods }: { status: DisplayStatus; pods: number
 }
 
 const EMPTY_IMPORT_FORM = { name: '', owner: '', repo_url: '', framework: '', target_cluster_id: '' };
+const EMPTY_SCAFFOLD_FORM = { name: '', owner: '', template: '', port: '8000', replicas: '1' };
 
 export const Resources = () => {
   const [filterStatus, setFilterStatus] = useState<DisplayStatus | ''>('');
@@ -93,6 +94,9 @@ export const Resources = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importForm, setImportForm] = useState(EMPTY_IMPORT_FORM);
   const [importError, setImportError] = useState<string | null>(null);
+  const [showScaffoldModal, setShowScaffoldModal] = useState(false);
+  const [scaffoldForm, setScaffoldForm] = useState(EMPTY_SCAFFOLD_FORM);
+  const [scaffoldError, setScaffoldError] = useState<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -106,6 +110,13 @@ export const Resources = () => {
   const { data: clusters = [] } = useQuery({
     queryKey: ['clusters'],
     queryFn: () => clustersApi.list(),
+  });
+
+  const { data: templates = [], isLoading: templatesLoading, isError: templatesError } = useQuery({
+    queryKey: ['app-templates'],
+    queryFn: () => appsApi.listTemplates(),
+    enabled: showScaffoldModal,
+    staleTime: 60_000,
   });
 
   useEffect(() => {
@@ -156,6 +167,39 @@ export const Resources = () => {
     setShowImportModal(false);
     setImportForm(EMPTY_IMPORT_FORM);
     setImportError(null);
+  };
+
+  const scaffoldMutation = useMutation({
+    mutationFn: appsApi.scaffoldApp,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
+      setShowScaffoldModal(false);
+      setScaffoldForm(EMPTY_SCAFFOLD_FORM);
+      setScaffoldError(null);
+    },
+    onError: (err: any) => {
+      setScaffoldError(err?.response?.data?.detail ?? 'Erreur lors du scaffolding');
+    },
+  });
+
+  const closeScaffoldModal = () => {
+    setShowScaffoldModal(false);
+    setScaffoldForm(EMPTY_SCAFFOLD_FORM);
+    setScaffoldError(null);
+  };
+
+  const handleScaffold = (e: React.FormEvent) => {
+    e.preventDefault();
+    setScaffoldError(null);
+    scaffoldMutation.mutate({
+      name: scaffoldForm.name,
+      owner: scaffoldForm.owner,
+      template: scaffoldForm.template,
+      scaffolding: {
+        port: Number(scaffoldForm.port) || 8000,
+        replicas: Number(scaffoldForm.replicas) || 1,
+      },
+    });
   };
 
   const handleImport = (e: React.FormEvent) => {
@@ -233,13 +277,10 @@ export const Resources = () => {
               <div className="dropdown-menu">
                 <button
                   className="dropdown-item"
-                  onClick={() => setShowDropdown(false)}
-                  disabled
-                  style={{ opacity: 0.45, cursor: 'default' }}
+                  onClick={() => { setShowDropdown(false); setScaffoldForm(f => ({ ...f, owner: user?.email ?? '' })); setShowScaffoldModal(true); }}
                 >
                   <i className="ti ti-template" aria-hidden="true" />
                   Scaffolder une app
-                  <span className="coming-badge" style={{ marginLeft: 'auto' }}>bientôt</span>
                 </button>
                 <button
                   className="dropdown-item"
@@ -298,6 +339,126 @@ export const Resources = () => {
         onCancel={() => setDeleteModal(null)}
         isLoading={deleteMutation.isPending}
       />
+
+      {showScaffoldModal && (
+        <div className="modal-overlay" onClick={closeScaffoldModal}>
+          <div className="modal-box" style={{ width: 480 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(26,107,240,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <i className="ti ti-template" style={{ color: 'var(--accent)', fontSize: 16 }} aria-hidden="true" />
+              </div>
+              <div>
+                <div className="modal-title" style={{ marginBottom: 0 }}>Scaffolder une application</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>Créez un nouveau repo à partir d'un template CNP</div>
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: 'var(--border)', margin: '16px 0' }} />
+
+            <form onSubmit={handleScaffold} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="form-group">
+                  <label className="form-label">Nom de l'application <span style={{ color: 'var(--red)' }}>*</span></label>
+                  <input
+                    className="form-input"
+                    placeholder="mon-service"
+                    value={scaffoldForm.name}
+                    onChange={e => setScaffoldForm(f => ({ ...f, name: e.target.value }))}
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Responsable</label>
+                  <input
+                    className="form-input"
+                    value={scaffoldForm.owner}
+                    readOnly
+                    style={{ color: 'var(--text-muted)', cursor: 'default' }}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Template <span style={{ color: 'var(--red)' }}>*</span></label>
+                {templatesError ? (
+                  <div className="alert error" style={{ margin: 0 }}>
+                    <i className="ti ti-alert-circle" aria-hidden="true" />
+                    Impossible de charger les templates
+                  </div>
+                ) : (
+                  <select
+                    className="form-select"
+                    value={scaffoldForm.template}
+                    onChange={e => setScaffoldForm(f => ({ ...f, template: e.target.value }))}
+                    required
+                    disabled={templatesLoading}
+                  >
+                    <option value="">{templatesLoading ? 'Chargement…' : 'Choisir un template'}</option>
+                    {templates.map((t: AppTemplate) => (
+                      <option key={t.path} value={t.path}>{t.name}</option>
+                    ))}
+                  </select>
+                )}
+                <span className="form-hint">Template hébergé dans l'espace templates CNP</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="form-group">
+                  <label className="form-label">Port applicatif</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={scaffoldForm.port}
+                    onChange={e => setScaffoldForm(f => ({ ...f, port: e.target.value }))}
+                  />
+                  <span className="form-hint">Port exposé par le conteneur</span>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Replicas</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={scaffoldForm.replicas}
+                    onChange={e => setScaffoldForm(f => ({ ...f, replicas: e.target.value }))}
+                  />
+                  <span className="form-hint">Nombre de pods initiaux</span>
+                </div>
+              </div>
+
+              {scaffoldError && (
+                <div className="alert error">
+                  <i className="ti ti-alert-circle" aria-hidden="true" />
+                  {scaffoldError}
+                </div>
+              )}
+
+              <div className="modal-actions" style={{ marginTop: 4 }}>
+                <button type="button" className="btn btn-ghost" onClick={closeScaffoldModal} disabled={scaffoldMutation.isPending}>
+                  Annuler
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={scaffoldMutation.isPending || !scaffoldForm.template}>
+                  {scaffoldMutation.isPending ? (
+                    <>
+                      <i className="ti ti-loader-2" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
+                      Scaffolding…
+                    </>
+                  ) : (
+                    <>
+                      <i className="ti ti-template" aria-hidden="true" />
+                      Créer l'application
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showImportModal && (
         <div className="modal-overlay" onClick={closeImportModal}>
