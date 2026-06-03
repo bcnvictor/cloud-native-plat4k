@@ -90,6 +90,11 @@ class GitLabClient:
         """Get a GitLab project by its full path (e.g. 'namespace/project')."""
         return self._gl.projects.get(path_with_namespace)
 
+    def get_default_branch(self, project_path: str) -> str:
+        """Return the default branch name of the project (falls back to 'main')."""
+        project = self.get_project(project_path)
+        return getattr(project, "default_branch", None) or "main"
+
     def list_tree(self, project_path: str, path: str = "", ref: str = "HEAD") -> list[dict]:
         """List files/dirs at the root (or given path) of a project."""
         project = self.get_project(project_path)

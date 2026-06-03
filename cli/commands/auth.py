@@ -23,7 +23,7 @@ def login(
     try:
         # First login with JWT
         session = requests.Session()
-        res = session.post(f"{api_url}/auth/login", json={"email": email, "password": password})
+        res = session.post(f"{api_url}/auth/login", data={"username": email, "password": password})
         res.raise_for_status()
         token = res.json()["access_token"]
 

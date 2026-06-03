@@ -144,6 +144,7 @@ class ApplicationBase(BaseModel):
     repo_url: Optional[str] = None
     owner: str
     origin: Optional[str] = None
+    source_url: Optional[str] = None
     framework: Optional[str] = None
 
 
@@ -168,13 +169,23 @@ class ApplicationScaffoldRequest(BaseModel):
     scaffolding: Optional[ScaffoldingParams] = None
 
 
-class ApplicationImportRequest(BaseModel):
-    """Payload for POST /apps/import — imports an existing GitLab repo."""
+class ApplicationOnboardRequest(BaseModel):
+    """Payload for POST /apps/onboard — registers an existing GitLab repo already on the internal instance."""
     name: str
     owner: str
     repo_url: str
     framework: Optional[str] = None
     target_cluster_id: Optional[int] = None
+
+
+class ApplicationExternalImportRequest(BaseModel):
+    """Payload for POST /apps/import — clones a public external repo (GitHub/GitLab) into cnp-apps."""
+    name: str
+    owner: str
+    source_url: str
+    framework: Optional[str] = None
+    target_cluster_id: Optional[int] = None
+    raw: bool = False
 
 
 class ApplicationUpdate(BaseModel):
