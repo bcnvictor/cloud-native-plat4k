@@ -2,13 +2,13 @@ import hmac
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from shared.models import ApplicationStatus
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_db
 from backend.core.config import settings
 from backend.db.models import Application
-from shared.models import ApplicationStatus
 
 logger = logging.getLogger(__name__)
 
