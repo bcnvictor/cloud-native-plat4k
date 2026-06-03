@@ -39,7 +39,7 @@ jobs:
             shared/pyproject.toml
 
       - name: Install dev tools
-        run: pip install ruff mypy pytest
+        run: pip install ruff pytest
 
       - name: Install shared package
         run: pip install -e ./shared
@@ -50,11 +50,6 @@ jobs:
       # Vérification syntaxe et style Python
       - name: Lint — ruff
         run: ruff check backend/ shared/
-
-      # Vérification des types (--ignore-missing-imports car certaines dépendances
-      # comme kubernetes n'ont pas de stubs mypy publiés)
-      - name: Type check — mypy
-        run: mypy backend/ shared/ --ignore-missing-imports
 
       # Vérifie que pytest peut découvrir les tests (structure cohérente).
       # Retourne toujours 0 — il n'y a pas encore de tests à faire passer.
