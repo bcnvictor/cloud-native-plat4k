@@ -105,6 +105,7 @@ class Application(Base):
     owner = Column(String, nullable=False)
     target_cluster_id = Column(Integer, ForeignKey("cluster_connections.id", ondelete="SET NULL"), nullable=True)
     origin = Column(String, nullable=True)
+    source_url = Column(String, nullable=True)
     framework = Column(String, nullable=True)
     ci_injected = Column(Boolean, nullable=True)
     last_pipeline_status = Column(String, nullable=True)

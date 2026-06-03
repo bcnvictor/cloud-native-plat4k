@@ -12,6 +12,7 @@ export interface Application {
   repo_url: string | null;
   owner: string;
   origin: string | null;
+  source_url: string | null;
   status: ApplicationStatus;
   created_at: string;
   updated_at: string | null;

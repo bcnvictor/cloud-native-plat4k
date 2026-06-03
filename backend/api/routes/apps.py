@@ -7,7 +7,8 @@ from backend.db.models import User
 from shared.models import (
     ApplicationCreate,
     ApplicationScaffoldRequest,
-    ApplicationImportRequest,
+    ApplicationOnboardRequest,
+    ApplicationExternalImportRequest,
     ApplicationUpdate,
     ApplicationResponse,
     UserRole,
@@ -55,14 +56,24 @@ async def scaffold_app(
     return await AppService(db).scaffold_app(payload)
 
 
-@router.post("/import", response_model=ApplicationResponse, status_code=201)
-async def import_app(
-    payload: ApplicationImportRequest,
+@router.post("/onboard", response_model=ApplicationResponse, status_code=201)
+async def onboard_app(
+    payload: ApplicationOnboardRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.DEV)),
 ):
-    """Import an existing GitLab repo as a CNP app."""
-    return await AppService(db).import_app(payload)
+    """Register an existing internal GitLab repo as a CNP app (onboard)."""
+    return await AppService(db).onboard_app(payload)
+
+
+@router.post("/import", response_model=ApplicationResponse, status_code=201)
+async def import_app(
+    payload: ApplicationExternalImportRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.DEV)),
+):
+    """Clone a public external repo (GitHub/GitLab) into cnp-apps and register it."""
+    return await AppService(db).external_import_app(payload)
 
 
 @router.post("/sync", response_model=List[ApplicationResponse])
