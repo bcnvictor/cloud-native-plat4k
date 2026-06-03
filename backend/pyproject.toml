@@ -40,11 +40,6 @@ select = ["E", "F", "I"]   # pycodestyle errors, pyflakes, isort
 ignore = ["E501", "E712"]   # E501: line length géré par le formateur
                              # E712: SQLAlchemy requiert `== False/True` dans les filtres ORM
 
-[tool.mypy]
-python_version = "3.11"
-ignore_missing_imports = true
-strict = false
-
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 asyncio_mode = "auto"
