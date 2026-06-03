@@ -1,14 +1,27 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
-import { User } from '@/types';
+import { User, UserRole } from '@/types';
+
+const patchUser = async (id: number, payload: { role?: UserRole; is_active?: boolean }) => {
+  const { data } = await api.patch<User>(`/users/${id}`, payload);
+  return data;
+};
 
 export const Users = () => {
+  const queryClient = useQueryClient();
+
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['admin-users'],
     queryFn: async () => {
       const { data } = await api.get<User[]>('/users/');
       return data;
     },
+  });
+
+  const mutation = useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: { role?: UserRole; is_active?: boolean } }) =>
+      patchUser(id, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-users'] }),
   });
 
   return (
@@ -39,12 +52,25 @@ export const Users = () => {
                   <tr key={user.id}>
                     <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{user.email}</td>
                     <td>
-                      <span className={`badge ${user.role}`}>{user.role}</span>
+                      <select
+                        className="role-select"
+                        value={user.role}
+                        onChange={e => mutation.mutate({ id: user.id, payload: { role: e.target.value as UserRole } })}
+                      >
+                        <option value="admin">admin</option>
+                        <option value="dev">dev</option>
+                        <option value="viewer">viewer</option>
+                      </select>
                     </td>
                     <td>
-                      <span className={`badge ${user.is_active ? 'active' : 'inactive'}`}>
+                      <button
+                        className={`badge ${user.is_active ? 'active' : 'inactive'}`}
+                        style={{ cursor: 'pointer', border: 'none', background: undefined }}
+                        onClick={() => mutation.mutate({ id: user.id, payload: { is_active: !user.is_active } })}
+                        title={user.is_active ? 'Désactiver' : 'Activer'}
+                      >
                         {user.is_active ? 'Actif' : 'Inactif'}
-                      </span>
+                      </button>
                     </td>
                     <td className="mono">{new Date(user.created_at).toLocaleDateString('fr-FR')}</td>
                   </tr>

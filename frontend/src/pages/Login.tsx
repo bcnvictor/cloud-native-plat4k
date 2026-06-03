@@ -72,7 +72,7 @@ export const Login = () => {
               type="email"
               required
               className="form-input"
-              placeholder="vous@epita.fr"
+              placeholder="vous@example.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
               autoComplete="email"

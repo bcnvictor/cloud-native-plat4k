@@ -31,4 +31,9 @@ export const appsApi = {
     const { data } = await api.post<Application[]>('/apps/sync');
     return data;
   },
+
+  importApp: async (payload: { name: string; owner: string; repo_url: string; framework?: string }) => {
+    const { data } = await api.post<Application>('/apps/import', payload);
+    return data;
+  },
 };
