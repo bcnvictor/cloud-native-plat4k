@@ -32,7 +32,7 @@ export const appsApi = {
     return data;
   },
 
-  importApp: async (payload: { name: string; owner: string; repo_url: string; framework?: string }) => {
+  importApp: async (payload: { name: string; owner: string; repo_url: string; framework?: string; target_cluster_id?: number }) => {
     const { data } = await api.post<Application>('/apps/import', payload);
     return data;
   },

@@ -13,6 +13,7 @@ def import_app(
     name: str = typer.Option(..., "--name", "-n", help="Application name"),
     owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Owner (defaults to logged-in user)"),
     framework: Optional[str] = typer.Option(None, "--framework", "-f", help="Framework: python, generic (auto-detected if omitted)"),
+    cluster_id: Optional[int] = typer.Option(None, "--cluster-id", "-c", help="Target cluster ID (optional)"),
 ):
     """Import an existing GitLab repo as a CNP application."""
     resolved_owner = owner or load_config().get("user_email", "")
@@ -23,6 +24,8 @@ def import_app(
     payload: dict = {"name": name, "owner": resolved_owner, "repo_url": repo_url}
     if framework:
         payload["framework"] = framework
+    if cluster_id is not None:
+        payload["target_cluster_id"] = cluster_id
 
     try:
         data = client.post("/apps/import", json=payload)
@@ -36,6 +39,7 @@ def import_app(
                 ["owner", data["owner"]],
                 ["repo_url", data.get("repo_url") or "—"],
                 ["framework", data.get("framework") or "—"],
+                ["target_cluster_id", data.get("target_cluster_id") or "—"],
                 ["status", data["status"]],
                 ["ci_injected", data.get("ci_injected")],
             ],
