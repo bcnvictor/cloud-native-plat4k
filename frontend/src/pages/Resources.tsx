@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { appsApi } from '@/api/apps';
+import { clustersApi } from '@/api/clusters';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { Application, ResourceStatus } from '@/types';
 import { useAuthStore } from '@/store/auth';
@@ -82,7 +83,7 @@ function PodBar({ status, pods, maxPods }: { status: DisplayStatus; pods: number
   );
 }
 
-const EMPTY_IMPORT_FORM = { name: '', owner: '', repo_url: '', framework: '' };
+const EMPTY_IMPORT_FORM = { name: '', owner: '', repo_url: '', framework: '', target_cluster_id: '' };
 
 export const Resources = () => {
   const [filterStatus, setFilterStatus] = useState<DisplayStatus | ''>('');
@@ -100,6 +101,11 @@ export const Resources = () => {
   const { data: apiApps = [], isLoading, refetch } = useQuery({
     queryKey: ['apps'],
     queryFn: () => appsApi.list(),
+  });
+
+  const { data: clusters = [] } = useQuery({
+    queryKey: ['clusters'],
+    queryFn: () => clustersApi.list(),
   });
 
   useEffect(() => {
@@ -160,6 +166,7 @@ export const Resources = () => {
       owner: importForm.owner,
       repo_url: importForm.repo_url,
       framework: importForm.framework || undefined,
+      target_cluster_id: importForm.target_cluster_id ? Number(importForm.target_cluster_id) : undefined,
     });
   };
 
@@ -343,18 +350,34 @@ export const Resources = () => {
                 <span className="form-hint">Doit être accessible par le bot CNP</span>
               </div>
 
-              <div className="form-group">
-                <label className="form-label">Framework</label>
-                <select
-                  className="form-select"
-                  value={importForm.framework}
-                  onChange={e => setImportForm(f => ({ ...f, framework: e.target.value }))}
-                >
-                  <option value="">Auto-détection</option>
-                  <option value="python">Python</option>
-                  <option value="generic">Generic</option>
-                </select>
-                <span className="form-hint">Laissez vide pour la détection automatique</span>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="form-group">
+                  <label className="form-label">Framework</label>
+                  <select
+                    className="form-select"
+                    value={importForm.framework}
+                    onChange={e => setImportForm(f => ({ ...f, framework: e.target.value }))}
+                  >
+                    <option value="">Auto-détection</option>
+                    <option value="python">Python</option>
+                    <option value="generic">Generic</option>
+                  </select>
+                  <span className="form-hint">Laissez vide pour détection auto</span>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Cluster cible</label>
+                  <select
+                    className="form-select"
+                    value={importForm.target_cluster_id}
+                    onChange={e => setImportForm(f => ({ ...f, target_cluster_id: e.target.value }))}
+                  >
+                    <option value="">Aucun (à définir plus tard)</option>
+                    {clusters.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  <span className="form-hint">Optionnel</span>
+                </div>
               </div>
 
               {importError && (

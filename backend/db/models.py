@@ -103,6 +103,7 @@ class Application(Base):
     name = Column(String, nullable=False)
     repo_url = Column(String, nullable=True, unique=True)
     owner = Column(String, nullable=False)
+    target_cluster_id = Column(Integer, ForeignKey("cluster_connections.id", ondelete="SET NULL"), nullable=True)
     origin = Column(String, nullable=True)
     framework = Column(String, nullable=True)
     ci_injected = Column(Boolean, nullable=True)

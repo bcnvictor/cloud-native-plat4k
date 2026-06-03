@@ -104,6 +104,7 @@ class AppService:
             "repo_url": normalized_url,
             "origin": "imported",
             "framework": framework or "generic",
+            "target_cluster_id": payload.target_cluster_id,
         }
         return await self._save_app(data)
 
