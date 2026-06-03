@@ -101,7 +101,7 @@ class Application(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    repo_url = Column(String, nullable=True)
+    repo_url = Column(String, nullable=True, unique=True)
     owner = Column(String, nullable=False)
     origin = Column(String, nullable=True)
     framework = Column(String, nullable=True)
