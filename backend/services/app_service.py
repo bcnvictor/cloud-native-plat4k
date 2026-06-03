@@ -12,7 +12,7 @@ from backend.core.config import settings
 from backend.gitlab.client import GitLabClient
 from backend.ci.detector import detect_framework, extract_project_path
 from backend.ci.injector import inject_ci
-from shared.models import ApplicationCreate, ApplicationImportRequest, ApplicationScaffoldRequest, ApplicationUpdate, ApplicationStatus
+from shared.models import ApplicationCreate, ApplicationOnboardRequest, ApplicationExternalImportRequest, ApplicationScaffoldRequest, ApplicationUpdate, ApplicationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class AppService:
         }
         return await self._save_app(data, scaffolded_project_path=project_path)
 
-    async def import_app(self, payload: ApplicationImportRequest) -> Application:
+    async def onboard_app(self, payload: ApplicationOnboardRequest) -> Application:
         normalized_url = payload.repo_url.rstrip("/").removesuffix(".git")
         result = await self.db.execute(
             select(Application).where(
@@ -102,16 +102,69 @@ class AppService:
             "name": payload.name,
             "owner": payload.owner,
             "repo_url": normalized_url,
-            "origin": "imported",
+            "origin": "onboarded",
             "framework": framework or "generic",
             "target_cluster_id": payload.target_cluster_id,
         }
         return await self._save_app(data)
 
+    async def external_import_app(self, payload: ApplicationExternalImportRequest) -> Application:
+        from backend.gitlab.importer import import_external_repo
+        from backend.core.config import settings
+
+        bot = _get_bot_client()
+        if not bot:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="GITLAB_BOT_TOKEN not configured — cannot import external repo",
+            )
+
+        apps_namespace = settings.GITLAB_APPS_NAMESPACE
+        if not apps_namespace:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="GITLAB_APPS_NAMESPACE not configured",
+            )
+
+        try:
+            result = await anyio.to_thread.run_sync(
+                lambda: import_external_repo(
+                    source_url=payload.source_url,
+                    app_name=payload.name,
+                    client=bot,
+                    apps_namespace=apps_namespace,
+                ),
+                cancellable=True,
+            )
+        except TimeoutError as exc:
+            raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+        framework = payload.framework
+        if not framework:
+            try:
+                framework = await anyio.to_thread.run_sync(
+                    lambda: detect_framework(bot, result["repo_url"]), cancellable=True
+                )
+            except Exception:
+                framework = "generic"
+
+        data = {
+            "name": payload.name,
+            "owner": payload.owner,
+            "repo_url": result["repo_url"],
+            "source_url": payload.source_url,
+            "origin": "imported",
+            "framework": framework or "generic",
+            "target_cluster_id": payload.target_cluster_id,
+        }
+        return await self._save_app(data, skip_ci=payload.raw)
+
     async def create_app(self, payload: ApplicationCreate) -> Application:
         return await self._save_app(payload.model_dump())
 
-    async def _save_app(self, data: dict, scaffolded_project_path: str | None = None) -> Application:
+    async def _save_app(self, data: dict, scaffolded_project_path: str | None = None, skip_ci: bool = False) -> Application:
         app = Application(**data)
         self.db.add(app)
         try:
@@ -127,7 +180,7 @@ class AppService:
         await self.db.refresh(app)
 
         bot = _get_bot_client()
-        if bot and app.repo_url and app.origin in ("scaffolded", "imported"):
+        if not skip_ci and bot and app.repo_url and app.origin in ("scaffolded", "onboarded", "imported"):
             try:
                 webhook_url = f"{settings.CNP_API_BASE_URL}{settings.API_V1_STR}/webhooks/gitlab"
                 await anyio.to_thread.run_sync(

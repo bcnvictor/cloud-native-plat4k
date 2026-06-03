@@ -7,21 +7,64 @@ from cli.core.output import print_error, print_success, print_table, print_json
 app = typer.Typer(help="Manage CNP applications.")
 
 
-@app.command("import")
-def import_app(
-    repo_url: str = typer.Option(..., "--repo-url", "-r", help="GitLab repository URL"),
+@app.command("onboard")
+def onboard_app(
+    repo_url: str = typer.Option(..., "--repo-url", "-r", help="Internal GitLab repository URL"),
     name: str = typer.Option(..., "--name", "-n", help="Application name"),
     owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Owner (defaults to logged-in user)"),
     framework: Optional[str] = typer.Option(None, "--framework", "-f", help="Framework: python, generic (auto-detected if omitted)"),
     cluster_id: Optional[int] = typer.Option(None, "--cluster-id", "-c", help="Target cluster ID (optional)"),
 ):
-    """Import an existing GitLab repo as a CNP application."""
+    """Onboard an existing internal GitLab repo as a CNP application."""
     resolved_owner = owner or load_config().get("user_email", "")
     if not resolved_owner:
         print_error("Could not determine owner. Pass --owner or log in first (cnp auth login).")
         raise typer.Exit(1)
 
     payload: dict = {"name": name, "owner": resolved_owner, "repo_url": repo_url}
+    if framework:
+        payload["framework"] = framework
+    if cluster_id is not None:
+        payload["target_cluster_id"] = cluster_id
+
+    try:
+        data = client.post("/apps/onboard", json=payload)
+        print_success(f"App '{data['name']}' onboarded (id={data['id']})")
+        print_table(
+            "Onboard result",
+            ["Field", "Value"],
+            [
+                ["id", data["id"]],
+                ["name", data["name"]],
+                ["owner", data["owner"]],
+                ["repo_url", data.get("repo_url") or "—"],
+                ["framework", data.get("framework") or "—"],
+                ["target_cluster_id", data.get("target_cluster_id") or "—"],
+                ["status", data["status"]],
+                ["ci_injected", data.get("ci_injected")],
+            ],
+        )
+    except Exception as e:
+        print_error(str(e))
+        raise typer.Exit(1)
+
+
+@app.command("import")
+def import_app(
+    source_url: str = typer.Option(..., "--source-url", "-s", help="Public GitHub or GitLab URL to import"),
+    name: str = typer.Option(..., "--name", "-n", help="Application name"),
+    owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Owner (defaults to logged-in user)"),
+    framework: Optional[str] = typer.Option(None, "--framework", "-f", help="Framework: python, generic (auto-detected if omitted)"),
+    cluster_id: Optional[int] = typer.Option(None, "--cluster-id", "-c", help="Target cluster ID (optional)"),
+    raw: bool = typer.Option(False, "--raw", help="Import as-is, skip CI injection"),
+):
+    """Import a public external repo (GitHub/GitLab) into cnp-apps."""
+    resolved_owner = owner or load_config().get("user_email", "")
+    if not resolved_owner:
+        print_error("Could not determine owner. Pass --owner or log in first (cnp auth login).")
+        raise typer.Exit(1)
+
+    payload: dict = {"name": name, "owner": resolved_owner, "source_url": source_url, "raw": raw}
     if framework:
         payload["framework"] = framework
     if cluster_id is not None:
@@ -38,6 +81,7 @@ def import_app(
                 ["name", data["name"]],
                 ["owner", data["owner"]],
                 ["repo_url", data.get("repo_url") or "—"],
+                ["source_url", data.get("source_url") or "—"],
                 ["framework", data.get("framework") or "—"],
                 ["target_cluster_id", data.get("target_cluster_id") or "—"],
                 ["status", data["status"]],
