@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { appsApi } from '@/api/apps';
-import { clustersApi } from '@/api/clusters';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { Application, ResourceStatus } from '@/types';
 import { useAuthStore } from '@/store/auth';
@@ -83,16 +82,11 @@ function PodBar({ status, pods, maxPods }: { status: DisplayStatus; pods: number
   );
 }
 
-const EMPTY_IMPORT_FORM = { name: '', owner: '', repo_url: '', framework: '', target_cluster_id: '' };
 
 export const Resources = () => {
   const [filterStatus, setFilterStatus] = useState<DisplayStatus | ''>('');
   const [deleteModal, setDeleteModal] = useState<number | null>(null);
   const [syncError, setSyncError] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [importForm, setImportForm] = useState(EMPTY_IMPORT_FORM);
-  const [importError, setImportError] = useState<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -101,11 +95,6 @@ export const Resources = () => {
   const { data: apiApps = [], isLoading, refetch } = useQuery({
     queryKey: ['apps'],
     queryFn: () => appsApi.list(),
-  });
-
-  const { data: clusters = [] } = useQuery({
-    queryKey: ['clusters'],
-    queryFn: () => clustersApi.list(),
   });
 
   useEffect(() => {
@@ -139,36 +128,6 @@ export const Resources = () => {
     },
   });
 
-  const importMutation = useMutation({
-    mutationFn: appsApi.importApp,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['apps'] });
-      setShowImportModal(false);
-      setImportForm(EMPTY_IMPORT_FORM);
-      setImportError(null);
-    },
-    onError: (err: any) => {
-      setImportError(err?.response?.data?.detail ?? "Erreur lors de l'import");
-    },
-  });
-
-  const closeImportModal = () => {
-    setShowImportModal(false);
-    setImportForm(EMPTY_IMPORT_FORM);
-    setImportError(null);
-  };
-
-  const handleImport = (e: React.FormEvent) => {
-    e.preventDefault();
-    setImportError(null);
-    importMutation.mutate({
-      name: importForm.name,
-      owner: importForm.owner,
-      repo_url: importForm.repo_url,
-      framework: importForm.framework || undefined,
-      target_cluster_id: importForm.target_cluster_id ? Number(importForm.target_cluster_id) : undefined,
-    });
-  };
 
   return (
     <>
@@ -219,38 +178,10 @@ export const Resources = () => {
               {syncMutation.isPending ? 'Sync…' : 'Sync K8s'}
             </button>
           )}
-          <div
-            style={{ position: 'relative' }}
-            onMouseEnter={() => setShowDropdown(true)}
-            onMouseLeave={() => setShowDropdown(false)}
-          >
-            <button className="btn btn-primary">
-              <i className="ti ti-plus" aria-hidden="true" />
-              Nouvelle application
-              <i className="ti ti-chevron-down" aria-hidden="true" style={{ fontSize: 11, marginLeft: 2 }} />
-            </button>
-            {showDropdown && (
-              <div className="dropdown-menu">
-                <button
-                  className="dropdown-item"
-                  onClick={() => setShowDropdown(false)}
-                  disabled
-                  style={{ opacity: 0.45, cursor: 'default' }}
-                >
-                  <i className="ti ti-template" aria-hidden="true" />
-                  Scaffolder une app
-                  <span className="coming-badge" style={{ marginLeft: 'auto' }}>bientôt</span>
-                </button>
-                <button
-                  className="dropdown-item"
-                  onClick={() => { setShowDropdown(false); setImportForm(f => ({ ...f, owner: user?.email ?? '' })); setShowImportModal(true); }}
-                >
-                  <i className="ti ti-git-merge" aria-hidden="true" />
-                  Importer un repo
-                </button>
-              </div>
-            )}
-          </div>
+          <button className="btn btn-primary" onClick={() => navigate('/resources/new')}>
+            <i className="ti ti-plus" aria-hidden="true" />
+            Nouvelle application
+          </button>
         </div>
       </div>
 
@@ -299,116 +230,6 @@ export const Resources = () => {
         isLoading={deleteMutation.isPending}
       />
 
-      {showImportModal && (
-        <div className="modal-overlay" onClick={closeImportModal}>
-          <div className="modal-box" style={{ width: 460 }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(26,107,240,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <i className="ti ti-git-merge" style={{ color: 'var(--accent)', fontSize: 16 }} aria-hidden="true" />
-              </div>
-              <div>
-                <div className="modal-title" style={{ marginBottom: 0 }}>Importer une application</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>Connectez un repo GitLab existant à la plateforme CNP</div>
-              </div>
-            </div>
-
-            <div style={{ height: 1, background: 'var(--border)', margin: '16px 0' }} />
-
-            <form onSubmit={handleImport} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div className="form-group">
-                  <label className="form-label">Nom de l'application <span style={{ color: 'var(--red)' }}>*</span></label>
-                  <input
-                    className="form-input"
-                    placeholder="mon-service"
-                    value={importForm.name}
-                    onChange={e => setImportForm(f => ({ ...f, name: e.target.value }))}
-                    required
-                    autoFocus
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Responsable</label>
-                  <input
-                    className="form-input"
-                    value={importForm.owner}
-                    readOnly
-                    style={{ color: 'var(--text-muted)', cursor: 'default' }}
-                  />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">URL du repo GitLab <span style={{ color: 'var(--red)' }}>*</span></label>
-                <input
-                  className="form-input mono"
-                  placeholder="https://gitlab.example.com/cnp-apps/mon-service"
-                  value={importForm.repo_url}
-                  onChange={e => setImportForm(f => ({ ...f, repo_url: e.target.value }))}
-                  required
-                />
-                <span className="form-hint">Doit être accessible par le bot CNP</span>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div className="form-group">
-                  <label className="form-label">Framework</label>
-                  <select
-                    className="form-select"
-                    value={importForm.framework}
-                    onChange={e => setImportForm(f => ({ ...f, framework: e.target.value }))}
-                  >
-                    <option value="">Auto-détection</option>
-                    <option value="python">Python</option>
-                    <option value="generic">Generic</option>
-                  </select>
-                  <span className="form-hint">Laissez vide pour détection auto</span>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Cluster cible</label>
-                  <select
-                    className="form-select"
-                    value={importForm.target_cluster_id}
-                    onChange={e => setImportForm(f => ({ ...f, target_cluster_id: e.target.value }))}
-                  >
-                    <option value="">Aucun (à définir plus tard)</option>
-                    {clusters.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                  <span className="form-hint">Optionnel</span>
-                </div>
-              </div>
-
-              {importError && (
-                <div className="alert error">
-                  <i className="ti ti-alert-circle" aria-hidden="true" />
-                  {importError}
-                </div>
-              )}
-
-              <div className="modal-actions" style={{ marginTop: 4 }}>
-                <button type="button" className="btn btn-ghost" onClick={closeImportModal} disabled={importMutation.isPending}>
-                  Annuler
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={importMutation.isPending}>
-                  {importMutation.isPending ? (
-                    <>
-                      <i className="ti ti-loader-2" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
-                      Import en cours…
-                    </>
-                  ) : (
-                    <>
-                      <i className="ti ti-git-merge" aria-hidden="true" />
-                      Importer
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </>
   );
 };

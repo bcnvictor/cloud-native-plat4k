@@ -38,14 +38,6 @@ export const MyProjects = () => {
     <>
       <div className="topbar">
         <span className="topbar-title">Templates &amp; Repos</span>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-ghost" onClick={() => showToast('Coming soon')}>
-            <i className="ti ti-download" aria-hidden="true" />Importer un repo
-          </button>
-          <button className="btn btn-primary" onClick={() => showToast('Coming soon')}>
-            <i className="ti ti-plus" aria-hidden="true" />Scaffolder
-          </button>
-        </div>
       </div>
 
       <div className="page-content">
