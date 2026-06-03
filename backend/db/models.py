@@ -16,7 +16,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    role = Column(SQLEnum(UserRole), default=UserRole.VIEWER, nullable=False)
+    role = Column(SQLEnum(UserRole), default=UserRole.DEV, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -101,8 +101,9 @@ class Application(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    repo_url = Column(String, nullable=True)
+    repo_url = Column(String, nullable=True, unique=True)
     owner = Column(String, nullable=False)
+    target_cluster_id = Column(Integer, ForeignKey("cluster_connections.id", ondelete="SET NULL"), nullable=True)
     origin = Column(String, nullable=True)
     framework = Column(String, nullable=True)
     ci_injected = Column(Boolean, nullable=True)

@@ -5,7 +5,7 @@ import { gitlabApi, GitLabHealthcheck } from '@/api/gitlab';
 import { CloudType } from '@/types';
 import { SettingsLayout } from '@/components/SettingsLayout';
 
-const GITLAB_PAT_URL = 'https://gitlab.cri.epita.fr/-/user_settings/personal_access_tokens';
+const GITLAB_PAT_URL = 'https://gitlab.com/-/user_settings/personal_access_tokens';
 
 export const Credentials = () => {
   const queryClient = useQueryClient();

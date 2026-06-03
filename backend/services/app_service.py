@@ -60,13 +60,25 @@ class AppService:
         return await self._save_app(data, scaffolded_project_path=project_path)
 
     async def import_app(self, payload: ApplicationImportRequest) -> Application:
+        normalized_url = payload.repo_url.rstrip("/").removesuffix(".git")
+        result = await self.db.execute(
+            select(Application).where(
+                Application.repo_url.in_([normalized_url, normalized_url + ".git"])
+            )
+        )
+        if existing := result.scalars().first():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Repository already onboarded (app id={existing.id}, name='{existing.name}')",
+            )
+
         bot = _get_bot_client()
         if not bot:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="GITLAB_BOT_TOKEN not configured — cannot validate repo or inject CI",
             )
-        project_path = extract_project_path(payload.repo_url)
+        project_path = extract_project_path(normalized_url)
         try:
             await anyio.to_thread.run_sync(
                 lambda: bot.get_project(project_path), cancellable=True
@@ -89,9 +101,10 @@ class AppService:
         data = {
             "name": payload.name,
             "owner": payload.owner,
-            "repo_url": payload.repo_url,
+            "repo_url": normalized_url,
             "origin": "imported",
             "framework": framework or "generic",
+            "target_cluster_id": payload.target_cluster_id,
         }
         return await self._save_app(data)
 

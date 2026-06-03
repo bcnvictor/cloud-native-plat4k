@@ -31,6 +31,7 @@ class ResourceStatus(str, Enum):
 
 class UserRole(str, Enum):
     ADMIN = "admin"
+    DEV = "dev"
     VIEWER = "viewer"
 
 
@@ -173,6 +174,7 @@ class ApplicationImportRequest(BaseModel):
     owner: str
     repo_url: str
     framework: Optional[str] = None
+    target_cluster_id: Optional[int] = None
 
 
 class ApplicationUpdate(BaseModel):
@@ -187,6 +189,7 @@ class ApplicationUpdate(BaseModel):
 class ApplicationResponse(ApplicationBase):
     id: int
     status: ApplicationStatus
+    target_cluster_id: Optional[int] = None
     ci_injected: Optional[bool] = None
     last_pipeline_status: Optional[str] = None
     created_at: datetime

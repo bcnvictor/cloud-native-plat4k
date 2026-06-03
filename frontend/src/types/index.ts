@@ -1,7 +1,7 @@
 export type CloudType = 'aws' | 'gcp' | 'openstack';
 export type ResourceType = 'vm' | 'storage' | 'network';
 export type ResourceStatus = 'pending' | 'running' | 'stopped' | 'terminated' | 'error';
-export type UserRole = 'admin' | 'viewer';
+export type UserRole = 'admin' | 'dev' | 'viewer';
 
 export type ApplicationStatus = 'onboarding' | 'ready' | 'deployed';
 export type DeploymentStatus = 'pending' | 'running' | 'succeeded' | 'failed';

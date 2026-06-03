@@ -3,8 +3,8 @@
 ## Prérequis
 
 - Stack CNP démarrée (`./start.sh`)
-- `.env` contient `GITLAB_BOT_TOKEN`, `GITLAB_BOT_NAMESPACE=victor.biancini`, `CNP_API_BASE_URL`
-- Un repo de test vide créé sur GitLab : `https://gitlab.cri.epita.fr/victor.biancini/cnp-test`
+- `.env` contient `GITLAB_BOT_TOKEN`, `GITLAB_BOT_NAMESPACE=4k-cnp-2027`, `CNP_API_BASE_URL`
+- Un repo de test vide créé sur GitLab : `https://gitlab.com/4k-cnp-2027/cnp-apps/cnp-test`
 - Le bot a accès en écriture à ce repo
 
 ---
@@ -29,7 +29,7 @@ print(generate_gitlab_ci('mon-app', 42, 'python'))
 "
 ```
 
-Résultat attendu : un YAML avec `include: project: victor.biancini/cnp-ci-templates`.
+Résultat attendu : un YAML avec `include: project: 4k-cnp-2027/cnp-ci-modules`.
 
 ---
 
@@ -43,7 +43,7 @@ curl -s -X POST http://localhost:8000/api/v1/apps/ \
     "name": "repo-inexistant",
     "owner": "victor",
     "origin": "scaffolded",
-    "repo_url": "https://gitlab.cri.epita.fr/victor.biancini/ce-repo-nexiste-pas"
+    "repo_url": "https://gitlab.com/4k-cnp-2027/cnp-apps/ce-repo-nexiste-pas"
   }' | jq .
 ```
 
@@ -64,7 +64,7 @@ curl -s -X POST http://localhost:8000/api/v1/apps/ \
     "name": "cnp-test",
     "owner": "victor",
     "origin": "scaffolded",
-    "repo_url": "https://gitlab.cri.epita.fr/victor.biancini/cnp-test"
+    "repo_url": "https://gitlab.com/4k-cnp-2027/cnp-apps/cnp-test"
   }' | jq '{id, framework, ci_injected, status}'
 ```
 
@@ -102,7 +102,7 @@ curl -s -X POST http://localhost:8000/api/v1/apps/ \
     "name": "cnp-test-imported",
     "owner": "victor",
     "origin": "imported",
-    "repo_url": "https://gitlab.cri.epita.fr/victor.biancini/cnp-test"
+    "repo_url": "https://gitlab.com/4k-cnp-2027/cnp-apps/cnp-test"
   }' | jq '{id, framework, ci_injected, status}'
 ```
 
@@ -127,7 +127,7 @@ curl -s -X POST http://localhost:8000/api/v1/apps/ \
     "name": "cnp-test-python",
     "owner": "victor",
     "origin": "scaffolded",
-    "repo_url": "https://gitlab.cri.epita.fr/victor.biancini/cnp-test"
+    "repo_url": "https://gitlab.com/4k-cnp-2027/cnp-apps/cnp-test"
   }' | jq '{id, framework, ci_injected}'
 ```
 
