@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from backend.gitlab.client import GitLabClient
 from backend.ci.detector import extract_project_path
 from backend.ci.templates import generate_gitlab_ci
+from backend.gitlab.client import GitLabClient
 
 logger = logging.getLogger(__name__)
 
