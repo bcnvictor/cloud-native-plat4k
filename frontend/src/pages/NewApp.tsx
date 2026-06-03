@@ -5,10 +5,11 @@ import { appsApi, AppTemplate } from '@/api/apps';
 import { clustersApi } from '@/api/clusters';
 import { useAuthStore } from '@/store/auth';
 
-type Mode = 'scaffold' | 'import';
+type Mode = 'scaffold' | 'onboard' | 'import';
 
 const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1' };
-const EMPTY_IMPORT = { name: '', repo_url: '', framework: '', target_cluster_id: '' };
+const EMPTY_ONBOARD = { name: '', repo_url: '', framework: '', target_cluster_id: '' };
+const EMPTY_IMPORT = { name: '', source_url: '', framework: '', target_cluster_id: '', raw: false };
 
 export const NewApp = () => {
   const [mode, setMode] = useState<Mode>('scaffold');
@@ -19,6 +20,9 @@ export const NewApp = () => {
 
   const [scaffoldForm, setScaffoldForm] = useState(EMPTY_SCAFFOLD);
   const [scaffoldError, setScaffoldError] = useState<string | null>(null);
+
+  const [onboardForm, setOnboardForm] = useState(EMPTY_ONBOARD);
+  const [onboardError, setOnboardError] = useState<string | null>(null);
 
   const [importForm, setImportForm] = useState(EMPTY_IMPORT);
   const [importError, setImportError] = useState<string | null>(null);
@@ -43,6 +47,17 @@ export const NewApp = () => {
     },
     onError: (err: any) => {
       setScaffoldError(err?.response?.data?.detail ?? 'Erreur lors du scaffolding');
+    },
+  });
+
+  const onboardMutation = useMutation({
+    mutationFn: appsApi.onboardApp,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
+      navigate('/resources');
+    },
+    onError: (err: any) => {
+      setOnboardError(err?.response?.data?.detail ?? "Erreur lors de l'onboarding");
     },
   });
 
@@ -71,15 +86,28 @@ export const NewApp = () => {
     });
   };
 
+  const handleOnboard = (e: React.FormEvent) => {
+    e.preventDefault();
+    setOnboardError(null);
+    onboardMutation.mutate({
+      name: onboardForm.name,
+      owner,
+      repo_url: onboardForm.repo_url,
+      framework: onboardForm.framework || undefined,
+      target_cluster_id: onboardForm.target_cluster_id ? Number(onboardForm.target_cluster_id) : undefined,
+    });
+  };
+
   const handleImport = (e: React.FormEvent) => {
     e.preventDefault();
     setImportError(null);
     importMutation.mutate({
       name: importForm.name,
       owner,
-      repo_url: importForm.repo_url,
+      source_url: importForm.source_url,
       framework: importForm.framework || undefined,
       target_cluster_id: importForm.target_cluster_id ? Number(importForm.target_cluster_id) : undefined,
+      raw: importForm.raw,
     });
   };
 
@@ -104,7 +132,7 @@ export const NewApp = () => {
         <div style={{ width: '100%', maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* Mode selector */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
             <ModeCard
               icon="ti-template"
               label="Scaffolder une app"
@@ -114,8 +142,15 @@ export const NewApp = () => {
             />
             <ModeCard
               icon="ti-git-merge"
+              label="Onboarder un repo"
+              desc="Connecter un repo GitLab interne existant"
+              active={mode === 'onboard'}
+              onClick={() => { setMode('onboard'); setOnboardError(null); }}
+            />
+            <ModeCard
+              icon="ti-cloud-download"
               label="Importer un repo"
-              desc="Connecter un repo GitLab existant"
+              desc="Rapatrier un repo public GitHub / GitLab"
               active={mode === 'import'}
               onClick={() => { setMode('import'); setImportError(null); }}
             />
@@ -227,6 +262,99 @@ export const NewApp = () => {
                   </button>
                 </div>
               </form>
+            ) : mode === 'onboard' ? (
+              <form onSubmit={handleOnboard} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div className="form-group">
+                    <label className="form-label">Nom de l'application <span style={{ color: 'var(--red)' }}>*</span></label>
+                    <input
+                      className="form-input"
+                      placeholder="mon-service"
+                      value={onboardForm.name}
+                      onChange={e => setOnboardForm(f => ({ ...f, name: e.target.value }))}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Responsable</label>
+                    <input
+                      className="form-input"
+                      value={owner}
+                      readOnly
+                      style={{ color: 'var(--text-muted)', cursor: 'default' }}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">URL du repo GitLab <span style={{ color: 'var(--red)' }}>*</span></label>
+                  <input
+                    className="form-input mono"
+                    placeholder="https://gitlab.example.com/cnp-apps/mon-service"
+                    value={onboardForm.repo_url}
+                    onChange={e => setOnboardForm(f => ({ ...f, repo_url: e.target.value }))}
+                    required
+                  />
+                  <span className="form-hint">Doit être accessible par le bot CNP</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div className="form-group">
+                    <label className="form-label">Framework</label>
+                    <select
+                      className="form-select"
+                      value={onboardForm.framework}
+                      onChange={e => setOnboardForm(f => ({ ...f, framework: e.target.value }))}
+                    >
+                      <option value="">Auto-détection</option>
+                      <option value="python">Python</option>
+                      <option value="generic">Generic</option>
+                    </select>
+                    <span className="form-hint">Laissez vide pour détection auto</span>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Cluster cible</label>
+                    <select
+                      className="form-select"
+                      value={onboardForm.target_cluster_id}
+                      onChange={e => setOnboardForm(f => ({ ...f, target_cluster_id: e.target.value }))}
+                    >
+                      <option value="">Aucun (à définir plus tard)</option>
+                      {clusters.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <span className="form-hint">Optionnel</span>
+                  </div>
+                </div>
+
+                {onboardError && (
+                  <div className="alert error">
+                    <i className="ti ti-alert-circle" aria-hidden="true" />
+                    {onboardError}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+                  <button type="button" className="btn btn-ghost" onClick={() => navigate('/resources')} disabled={onboardMutation.isPending}>
+                    Annuler
+                  </button>
+                  <button type="submit" className="btn btn-primary" disabled={onboardMutation.isPending}>
+                    {onboardMutation.isPending ? (
+                      <>
+                        <i className="ti ti-loader-2" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
+                        Onboarding…
+                      </>
+                    ) : (
+                      <>
+                        <i className="ti ti-git-merge" aria-hidden="true" />
+                        Onboarder
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             ) : (
               <form onSubmit={handleImport} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -253,16 +381,27 @@ export const NewApp = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">URL du repo GitLab <span style={{ color: 'var(--red)' }}>*</span></label>
+                  <label className="form-label">URL source publique <span style={{ color: 'var(--red)' }}>*</span></label>
                   <input
                     className="form-input mono"
-                    placeholder="https://gitlab.example.com/cnp-apps/mon-service"
-                    value={importForm.repo_url}
-                    onChange={e => setImportForm(f => ({ ...f, repo_url: e.target.value }))}
+                    placeholder="https://github.com/tiangolo/fastapi"
+                    value={importForm.source_url}
+                    onChange={e => setImportForm(f => ({ ...f, source_url: e.target.value }))}
                     required
                   />
-                  <span className="form-hint">Doit être accessible par le bot CNP</span>
+                  <span className="form-hint">GitHub ou GitLab public — le repo sera cloné dans cnp-apps</span>
                 </div>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={importForm.raw}
+                    onChange={e => setImportForm(f => ({ ...f, raw: e.target.checked }))}
+                  />
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    Importer tel quel <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>(sans injection CI)</span>
+                  </span>
+                </label>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <div className="form-group">
@@ -313,7 +452,7 @@ export const NewApp = () => {
                       </>
                     ) : (
                       <>
-                        <i className="ti ti-git-merge" aria-hidden="true" />
+                        <i className="ti ti-cloud-download" aria-hidden="true" />
                         Importer
                       </>
                     )}
