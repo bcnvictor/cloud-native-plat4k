@@ -1,6 +1,6 @@
 """Import externe : rename origin imported->onboarded, add source_url
 
-Revision ID: 0008
+Revision ID: 00114ca084ff
 Revises: f2a8c4e1b703
 Create Date: 2026-06-03 00:00:00.000000
 
@@ -8,7 +8,7 @@ Create Date: 2026-06-03 00:00:00.000000
 from alembic import op
 import sqlalchemy as sa
 
-revision = '0008'
+revision = '00114ca084ff'
 down_revision = 'f2a8c4e1b703'
 branch_labels = None
 depends_on = None
