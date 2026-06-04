@@ -2,9 +2,17 @@ import logging
 from functools import partial
 
 import anyio
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from fastapi import HTTPException, status
+from shared.models import (
+    ApplicationCreate,
+    ApplicationExternalImportRequest,
+    ApplicationOnboardRequest,
+    ApplicationScaffoldRequest,
+    ApplicationStatus,
+    ApplicationUpdate,
+)
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import Application, ClusterConnection
 from backend.k8s.client import k8s_client
@@ -109,8 +117,8 @@ class AppService:
         return await self._save_app(data)
 
     async def external_import_app(self, payload: ApplicationExternalImportRequest) -> Application:
-        from backend.gitlab.importer import import_external_repo
         from backend.core.config import settings
+        from backend.gitlab.importer import import_external_repo
 
         bot = _get_bot_client()
         if not bot:

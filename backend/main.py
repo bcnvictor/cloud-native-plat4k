@@ -5,9 +5,23 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
+from backend.api.routes import (
+    apps,
+    audit,
+    auth,
+    clusters,
+    credentials,
+    deployments,
+    gitlab,
+    health,
+    monitoring,
+    resources,
+    users,
+    webhooks,
+)
 from backend.core.config import settings
 from backend.api.routes import auth, users, resources, credentials, audit, health
 from backend.api.routes import gitlab

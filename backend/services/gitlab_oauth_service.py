@@ -1,5 +1,6 @@
 from typing import Dict
 from urllib.parse import urlencode
+
 import httpx
 
 from backend.core.config import settings

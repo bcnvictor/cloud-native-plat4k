@@ -1,9 +1,11 @@
 """
 User related schemas.
 """
-from shared.models import UserBase, UserResponse, UserRole
-from pydantic import BaseModel
 from typing import Optional
+
+from pydantic import BaseModel
+from shared.models import UserBase, UserRole
+
 
 class UserCreate(UserBase):
     password: str
