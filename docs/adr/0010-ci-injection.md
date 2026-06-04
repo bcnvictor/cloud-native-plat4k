@@ -16,19 +16,20 @@ Deux types d'apps existent :
 
 ## Décision
 
-### Architecture : `cnp-ci-templates` + include minimal
+### Architecture : `cnp-ci-modules` + include minimal
 
-Nous avons décidé d'héberger la logique CI dans un repo dédié `cnp-ci-templates` (actuellement `victor.biancini/cnp-ci-templates` sur `gitlab.cri.epita.fr`), et d'injecter dans chaque repo applicatif un `.gitlab-ci.yml` **minimal** qui délègue via le mécanisme `include: project:` de GitLab CI.
+Nous avons décidé d'héberger la logique CI dans un repo dédié `cnp-ci-modules` (actuellement `4k-cnp-2027/cnp-ci-modules` sur `gitlab.com`), et d'injecter dans chaque repo applicatif un `.gitlab-ci.yml` **minimal** qui délègue via le mécanisme `include: project:` de GitLab CI.
 
-Le fichier injecté ne contient que des variables et des includes — toute la logique vit dans `cnp-ci-templates`. Cela permet de mettre à jour la baseline CI sans toucher aux repos applicatifs.
+Le fichier injecté ne contient que des variables et des includes — toute la logique vit dans `cnp-ci-modules`. Cela permet de mettre à jour la baseline CI sans toucher aux repos applicatifs.
 
-Structure de `cnp-ci-templates` :
+Structure de `cnp-ci-modules` :
 ```
 base/
   pipeline.yml      ← baseline obligatoire (hadolint, gitleaks, trivy, docker-build, cnp-callback)
 frameworks/
   python.yml        ← jobs spécifiques Python
   generic.yml       ← placeholder valide, aucun job supplémentaire
+  ...
 ```
 
 ### Stratégie d'injection selon l'origin
@@ -72,12 +73,12 @@ Le résultat de l'injection est exposé dans `ApplicationResponse.ci_injected` (
 
 Positif :
 - Baseline de sécurité garantie sur tous les repos CNP sans intervention manuelle
-- Mise à jour de la CI centralisée dans `cnp-ci-templates`, transparente pour les apps
+- Mise à jour de la CI centralisée dans `cnp-ci-modules`, transparente pour les apps
 - Détection de framework extensible (ajouter un fichier dans `frameworks/` suffit)
 - Comportement CI cohérent entre les repos (un seul pipeline par événement)
 
 Négatif / Dette :
-- **Token PAT personnel** utilisé faute de Group Access Token sur `gitlab.cri.epita.fr` — à migrer lors du changement d'instance GitLab (voir 4K-41)
+- **Token PAT personnel** utilisé faute de Group Access Token sur `gitlab.com` free tier — à migrer vers un Group Access Token si upgrade vers Premium ou self-hosted (voir 4K-41)
 - **Callback CNP** (`cnp-callback` job) non fonctionnel en local (CNP non accessible depuis les runners GitLab) — `allow_failure: true` posé en attendant le déploiement cloud
 - **Authentification callback** manuelle pour la démo (variable `CNP_CALLBACK_TOKEN` à poser à la main) — automatisation prévue dans 4K-41
 - L'endpoint `POST /api/v1/apps/{id}/ci-status` n'existe pas encore

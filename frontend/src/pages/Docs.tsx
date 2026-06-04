@@ -135,7 +135,7 @@ function PageContent({
         Le scaffolding génère un projet prêt-à-déployer depuis un template officiel CNP, avec Dockerfile, manifests Kubernetes et pipeline CI/CD préconfigurés.
       </p>
       <h2 className="doc-h2">Via le CLI</h2>
-      <CodeBlock>{`# Lister les templates disponibles\ncnp template list\n\n# Scaffolder une app FastAPI\ncnp app create --template fastapi --name mon-service\n\n# Cloner le repo généré\ngit clone gitlab.cri.epita.fr/votre-namespace/mon-service`}</CodeBlock>
+      <CodeBlock>{`# Lister les templates disponibles\ncnp template list\n\n# Scaffolder une app FastAPI\ncnp app create --template fastapi --name mon-service\n\n# Cloner le repo généré\ngit clone gitlab.com/votre-namespace/mon-service`}</CodeBlock>
       <Callout type="tip">CNP crée un repo GitLab dans votre namespace et pousse le code généré. Vous pouvez cloner et commencer à coder immédiatement.</Callout>
       <div className="doc-nav-footer">
         <NavBtn to="premiers-pas" label="Premiers pas" dir="prev" onClick={nav} />
@@ -190,7 +190,7 @@ function PageContent({
         L'API CNP expose les ressources de la plateforme via HTTP/JSON. Authentification via Bearer token ou header X-API-Key.
       </p>
       <h2 className="doc-h2">Base URL</h2>
-      <CodeBlock>https://api.cnp.epita.fr/v1</CodeBlock>
+      <CodeBlock>https://api.cnp.example.com/v1</CodeBlock>
       <h2 className="doc-h2">Endpoints principaux</h2>
       <table className="doc-table">
         <thead>
@@ -261,7 +261,7 @@ function PageContent({
         ['Comment réduire les coûts quand je n\'utilise pas le cluster ?', 'Utilisez az aks stop --name cnp-aks-sweden --resource-group cnp-rg pour arrêter le cluster. Le démarrage prend 3–5 minutes avec az aks start.'],
         ['Puis-je déployer sur plusieurs clusters en même temps ?', 'Le multi-cluster est prévu pour la Phase 2. En Phase 1, chaque application est associée à un seul cluster cible.'],
         ['Comment ajouter des variables d\'environnement secrètes ?', 'Les secrets sont gérés via Kubernetes Secrets. Depuis la page de votre application, Configuration > Variables d\'environnement, les valeurs sont chiffrées au repos.'],
-        ['Mon image Docker ne se build pas dans la CI GitLab.', 'Vérifiez que votre Dockerfile est à la racine du repo et que le runner GitLab a accès au registry registry.cri.epita.fr.'],
+        ['Mon image Docker ne se build pas dans la CI GitLab.', 'Vérifiez que votre Dockerfile est à la racine du repo et que le runner GitLab a accès au registry registry.gitlab.com.'],
       ].map(([q, a], i) => (
         <div key={i} className="faq-item" onClick={() => setOpenFaq(openFaq === i ? null : i)}>
           <div className="faq-q">

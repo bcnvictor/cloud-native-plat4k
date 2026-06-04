@@ -2,10 +2,18 @@
 SQLAlchemy models for the backend database.
 """
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum, JSON
+from shared.models import (
+    ApplicationStatus,
+    CloudType,
+    DeploymentStatus,
+    ResourceStatus,
+    ResourceType,
+    UserRole,
+)
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
-from shared.models import CloudType, ResourceType, ResourceStatus, UserRole, ApplicationStatus, DeploymentStatus
 
 Base = declarative_base()
 
@@ -16,7 +24,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    role = Column(SQLEnum(UserRole), default=UserRole.VIEWER, nullable=False)
+    role = Column(SQLEnum(UserRole), default=UserRole.DEV, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -101,9 +109,11 @@ class Application(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    repo_url = Column(String, nullable=True)
+    repo_url = Column(String, nullable=True, unique=True)
     owner = Column(String, nullable=False)
+    target_cluster_id = Column(Integer, ForeignKey("cluster_connections.id", ondelete="SET NULL"), nullable=True)
     origin = Column(String, nullable=True)
+    source_url = Column(String, nullable=True)
     framework = Column(String, nullable=True)
     ci_injected = Column(Boolean, nullable=True)
     last_pipeline_status = Column(String, nullable=True)

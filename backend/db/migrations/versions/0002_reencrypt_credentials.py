@@ -5,13 +5,12 @@ Revises: 0001
 Create Date: 2026-05-12 00:00:00.000000
 
 """
-import os
 import base64
-import json
+import os
 
 from alembic import op
-from sqlalchemy import text
 from cryptography.fernet import Fernet, InvalidToken
+from sqlalchemy import text
 
 revision = '0002'
 down_revision = '0001'

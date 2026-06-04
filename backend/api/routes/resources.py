@@ -1,12 +1,19 @@
-from fastapi import APIRouter, Depends, BackgroundTasks, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
-from backend.db.session import get_db
+from backend.api.deps import get_current_user, require_role
 from backend.db.models import User
-from shared.models import ResourceResponse, ResourceCreate, CloudType, ResourceType, ResourceStatus, UserRole
-from backend.api.deps import get_current_user, require_role, log_audit
+from backend.db.session import get_db
 from backend.services.resource_service import ResourceService
+from fastapi import APIRouter, Depends, Request
+from shared.models import (
+    CloudType,
+    ResourceCreate,
+    ResourceResponse,
+    ResourceStatus,
+    ResourceType,
+    UserRole,
+)
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

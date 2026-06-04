@@ -2,12 +2,14 @@
 Security module for hashing passwords/API keys and generating JWTs.
 """
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any, Union
+
 from jose import jwt
 from passlib.context import CryptContext
+
 from backend.core.config import settings
-import hashlib
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

@@ -1,6 +1,6 @@
-import gitlab
-from gitlab.exceptions import GitlabAuthenticationError, GitlabGetError, GitlabCreateError
+from gitlab.exceptions import GitlabAuthenticationError, GitlabCreateError, GitlabGetError
 
+import gitlab
 from backend.core.config import settings
 
 
@@ -40,15 +40,21 @@ class GitLabClient:
             return {"status": "error", "detail": f"Unexpected error: {e}"}
 
     def get_namespace_id(self) -> int | None:
-        """Resolve namespace to its numeric ID (group or user)."""
+        """Resolve namespace to its numeric ID.
+
+        Groups and subgroups are resolved via the groups API (supports full paths
+        with slashes). Personal namespaces fall back to the namespaces search API.
+        """
         try:
-            groups = self._gl.groups.list(search=self.namespace)
-            for g in groups:
-                if g.full_path == self.namespace:
-                    return g.id
-            users = self._gl.users.list(username=self.namespace)
-            if users:
-                return users[0].id
+            group = self._gl.groups.get(self.namespace)
+            return group.id
+        except Exception:
+            pass
+        try:
+            namespaces = self._gl.namespaces.list(search=self.namespace, all=True)
+            for ns in namespaces:
+                if ns.full_path == self.namespace:
+                    return ns.id
         except Exception:
             pass
         return None
@@ -67,9 +73,27 @@ class GitLabClient:
             for p in projects
         ]
 
+    def list_namespace_projects(self, namespace_path: str) -> list[dict]:
+        """List projects directly under a group/subgroup path."""
+        group = self._gl.groups.get(namespace_path)
+        projects = group.projects.list(all=True, include_subgroups=False)
+        return [
+            {
+                "name": p.name,
+                "path": p.path,
+                "web_url": p.web_url,
+            }
+            for p in projects
+        ]
+
     def get_project(self, path_with_namespace: str):
         """Get a GitLab project by its full path (e.g. 'namespace/project')."""
         return self._gl.projects.get(path_with_namespace)
+
+    def get_default_branch(self, project_path: str) -> str:
+        """Return the default branch name of the project (falls back to 'main')."""
+        project = self.get_project(project_path)
+        return getattr(project, "default_branch", None) or "main"
 
     def list_tree(self, project_path: str, path: str = "", ref: str = "HEAD") -> list[dict]:
         """List files/dirs at the root (or given path) of a project."""
@@ -175,3 +199,74 @@ class GitLabClient:
             "description": description,
         })
         return {"iid": mr.iid, "web_url": mr.web_url}
+    
+    @staticmethod
+    def _slugify(name: str) -> str:
+        import re
+        slug = name.lower()
+        slug = re.sub(r"[^a-z0-9_.-]", "-", slug)
+        slug = re.sub(r"-{2,}", "-", slug)
+        slug = slug.strip("-_.")
+        return slug or "app"
+
+    def delete_project(self, project_path: str) -> None:
+        """Delete a GitLab project by its full path. No-op if not found."""
+        try:
+            project = self.get_project(project_path)
+            project.delete()
+        except GitlabGetError:
+            pass
+
+    def push_files_batch(
+        self,
+        project_path: str,
+        files: list[dict],
+        commit_message: str,
+        branch: str = "main",
+    ) -> None:
+        """Push multiple files in a single commit using the GitLab Commits API.
+
+        Each entry in `files` must have {"file_path": str, "content": str}.
+        Uses "create" action — intended for repos with no prior commits.
+        """
+        project = self.get_project(project_path)
+        actions = [
+            {"action": "create", "file_path": f["file_path"], "content": f["content"]}
+            for f in files
+        ]
+        project.commits.create({
+            "branch": branch,
+            "commit_message": commit_message,
+            "actions": actions,
+        })
+
+    def create_project(self, name: str, namespace_id: int, initialize_with_readme: bool = False) -> dict:
+        """Creates a new GitLab project in the specified namespace."""
+        project = self._gl.projects.create({
+            "name": name,
+            "path": self._slugify(name),
+            "namespace_id": namespace_id,
+            "initialize_with_readme": initialize_with_readme,
+            "default_branch": "main",
+            "visibility": "private",
+        })
+        return {
+            "id": project.id,
+            "name": project.name,
+            "path_with_namespace": project.path_with_namespace,
+            "web_url": project.web_url,
+        }
+
+    def read_file(self, project_path: str, file_path: str, ref: str = "main") -> str:
+        """Reads the contents of a file from the repository (decoded in UTF-8)."""
+        project = self.get_project(project_path)
+        raw = project.files.raw(file_path=file_path, ref=ref)
+        if isinstance(raw, bytes):
+            return raw.decode("utf-8")
+        return raw
+
+    def list_tree_recursive(self, project_path: str, ref: str = "main") -> list[dict]:
+        """List all files in the repo recursively."""
+        project = self.get_project(project_path)
+        items = project.repository_tree(ref=ref, recursive=True, all=True)
+        return [{"name": i["name"], "type": i["type"], "path": i["path"]} for i in items]

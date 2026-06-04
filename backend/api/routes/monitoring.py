@@ -1,6 +1,7 @@
 from typing import Optional
+
+from backend.services.monitoring_service import get_logs, get_metrics
 from fastapi import APIRouter, HTTPException, Query
-from backend.services.monitoring_service import get_metrics, get_logs
 
 router = APIRouter()
 

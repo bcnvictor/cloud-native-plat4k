@@ -1,15 +1,15 @@
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from typing import List
 
-from backend.db.session import get_db
-from backend.db.models import User
-from backend.api.schemas.user import UserCreate, UserUpdate
-from shared.models import UserResponse, UserRole
 from backend.api.deps import require_role
+from backend.api.schemas.user import UserCreate, UserUpdate
+from backend.core.exceptions import BadRequestException, NotFoundException
 from backend.core.security import get_password_hash
-from backend.core.exceptions import NotFoundException, BadRequestException
+from backend.db.models import User
+from backend.db.session import get_db
+from fastapi import APIRouter, Depends, Request
+from shared.models import UserResponse, UserRole
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -55,4 +55,24 @@ async def get_user(
     user = result.scalar_one_or_none()
     if not user:
         raise NotFoundException("User not found")
+    return user
+
+@router.patch("/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: int,
+    payload: UserUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN))
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise NotFoundException("User not found")
+    if payload.role is not None:
+        user.role = payload.role
+    if payload.is_active is not None:
+        user.is_active = payload.is_active
+    await db.commit()
+    await db.refresh(user)
     return user

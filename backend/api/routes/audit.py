@@ -1,12 +1,12 @@
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
-from backend.db.session import get_db
-from backend.db.models import User
-from shared.models import AuditLogResponse, UserRole
 from backend.api.deps import require_role
+from backend.db.models import User
+from backend.db.session import get_db
 from backend.services.audit_service import AuditService
+from fastapi import APIRouter, Depends, Request
+from shared.models import AuditLogResponse, UserRole
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
