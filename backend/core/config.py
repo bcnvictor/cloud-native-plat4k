@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     KUBECONFIG_PATH: Optional[str] = None
     K8S_TARGET_NAMESPACE: str = "default"
     K8S_IMAGE_PULL_SECRET: Optional[str] = None
+    CLUSTER_HEALTH_INTERVAL: int = 300      # secondes entre deux sondes
+    KUBECONFIG_DIR: Optional[str] = None    # répertoire de kubeconfigs, optionnel
 
     # Logging
     LOG_LEVEL: str = "INFO"
