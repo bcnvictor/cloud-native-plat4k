@@ -1,24 +1,23 @@
-from fastapi import APIRouter, Depends, Response, Request, HTTPException
-from datetime import datetime, timezone, timedelta
-from fastapi.security import OAuth2PasswordRequestForm
+import secrets
+from datetime import datetime, timedelta, timezone
+from typing import List
+from urllib.parse import urlencode
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-
+from backend.api.deps import get_current_user
+from backend.api.schemas.auth import LoginPayload, RefreshTokenPayload, Token
 from backend.core.config import settings
 from backend.core.exceptions import UnauthorizedException
+from backend.db.models import APIKey, User
 from backend.db.session import get_db
 from backend.services.auth_service import AuthService
-from backend.services.gitlab_oauth_service import GitLabOAuthService
 from backend.services.credential_service import _build_fernet
-from backend.api.schemas.auth import LoginPayload, Token, RefreshTokenPayload
-from backend.api.deps import get_current_user
-from backend.db.models import User, APIKey
-from shared.models import APIKeyCreateResponse, APIKeyResponse
-from typing import List
+from backend.services.gitlab_oauth_service import GitLabOAuthService
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-import secrets
-from urllib.parse import urlencode, urlparse
+from fastapi.security import OAuth2PasswordRequestForm
+from shared.models import APIKeyCreateResponse, APIKeyResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -57,8 +56,8 @@ async def refresh_token(
     if not refresh_token:
         raise UnauthorizedException("No refresh token found")
 
-    from jose import jwt, JWTError
     from backend.core.config import settings
+    from jose import JWTError, jwt
     try:
         payload = jwt.decode(refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id = payload.get("sub")
@@ -166,7 +165,8 @@ async def gitlab_callback(request: Request, response: Response, db: AsyncSession
     user = result.scalar_one_or_none()
     if not user:
         from backend.core.security import get_password_hash
-        new_user = User(email=email, hashed_password=get_password_hash(secrets.token_urlsafe(24)))
+        from shared.models import UserRole
+        new_user = User(email=email, hashed_password=get_password_hash(secrets.token_urlsafe(24)), role=UserRole.DEV)
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)

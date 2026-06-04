@@ -1,13 +1,13 @@
 import hmac
 import logging
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-
 from backend.api.deps import get_db
 from backend.core.config import settings
 from backend.db.models import Application
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from shared.models import ApplicationStatus
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,9 @@ async def gitlab_pipeline_webhook(
         return {"ignored": True}
 
     app.last_pipeline_status = pipeline_status
+    if pipeline_status == "success" and app.status == ApplicationStatus.ONBOARDING:
+        app.status = ApplicationStatus.READY
+        logger.info("App %s promoted to READY after first successful pipeline", app.id)
     await db.commit()
     logger.info("Pipeline status updated: app=%s status=%s", app.id, pipeline_status)
     return {"app_id": app.id, "last_pipeline_status": pipeline_status}

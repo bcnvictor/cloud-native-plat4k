@@ -1,15 +1,15 @@
 import asyncio
+import os
+
+# Add backend directory to sys.path to import modules
+import sys
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from alembic import context
-
-# Add backend directory to sys.path to import modules
-import sys
-import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 
 from backend.core.config import settings

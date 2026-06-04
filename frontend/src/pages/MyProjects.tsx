@@ -38,14 +38,6 @@ export const MyProjects = () => {
     <>
       <div className="topbar">
         <span className="topbar-title">Templates &amp; Repos</span>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-ghost" onClick={() => showToast('Coming soon')}>
-            <i className="ti ti-download" aria-hidden="true" />Importer un repo
-          </button>
-          <button className="btn btn-primary" onClick={() => showToast('Coming soon')}>
-            <i className="ti ti-plus" aria-hidden="true" />Scaffolder
-          </button>
-        </div>
       </div>
 
       <div className="page-content">
@@ -114,7 +106,7 @@ export const MyProjects = () => {
           ) : (
             <div className="repos-list">
               {projects.map((p: GitLabProject) => {
-                const lang = (p as any).language ?? 'Python';
+                const lang = p.language ?? 'Python';
                 const color = LANG_COLORS[lang] ?? '#94A3B8';
                 return (
                   <div key={p.id} className="repo-row">

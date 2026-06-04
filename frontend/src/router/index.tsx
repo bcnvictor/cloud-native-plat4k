@@ -6,6 +6,7 @@ import { OAuthCallback } from '@/pages/OAuthCallback';
 import { Dashboard } from '@/pages/Dashboard';
 import { Resources } from '@/pages/Resources';
 import { ResourceDetail } from '@/pages/ResourceDetail';
+import { NewApp } from '@/pages/NewApp';
 import { Credentials } from '@/pages/Credentials';
 import { ApiKeys } from '@/pages/ApiKeys';
 import { Users } from '@/pages/admin/Users';
@@ -32,6 +33,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Resources /> },
           { path: 'dashboard', element: <Dashboard /> },
           { path: 'resources', element: <Resources /> },
+          { path: 'resources/new', element: <NewApp /> },
           { path: 'resources/:id', element: <ResourceDetail /> },
           { path: 'credentials', element: <Credentials /> },
           { path: 'apikeys', element: <ApiKeys /> },

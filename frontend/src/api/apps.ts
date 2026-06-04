@@ -1,6 +1,12 @@
 import { api } from './client';
 import { Application, Deployment } from '@/types';
 
+export interface AppTemplate {
+  name: string;
+  path: string;
+  web_url: string;
+}
+
 export const appsApi = {
   list: async () => {
     const { data } = await api.get<Application[]>('/apps/');
@@ -29,6 +35,26 @@ export const appsApi = {
 
   syncFromK8s: async () => {
     const { data } = await api.post<Application[]>('/apps/sync');
+    return data;
+  },
+
+  onboardApp: async (payload: { name: string; owner: string; repo_url: string; framework?: string; target_cluster_id?: number }) => {
+    const { data } = await api.post<Application>('/apps/onboard', payload);
+    return data;
+  },
+
+  importApp: async (payload: { name: string; owner: string; source_url: string; framework?: string; target_cluster_id?: number; raw?: boolean }) => {
+    const { data } = await api.post<Application>('/apps/import', payload);
+    return data;
+  },
+
+  listTemplates: async (): Promise<AppTemplate[]> => {
+    const { data } = await api.get<AppTemplate[]>('/apps/templates');
+    return data;
+  },
+
+  scaffoldApp: async (payload: { name: string; owner: string; template: string; scaffolding?: { port: number; replicas: number } }) => {
+    const { data } = await api.post<Application>('/apps/scaffold', payload);
     return data;
   },
 };

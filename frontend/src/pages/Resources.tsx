@@ -16,7 +16,7 @@ interface MockApp {
   name: string;
   desc: string;
   env: string;
-  source: 'imported' | 'scaffolded';
+  source: 'scaffolded' | 'onboarded' | 'imported';
   status: DisplayStatus;
   repoPath: string;
   commitHash: string;
@@ -26,22 +26,25 @@ interface MockApp {
 }
 
 const MOCK_APPS: MockApp[] = [
-  { id: -1, name: 'api-gateway', desc: 'Reverse proxy & authentication layer', env: 'production', source: 'scaffolded', status: 'running', repoPath: 'gitlab.cri.epita.fr/…/api-gateway', commitHash: 'a3f8c12', pods: 3, maxPods: 3, created_at: new Date(Date.now() - 3 * 60 * 1000).toISOString() },
-  { id: -2, name: 'user-service', desc: 'User management & profiles', env: 'production', source: 'scaffolded', status: 'pending', repoPath: 'gitlab.cri.epita.fr/…/user-service', commitHash: 'e9d5c76', pods: 1, maxPods: 2, created_at: new Date(Date.now() - 30 * 1000).toISOString() },
-  { id: -3, name: 'payment-worker', desc: 'Async payment processing', env: 'production', source: 'imported', status: 'error', repoPath: 'gitlab.cri.epita.fr/…/payment-worker', commitHash: 'h6a2z43', pods: 0, maxPods: 2, created_at: new Date(Date.now() - 12 * 60 * 1000).toISOString() },
-  { id: -4, name: 'frontend-app', desc: 'Main customer-facing interface', env: 'production', source: 'scaffolded', status: 'running', repoPath: 'gitlab.cri.epita.fr/…/frontend-app', commitHash: 'j4y0x21', pods: 2, maxPods: 2, created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
-  { id: -5, name: 'notif-service', desc: 'Email & push notifications', env: 'staging', source: 'imported', status: 'stopped', repoPath: 'gitlab.cri.epita.fr/…/notif-service', commitHash: 'l2w8v09', pods: 0, maxPods: 0, created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() },
+  { id: -1, name: 'api-gateway', desc: 'Reverse proxy & authentication layer', env: 'production', source: 'scaffolded', status: 'running', repoPath: 'gitlab.com/…/api-gateway', commitHash: 'a3f8c12', pods: 3, maxPods: 3, created_at: new Date(Date.now() - 3 * 60 * 1000).toISOString() },
+  { id: -2, name: 'user-service', desc: 'User management & profiles', env: 'production', source: 'scaffolded', status: 'pending', repoPath: 'gitlab.com/…/user-service', commitHash: 'e9d5c76', pods: 1, maxPods: 2, created_at: new Date(Date.now() - 30 * 1000).toISOString() },
+  { id: -3, name: 'payment-worker', desc: 'Async payment processing', env: 'production', source: 'onboarded', status: 'error', repoPath: 'gitlab.com/…/payment-worker', commitHash: 'h6a2z43', pods: 0, maxPods: 2, created_at: new Date(Date.now() - 12 * 60 * 1000).toISOString() },
+  { id: -4, name: 'frontend-app', desc: 'Main customer-facing interface', env: 'production', source: 'scaffolded', status: 'running', repoPath: 'gitlab.com/…/frontend-app', commitHash: 'j4y0x21', pods: 2, maxPods: 2, created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+  { id: -5, name: 'notif-service', desc: 'Email & push notifications', env: 'staging', source: 'imported', status: 'stopped', repoPath: 'github.com/…/notif-service', commitHash: 'l2w8v09', pods: 0, maxPods: 0, created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() },
 ];
 
-const SCAFFOLDED_ORIGINS = new Set(['gitlab', 'github', 'template', 'scaffold']);
+function originToSource(origin: string | undefined): 'scaffolded' | 'onboarded' | 'imported' {
+  if (origin === 'scaffolded') return 'scaffolded';
+  if (origin === 'onboarded') return 'onboarded';
+  return 'imported';
+}
 
 function appToDisplay(app: Application): MockApp {
   const pods = app.status === 'deployed' ? 2 : app.status === 'onboarding' ? 1 : 0;
   const repoPath = app.repo_url
     ? app.repo_url.replace(/^https?:\/\//, '').replace(/\.git$/, '')
-    : `gitlab.cri.epita.fr/…/${app.name}`;
-  const source: 'imported' | 'scaffolded' =
-    app.origin && SCAFFOLDED_ORIGINS.has(app.origin) ? 'scaffolded' : 'imported';
+    : `gitlab.com/…/${app.name}`;
+  const source = originToSource(app.origin ?? undefined);
   return {
     id: app.id,
     name: app.name,
@@ -82,6 +85,7 @@ function PodBar({ status, pods, maxPods }: { status: DisplayStatus; pods: number
   );
 }
 
+
 export const Resources = () => {
   const [filterStatus, setFilterStatus] = useState<DisplayStatus | ''>('');
   const [deleteModal, setDeleteModal] = useState<number | null>(null);
@@ -121,11 +125,12 @@ export const Resources = () => {
       queryClient.invalidateQueries({ queryKey: ['apps'] });
       setSyncError('');
     },
-    onError: (err: any) => {
-      const detail = err.response?.data?.detail;
+    onError: (err: unknown) => {
+      const detail = (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
       setSyncError(typeof detail === 'string' ? detail : 'Synchronisation échouée');
     },
   });
+
 
   return (
     <>
@@ -176,8 +181,9 @@ export const Resources = () => {
               {syncMutation.isPending ? 'Sync…' : 'Sync K8s'}
             </button>
           )}
-          <button className="btn btn-primary">
-            <i className="ti ti-plus" aria-hidden="true" />Déployer une app
+          <button className="btn btn-primary" onClick={() => navigate('/resources/new')}>
+            <i className="ti ti-plus" aria-hidden="true" />
+            Nouvelle application
           </button>
         </div>
       </div>
@@ -226,23 +232,30 @@ export const Resources = () => {
         onCancel={() => setDeleteModal(null)}
         isLoading={deleteMutation.isPending}
       />
+
     </>
   );
 };
 
-function SourceBadge({ source }: { source: 'imported' | 'scaffolded' }) {
-  const isImported = source === 'imported';
+const SOURCE_STYLE: Record<'scaffolded' | 'onboarded' | 'imported', { color: string; border: string }> = {
+  scaffolded: { color: 'var(--accent)', border: 'color-mix(in srgb, var(--accent) 40%, transparent)' },
+  onboarded:  { color: 'var(--green)',  border: 'color-mix(in srgb, var(--green) 40%, transparent)' },
+  imported:   { color: 'var(--text-muted)', border: 'var(--border)' },
+};
+
+function SourceBadge({ source }: { source: 'scaffolded' | 'onboarded' | 'imported' }) {
+  const style = SOURCE_STYLE[source];
   return (
     <span style={{
       fontSize: 9, fontWeight: 600, letterSpacing: '0.06em',
       textTransform: 'uppercase',
-      color: isImported ? 'var(--text-muted)' : 'var(--accent)',
-      border: `1px solid ${isImported ? 'var(--border)' : 'color-mix(in srgb, var(--accent) 40%, transparent)'}`,
+      color: style.color,
+      border: `1px solid ${style.border}`,
       borderRadius: 4,
       padding: '1px 5px', lineHeight: '16px',
       whiteSpace: 'nowrap',
     }}>
-      {isImported ? 'imported' : 'scaffolded'}
+      {source}
     </span>
   );
 }

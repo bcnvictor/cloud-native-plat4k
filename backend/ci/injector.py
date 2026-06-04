@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from backend.gitlab.client import GitLabClient
 from backend.ci.detector import extract_project_path
 from backend.ci.templates import generate_gitlab_ci
+from backend.gitlab.client import GitLabClient
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +42,10 @@ def inject_ci(
         )
         logger.info("CI injected via push on %s", project_path)
     else:
+        default_branch = client.get_default_branch(project_path)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         branch = f"cnp/inject-ci-{ts}"
-        client.create_branch(project_path, branch, ref="main")
+        client.create_branch(project_path, branch, ref=default_branch)
         client.push_file(
             project_path=project_path,
             file_path=".gitlab-ci.yml",
@@ -55,7 +56,7 @@ def inject_ci(
         mr = client.create_mr(
             project_path=project_path,
             source_branch=branch,
-            target_branch="main",
+            target_branch=default_branch,
             title="CNP: inject CI pipeline",
             description=(
                 "Ce MR a été créé automatiquement par CNP pour injecter le pipeline CI baseline.\n\n"

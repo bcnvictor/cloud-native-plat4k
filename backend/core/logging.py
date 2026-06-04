@@ -2,11 +2,13 @@
 Structured logging configuration (JSON format).
 """
 
+import json
 import logging
 import sys
-import json
 from datetime import datetime, timezone
+
 from backend.core.config import settings
+
 
 class JSONFormatter(logging.Formatter):
     def format(self, record):

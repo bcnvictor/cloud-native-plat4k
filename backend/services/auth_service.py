@@ -1,14 +1,20 @@
 import secrets
-from datetime import datetime, timezone
-from typing import Tuple, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from typing import Tuple
 
-from backend.db.models import User, APIKey
-from backend.core.security import verify_password, create_access_token, create_refresh_token, get_api_key_hash, get_password_hash
+from shared.models import APIKeyCreateResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.api.schemas.auth import LoginPayload
-from backend.core.exceptions import UnauthorizedException, NotFoundException
-from shared.models import APIKeyCreateResponse, UserRole
+from backend.core.exceptions import UnauthorizedException
+from backend.core.security import (
+    create_access_token,
+    create_refresh_token,
+    get_api_key_hash,
+    verify_password,
+)
+from backend.db.models import APIKey, User
+
 
 class AuthService:
     def __init__(self, db: AsyncSession):

@@ -3,8 +3,8 @@ Shared Pydantic models for both the FastAPI backend and the Typer CLI.
 This avoids duplicating code between the client and server.
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
@@ -31,6 +31,7 @@ class ResourceStatus(str, Enum):
 
 class UserRole(str, Enum):
     ADMIN = "admin"
+    DEV = "dev"
     VIEWER = "viewer"
 
 
@@ -143,11 +144,48 @@ class ApplicationBase(BaseModel):
     repo_url: Optional[str] = None
     owner: str
     origin: Optional[str] = None
+    source_url: Optional[str] = None
     framework: Optional[str] = None
+
+
+class ScaffoldingParams(BaseModel):
+    """Settings for generating the values.yaml file during scaffolding."""
+    port: int = 8000
+    image_repository: Optional[str] = None
+    image_tag: str = "latest"
+    replicas: int = 1
+    env: Dict[str, str] = {}
 
 
 class ApplicationCreate(ApplicationBase):
     pass
+
+
+class ApplicationScaffoldRequest(BaseModel):
+    """Payload for POST /apps/scaffold — creates a new app from a CNP template."""
+    name: str
+    owner: str
+    template: str  # name of the template repo in GITLAB_TEMPLATES_NAMESPACE (ex: "python-fastapi")
+    scaffolding: Optional[ScaffoldingParams] = None
+
+
+class ApplicationOnboardRequest(BaseModel):
+    """Payload for POST /apps/onboard — registers an existing GitLab repo already on the internal instance."""
+    name: str
+    owner: str
+    repo_url: str
+    framework: Optional[str] = None
+    target_cluster_id: Optional[int] = None
+
+
+class ApplicationExternalImportRequest(BaseModel):
+    """Payload for POST /apps/import — clones a public external repo (GitHub/GitLab) into cnp-apps."""
+    name: str
+    owner: str
+    source_url: str
+    framework: Optional[str] = None
+    target_cluster_id: Optional[int] = None
+    raw: bool = False
 
 
 class ApplicationUpdate(BaseModel):
@@ -162,6 +200,7 @@ class ApplicationUpdate(BaseModel):
 class ApplicationResponse(ApplicationBase):
     id: int
     status: ApplicationStatus
+    target_cluster_id: Optional[int] = None
     ci_injected: Optional[bool] = None
     last_pipeline_status: Optional[str] = None
     created_at: datetime

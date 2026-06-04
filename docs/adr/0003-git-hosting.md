@@ -1,7 +1,7 @@
 # ADR-0003 - Git hosting pour les applications scaffoldées
 
 **Date :** 2026-05-07
-**Statut :** Accepté
+**Statut :** OBSOLETE
 **Décideurs :** Victor Biancini (PO), équipe CNP
 
 ---

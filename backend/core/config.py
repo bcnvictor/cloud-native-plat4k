@@ -2,10 +2,10 @@
 Configuration file for the backend. Uses pydantic-settings to parse .env files.
 """
 
+from typing import List, Optional
+
+from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import AnyHttpUrl, EmailStr, PostgresDsn
-from typing import List, Union, Optional
-import os
 
 
 class Settings(BaseSettings):
@@ -33,14 +33,19 @@ class Settings(BaseSettings):
     # GitLab
     GITLAB_BASE_URL: str = "https://gitlab.com"
     GITLAB_TOKEN: Optional[str] = None
+    GITLAB_NAMESPACE: Optional[str] = None
+    # Scaffolding
+    GITLAB_TEMPLATES_NAMESPACE: Optional[str] = None  # subgroup contenant les repos templates (ex: 4k-cnp-2027/cnp-templates)
+    GITLAB_APPS_NAMESPACE: Optional[str] = None  # subgroup for scaffolded apps, defaults to {GITLAB_BOT_NAMESPACE}/cnp-apps
+    GITLAB_REGISTRY_URL: str = "registry.gitlab.com"  # override for self-hosted instances
     # GitLab OAuth (SSO)
     GITLAB_OAUTH_CLIENT_ID: Optional[str] = None
     GITLAB_OAUTH_CLIENT_SECRET: Optional[str] = None
     GITLAB_OAUTH_REDIRECT_URI: Optional[str] = None
-    GITLAB_OAUTH_SCOPES: str = "api read_user"
-    # GitLab bot (CI injection & GitOps commits)
+    GITLAB_OAUTH_SCOPES: str = "api read_user offline_access"
+    # GitLab bot (CI injection)
     GITLAB_BOT_TOKEN: Optional[str] = None
-    GITLAB_BOT_NAMESPACE: Optional[str] = None  # groupe parent du bot (ex: 4k-cnp-2027)
+    GITLAB_BOT_NAMESPACE: Optional[str] = None  # namespace owning cnp-ci-templates
     GITLAB_CI_PROJECT: Optional[str] = None     # chemin complet du repo CI (ex: 4k-cnp-2027/cnp-ci-modules)
     # GitOps — URL du dépôt cnp-gitops (injecté dans les .gitlab-ci.yml générés)
     GITOPS_REPO_URL: str = "https://gitlab.com/4k-cnp-2027/cnp-gitops.git"
@@ -54,10 +59,6 @@ class Settings(BaseSettings):
     KUBECONFIG_PATH: Optional[str] = None
     K8S_TARGET_NAMESPACE: str = "default"
     K8S_IMAGE_PULL_SECRET: Optional[str] = None
-
-    # Monitoring
-    PROMETHEUS_URL: str = "http://prometheus-operated.monitoring.svc.cluster.local:9090"
-    LOKI_URL: str = "http://loki.monitoring.svc.cluster.local:3100"
 
     # Logging
     LOG_LEVEL: str = "INFO"
