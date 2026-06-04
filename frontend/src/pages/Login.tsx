@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { authApi } from '@/api/auth';
 import { useAuthStore } from '@/store/auth';
 import { jwtDecode } from 'jwt-decode';
-import { HexLogo } from '@/components/HexLogo';
 import type { UserRole, CnpJwtPayload } from '@/types';
 
 export const Login = () => {

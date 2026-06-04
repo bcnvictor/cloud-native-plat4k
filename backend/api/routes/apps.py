@@ -1,5 +1,10 @@
 from typing import List
 
+from backend.api.deps import get_current_user, require_role
+from backend.db.models import User
+from backend.db.session import get_db
+from backend.services.app_service import AppService
+from backend.services.scaffolding_service import ScaffoldingService
 from fastapi import APIRouter, Depends
 from shared.models import (
     ApplicationCreate,
@@ -11,12 +16,6 @@ from shared.models import (
     UserRole,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from backend.api.deps import get_current_user, require_role
-from backend.db.models import User
-from backend.db.session import get_db
-from backend.services.app_service import AppService
-from backend.services.scaffolding_service import ScaffoldingService
 
 router = APIRouter()
 
