@@ -5,7 +5,7 @@ SQLAlchemy models for the backend database.
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum, JSON
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
-from shared.models import CloudType, ResourceType, ResourceStatus, UserRole, ApplicationStatus, DeploymentStatus
+from shared.models import CloudType, ResourceType, ResourceStatus, UserRole, ApplicationStatus, DeploymentStatus, ClusterStatus
 
 Base = declarative_base()
 
@@ -127,6 +127,12 @@ class ClusterConnection(Base):
     name = Column(String, nullable=False, unique=True)
     endpoint = Column(String, nullable=False)
     kubeconfig_secret_ref = Column(String, nullable=False)
+    status = Column(
+        SQLEnum(ClusterStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=ClusterStatus.UNKNOWN,
+    )
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
 

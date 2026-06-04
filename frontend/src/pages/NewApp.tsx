@@ -2,10 +2,16 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { appsApi, AppTemplate } from '@/api/apps';
-import { clustersApi } from '@/api/clusters';
+import { clustersApi, type ClusterConnection } from '@/api/clusters';
 import { useAuthStore } from '@/store/auth';
 
 type Mode = 'scaffold' | 'onboard' | 'import';
+
+function statusDot(s: ClusterConnection['status']): string {
+  if (s === 'online') return '● ';
+  if (s === 'offline') return '○ ';
+  return '◌ ';
+}
 
 const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1' };
 const EMPTY_ONBOARD = { name: '', repo_url: '', framework: '', target_cluster_id: '' };
@@ -322,7 +328,9 @@ export const NewApp = () => {
                     >
                       <option value="">Aucun (à définir plus tard)</option>
                       {clusters.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
+                        <option key={c.id} value={c.id} disabled={c.status === 'offline'}>
+                          {statusDot(c.status)}{c.name}
+                        </option>
                       ))}
                     </select>
                     <span className="form-hint">Optionnel</span>
@@ -426,7 +434,9 @@ export const NewApp = () => {
                     >
                       <option value="">Aucun (à définir plus tard)</option>
                       {clusters.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
+                        <option key={c.id} value={c.id} disabled={c.status === 'offline'}>
+                          {statusDot(c.status)}{c.name}
+                        </option>
                       ))}
                     </select>
                     <span className="form-hint">Optionnel</span>
