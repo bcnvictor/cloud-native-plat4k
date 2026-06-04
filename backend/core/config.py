@@ -2,10 +2,10 @@
 Configuration file for the backend. Uses pydantic-settings to parse .env files.
 """
 
+from typing import List, Optional
+
+from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import AnyHttpUrl, EmailStr, PostgresDsn
-from typing import List, Union, Optional
-import os
 
 
 class Settings(BaseSettings):

@@ -1,11 +1,5 @@
-import json
 import base64
-from datetime import datetime, timezone, timedelta
-from cryptography.fernet import Fernet
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from datetime import datetime, timedelta, timezone
 
 from backend.api.deps import get_current_user
 from backend.core.config import settings
@@ -13,6 +7,11 @@ from backend.db.models import GitLabCredential, User
 from backend.db.session import get_db
 from backend.gitlab.client import GitLabClient
 from backend.services.gitlab_oauth_service import GitLabOAuthService
+from cryptography.fernet import Fernet
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

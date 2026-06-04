@@ -45,8 +45,8 @@ export const NewApp = () => {
       queryClient.invalidateQueries({ queryKey: ['apps'] });
       navigate('/resources');
     },
-    onError: (err: any) => {
-      setScaffoldError(err?.response?.data?.detail ?? 'Erreur lors du scaffolding');
+    onError: (err: unknown) => {
+      setScaffoldError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Erreur lors du scaffolding');
     },
   });
 
@@ -56,8 +56,8 @@ export const NewApp = () => {
       queryClient.invalidateQueries({ queryKey: ['apps'] });
       navigate('/resources');
     },
-    onError: (err: any) => {
-      setOnboardError(err?.response?.data?.detail ?? "Erreur lors de l'onboarding");
+    onError: (err: unknown) => {
+      setOnboardError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Erreur lors de l'onboarding");
     },
   });
 
@@ -67,8 +67,8 @@ export const NewApp = () => {
       queryClient.invalidateQueries({ queryKey: ['apps'] });
       navigate('/resources');
     },
-    onError: (err: any) => {
-      setImportError(err?.response?.data?.detail ?? "Erreur lors de l'import");
+    onError: (err: unknown) => {
+      setImportError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Erreur lors de l'import");
     },
   });
 

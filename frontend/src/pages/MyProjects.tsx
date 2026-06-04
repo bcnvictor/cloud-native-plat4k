@@ -106,7 +106,7 @@ export const MyProjects = () => {
           ) : (
             <div className="repos-list">
               {projects.map((p: GitLabProject) => {
-                const lang = (p as any).language ?? 'Python';
+                const lang = p.language ?? 'Python';
                 const color = LANG_COLORS[lang] ?? '#94A3B8';
                 return (
                   <div key={p.id} className="repo-row">

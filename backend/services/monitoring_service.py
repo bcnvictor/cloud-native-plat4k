@@ -1,6 +1,8 @@
-import time
 import re
+import time
+
 import httpx
+
 from backend.core.config import settings
 
 COST_PER_HOUR_USD = 0.016  # Standard_B2ls_v2 x2 nodes
