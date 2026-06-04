@@ -2,9 +2,11 @@
 Database session management.
 """
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from backend.core.config import settings
 from typing import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from backend.core.config import settings
 
 # Create async engine
 engine = create_async_engine(

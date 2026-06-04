@@ -1,12 +1,17 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
-from backend.db.session import get_db
-from backend.db.models import User
-from shared.models import ClusterConnectionCreate, ClusterConnectionUpdate, ClusterConnectionResponse, UserRole
 from backend.api.deps import get_current_user, require_role
+from backend.db.models import User
+from backend.db.session import get_db
 from backend.services.cluster_service import ClusterService
+from fastapi import APIRouter, Depends
+from shared.models import (
+    ClusterConnectionCreate,
+    ClusterConnectionResponse,
+    ClusterConnectionUpdate,
+    UserRole,
+)
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

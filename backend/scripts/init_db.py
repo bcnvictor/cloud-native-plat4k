@@ -1,16 +1,16 @@
 import asyncio
-import os
 import sys
 
 # Add /app directory to sys.path
 sys.path.append("/app")
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from backend.db.session import AsyncSessionLocal
-from backend.db.models import User
-from backend.core.security import get_password_hash
 from shared.models import UserRole
+from sqlalchemy import select
+
+from backend.core.security import get_password_hash
+from backend.db.models import User
+from backend.db.session import AsyncSessionLocal
+
 
 async def seed_admin():
     async with AsyncSessionLocal() as session:

@@ -13,12 +13,11 @@ from typing import Optional
 import anyio
 import yaml
 from fastapi import HTTPException, status
+from shared.models import ScaffoldingParams
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
-from backend.db.models import User
 from backend.gitlab.client import GitLabClient
-from shared.models import ScaffoldingParams
 
 logger = logging.getLogger(__name__)
 
