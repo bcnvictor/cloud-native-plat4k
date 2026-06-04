@@ -1,7 +1,7 @@
 from typing import List
 
 from backend.api.deps import require_role
-from backend.api.schemas.user import UserCreate
+from backend.api.schemas.user import UserCreate, UserUpdate
 from backend.core.exceptions import BadRequestException, NotFoundException
 from backend.core.security import get_password_hash
 from backend.db.models import User
