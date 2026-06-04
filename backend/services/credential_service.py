@@ -1,12 +1,13 @@
-import json
 import base64
-from cryptography.fernet import Fernet
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+import json
 
-from backend.db.models import CloudCredential
+from cryptography.fernet import Fernet
 from shared.models import CloudType, CredentialCreate
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.core.config import settings
+from backend.db.models import CloudCredential
 
 
 def _build_fernet() -> Fernet:

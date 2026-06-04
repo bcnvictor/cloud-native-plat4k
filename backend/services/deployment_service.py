@@ -5,6 +5,7 @@ from typing import Optional
 import anyio
 from fastapi import HTTPException, status
 from kubernetes.client.exceptions import ApiException
+from shared.models import ApplicationStatus, DeploymentCreate, DeploymentStatus
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
