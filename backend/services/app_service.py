@@ -116,8 +116,8 @@ class AppService:
         return await self._save_app(data)
 
     async def external_import_app(self, payload: ApplicationExternalImportRequest) -> Application:
-        from backend.gitlab.importer import import_external_repo
         from backend.core.config import settings
+        from backend.gitlab.importer import import_external_repo
 
         bot = _get_bot_client()
         if not bot:
