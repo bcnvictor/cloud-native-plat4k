@@ -42,4 +42,3 @@ ignore = ["E501", "E712"]   # E501: line length géré par le formateur
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
-asyncio_mode = "auto"
