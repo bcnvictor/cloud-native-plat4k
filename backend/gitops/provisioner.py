@@ -50,11 +50,11 @@ def _generate_helm_values(app_name: str, repo_url: str, env: str) -> str:
 # {app_name} Staging Surcharges
 # Ce fichier est mis à jour automatiquement par le pipeline GitLab CI
 # lors de chaque push sur la branche main de l'application.
-replicaCount: 1
+replicas: 1
 
 image:
   repository: {image_repository}
-  tag: latest # Mis à jour automatiquement par la CI
+  tag: "none"
   pullPolicy: Always
 
 resources:
@@ -77,11 +77,11 @@ ingress:
     else:  # prod
         return f"""\
 # {app_name} Prod Surcharges
-replicaCount: 3
+replicas: 3
 
 image:
   repository: {image_repository}
-  tag: stable # Mis à jour lors des promotions (git tag)
+  tag: "none"
   pullPolicy: IfNotPresent
 
 resources:
