@@ -204,21 +204,24 @@ class AppService:
                     cancellable=True,
                 )
                 app.ci_injected = True
-                
-                # Provision GitOps repository (create ArgoCD manifests + values)
-                from backend.gitops.provisioner import provision_gitops
-                await anyio.to_thread.run_sync(
-                    lambda: provision_gitops(
-                        app_name=app.name,
-                        repo_url=app.repo_url,
-                        client=bot,
-                    ),
-                    cancellable=True,
-                )
-                
             except Exception:
-                logger.exception("CI injection or GitOps provisioning failed for app %s (%s)", app.id, app.repo_url)
+                logger.exception("CI injection failed for app %s (%s)", app.id, app.repo_url)
                 app.ci_injected = False
+
+            if app.ci_injected:
+                try:
+                    from backend.gitops.provisioner import provision_gitops
+                    await anyio.to_thread.run_sync(
+                        lambda: provision_gitops(
+                            app_name=app.name,
+                            repo_url=app.repo_url,
+                            client=bot,
+                        ),
+                        cancellable=True,
+                    )
+                except Exception:
+                    logger.exception("GitOps provisioning failed for app %s (%s)", app.id, app.repo_url)
+
             await self.db.commit()
             await self.db.refresh(app)
 
