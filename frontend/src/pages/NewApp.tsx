@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/auth';
 
 type Mode = 'scaffold' | 'onboard' | 'import';
 
-const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1' };
+const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1', skip_first_deploy: false };
 const EMPTY_ONBOARD = { name: '', repo_url: '', framework: '', target_cluster_id: '' };
 const EMPTY_IMPORT = { name: '', source_url: '', framework: '', target_cluster_id: '', raw: false };
 
@@ -83,6 +83,7 @@ export const NewApp = () => {
         port: Number(scaffoldForm.port) || 8000,
         replicas: Number(scaffoldForm.replicas) || 1,
       },
+      skip_first_deploy: scaffoldForm.skip_first_deploy,
     });
   };
 
@@ -235,6 +236,17 @@ export const NewApp = () => {
                     <span className="form-hint">Nombre de pods initiaux</span>
                   </div>
                 </div>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={scaffoldForm.skip_first_deploy}
+                    onChange={e => setScaffoldForm(f => ({ ...f, skip_first_deploy: e.target.checked }))}
+                  />
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    Skip le premier deploy <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>(ne déclenche pas la CI ni ArgoCD au scaffold)</span>
+                  </span>
+                </label>
 
                 {scaffoldError && (
                   <div className="alert error">
