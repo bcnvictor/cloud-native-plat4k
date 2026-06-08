@@ -123,6 +123,32 @@ class GitLabClient:
                 "commit_message": commit_message,
             })
 
+    def push_multiple_files(
+        self,
+        project_path: str,
+        branch: str,
+        commit_message: str,
+        actions: list[dict],
+    ) -> None:
+        """Commit multiple files in one atomic operation.
+
+        Callers may use action="upsert" to mean create-or-update; this method
+        resolves the correct GitLab action (create vs update) for each file.
+        """
+        project = self.get_project(project_path)
+        resolved = []
+        for action in actions:
+            a = dict(action)
+            if a.get("action") == "upsert":
+                exists = self.file_exists(project_path, a["file_path"], ref=branch)
+                a["action"] = "update" if exists else "create"
+            resolved.append(a)
+        project.commits.create({
+            "branch": branch,
+            "commit_message": commit_message,
+            "actions": resolved,
+        })
+
     def create_branch(self, project_path: str, branch: str, ref: str = "main") -> None:
         """Create a branch from ref. Silently ignores if branch already exists."""
         project = self.get_project(project_path)

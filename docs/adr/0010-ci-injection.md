@@ -34,7 +34,7 @@ frameworks/
 
 ### Stratégie d'injection selon l'origin
 
-- **scaffolded** → push direct sur `main` (`[skip ci]` pour ne pas déclencher de pipeline sur le commit d'injection lui-même)
+- **scaffolded** → push direct sur `main` (le commit porte `[skip ci]` si l'option `skip_first_deploy` est activée au scaffold, sinon commit normal)
 - **imported** → création d'une branche `cnp/inject-ci-{timestamp}` + MR vers `main`
 
 ### Détection de framework
@@ -84,5 +84,5 @@ Négatif / Dette :
 - L'endpoint `POST /api/v1/apps/{id}/ci-status` n'existe pas encore
 
 Neutre :
-- Le `.gitlab-ci.yml` injecté sur les repos scaffoldés est marqué `[skip ci]` pour éviter un pipeline sur le commit d'injection lui-même
+- Le `.gitlab-ci.yml` injecté sur les repos scaffoldés est marqué `[skip ci]` si `skip_first_deploy=true`, sinon le commit est normal et la CI s'exécute immédiatement
 - Si `.gitlab-ci.yml` existe déjà sur `main` d'un repo scaffoldé, l'injection est bloquée (`ci_injected: false`) — pas d'écrasement silencieux
