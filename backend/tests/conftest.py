@@ -10,13 +10,13 @@ os.environ.setdefault("ENCRYPTION_KEY", "")
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from shared.models import UserRole
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from backend.core.security import get_password_hash
 from backend.db.models import Base, User
 from backend.db.session import get_db
 from backend.main import app
-from shared.models import UserRole
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
