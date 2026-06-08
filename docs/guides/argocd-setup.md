@@ -40,7 +40,7 @@ Ces scénarios ont été conçus pour prouver la résilience de notre architectu
 ### Scénario 1 : Sync Auto (Commit Values → Re-déploiement < 3 min)
 **Objectif :** Vérifier que la modification d'une surcharge d'environnement est appliquée.
 1. Dans le dépôt `cnp-gitops`, modifier `apps/cnp-demo-app/values-dev.yaml`.
-2. Changer `replicaCount: 1` à `replicaCount: 2`.
+2. Changer `replicas: 1` à `replicas: 2`.
 3. Commiter et pousser la modification.
 4. **Validation :** Dans les 3 minutes (délai de poll par défaut d'ArgoCD), l'interface d'ArgoCD doit afficher la synchronisation, et la commande `kubectl get pods -n dev` doit afficher 2 pods.
 
@@ -73,6 +73,6 @@ Ces scénarios ont été conçus pour prouver la résilience de notre architectu
 
 ## Apprentissages et Notes
 - **Pas de branche par environnement** : Le modèle *Multiple Sources* avec un dossier par application (`apps/`) s'est révélé beaucoup plus stable et facile à tracer que le branching par environnement.
-- **Mécanisme `$ref` dans Multiple Sources** : Quand une source porte `ref: <nom>`, elle devient une source de référence (pas de déploiement direct) et expose son contenu sous la variable `$<nom>`. Les autres sources peuvent alors l'utiliser dans leurs `valueFiles` (ex: `$gitops/apps/my-app/values-staging.yaml`). `$<nom>` pointe toujours sur la **racine** du repo référencé, indépendamment de tout champ `path`. Cette feature requiert ArgoCD v2.6+.
+- **Mécanisme `$ref` dans Multiple Sources** : Quand une source porte `ref: <nom>`, elle devient une source de référence (pas de déploiement direct) et expose son contenu sous la variable `$<nom>`. Les autres sources peuvent alors l'utiliser dans leurs `valueFiles` (ex: `$gitops/apps/my-app/values-dev.yaml`). `$<nom>` pointe toujours sur la **racine** du repo référencé, indépendamment de tout champ `path`. Cette feature requiert ArgoCD v2.6+.
 - L'utilisation des finalizers est vitale pour éviter de laisser des ressources orphelines, surtout sur un cluster AKS aux ressources limitées.
 - **Sécurité** : Aucune clé Kubernetes n'a eu besoin d'être exportée vers GitLab pour le déploiement. L'AKS vient tirer l'état lui-même.
