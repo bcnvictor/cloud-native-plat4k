@@ -4,7 +4,6 @@ from httpx import AsyncClient
 
 from backend.db.models import User
 
-
 pytestmark = pytest.mark.asyncio
 
 

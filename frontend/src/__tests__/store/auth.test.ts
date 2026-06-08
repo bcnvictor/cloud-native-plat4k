@@ -10,7 +10,7 @@ const localStorageMock = vi.hoisted(() => {
     removeItem: (key: string) => { delete store[key]; },
     clear: () => { store = {}; },
     get length() { return Object.keys(store).length; },
-    key: (_: number) => null,
+    key: () => null,
   };
   Object.defineProperty(globalThis, 'localStorage', { value: mock, writable: true, configurable: true });
   return mock;
