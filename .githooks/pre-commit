@@ -19,3 +19,5 @@ if ! echo "$STAGED_PY" | xargs ruff check --quiet; then
   echo "[CNP] ruff : erreurs non auto-réparables — commit annulé."
   exit 1
 fi
+
+echo "[CNP] ruff : OK"
