@@ -64,7 +64,7 @@ class AppService:
             "origin": "scaffolded",
             "framework": payload.template,
         }
-        return await self._save_app(data, scaffolded_project_path=project_path)
+        return await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
 
     async def onboard_app(self, payload: ApplicationOnboardRequest) -> Application:
         normalized_url = payload.repo_url.rstrip("/").removesuffix(".git")
@@ -171,7 +171,7 @@ class AppService:
     async def create_app(self, payload: ApplicationCreate) -> Application:
         return await self._save_app(payload.model_dump())
 
-    async def _save_app(self, data: dict, scaffolded_project_path: str | None = None, skip_ci: bool = False) -> Application:
+    async def _save_app(self, data: dict, scaffolded_project_path: str | None = None, skip_ci: bool = False, skip_gitops: bool = False) -> Application:
         app = Application(**data)
         self.db.add(app)
         try:
@@ -200,6 +200,7 @@ class AppService:
                         client=bot,
                         webhook_url=webhook_url,
                         webhook_secret=settings.GITLAB_WEBHOOK_SECRET or "",
+                        skip_first_run=skip_gitops,
                     ),
                     cancellable=True,
                 )
@@ -207,6 +208,21 @@ class AppService:
             except Exception:
                 logger.exception("CI injection failed for app %s (%s)", app.id, app.repo_url)
                 app.ci_injected = False
+
+            if app.ci_injected and not skip_gitops:
+                try:
+                    from backend.gitops.provisioner import provision_gitops
+                    await anyio.to_thread.run_sync(
+                        lambda: provision_gitops(
+                            app_name=app.name,
+                            repo_url=app.repo_url,
+                            client=bot,
+                        ),
+                        cancellable=True,
+                    )
+                except Exception:
+                    logger.exception("GitOps provisioning failed for app %s (%s)", app.id, app.repo_url)
+
             await self.db.commit()
             await self.db.refresh(app)
 
