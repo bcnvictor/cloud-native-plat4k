@@ -168,7 +168,7 @@ export const NewApp = () => {
                       className="form-input"
                       placeholder="mon-service"
                       value={scaffoldForm.name}
-                      onChange={e => setScaffoldForm(f => ({ ...f, name: e.target.value }))}
+                      onChange={e => setScaffoldForm(f => ({ ...f, name: e.target.value.replace(/\s+/g, '-') }))}
                       required
                       autoFocus
                     />
@@ -283,7 +283,7 @@ export const NewApp = () => {
                       className="form-input"
                       placeholder="mon-service"
                       value={onboardForm.name}
-                      onChange={e => setOnboardForm(f => ({ ...f, name: e.target.value }))}
+                      onChange={e => setOnboardForm(f => ({ ...f, name: e.target.value.replace(/\s+/g, '-') }))}
                       required
                       autoFocus
                     />
@@ -376,7 +376,7 @@ export const NewApp = () => {
                       className="form-input"
                       placeholder="mon-service"
                       value={importForm.name}
-                      onChange={e => setImportForm(f => ({ ...f, name: e.target.value }))}
+                      onChange={e => setImportForm(f => ({ ...f, name: e.target.value.replace(/\s+/g, '-') }))}
                       required
                       autoFocus
                     />

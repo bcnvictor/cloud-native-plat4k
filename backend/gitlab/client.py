@@ -268,3 +268,24 @@ class GitLabClient:
         project = self.get_project(project_path)
         items = project.repository_tree(ref=ref, recursive=True, all=True)
         return [{"name": i["name"], "type": i["type"], "path": i["path"]} for i in items]
+
+    def delete_directory_contents(self, project_path: str, directory_path: str, commit_message: str, branch: str = "main") -> None:
+        """Deletes all files within a directory using the Commits API."""
+        try:
+            project = self.get_project(project_path)
+            items = project.repository_tree(path=directory_path, ref=branch, recursive=True, all=True)
+            actions = []
+            for item in items:
+                if item["type"] == "blob":
+                    actions.append({"action": "delete", "file_path": item["path"]})
+            
+            if not actions:
+                return # nothing to delete
+            
+            project.commits.create({
+                "branch": branch,
+                "commit_message": commit_message,
+                "actions": actions,
+            })
+        except Exception:
+            pass # ignore if directory doesn't exist or other API errors
