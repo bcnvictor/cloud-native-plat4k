@@ -135,10 +135,34 @@ Résultat attendu : `"framework": "python"`.
 
 ---
 
+## 7. Suppression d'app (4K-59)
+
+### 7a. App scaffoldée → supprime GitOps + projet GitLab + BDD
+
+```bash
+curl -s -X DELETE http://localhost:8000/api/v1/apps/{id} \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Vérifier :
+- `cnp-gitops` : `argocd/<app>/` et `apps/<app>/` supprimés
+- GitLab : le projet `4k-cnp-2027/cnp-apps/<app>` est supprimé
+- L'app n'apparaît plus dans `GET /api/v1/apps/`
+
+### 7b. App importée → supprime GitOps uniquement, préserve le repo GitLab
+
+Même commande avec une app dont `origin = "imported"`.
+
+Vérifier :
+- `cnp-gitops` : manifestes supprimés
+- GitLab : le repo source **n'est pas supprimé**
+
+---
+
 ## Nettoyage entre les tests
 
 ```bash
-# Supprimer une app par son id
+# Supprimer une app par son id (nettoie aussi GitOps et GitLab si scaffolded)
 curl -s -X DELETE http://localhost:8000/api/v1/apps/{id} \
   -H "Authorization: Bearer $TOKEN"
 ```
