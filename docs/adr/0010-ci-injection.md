@@ -84,5 +84,5 @@ Négatif / Dette :
 - L'endpoint `POST /api/v1/apps/{id}/ci-status` n'existe pas encore
 
 Neutre :
-- Le `.gitlab-ci.yml` injecté sur les repos scaffoldés est marqué `[skip ci]` si `skip_first_deploy=true`, sinon le commit est normal et la CI s'exécute immédiatement
+- Le `.gitlab-ci.yml` injecté sur les repos scaffoldés est marqué `[skip ci]` si `skip_first_deploy=true`, sinon le commit est normal et la CI s'exécute immédiatement. Lors du premier run CI (sans `[skip ci]`), le job `update-gitops` provisionne également les manifestes ArgoCD dans `cnp-gitops` — ArgoCD ne découvre l'app qu'à ce moment (voir ADR-0012).
 - Si `.gitlab-ci.yml` existe déjà sur `main` d'un repo scaffoldé, l'injection est bloquée (`ci_injected: false`) — pas d'écrasement silencieux
