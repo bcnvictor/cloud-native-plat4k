@@ -93,6 +93,10 @@ export const ResourceDetail = () => {
   const { name, owner, origin, repo_url, status, created_at } = app;
   const displayStatus = APP_STATUS_MAP[status];
 
+  const deleteMessage = origin === 'scaffolded'
+    ? "Cette action supprimera définitivement l'application de la base de données, les manifestes de déploiement (GitOps/ArgoCD), ainsi que le dépôt source sur GitLab. Cette action est irréversible."
+    : "Cette action supprimera définitivement l'application de la base de données et les manifestes de déploiement (GitOps/ArgoCD). Le dépôt source sur GitLab ne sera PAS supprimé. Cette action est irréversible.";
+
   return (
     <>
       <div className="app-header">
@@ -315,7 +319,7 @@ export const ResourceDetail = () => {
               <div className="danger-header">Danger zone</div>
               <div className="danger-body">
                 <div className="danger-desc">
-                  Supprimer détruit définitivement l'application et toutes ses données de déploiement. Cette action est irréversible.
+                  {deleteMessage}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                   <button className="btn-danger" onClick={() => setShowDeleteModal(true)} disabled={deleteMutation.isPending}>
@@ -331,7 +335,7 @@ export const ResourceDetail = () => {
       <ConfirmModal
         isOpen={showDeleteModal}
         title="Supprimer l'application"
-        message="Supprimer détruit définitivement l'application et toutes ses données de déploiement. Cette action est irréversible."
+        message={deleteMessage}
         onConfirm={() => deleteMutation.mutate()}
         onCancel={() => setShowDeleteModal(false)}
         isLoading={deleteMutation.isPending}
