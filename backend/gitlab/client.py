@@ -1,6 +1,10 @@
+import logging
+
 from gitlab.exceptions import GitlabAuthenticationError, GitlabCreateError, GitlabGetError
 
 import gitlab
+
+logger = logging.getLogger(__name__)
 from backend.core.config import settings
 
 
@@ -278,14 +282,14 @@ class GitLabClient:
             for item in items:
                 if item["type"] == "blob":
                     actions.append({"action": "delete", "file_path": item["path"]})
-            
+
             if not actions:
-                return # nothing to delete
-            
+                return
+
             project.commits.create({
                 "branch": branch,
                 "commit_message": commit_message,
                 "actions": actions,
             })
         except Exception:
-            pass # ignore if directory doesn't exist or other API errors
+            logger.exception("Failed to delete directory %s in %s", directory_path, project_path)
