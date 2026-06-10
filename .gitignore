@@ -317,3 +317,8 @@ override.tf.json
 .terraformrc
 terraform.rc
 .venv/
+
+
+.githooks/
+CLAUDE.md
+graphify-out/

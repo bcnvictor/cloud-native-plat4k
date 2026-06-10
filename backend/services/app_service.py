@@ -64,7 +64,7 @@ class AppService:
             "origin": "scaffolded",
             "framework": payload.template,
         }
-        return await self._save_app(data, scaffolded_project_path=project_path)
+        return await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
 
     async def onboard_app(self, payload: ApplicationOnboardRequest) -> Application:
         normalized_url = payload.repo_url.rstrip("/").removesuffix(".git")
@@ -171,7 +171,7 @@ class AppService:
     async def create_app(self, payload: ApplicationCreate) -> Application:
         return await self._save_app(payload.model_dump())
 
-    async def _save_app(self, data: dict, scaffolded_project_path: str | None = None, skip_ci: bool = False) -> Application:
+    async def _save_app(self, data: dict, scaffolded_project_path: str | None = None, skip_ci: bool = False, skip_gitops: bool = False) -> Application:
         app = Application(**data)
         self.db.add(app)
         try:
@@ -200,6 +200,7 @@ class AppService:
                         client=bot,
                         webhook_url=webhook_url,
                         webhook_secret=settings.GITLAB_WEBHOOK_SECRET or "",
+                        skip_first_run=skip_gitops,
                     ),
                     cancellable=True,
                 )
@@ -207,6 +208,9 @@ class AppService:
             except Exception:
                 logger.exception("CI injection failed for app %s (%s)", app.id, app.repo_url)
                 app.ci_injected = False
+
+
+
             await self.db.commit()
             await self.db.refresh(app)
 
@@ -222,6 +226,44 @@ class AppService:
 
     async def delete_app(self, app_id: int) -> None:
         app = await self.get_app(app_id)
+        
+        # 1. Clean up GitOps repo (ArgoCD manifests)
+        bot = _get_bot_client()
+        if bot:
+            try:
+                gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
+                # ArgoCD manifests and values
+                await anyio.to_thread.run_sync(
+                    lambda: bot.delete_directory_contents(
+                        project_path=gitops_path,
+                        directory_path=f"apps/{app.name}",
+                        commit_message=f"chore: delete app {app.name} from gitops apps"
+                    ),
+                    cancellable=True
+                )
+                await anyio.to_thread.run_sync(
+                    lambda: bot.delete_directory_contents(
+                        project_path=gitops_path,
+                        directory_path=f"argocd/{app.name}",
+                        commit_message=f"chore: delete app {app.name} from gitops argocd"
+                    ),
+                    cancellable=True
+                )
+            except Exception:
+                logger.exception("Failed to clean up gitops repository for app %s", app.name)
+        
+        # 2. Delete the GitLab app repository if it was scaffolded
+        if bot and app.origin == "scaffolded" and app.repo_url:
+            try:
+                repo_path = extract_project_path(app.repo_url)
+                await anyio.to_thread.run_sync(
+                    lambda: bot.delete_project(repo_path),
+                    cancellable=True
+                )
+            except Exception:
+                logger.exception("Failed to delete GitLab repository %s for app %s", app.repo_url, app.name)
+
+        # 3. Remove from database
         await self.db.delete(app)
         await self.db.commit()
 
