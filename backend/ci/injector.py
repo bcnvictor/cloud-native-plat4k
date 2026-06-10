@@ -19,6 +19,7 @@ def inject_ci(
     client: GitLabClient,
     webhook_url: str | None = None,
     webhook_secret: str = "",
+    skip_first_run: bool = False,
 ) -> None:
     """Inject .gitlab-ci.yml into the app repo.
 
@@ -33,11 +34,12 @@ def inject_ci(
             raise RuntimeError(
                 f".gitlab-ci.yml already exists on main in {project_path} — injection skipped"
             )
+        commit_msg = "ci: inject CNP pipeline [skip ci]" if skip_first_run else "ci: inject CNP pipeline"
         client.push_file(
             project_path=project_path,
             file_path=".gitlab-ci.yml",
             content=content,
-            commit_message="ci: inject CNP pipeline [skip ci]",
+            commit_message=commit_msg,
             branch="main",
         )
         logger.info("CI injected via push on %s", project_path)

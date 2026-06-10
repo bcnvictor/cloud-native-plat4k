@@ -23,6 +23,12 @@ dc() {
   fi
 }
 
+# ── Git hooks (one-time setup) ────────────────────────────────────────────────
+if [ "$(git config --local core.hooksPath 2>/dev/null)" != ".githooks" ]; then
+  git config core.hooksPath .githooks
+  info "Git hooks configurés → .githooks/"
+fi
+
 # ── Arguments ─────────────────────────────────────────────────────────────────
 #   ./start.sh         → rebuild + démarrer tout
 #   ./start.sh restart → redémarrer tout SANS rebuild (rapide)
@@ -52,7 +58,11 @@ fi
 # ── Migrations Alembic ────────────────────────────────────────────────────────
 # Toujours lancées : idempotentes et nécessaires après chaque pull avec migration
 info "Application des migrations Alembic..."
-dc exec -T backend alembic -c /app/backend/alembic.ini upgrade head
+if ! dc exec -T backend alembic -c /app/backend/alembic.ini upgrade head; then
+  warn "Migrations Alembic échouées."
+  warn "Si tu viens de changer de branche avec des migrations divergentes, lance : ./fix-db.sh"
+  exit 1
+fi
 
 # ── Utilisateur admin (optionnel) ─────────────────────────────────────────────
 ADMIN_EMAIL="${CNP_ADMIN_EMAIL:-admin@cnp.local}"
