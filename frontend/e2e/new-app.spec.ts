@@ -38,7 +38,7 @@ test.describe('New application', () => {
     await page.goto('/resources/new');
 
     await page.getByPlaceholder('mon-service').fill('e2e-app');
-    await page.getByRole('combobox').selectOption({ label: 'Python API' });
+    await page.getByLabel('Template').selectOption({ label: 'Python API' });
     await page.getByRole('button', { name: "Créer l'application" }).click();
 
     await expect(page).toHaveURL(/\/resources$/);

@@ -10,6 +10,7 @@ from shared.models import (
     ApplicationScaffoldRequest,
     ApplicationStatus,
     ApplicationUpdate,
+    ClusterStatus,
     compute_slug,
 )
 from sqlalchemy import select
@@ -18,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ci.detector import detect_framework, extract_project_path
 from backend.ci.injector import inject_ci
 from backend.core.config import settings
-from backend.db.models import Application
+from backend.db.models import Application, ClusterConnection
 from backend.gitlab.client import GitLabClient
 from backend.k8s.client import k8s_client
 
@@ -244,6 +245,24 @@ class AppService:
 
     async def update_app(self, app_id: int, payload: ApplicationUpdate) -> Application:
         app = await self.get_app(app_id)
+
+        # Validation du nouveau cluster cible si réassignation
+        new_cluster_id = payload.model_dump(exclude_unset=True).get("target_cluster_id")
+        if new_cluster_id is not None and new_cluster_id != app.target_cluster_id:
+            cluster_result = await self.db.execute(
+                select(ClusterConnection).where(ClusterConnection.id == new_cluster_id)
+            )
+            target_cluster = cluster_result.scalar_one_or_none()
+            if target_cluster is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster not found")
+            # Seul OFFLINE (panne confirmée) bloque. UNKNOWN est autorisé : cluster pas
+            # encore sondé ou ref non-fichier — le bloquer le rendrait inutilisable.
+            if target_cluster.status == ClusterStatus.OFFLINE:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Cluster '{target_cluster.name}' is currently offline",
+                )
+
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(app, field, value)
         await self.db.commit()
