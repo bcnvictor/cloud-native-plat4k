@@ -160,20 +160,26 @@ async def run_health_worker(
     while True:
         probed = 0
         try:
+            # Chargement de la liste en session courte : seuls id/name (scalaires purs,
+            # pas d'objets ORM) pour éviter tout risque d'expiry dans la boucle.
             async with AsyncSessionLocal() as db:
-                result = await db.execute(select(ClusterConnection))
-                clusters = list(result.scalars().all())
+                result = await db.execute(select(ClusterConnection.id, ClusterConnection.name))
+                cluster_rows = result.all()
 
-                for cluster in clusters:
-                    # Commit isolé par cluster : une erreur sur l'un ne fait pas
-                    # perdre les mises à jour des autres.
-                    try:
+            total = len(cluster_rows)
+            for cluster_id, cluster_name in cluster_rows:
+                # Session dédiée par cluster : un rollback n'expire pas les autres.
+                try:
+                    async with AsyncSessionLocal() as db:
+                        cluster = await db.get(ClusterConnection, cluster_id)
+                        if cluster is None:
+                            continue
                         await _process_cluster(db, cluster, failures, degraded_apps, failure_threshold)
                         probed += 1
-                    except Exception:
-                        await db.rollback()
-                        logger.exception("Health check failed for cluster %s", cluster.name)
-            logger.info("Health check done: %d/%d cluster(s) processed", probed, len(clusters))
+                except Exception:
+                    logger.exception("Health check failed for cluster %s (id=%d)", cluster_name, cluster_id)
+
+            logger.info("Health check done: %d/%d cluster(s) processed", probed, total)
         except Exception:
             logger.exception("Health worker error (will retry in %ds)", interval_seconds)
 
