@@ -1,11 +1,15 @@
 from backend.core.config import settings
 
-_ALLOWED_FRAMEWORKS = {"python", "generic"}
+_ALLOWED_FRAMEWORKS = {"python", "nodejs", "go", "generic"}
 
-# Maps template/framework names to their CI framework key
+# Maps template/framework names to their CI framework key.
+# Scaffolded apps store the template name as their framework (see app_service),
+# so every template name must resolve to an allowed CI framework key here.
 _FRAMEWORK_ALIASES = {
     "python-fastapi": "python",
     "python-flask": "python",
+    "node-express": "nodejs",
+    "react-vite": "nodejs",
 }
 
 
