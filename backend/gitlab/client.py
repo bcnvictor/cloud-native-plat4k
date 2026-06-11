@@ -3,9 +3,9 @@ import logging
 from gitlab.exceptions import GitlabAuthenticationError, GitlabCreateError, GitlabGetError
 
 import gitlab
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
-from backend.core.config import settings
 
 
 class GitLabClient:
