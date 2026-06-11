@@ -1,38 +1,43 @@
-FROM python:3.11-slim AS builder
-
-WORKDIR /app
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY backend/pyproject.toml .
-# No-op builder stage just to satisfy the explicit requirement.
-# We'll install directly via pip in the final stage for simplicity,
-# but we COULD build wheels here if needed.
-
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install runtime dependencies for psycopg2/asyncpg
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy backend, shared and grafana dashboards
-COPY ./backend /app/backend
-COPY ./shared /app/shared
-COPY ./infra/grafana /app/infra/grafana
-COPY ./backend/pyproject.toml /app/backend/pyproject.toml
+# Copy only dependency manifests first so the pip install layer is cached
+# independently of source changes.
 COPY ./shared/pyproject.toml /app/shared/pyproject.toml
+COPY ./backend/pyproject.toml /app/backend/pyproject.toml
 
-# Install dependencies (install shared first, then backend)
+# Stub __init__.py so editable installs can resolve package metadata.
+# The real source is copied below and takes over at runtime.
+RUN mkdir -p /app/shared/shared \
+             /app/backend/api/schemas \
+             /app/backend/core \
+             /app/backend/db \
+             /app/backend/k8s \
+             /app/backend/gitlab \
+             /app/backend/services && \
+    touch /app/shared/shared/__init__.py \
+          /app/backend/__init__.py \
+          /app/backend/api/__init__.py \
+          /app/backend/api/schemas/__init__.py \
+          /app/backend/core/__init__.py \
+          /app/backend/db/__init__.py \
+          /app/backend/k8s/__init__.py \
+          /app/backend/gitlab/__init__.py \
+          /app/backend/services/__init__.py
+
 RUN pip install --no-cache-dir -e /app/shared && \
     pip install --no-cache-dir -e /app/backend
 
-# Create non-root user
+# Copy actual source (overwrites stubs; editable installs already wired).
+COPY ./backend /app/backend
+COPY ./shared /app/shared
+COPY ./infra/grafana /app/infra/grafana
+
 RUN useradd -m cnpuser && chown -R cnpuser:cnpuser /app
 USER cnpuser
 

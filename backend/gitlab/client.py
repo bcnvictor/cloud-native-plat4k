@@ -1,7 +1,11 @@
+import logging
+
 from gitlab.exceptions import GitlabAuthenticationError, GitlabCreateError, GitlabGetError
 
 import gitlab
 from backend.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class GitLabClient:
@@ -123,6 +127,32 @@ class GitLabClient:
                 "commit_message": commit_message,
             })
 
+    def push_multiple_files(
+        self,
+        project_path: str,
+        branch: str,
+        commit_message: str,
+        actions: list[dict],
+    ) -> None:
+        """Commit multiple files in one atomic operation.
+
+        Callers may use action="upsert" to mean create-or-update; this method
+        resolves the correct GitLab action (create vs update) for each file.
+        """
+        project = self.get_project(project_path)
+        resolved = []
+        for action in actions:
+            a = dict(action)
+            if a.get("action") == "upsert":
+                exists = self.file_exists(project_path, a["file_path"], ref=branch)
+                a["action"] = "update" if exists else "create"
+            resolved.append(a)
+        project.commits.create({
+            "branch": branch,
+            "commit_message": commit_message,
+            "actions": resolved,
+        })
+
     def create_branch(self, project_path: str, branch: str, ref: str = "main") -> None:
         """Create a branch from ref. Silently ignores if branch already exists."""
         project = self.get_project(project_path)
@@ -242,3 +272,24 @@ class GitLabClient:
         project = self.get_project(project_path)
         items = project.repository_tree(ref=ref, recursive=True, all=True)
         return [{"name": i["name"], "type": i["type"], "path": i["path"]} for i in items]
+
+    def delete_directory_contents(self, project_path: str, directory_path: str, commit_message: str, branch: str = "main") -> None:
+        """Deletes all files within a directory using the Commits API."""
+        try:
+            project = self.get_project(project_path)
+            items = project.repository_tree(path=directory_path, ref=branch, recursive=True, all=True)
+            actions = []
+            for item in items:
+                if item["type"] == "blob":
+                    actions.append({"action": "delete", "file_path": item["path"]})
+
+            if not actions:
+                return
+
+            project.commits.create({
+                "branch": branch,
+                "commit_message": commit_message,
+                "actions": actions,
+            })
+        except Exception:
+            logger.exception("Failed to delete directory %s in %s", directory_path, project_path)

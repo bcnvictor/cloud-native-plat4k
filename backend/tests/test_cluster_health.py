@@ -55,7 +55,7 @@ def test_unknown_cluster_offline_does_not_degrade_apps(monkeypatch, tmp_path):
             db.add(cluster)
             await db.flush()
             app = Application(
-                name="a1", owner="o",
+                name="a1", slug="a1", owner="o",
                 status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
             )
             db.add(app)
@@ -98,7 +98,7 @@ def test_online_degrades_only_after_threshold(monkeypatch, tmp_path):
             db.add(cluster)
             await db.flush()
             app = Application(
-                name="a1", owner="o",
+                name="a1", slug="a1", owner="o",
                 status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
             )
             db.add(app)
@@ -141,12 +141,12 @@ def test_recovery_restores_only_outage_degraded_apps(monkeypatch, tmp_path):
             db.add(cluster)
             await db.flush()
             app_a = Application(
-                name="a", owner="o",
+                name="a", slug="a", owner="o",
                 status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
             )
             # app_b est DEGRADED pour une raison sans rapport (déploiement cassé).
             app_b = Application(
-                name="b", owner="o",
+                name="b", slug="b", owner="o",
                 status=ApplicationStatus.DEGRADED, target_cluster_id=cluster.id,
             )
             db.add_all([app_a, app_b])
@@ -198,7 +198,7 @@ def test_non_file_ref_stays_unknown_and_skips_probe(monkeypatch):
             db.add(cluster)
             await db.flush()
             app = Application(
-                name="a1", owner="o",
+                name="a1", slug="a1", owner="o",
                 status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
             )
             db.add(app)
