@@ -196,6 +196,7 @@ class ScaffoldingService:
             "app": {
                 "name": app_name,
                 "port": params.port,
+                "owner": "unknown",
             },
             "image": {
                 "repository": image_repo,
