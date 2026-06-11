@@ -21,7 +21,7 @@ function statusDot(s: ClusterConnection['status']): string {
   return '◌ ';
 }
 
-const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1', skip_first_deploy: false };
+const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1', skip_first_deploy: false, target_cluster_id: '' };
 const EMPTY_ONBOARD = { name: '', repo_url: '', framework: '', target_cluster_id: '' };
 const EMPTY_IMPORT = { name: '', source_url: '', framework: '', target_cluster_id: '', raw: false };
 
@@ -98,6 +98,7 @@ export const NewApp = () => {
         replicas: Number(scaffoldForm.replicas) || 1,
       },
       skip_first_deploy: scaffoldForm.skip_first_deploy,
+      target_cluster_id: scaffoldForm.target_cluster_id ? Number(scaffoldForm.target_cluster_id) : undefined,
     });
   };
 
@@ -250,6 +251,23 @@ export const NewApp = () => {
                     />
                     <span className="form-hint">Nombre de pods initiaux</span>
                   </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Cluster cible</label>
+                  <select
+                    className="form-select"
+                    value={scaffoldForm.target_cluster_id}
+                    onChange={e => setScaffoldForm(f => ({ ...f, target_cluster_id: e.target.value }))}
+                  >
+                    <option value="">Aucun (à définir plus tard)</option>
+                    {clusters.map(c => (
+                      <option key={c.id} value={c.id} disabled={c.status === 'offline'}>
+                        {statusDot(c.status)}{c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="form-hint">Optionnel</span>
                 </div>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
