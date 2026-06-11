@@ -52,5 +52,5 @@ ArgoCD surveille cnp-gitops et déploie chaque app dans son namespace Kubernetes
 
 - Le repo cnp-gitops est créé dans le namespace GitLab CNP avant la mise en place d'ArgoCD. Sa structure de répertoires est normalisée : apps/{app-name}/values-{env}.yaml.
 - ArgoCD est déployé sur AKS via son chart Helm officiel. Sa configuration (liste des apps à surveiller) est elle-même versionnée dans cnp-gitops (pattern App of Apps).
-- Le script update-gitops.sh est maintenu dans un repo partagé CNP et versionné indépendamment des apps scaffoldées.
+- Le job `update-gitops` est défini dans `cnp-ci-modules/base/pipeline.yml` et versionné indépendamment des apps scaffoldées. Il est **idempotent** : il crée les manifestes ArgoCD et les values files s'ils n'existent pas, puis met à jour le tag image. C'est lui qui provisionne ArgoCD au premier run, éliminant la race condition `ImagePullBackoff` (voir ADR-0012).
 - Le mode de déploiement est modifiable à tout moment via le portail ou la CLI sans modifier le pipeline CI (le pipeline interroge l'API à chaque exécution).

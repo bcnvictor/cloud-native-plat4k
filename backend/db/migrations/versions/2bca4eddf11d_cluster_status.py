@@ -1,7 +1,7 @@
 """Add status and last_seen_at to cluster_connections; add degraded to applicationstatus
 
 Revision ID: 2bca4eddf11d
-Revises: 00114ca084ff
+Revises: b5d1f3a8e260
 Create Date: 2026-06-04 00:00:00.000000
 """
 import sqlalchemy as sa
@@ -9,7 +9,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = '2bca4eddf11d'
-down_revision = '00114ca084ff'
+down_revision = 'b5d1f3a8e260'
 branch_labels = None
 depends_on = None
 

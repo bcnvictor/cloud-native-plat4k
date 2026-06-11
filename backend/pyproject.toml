@@ -27,12 +27,6 @@ dependencies = [
     "pyyaml"
 ]
 
-[project.optional-dependencies]
-# Dépendances pour exécuter la suite de tests : `pip install -e ./backend[test]`
-# (aiosqlite = base SQLite en mémoire ; les tests pilotent l'async via asyncio.run,
-#  donc pas besoin de pytest-asyncio).
-test = ["pytest", "aiosqlite"]
-
 [tool.setuptools]
 package-dir = {"backend" = "."}
 packages = ["backend", "backend.api", "backend.core", "backend.db", "backend.k8s", "backend.gitlab", "backend.services", "backend.api.schemas"]
@@ -46,5 +40,14 @@ select = ["E", "F", "I"]   # pycodestyle errors, pyflakes, isort
 ignore = ["E501", "E712"]   # E501: line length géré par le formateur
                              # E712: SQLAlchemy requiert `== False/True` dans les filtres ORM
 
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "aiosqlite",
+    "httpx",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
+asyncio_mode = "auto"

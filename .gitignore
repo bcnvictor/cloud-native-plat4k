@@ -317,3 +317,13 @@ override.tf.json
 .terraformrc
 terraform.rc
 .venv/
+
+
+.githooks/
+CLAUDE.md
+graphify-out/
+
+### Playwright ###
+frontend/playwright-report/
+frontend/test-results/
+frontend/blob-report/
