@@ -1,10 +1,10 @@
 import { api } from './client';
 
-export type NamespaceValue = { namespace: string; value: number };
+export type AppValue = { app: string; owner: string; value: number };
 
 export type MonitoringMetrics = {
-  cpu_by_namespace: NamespaceValue[];
-  ram_by_namespace: NamespaceValue[];
+  cpu_by_app: AppValue[];
+  ram_by_app: AppValue[];
   estimated_hourly_cost_usd: number;
   estimated_daily_cost_usd: number;
 };

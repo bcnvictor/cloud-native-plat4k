@@ -224,6 +224,7 @@ class AppService:
                         origin=app.origin,
                         framework=app.framework or "generic",
                         client=bot,
+                        owner=app.owner,
                         webhook_url=webhook_url,
                         webhook_secret=settings.GITLAB_WEBHOOK_SECRET or "",
                         skip_first_run=skip_gitops,
