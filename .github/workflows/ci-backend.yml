@@ -2,7 +2,7 @@
 #
 # Déclenché uniquement quand backend/ ou shared/ changent.
 # Deux jobs :
-#   1. lint-and-typecheck : ruff + mypy + pytest --collect-only (pas de DB requise)
+#   1. lint-and-typecheck : ruff + mypy + pytest (SQLite in-memory, pas de DB requise)
 #   2. docker-build       : build l'image, push sur GHCR uniquement sur main
 #
 # Secrets requis : aucun (GITHUB_TOKEN est injecté automatiquement par GitHub Actions).
@@ -39,22 +39,21 @@ jobs:
             shared/pyproject.toml
 
       - name: Install dev tools
-        run: pip install ruff pytest
+        run: pip install ruff
 
       - name: Install shared package
         run: pip install -e ./shared
 
       - name: Install backend package
-        run: pip install -e ./backend
+        run: pip install -e "./backend[test]"
 
       # Vérification syntaxe et style Python
       - name: Lint — ruff
         run: ruff check backend/ shared/
 
-      # Vérifie que pytest peut découvrir les tests (structure cohérente).
-      # Retourne toujours 0 — il n'y a pas encore de tests à faire passer.
-      - name: Test structure — pytest collect
-        run: pytest backend/tests/ --collect-only -q
+      # Tests unitaires et fonctionnels (SQLite in-memory via aiosqlite, pas de DB requise)
+      - name: Test — pytest
+        run: pytest backend/tests/ -v
 
   # ─── Job 2 : image Docker ─────────────────────────────────────────────────
   docker-build:
