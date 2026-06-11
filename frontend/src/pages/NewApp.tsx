@@ -5,6 +5,14 @@ import { appsApi, AppTemplate } from '@/api/apps';
 import { clustersApi } from '@/api/clusters';
 import { useAuthStore } from '@/store/auth';
 
+function computeSlug(name: string): string {
+  let s = name.toLowerCase();
+  s = s.replace(/[^a-z0-9-]/g, '-');
+  s = s.replace(/-+/g, '-');
+  s = s.replace(/^-+|-+$/, '');
+  return s.slice(0, 50);
+}
+
 type Mode = 'scaffold' | 'onboard' | 'import';
 
 const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1', skip_first_deploy: false };
@@ -168,10 +176,11 @@ export const NewApp = () => {
                       className="form-input"
                       placeholder="mon-service"
                       value={scaffoldForm.name}
-                      onChange={e => setScaffoldForm(f => ({ ...f, name: e.target.value.replace(/\s+/g, '-') }))}
+                      onChange={e => setScaffoldForm(f => ({ ...f, name: e.target.value }))}
                       required
                       autoFocus
                     />
+                    <SlugHint name={scaffoldForm.name} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Responsable</label>
@@ -259,7 +268,7 @@ export const NewApp = () => {
                   <button type="button" className="btn btn-ghost" onClick={() => navigate('/resources')} disabled={scaffoldMutation.isPending}>
                     Annuler
                   </button>
-                  <button type="submit" className="btn btn-primary" disabled={scaffoldMutation.isPending || !scaffoldForm.template}>
+                  <button type="submit" className="btn btn-primary" disabled={scaffoldMutation.isPending || !scaffoldForm.template || !computeSlug(scaffoldForm.name)}>
                     {scaffoldMutation.isPending ? (
                       <>
                         <i className="ti ti-loader-2" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
@@ -283,10 +292,11 @@ export const NewApp = () => {
                       className="form-input"
                       placeholder="mon-service"
                       value={onboardForm.name}
-                      onChange={e => setOnboardForm(f => ({ ...f, name: e.target.value.replace(/\s+/g, '-') }))}
+                      onChange={e => setOnboardForm(f => ({ ...f, name: e.target.value }))}
                       required
                       autoFocus
                     />
+                    <SlugHint name={onboardForm.name} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Responsable</label>
@@ -352,7 +362,7 @@ export const NewApp = () => {
                   <button type="button" className="btn btn-ghost" onClick={() => navigate('/resources')} disabled={onboardMutation.isPending}>
                     Annuler
                   </button>
-                  <button type="submit" className="btn btn-primary" disabled={onboardMutation.isPending}>
+                  <button type="submit" className="btn btn-primary" disabled={onboardMutation.isPending || !computeSlug(onboardForm.name)}>
                     {onboardMutation.isPending ? (
                       <>
                         <i className="ti ti-loader-2" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
@@ -376,10 +386,11 @@ export const NewApp = () => {
                       className="form-input"
                       placeholder="mon-service"
                       value={importForm.name}
-                      onChange={e => setImportForm(f => ({ ...f, name: e.target.value.replace(/\s+/g, '-') }))}
+                      onChange={e => setImportForm(f => ({ ...f, name: e.target.value }))}
                       required
                       autoFocus
                     />
+                    <SlugHint name={importForm.name} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Responsable</label>
@@ -456,7 +467,7 @@ export const NewApp = () => {
                   <button type="button" className="btn btn-ghost" onClick={() => navigate('/resources')} disabled={importMutation.isPending}>
                     Annuler
                   </button>
-                  <button type="submit" className="btn btn-primary" disabled={importMutation.isPending}>
+                  <button type="submit" className="btn btn-primary" disabled={importMutation.isPending || !computeSlug(importForm.name)}>
                     {importMutation.isPending ? (
                       <>
                         <i className="ti ti-loader-2" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
@@ -478,6 +489,22 @@ export const NewApp = () => {
     </>
   );
 };
+
+function SlugHint({ name }: { name: string }) {
+  if (!name) return null;
+  const slug = computeSlug(name);
+  if (!slug) return (
+    <span className="form-hint" style={{ color: 'var(--red)' }}>
+      Ce nom ne peut pas être converti en identifiant Kubernetes valide.
+    </span>
+  );
+  if (slug === name) return null;
+  return (
+    <span className="form-hint">
+      Identifiant GitLab&nbsp;: <code style={{ fontFamily: 'var(--font-mono, monospace)' }}>{slug}</code>
+    </span>
+  );
+}
 
 function ModeCard({ icon, label, desc, active, onClick }: {
   icon: string;

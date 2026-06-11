@@ -3,10 +3,25 @@ Shared Pydantic models for both the FastAPI backend and the Typer CLI.
 This avoids duplicating code between the client and server.
 """
 
+import re
+
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
+
+
+def compute_slug(name: str) -> str:
+    """Return an RFC 1123-compliant slug derived from name, capped at 50 chars.
+
+    Returns an empty string when the name cannot be normalised (e.g. all
+    special characters).  Callers must treat an empty return as an error.
+    """
+    s = name.lower()
+    s = re.sub(r"[^a-z0-9-]", "-", s)
+    s = re.sub(r"-+", "-", s)
+    s = s.strip("-")
+    return s[:50]
 
 
 class CloudType(str, Enum):
@@ -200,6 +215,7 @@ class ApplicationUpdate(BaseModel):
 
 class ApplicationResponse(ApplicationBase):
     id: int
+    slug: str
     status: ApplicationStatus
     target_cluster_id: Optional[int] = None
     ci_injected: Optional[bool] = None
