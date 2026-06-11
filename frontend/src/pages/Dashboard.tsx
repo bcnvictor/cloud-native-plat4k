@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { monitoringApi, AppValue, LogEntry } from '@/api/monitoring';
+import { grafanaFinopsUrl } from '@/utils/grafanaLinks';
 
 function AppBarChart({ data, color, unit }: { data: AppValue[]; color: string; unit: string }) {
   const top = data.slice(0, 6);
@@ -43,6 +44,12 @@ export const Dashboard = () => {
   const [nsFilter, setNsFilter] = useState('Tous');
   const [levelFilter, setLevelFilter] = useState('Tous');
 
+  const { data: monitoringConfig } = useQuery({
+    queryKey: ['monitoring-config'],
+    queryFn: monitoringApi.getConfig,
+    staleTime: Infinity,
+  });
+
   const { data: metrics, isError: metricsError } = useQuery({
     queryKey: ['monitoring-metrics'],
     queryFn: monitoringApi.getMetrics,
@@ -69,6 +76,18 @@ export const Dashboard = () => {
     <>
       <div className="topbar">
         <span className="topbar-title">Monitoring</span>
+        {monitoringConfig?.grafana_url && (
+          <a
+            href={grafanaFinopsUrl(monitoringConfig.grafana_url)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-ghost"
+            style={{ textDecoration: 'none' }}
+          >
+            <i className="ti ti-chart-area-line" aria-hidden="true" />
+            Grafana FinOps
+          </a>
+        )}
       </div>
 
       <div className="page-content">
