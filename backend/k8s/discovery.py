@@ -3,11 +3,11 @@ import os
 from pathlib import Path
 
 import yaml
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import ClusterConnection
 from backend.core.config import settings
+from backend.db.models import ClusterConnection
 
 logger = logging.getLogger(__name__)
 
@@ -59,28 +59,43 @@ def _collect_all_contexts() -> list[dict]:
 
 
 async def discover_clusters(db: AsyncSession) -> None:
-    """Scanne les kubeconfigs disponibles et upsert les clusters manquants dans cluster_connections."""
+    """Scanne les kubeconfigs disponibles et upsert les clusters dans cluster_connections.
+
+    - cluster inconnu  -> insertion
+    - cluster connu     -> mise à jour de endpoint / kubeconfig_secret_ref s'ils ont changé
+      (ex: rotation du chemin de kubeconfig ou changement d'endpoint de l'API server).
+    """
     contexts = _collect_all_contexts()
     if not contexts:
         logger.info("No kubeconfig contexts found, skipping discovery")
         return
 
-    existing_result = await db.execute(select(ClusterConnection.name))
-    existing_names = {row[0] for row in existing_result.all()}
+    existing_result = await db.execute(select(ClusterConnection))
+    existing_by_name = {c.name: c for c in existing_result.scalars().all()}
 
     inserted = 0
+    updated = 0
     for ctx in contexts:
-        if ctx["name"] not in existing_names:
-            cluster = ClusterConnection(
-                name=ctx["name"],
-                endpoint=ctx["endpoint"],
-                kubeconfig_secret_ref=ctx["kubeconfig_path"],
+        existing = existing_by_name.get(ctx["name"])
+        if existing is None:
+            db.add(
+                ClusterConnection(
+                    name=ctx["name"],
+                    endpoint=ctx["endpoint"],
+                    kubeconfig_secret_ref=ctx["kubeconfig_path"],
+                )
             )
-            db.add(cluster)
             inserted += 1
+        elif (
+            existing.endpoint != ctx["endpoint"]
+            or existing.kubeconfig_secret_ref != ctx["kubeconfig_path"]
+        ):
+            existing.endpoint = ctx["endpoint"]
+            existing.kubeconfig_secret_ref = ctx["kubeconfig_path"]
+            updated += 1
 
-    if inserted:
+    if inserted or updated:
         await db.commit()
-        logger.info("Discovery: inserted %d new cluster(s)", inserted)
+        logger.info("Discovery: %d inserted, %d updated", inserted, updated)
     else:
-        logger.info("Discovery: no new clusters found")
+        logger.info("Discovery: no changes")

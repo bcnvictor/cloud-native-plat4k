@@ -27,6 +27,12 @@ dependencies = [
     "pyyaml"
 ]
 
+[project.optional-dependencies]
+# Dépendances pour exécuter la suite de tests : `pip install -e ./backend[test]`
+# (aiosqlite = base SQLite en mémoire ; les tests pilotent l'async via asyncio.run,
+#  donc pas besoin de pytest-asyncio).
+test = ["pytest", "aiosqlite"]
+
 [tool.setuptools]
 package-dir = {"backend" = "."}
 packages = ["backend", "backend.api", "backend.core", "backend.db", "backend.k8s", "backend.gitlab", "backend.services", "backend.api.schemas"]
