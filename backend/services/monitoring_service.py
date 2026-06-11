@@ -41,7 +41,7 @@ async def get_metrics() -> dict:
         {
             "app": r["metric"].get("label_app_kubernetes_io_name", "unknown"),
             "owner": r["metric"].get("label_cnp_io_owner", "unknown"),
-            "value": round(float(r["value"][1]), 4),
+            "value": round(float(r["value"][1]), 6),
         }
         for r in cpu_result
     ]
@@ -72,9 +72,15 @@ def _detect_level(line: str, stream_labels: dict) -> str:
     return "INFO"
 
 
-async def get_logs(namespace: str | None = None, limit: int = 50) -> list[dict]:
-    ns_filter = f'namespace="{namespace}"' if namespace else 'namespace=~".+"'
-    logql = '{' + ns_filter + '}'
+async def get_logs(namespace: str | None = None, app: str | None = None, limit: int = 50) -> list[dict]:
+    filters = []
+    if namespace:
+        filters.append(f'namespace="{namespace}"')
+    if app:
+        filters.append(f'container="{app}"')
+    if not filters:
+        filters.append('namespace=~".+"')
+    logql = '{' + ', '.join(filters) + '}'
 
     now_ns = int(time.time() * 1e9)
     start_ns = now_ns - int(3600 * 1e9)
