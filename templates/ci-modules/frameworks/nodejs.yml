@@ -1,0 +1,9 @@
+nodejs-test:
+  stage: test
+  image: node:20-alpine
+  script:
+    - npm install
+    - npm run test --if-present
+  rules:
+    - exists:
+        - package.json

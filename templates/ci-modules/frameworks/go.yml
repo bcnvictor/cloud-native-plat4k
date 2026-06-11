@@ -1,0 +1,8 @@
+go-test:
+  stage: test
+  image: golang:1.22-alpine
+  script:
+    - go test ./...
+  rules:
+    - exists:
+        - go.mod
