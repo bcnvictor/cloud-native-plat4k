@@ -141,10 +141,17 @@ class AuditLogResponse(BaseModel):
 
 # ── IDP entities ──────────────────────────────────────────────────────────────
 
+class ClusterStatus(str, Enum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+    UNKNOWN = "unknown"
+
+
 class ApplicationStatus(str, Enum):
     ONBOARDING = "onboarding"
     READY = "ready"
     DEPLOYED = "deployed"
+    DEGRADED = "degraded"
 
 
 class DeploymentStatus(str, Enum):
@@ -211,6 +218,7 @@ class ApplicationUpdate(BaseModel):
     origin: Optional[str] = None
     framework: Optional[str] = None
     status: Optional[ApplicationStatus] = None
+    target_cluster_id: Optional[int] = None
 
 
 class ApplicationResponse(ApplicationBase):
@@ -245,6 +253,8 @@ class ClusterConnectionUpdate(BaseModel):
 
 class ClusterConnectionResponse(ClusterConnectionBase):
     id: int
+    status: ClusterStatus = ClusterStatus.UNKNOWN
+    last_seen_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { appsApi, AppTemplate } from '@/api/apps';
-import { clustersApi } from '@/api/clusters';
+import { clustersApi, type ClusterConnection } from '@/api/clusters';
 import { useAuthStore } from '@/store/auth';
 
 function computeSlug(name: string): string {
@@ -15,7 +15,13 @@ function computeSlug(name: string): string {
 
 type Mode = 'scaffold' | 'onboard' | 'import';
 
-const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1', skip_first_deploy: false };
+function statusDot(s: ClusterConnection['status']): string {
+  if (s === 'online') return '● ';
+  if (s === 'offline') return '○ ';
+  return '◌ ';
+}
+
+const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1', skip_first_deploy: false, target_cluster_id: '' };
 const EMPTY_ONBOARD = { name: '', repo_url: '', framework: '', target_cluster_id: '' };
 const EMPTY_IMPORT = { name: '', source_url: '', framework: '', target_cluster_id: '', raw: false };
 
@@ -92,6 +98,7 @@ export const NewApp = () => {
         replicas: Number(scaffoldForm.replicas) || 1,
       },
       skip_first_deploy: scaffoldForm.skip_first_deploy,
+      target_cluster_id: scaffoldForm.target_cluster_id ? Number(scaffoldForm.target_cluster_id) : undefined,
     });
   };
 
@@ -246,6 +253,23 @@ export const NewApp = () => {
                   </div>
                 </div>
 
+                <div className="form-group">
+                  <label className="form-label">Cluster cible</label>
+                  <select
+                    className="form-select"
+                    value={scaffoldForm.target_cluster_id}
+                    onChange={e => setScaffoldForm(f => ({ ...f, target_cluster_id: e.target.value }))}
+                  >
+                    <option value="">Aucun (à définir plus tard)</option>
+                    {clusters.map(c => (
+                      <option key={c.id} value={c.id} disabled={c.status === 'offline'}>
+                        {statusDot(c.status)}{c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="form-hint">Optionnel</span>
+                </div>
+
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
                   <input
                     type="checkbox"
@@ -344,7 +368,9 @@ export const NewApp = () => {
                     >
                       <option value="">Aucun (à définir plus tard)</option>
                       {clusters.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
+                        <option key={c.id} value={c.id} disabled={c.status === 'offline'}>
+                          {statusDot(c.status)}{c.name}
+                        </option>
                       ))}
                     </select>
                     <span className="form-hint">Optionnel</span>
@@ -449,7 +475,9 @@ export const NewApp = () => {
                     >
                       <option value="">Aucun (à définir plus tard)</option>
                       {clusters.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
+                        <option key={c.id} value={c.id} disabled={c.status === 'offline'}>
+                          {statusDot(c.status)}{c.name}
+                        </option>
                       ))}
                     </select>
                     <span className="form-hint">Optionnel</span>
