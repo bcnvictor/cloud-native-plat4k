@@ -230,21 +230,21 @@ class ApplicationResponse(ApplicationBase):
 class ClusterConnectionBase(BaseModel):
     name: str
     endpoint: str
-    kubeconfig_secret_ref: str
 
 
 class ClusterConnectionCreate(ClusterConnectionBase):
-    pass
+    kubeconfig: str
 
 
 class ClusterConnectionUpdate(BaseModel):
     name: Optional[str] = None
     endpoint: Optional[str] = None
-    kubeconfig_secret_ref: Optional[str] = None
+    kubeconfig: Optional[str] = None
 
 
 class ClusterConnectionResponse(ClusterConnectionBase):
     id: int
+    kubeconfig_secret_ref: str
     created_at: datetime
     updated_at: Optional[datetime] = None
 
