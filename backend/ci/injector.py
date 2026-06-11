@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 def inject_ci(
     app_id: int,
     app_name: str,
+    app_slug: str,
     repo_url: str,
     origin: str,
     framework: str,
@@ -27,7 +28,7 @@ def inject_ci(
     - imported:   open a MR from a dedicated branch
     """
     project_path = extract_project_path(repo_url)
-    content = generate_gitlab_ci(app_name, app_id, framework)
+    content = generate_gitlab_ci(app_slug, app_id, framework)
 
     if origin == "scaffolded":
         if client.file_exists(project_path, ".gitlab-ci.yml", ref="main"):

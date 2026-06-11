@@ -10,6 +10,7 @@ from shared.models import (
     ApplicationScaffoldRequest,
     ApplicationStatus,
     ApplicationUpdate,
+    compute_slug,
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,21 @@ def _get_bot_client() -> GitLabClient | None:
     )
 
 
+def _validated_slug(name: str) -> str:
+    """Compute slug and raise 400 if the name cannot be normalised."""
+    from fastapi import HTTPException
+    slug = compute_slug(name)
+    if not slug:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"App name '{name}' cannot be normalised to a valid Kubernetes identifier (RFC 1123). "
+                "Use only letters, digits, and hyphens."
+            ),
+        )
+    return slug
+
+
 class AppService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -50,15 +66,18 @@ class AppService:
         return app
 
     async def scaffold_app(self, payload: ApplicationScaffoldRequest) -> Application:
+        slug = _validated_slug(payload.name)
         from backend.services.scaffolding_service import ScaffoldingService
         svc = ScaffoldingService(self.db)
         repo_url, project_path = await svc.scaffold(
             app_name=payload.name,
+            app_slug=slug,
             template=payload.template,
             scaffolding_params=payload.scaffolding,
         )
         data = {
             "name": payload.name,
+            "slug": slug,
             "owner": payload.owner,
             "repo_url": repo_url,
             "origin": "scaffolded",
@@ -67,6 +86,7 @@ class AppService:
         return await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
 
     async def onboard_app(self, payload: ApplicationOnboardRequest) -> Application:
+        slug = _validated_slug(payload.name)
         normalized_url = payload.repo_url.rstrip("/").removesuffix(".git")
         result = await self.db.execute(
             select(Application).where(
@@ -107,6 +127,7 @@ class AppService:
 
         data = {
             "name": payload.name,
+            "slug": slug,
             "owner": payload.owner,
             "repo_url": normalized_url,
             "origin": "onboarded",
@@ -116,6 +137,7 @@ class AppService:
         return await self._save_app(data)
 
     async def external_import_app(self, payload: ApplicationExternalImportRequest) -> Application:
+        slug = _validated_slug(payload.name)
         from backend.core.config import settings
         from backend.gitlab.importer import import_external_repo
 
@@ -159,6 +181,7 @@ class AppService:
 
         data = {
             "name": payload.name,
+            "slug": slug,
             "owner": payload.owner,
             "repo_url": result["repo_url"],
             "source_url": payload.source_url,
@@ -169,7 +192,9 @@ class AppService:
         return await self._save_app(data, skip_ci=payload.raw)
 
     async def create_app(self, payload: ApplicationCreate) -> Application:
-        return await self._save_app(payload.model_dump())
+        data = payload.model_dump()
+        data["slug"] = _validated_slug(data["name"])
+        return await self._save_app(data)
 
     async def _save_app(self, data: dict, scaffolded_project_path: str | None = None, skip_ci: bool = False, skip_gitops: bool = False) -> Application:
         app = Application(**data)
@@ -194,6 +219,7 @@ class AppService:
                     lambda: inject_ci(
                         app_id=app.id,
                         app_name=app.name,
+                        app_slug=app.slug,
                         repo_url=app.repo_url,
                         origin=app.origin,
                         framework=app.framework or "generic",
@@ -236,7 +262,7 @@ class AppService:
                 await anyio.to_thread.run_sync(
                     lambda: bot.delete_directory_contents(
                         project_path=gitops_path,
-                        directory_path=f"apps/{app.name}",
+                        directory_path=f"apps/{app.slug}",
                         commit_message=f"chore: delete app {app.name} from gitops apps"
                     ),
                     cancellable=True
@@ -244,7 +270,7 @@ class AppService:
                 await anyio.to_thread.run_sync(
                     lambda: bot.delete_directory_contents(
                         project_path=gitops_path,
-                        directory_path=f"argocd/{app.name}",
+                        directory_path=f"argocd/{app.slug}",
                         commit_message=f"chore: delete app {app.name} from gitops argocd"
                     ),
                     cancellable=True
@@ -303,6 +329,7 @@ class AppService:
             if existing is None:
                 app = Application(
                     name=name,
+                    slug=compute_slug(name) or f"app-{name}",
                     owner='k8s-sync',
                     origin='kubernetes',
                     repo_url=image,

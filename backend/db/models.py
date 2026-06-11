@@ -109,6 +109,7 @@ class Application(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    slug = Column(String, nullable=False, unique=True)
     repo_url = Column(String, nullable=True, unique=True)
     owner = Column(String, nullable=False)
     target_cluster_id = Column(Integer, ForeignKey("cluster_connections.id", ondelete="SET NULL"), nullable=True)
