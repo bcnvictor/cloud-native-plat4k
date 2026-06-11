@@ -64,6 +64,7 @@ export const Layout = () => {
             <>
               <div className="sb-sep" />
               {navItem('/admin/users', 'ti-users', 'Utilisateurs')}
+              {navItem('/admin/clusters', 'ti-server', 'Clusters')}
               {navItem('/admin/audit', 'ti-shield-check', 'Audit')}
             </>
           )}
