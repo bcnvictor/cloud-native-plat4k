@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { monitoringApi, NamespaceValue, LogEntry } from '@/api/monitoring';
+import { monitoringApi, AppValue, LogEntry } from '@/api/monitoring';
+import { grafanaFinopsUrl } from '@/utils/grafanaLinks';
 
-function NamespaceBarChart({ data, color, unit }: { data: NamespaceValue[]; color: string; unit: string }) {
+function AppBarChart({ data, color, unit }: { data: AppValue[]; color: string; unit: string }) {
   const top = data.slice(0, 6);
   const max = top[0]?.value ?? 1;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 0' }}>
-      {top.map(({ namespace, value }) => (
-        <div key={namespace} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'rgba(255,255,255,0.35)', width: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
-            {namespace}
+      {top.map(({ app, owner, value }) => (
+        <div key={app} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'rgba(255,255,255,0.35)', width: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }} title={owner}>
+            {app}
           </span>
           <div style={{ flex: 1, height: 4, background: 'rgba(255,255,255,0.07)', borderRadius: 2 }}>
             <div style={{ width: `${(value / max) * 100}%`, height: '100%', background: color, borderRadius: 2 }} />
@@ -43,6 +44,12 @@ export const Dashboard = () => {
   const [nsFilter, setNsFilter] = useState('Tous');
   const [levelFilter, setLevelFilter] = useState('Tous');
 
+  const { data: monitoringConfig } = useQuery({
+    queryKey: ['monitoring-config'],
+    queryFn: monitoringApi.getConfig,
+    staleTime: Infinity,
+  });
+
   const { data: metrics, isError: metricsError } = useQuery({
     queryKey: ['monitoring-metrics'],
     queryFn: monitoringApi.getMetrics,
@@ -61,26 +68,38 @@ export const Dashboard = () => {
     levelFilter === 'Tous' || l.level === levelFilter
   );
 
-  const totalCpuCores = metrics?.cpu_by_namespace.reduce((s, n) => s + n.value, 0).toFixed(3) ?? '—';
-  const totalRamMb = metrics?.ram_by_namespace.reduce((s, n) => s + n.value, 0).toFixed(0) ?? '—';
+  const totalCpuCores = metrics?.cpu_by_app.reduce((s, n) => s + n.value, 0).toFixed(3) ?? '—';
+  const totalRamMb = metrics?.ram_by_app.reduce((s, n) => s + n.value, 0).toFixed(0) ?? '—';
   const dailyCost = metrics ? `$${metrics.estimated_daily_cost_usd.toFixed(3)}` : '—';
 
   return (
     <>
       <div className="topbar">
         <span className="topbar-title">Monitoring</span>
+        {monitoringConfig?.grafana_url && (
+          <a
+            href={grafanaFinopsUrl(monitoringConfig.grafana_url)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-ghost"
+            style={{ textDecoration: 'none' }}
+          >
+            <i className="ti ti-chart-area-line" aria-hidden="true" />
+            Grafana FinOps
+          </a>
+        )}
       </div>
 
       <div className="page-content">
         <div className="panels-row">
           <div className="grafana-panel">
             <div className="panel-header">
-              <span className="panel-title">CPU par namespace</span>
+              <span className="panel-title">CPU par app</span>
               <span className="panel-value" style={{ color: '#10B981' }}>{totalCpuCores} cores</span>
             </div>
             <div className="panel-chart">
               {metricsError || !metrics ? <UnavailableChart label="Prometheus" /> : (
-                <NamespaceBarChart data={metrics.cpu_by_namespace} color="#10B981" unit="c" />
+                <AppBarChart data={metrics.cpu_by_app} color="#10B981" unit="c" />
               )}
             </div>
             <div className="panel-footer" />
@@ -88,12 +107,12 @@ export const Dashboard = () => {
 
           <div className="grafana-panel">
             <div className="panel-header">
-              <span className="panel-title">RAM par namespace</span>
+              <span className="panel-title">RAM par app</span>
               <span className="panel-value" style={{ color: '#93B8FA' }}>{totalRamMb} Mo</span>
             </div>
             <div className="panel-chart">
               {metricsError || !metrics ? <UnavailableChart label="Prometheus" /> : (
-                <NamespaceBarChart data={metrics.ram_by_namespace} color="#93B8FA" unit="Mo" />
+                <AppBarChart data={metrics.ram_by_app} color="#93B8FA" unit="Mo" />
               )}
             </div>
             <div className="panel-footer" />

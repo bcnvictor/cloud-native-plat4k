@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     CLUSTER_HEALTH_FAILURE_THRESHOLD: int = 2  # sondes échouées consécutives avant de marquer OFFLINE (grace period)
     KUBECONFIG_DIR: Optional[str] = None    # répertoire de kubeconfigs, optionnel
 
+    # Monitoring
+    PROMETHEUS_URL: str = "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+    LOKI_URL: str = "http://loki-gateway.monitoring.svc.cluster.local"
+    GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: http://localhost:3000
+
     # Logging
     LOG_LEVEL: str = "INFO"
 
