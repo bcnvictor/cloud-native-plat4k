@@ -5,7 +5,7 @@ from typing import Optional
 import anyio
 from fastapi import HTTPException, status
 from kubernetes.client.exceptions import ApiException
-from shared.models import ApplicationStatus, DeploymentCreate, DeploymentStatus
+from shared.models import ApplicationStatus, ClusterStatus, DeploymentCreate, DeploymentStatus
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,6 +58,13 @@ class DeploymentService:
         cluster = cluster_result.scalar_one_or_none()
         if cluster is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ClusterConnection not found")
+
+        # Seul OFFLINE bloque le déploiement ; UNKNOWN reste autorisé (cf. update_app).
+        if cluster.status == ClusterStatus.OFFLINE:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cluster '{cluster.name}' is currently offline",
+            )
 
         if not app.repo_url:
             raise HTTPException(

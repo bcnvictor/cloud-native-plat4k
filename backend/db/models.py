@@ -5,6 +5,7 @@ SQLAlchemy models for the backend database.
 from shared.models import (
     ApplicationStatus,
     CloudType,
+    ClusterStatus,
     DeploymentStatus,
     ResourceStatus,
     ResourceType,
@@ -136,6 +137,12 @@ class ClusterConnection(Base):
     name = Column(String, nullable=False, unique=True)
     endpoint = Column(String, nullable=False)
     kubeconfig_secret_ref = Column(String, nullable=False)
+    status = Column(
+        SQLEnum(ClusterStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=ClusterStatus.UNKNOWN,
+    )
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
 
