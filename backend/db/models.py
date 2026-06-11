@@ -5,6 +5,7 @@ SQLAlchemy models for the backend database.
 from shared.models import (
     ApplicationStatus,
     CloudType,
+    ClusterStatus,
     DeploymentStatus,
     ResourceStatus,
     ResourceType,
@@ -14,7 +15,6 @@ from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, Str
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
-from shared.models import CloudType, ResourceType, ResourceStatus, UserRole, ApplicationStatus, DeploymentStatus, ClusterStatus
 
 Base = declarative_base()
 

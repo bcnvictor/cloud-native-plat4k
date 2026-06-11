@@ -10,17 +10,17 @@ from shared.models import (
     ApplicationScaffoldRequest,
     ApplicationStatus,
     ApplicationUpdate,
+    ClusterStatus,
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import Application, ClusterConnection
-from backend.k8s.client import k8s_client
-from backend.core.config import settings
-from backend.gitlab.client import GitLabClient
 from backend.ci.detector import detect_framework, extract_project_path
 from backend.ci.injector import inject_ci
-from shared.models import ApplicationCreate, ApplicationOnboardRequest, ApplicationExternalImportRequest, ApplicationScaffoldRequest, ApplicationUpdate, ApplicationStatus, ClusterStatus
+from backend.core.config import settings
+from backend.db.models import Application, ClusterConnection
+from backend.gitlab.client import GitLabClient
+from backend.k8s.client import k8s_client
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +225,8 @@ class AppService:
             target_cluster = cluster_result.scalar_one_or_none()
             if target_cluster is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster not found")
+            # Seul OFFLINE (panne confirmée) bloque. UNKNOWN est autorisé : cluster pas
+            # encore sondé ou ref non-fichier — le bloquer le rendrait inutilisable.
             if target_cluster.status == ClusterStatus.OFFLINE:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,

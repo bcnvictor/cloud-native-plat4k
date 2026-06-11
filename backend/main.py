@@ -23,11 +23,6 @@ from backend.api.routes import (
     webhooks,
 )
 from backend.core.config import settings
-from backend.api.routes import auth, users, resources, credentials, audit, health
-from backend.api.routes import gitlab
-from backend.api.routes import apps, clusters, deployments
-from backend.api.routes import webhooks
-from backend.api.routes import monitoring
 from backend.db.session import AsyncSessionLocal
 from backend.k8s.client import k8s_client
 from backend.k8s.dashboards import FINOPS_DASHBOARD_JSON

@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     K8S_TARGET_NAMESPACE: str = "default"
     K8S_IMAGE_PULL_SECRET: Optional[str] = None
     CLUSTER_HEALTH_INTERVAL: int = 300      # secondes entre deux sondes
+    CLUSTER_HEALTH_FAILURE_THRESHOLD: int = 2  # sondes échouées consécutives avant de marquer OFFLINE (grace period)
     KUBECONFIG_DIR: Optional[str] = None    # répertoire de kubeconfigs, optionnel
 
     # Logging
