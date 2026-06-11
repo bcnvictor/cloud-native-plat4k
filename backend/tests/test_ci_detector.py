@@ -37,8 +37,13 @@ def test_detect_framework_python_pyproject():
     assert detect_framework(client, "https://gitlab.com/ns/repo") == "python"
 
 
-def test_detect_framework_generic_no_indicators():
+def test_detect_framework_nodejs():
     client = _mock_client([{"name": "index.js"}, {"name": "package.json"}])
+    assert detect_framework(client, "https://gitlab.com/ns/repo") == "nodejs"
+
+
+def test_detect_framework_generic_no_indicators():
+    client = _mock_client([{"name": "README.md"}, {"name": "Dockerfile"}])
     assert detect_framework(client, "https://gitlab.com/ns/repo") == "generic"
 
 
