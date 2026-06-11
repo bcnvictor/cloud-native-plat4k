@@ -111,7 +111,7 @@ jobs:
         run: nohup python -m uvicorn backend.main:app --port 8000 > backend-e2e.log 2>&1 &
 
       - name: Wait for backend
-        run: npx --yes wait-on@7 http://localhost:8000/api/v1/health/ -t 30000 || (cat backend-e2e.log; exit 1)
+        run: npx --yes wait-on@7 http-get://localhost:8000/api/v1/health/ -t 30000 || (cat backend-e2e.log; exit 1)
 
       - uses: actions/setup-node@v4
         with:
