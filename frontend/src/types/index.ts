@@ -3,6 +3,11 @@ export type ResourceType = 'vm' | 'storage' | 'network';
 export type ResourceStatus = 'pending' | 'running' | 'stopped' | 'terminated' | 'error';
 export type UserRole = 'admin' | 'dev' | 'viewer';
 
+export interface CnpJwtPayload {
+  sub: string;
+  role: UserRole;
+}
+
 export type ApplicationStatus = 'onboarding' | 'ready' | 'deployed';
 export type DeploymentStatus = 'pending' | 'running' | 'succeeded' | 'failed';
 
@@ -43,7 +48,7 @@ export interface Resource {
   external_id: string;
   name: string;
   status: ResourceStatus;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   created_at: string;
 }
 

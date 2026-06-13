@@ -2,12 +2,26 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { appsApi, AppTemplate } from '@/api/apps';
-import { clustersApi } from '@/api/clusters';
+import { clustersApi, type ClusterConnection } from '@/api/clusters';
 import { useAuthStore } from '@/store/auth';
+
+function computeSlug(name: string): string {
+  let s = name.toLowerCase();
+  s = s.replace(/[^a-z0-9-]/g, '-');
+  s = s.replace(/-+/g, '-');
+  s = s.replace(/^-+|-+$/, '');
+  return s.slice(0, 50);
+}
 
 type Mode = 'scaffold' | 'onboard' | 'import';
 
-const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1' };
+function statusDot(s: ClusterConnection['status']): string {
+  if (s === 'online') return '● ';
+  if (s === 'offline') return '○ ';
+  return '◌ ';
+}
+
+const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1', skip_first_deploy: false, target_cluster_id: '' };
 const EMPTY_ONBOARD = { name: '', repo_url: '', framework: '', target_cluster_id: '' };
 const EMPTY_IMPORT = { name: '', source_url: '', framework: '', target_cluster_id: '', raw: false };
 
@@ -45,8 +59,8 @@ export const NewApp = () => {
       queryClient.invalidateQueries({ queryKey: ['apps'] });
       navigate('/resources');
     },
-    onError: (err: any) => {
-      setScaffoldError(err?.response?.data?.detail ?? 'Erreur lors du scaffolding');
+    onError: (err: unknown) => {
+      setScaffoldError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Erreur lors du scaffolding');
     },
   });
 
@@ -56,8 +70,8 @@ export const NewApp = () => {
       queryClient.invalidateQueries({ queryKey: ['apps'] });
       navigate('/resources');
     },
-    onError: (err: any) => {
-      setOnboardError(err?.response?.data?.detail ?? "Erreur lors de l'onboarding");
+    onError: (err: unknown) => {
+      setOnboardError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Erreur lors de l'onboarding");
     },
   });
 
@@ -67,8 +81,8 @@ export const NewApp = () => {
       queryClient.invalidateQueries({ queryKey: ['apps'] });
       navigate('/resources');
     },
-    onError: (err: any) => {
-      setImportError(err?.response?.data?.detail ?? "Erreur lors de l'import");
+    onError: (err: unknown) => {
+      setImportError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Erreur lors de l'import");
     },
   });
 
@@ -83,6 +97,8 @@ export const NewApp = () => {
         port: Number(scaffoldForm.port) || 8000,
         replicas: Number(scaffoldForm.replicas) || 1,
       },
+      skip_first_deploy: scaffoldForm.skip_first_deploy,
+      target_cluster_id: scaffoldForm.target_cluster_id ? Number(scaffoldForm.target_cluster_id) : undefined,
     });
   };
 
@@ -171,6 +187,7 @@ export const NewApp = () => {
                       required
                       autoFocus
                     />
+                    <SlugHint name={scaffoldForm.name} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Responsable</label>
@@ -236,6 +253,34 @@ export const NewApp = () => {
                   </div>
                 </div>
 
+                <div className="form-group">
+                  <label className="form-label">Cluster cible</label>
+                  <select
+                    className="form-select"
+                    value={scaffoldForm.target_cluster_id}
+                    onChange={e => setScaffoldForm(f => ({ ...f, target_cluster_id: e.target.value }))}
+                  >
+                    <option value="">Aucun (à définir plus tard)</option>
+                    {clusters.map(c => (
+                      <option key={c.id} value={c.id} disabled={c.status === 'offline'}>
+                        {statusDot(c.status)}{c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="form-hint">Optionnel</span>
+                </div>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={scaffoldForm.skip_first_deploy}
+                    onChange={e => setScaffoldForm(f => ({ ...f, skip_first_deploy: e.target.checked }))}
+                  />
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    Skip le premier deploy <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>(ne déclenche pas la CI ni ArgoCD au scaffold)</span>
+                  </span>
+                </label>
+
                 {scaffoldError && (
                   <div className="alert error">
                     <i className="ti ti-alert-circle" aria-hidden="true" />
@@ -247,7 +292,7 @@ export const NewApp = () => {
                   <button type="button" className="btn btn-ghost" onClick={() => navigate('/resources')} disabled={scaffoldMutation.isPending}>
                     Annuler
                   </button>
-                  <button type="submit" className="btn btn-primary" disabled={scaffoldMutation.isPending || !scaffoldForm.template}>
+                  <button type="submit" className="btn btn-primary" disabled={scaffoldMutation.isPending || !scaffoldForm.template || !computeSlug(scaffoldForm.name)}>
                     {scaffoldMutation.isPending ? (
                       <>
                         <i className="ti ti-loader-2" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
@@ -275,6 +320,7 @@ export const NewApp = () => {
                       required
                       autoFocus
                     />
+                    <SlugHint name={onboardForm.name} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Responsable</label>
@@ -322,7 +368,9 @@ export const NewApp = () => {
                     >
                       <option value="">Aucun (à définir plus tard)</option>
                       {clusters.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
+                        <option key={c.id} value={c.id} disabled={c.status === 'offline'}>
+                          {statusDot(c.status)}{c.name}
+                        </option>
                       ))}
                     </select>
                     <span className="form-hint">Optionnel</span>
@@ -340,7 +388,7 @@ export const NewApp = () => {
                   <button type="button" className="btn btn-ghost" onClick={() => navigate('/resources')} disabled={onboardMutation.isPending}>
                     Annuler
                   </button>
-                  <button type="submit" className="btn btn-primary" disabled={onboardMutation.isPending}>
+                  <button type="submit" className="btn btn-primary" disabled={onboardMutation.isPending || !computeSlug(onboardForm.name)}>
                     {onboardMutation.isPending ? (
                       <>
                         <i className="ti ti-loader-2" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
@@ -368,6 +416,7 @@ export const NewApp = () => {
                       required
                       autoFocus
                     />
+                    <SlugHint name={importForm.name} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Responsable</label>
@@ -426,7 +475,9 @@ export const NewApp = () => {
                     >
                       <option value="">Aucun (à définir plus tard)</option>
                       {clusters.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
+                        <option key={c.id} value={c.id} disabled={c.status === 'offline'}>
+                          {statusDot(c.status)}{c.name}
+                        </option>
                       ))}
                     </select>
                     <span className="form-hint">Optionnel</span>
@@ -444,7 +495,7 @@ export const NewApp = () => {
                   <button type="button" className="btn btn-ghost" onClick={() => navigate('/resources')} disabled={importMutation.isPending}>
                     Annuler
                   </button>
-                  <button type="submit" className="btn btn-primary" disabled={importMutation.isPending}>
+                  <button type="submit" className="btn btn-primary" disabled={importMutation.isPending || !computeSlug(importForm.name)}>
                     {importMutation.isPending ? (
                       <>
                         <i className="ti ti-loader-2" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
@@ -466,6 +517,22 @@ export const NewApp = () => {
     </>
   );
 };
+
+function SlugHint({ name }: { name: string }) {
+  if (!name) return null;
+  const slug = computeSlug(name);
+  if (!slug) return (
+    <span className="form-hint" style={{ color: 'var(--red)' }}>
+      Ce nom ne peut pas être converti en identifiant Kubernetes valide.
+    </span>
+  );
+  if (slug === name) return null;
+  return (
+    <span className="form-hint">
+      Identifiant GitLab&nbsp;: <code style={{ fontFamily: 'var(--font-mono, monospace)' }}>{slug}</code>
+    </span>
+  );
+}
 
 function ModeCard({ icon, label, desc, active, onClick }: {
   icon: string;

@@ -2,17 +2,26 @@ import logging
 from functools import partial
 
 import anyio
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from fastapi import HTTPException, status
+from shared.models import (
+    ApplicationCreate,
+    ApplicationExternalImportRequest,
+    ApplicationOnboardRequest,
+    ApplicationScaffoldRequest,
+    ApplicationStatus,
+    ApplicationUpdate,
+    ClusterStatus,
+    compute_slug,
+)
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import Application
-from backend.k8s.client import k8s_client
-from backend.core.config import settings
-from backend.gitlab.client import GitLabClient
 from backend.ci.detector import detect_framework, extract_project_path
 from backend.ci.injector import inject_ci
-from shared.models import ApplicationCreate, ApplicationOnboardRequest, ApplicationExternalImportRequest, ApplicationScaffoldRequest, ApplicationUpdate, ApplicationStatus
+from backend.core.config import settings
+from backend.db.models import Application, ClusterConnection
+from backend.gitlab.client import GitLabClient
+from backend.k8s.client import k8s_client
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +34,21 @@ def _get_bot_client() -> GitLabClient | None:
         namespace=settings.GITLAB_BOT_NAMESPACE or "",
         use_private_token=True,
     )
+
+
+def _validated_slug(name: str) -> str:
+    """Compute slug and raise 400 if the name cannot be normalised."""
+    from fastapi import HTTPException
+    slug = compute_slug(name)
+    if not slug:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"App name '{name}' cannot be normalised to a valid Kubernetes identifier (RFC 1123). "
+                "Use only letters, digits, and hyphens."
+            ),
+        )
+    return slug
 
 
 class AppService:
@@ -43,23 +67,27 @@ class AppService:
         return app
 
     async def scaffold_app(self, payload: ApplicationScaffoldRequest) -> Application:
+        slug = _validated_slug(payload.name)
         from backend.services.scaffolding_service import ScaffoldingService
         svc = ScaffoldingService(self.db)
         repo_url, project_path = await svc.scaffold(
             app_name=payload.name,
+            app_slug=slug,
             template=payload.template,
             scaffolding_params=payload.scaffolding,
         )
         data = {
             "name": payload.name,
+            "slug": slug,
             "owner": payload.owner,
             "repo_url": repo_url,
             "origin": "scaffolded",
             "framework": payload.template,
         }
-        return await self._save_app(data, scaffolded_project_path=project_path)
+        return await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
 
     async def onboard_app(self, payload: ApplicationOnboardRequest) -> Application:
+        slug = _validated_slug(payload.name)
         normalized_url = payload.repo_url.rstrip("/").removesuffix(".git")
         result = await self.db.execute(
             select(Application).where(
@@ -100,6 +128,7 @@ class AppService:
 
         data = {
             "name": payload.name,
+            "slug": slug,
             "owner": payload.owner,
             "repo_url": normalized_url,
             "origin": "onboarded",
@@ -109,8 +138,9 @@ class AppService:
         return await self._save_app(data)
 
     async def external_import_app(self, payload: ApplicationExternalImportRequest) -> Application:
-        from backend.gitlab.importer import import_external_repo
+        slug = _validated_slug(payload.name)
         from backend.core.config import settings
+        from backend.gitlab.importer import import_external_repo
 
         bot = _get_bot_client()
         if not bot:
@@ -152,6 +182,7 @@ class AppService:
 
         data = {
             "name": payload.name,
+            "slug": slug,
             "owner": payload.owner,
             "repo_url": result["repo_url"],
             "source_url": payload.source_url,
@@ -162,9 +193,11 @@ class AppService:
         return await self._save_app(data, skip_ci=payload.raw)
 
     async def create_app(self, payload: ApplicationCreate) -> Application:
-        return await self._save_app(payload.model_dump())
+        data = payload.model_dump()
+        data["slug"] = _validated_slug(data["name"])
+        return await self._save_app(data)
 
-    async def _save_app(self, data: dict, scaffolded_project_path: str | None = None, skip_ci: bool = False) -> Application:
+    async def _save_app(self, data: dict, scaffolded_project_path: str | None = None, skip_ci: bool = False, skip_gitops: bool = False) -> Application:
         app = Application(**data)
         self.db.add(app)
         try:
@@ -187,12 +220,15 @@ class AppService:
                     lambda: inject_ci(
                         app_id=app.id,
                         app_name=app.name,
+                        app_slug=app.slug,
                         repo_url=app.repo_url,
                         origin=app.origin,
                         framework=app.framework or "generic",
                         client=bot,
+                        owner=app.owner,
                         webhook_url=webhook_url,
                         webhook_secret=settings.GITLAB_WEBHOOK_SECRET or "",
+                        skip_first_run=skip_gitops,
                     ),
                     cancellable=True,
                 )
@@ -200,6 +236,9 @@ class AppService:
             except Exception:
                 logger.exception("CI injection failed for app %s (%s)", app.id, app.repo_url)
                 app.ci_injected = False
+
+
+
             await self.db.commit()
             await self.db.refresh(app)
 
@@ -207,6 +246,24 @@ class AppService:
 
     async def update_app(self, app_id: int, payload: ApplicationUpdate) -> Application:
         app = await self.get_app(app_id)
+
+        # Validation du nouveau cluster cible si réassignation
+        new_cluster_id = payload.model_dump(exclude_unset=True).get("target_cluster_id")
+        if new_cluster_id is not None and new_cluster_id != app.target_cluster_id:
+            cluster_result = await self.db.execute(
+                select(ClusterConnection).where(ClusterConnection.id == new_cluster_id)
+            )
+            target_cluster = cluster_result.scalar_one_or_none()
+            if target_cluster is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster not found")
+            # Seul OFFLINE (panne confirmée) bloque. UNKNOWN est autorisé : cluster pas
+            # encore sondé ou ref non-fichier — le bloquer le rendrait inutilisable.
+            if target_cluster.status == ClusterStatus.OFFLINE:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Cluster '{target_cluster.name}' is currently offline",
+                )
+
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(app, field, value)
         await self.db.commit()
@@ -215,6 +272,44 @@ class AppService:
 
     async def delete_app(self, app_id: int) -> None:
         app = await self.get_app(app_id)
+        
+        # 1. Clean up GitOps repo (ArgoCD manifests)
+        bot = _get_bot_client()
+        if bot:
+            try:
+                gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
+                # ArgoCD manifests and values
+                await anyio.to_thread.run_sync(
+                    lambda: bot.delete_directory_contents(
+                        project_path=gitops_path,
+                        directory_path=f"apps/{app.slug}",
+                        commit_message=f"chore: delete app {app.name} from gitops apps"
+                    ),
+                    cancellable=True
+                )
+                await anyio.to_thread.run_sync(
+                    lambda: bot.delete_directory_contents(
+                        project_path=gitops_path,
+                        directory_path=f"argocd/{app.slug}",
+                        commit_message=f"chore: delete app {app.name} from gitops argocd"
+                    ),
+                    cancellable=True
+                )
+            except Exception:
+                logger.exception("Failed to clean up gitops repository for app %s", app.name)
+        
+        # 2. Delete the GitLab app repository if it was scaffolded
+        if bot and app.origin == "scaffolded" and app.repo_url:
+            try:
+                repo_path = extract_project_path(app.repo_url)
+                await anyio.to_thread.run_sync(
+                    lambda: bot.delete_project(repo_path),
+                    cancellable=True
+                )
+            except Exception:
+                logger.exception("Failed to delete GitLab repository %s for app %s", app.repo_url, app.name)
+
+        # 3. Remove from database
         await self.db.delete(app)
         await self.db.commit()
 
@@ -254,6 +349,7 @@ class AppService:
             if existing is None:
                 app = Application(
                     name=name,
+                    slug=compute_slug(name) or f"app-{name}",
                     owner='k8s-sync',
                     origin='kubernetes',
                     repo_url=image,

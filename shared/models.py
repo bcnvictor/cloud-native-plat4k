@@ -3,10 +3,25 @@ Shared Pydantic models for both the FastAPI backend and the Typer CLI.
 This avoids duplicating code between the client and server.
 """
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
+
+
+def compute_slug(name: str) -> str:
+    """Return an RFC 1123-compliant slug derived from name, capped at 50 chars.
+
+    Returns an empty string when the name cannot be normalised (e.g. all
+    special characters).  Callers must treat an empty return as an error.
+    """
+    s = name.lower()
+    s = re.sub(r"[^a-z0-9-]", "-", s)
+    s = re.sub(r"-+", "-", s)
+    s = s.strip("-")
+    return s[:50]
 
 
 class CloudType(str, Enum):
@@ -126,10 +141,17 @@ class AuditLogResponse(BaseModel):
 
 # ── IDP entities ──────────────────────────────────────────────────────────────
 
+class ClusterStatus(str, Enum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+    UNKNOWN = "unknown"
+
+
 class ApplicationStatus(str, Enum):
     ONBOARDING = "onboarding"
     READY = "ready"
     DEPLOYED = "deployed"
+    DEGRADED = "degraded"
 
 
 class DeploymentStatus(str, Enum):
@@ -168,6 +190,7 @@ class ApplicationScaffoldRequest(BaseModel):
     owner: str
     template: str  # name of the template repo in GITLAB_TEMPLATES_NAMESPACE (ex: "python-fastapi")
     scaffolding: Optional[ScaffoldingParams] = None
+    skip_first_deploy: bool = False  # si True, ne provisionne pas ArgoCD au scaffold (utile quand la 1ère image n'est pas encore buildée)
 
 
 class ApplicationOnboardRequest(BaseModel):
@@ -196,10 +219,12 @@ class ApplicationUpdate(BaseModel):
     origin: Optional[str] = None
     framework: Optional[str] = None
     status: Optional[ApplicationStatus] = None
+    target_cluster_id: Optional[int] = None
 
 
 class ApplicationResponse(ApplicationBase):
     id: int
+    slug: str
     status: ApplicationStatus
     target_cluster_id: Optional[int] = None
     ci_injected: Optional[bool] = None
@@ -229,6 +254,8 @@ class ClusterConnectionUpdate(BaseModel):
 
 class ClusterConnectionResponse(ClusterConnectionBase):
     id: int
+    status: ClusterStatus = ClusterStatus.UNKNOWN
+    last_seen_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

@@ -2,10 +2,10 @@
 Configuration file for the backend. Uses pydantic-settings to parse .env files.
 """
 
+from typing import List, Optional
+
+from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import AnyHttpUrl, EmailStr, PostgresDsn
-from typing import List, Union, Optional
-import os
 
 
 class Settings(BaseSettings):
@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     GITLAB_BOT_TOKEN: Optional[str] = None
     GITLAB_BOT_NAMESPACE: Optional[str] = None  # namespace owning cnp-ci-templates
     GITLAB_CI_PROJECT: Optional[str] = None     # chemin complet du repo CI (ex: 4k-cnp-2027/cnp-ci-modules)
+    # GitOps — URL du dépôt cnp-gitops (injecté dans les .gitlab-ci.yml générés)
+    GITOPS_REPO_URL: str = "https://gitlab.com/4k-cnp-2027/cnp-gitops.git"
 
     # CNP API public URL (used in webhook registration)
     CNP_API_BASE_URL: str = "http://localhost:8000"
@@ -57,6 +59,14 @@ class Settings(BaseSettings):
     KUBECONFIG_PATH: Optional[str] = None
     K8S_TARGET_NAMESPACE: str = "default"
     K8S_IMAGE_PULL_SECRET: Optional[str] = None
+    CLUSTER_HEALTH_INTERVAL: int = 300      # secondes entre deux sondes
+    CLUSTER_HEALTH_FAILURE_THRESHOLD: int = 2  # sondes échouées consécutives avant de marquer OFFLINE (grace period)
+    KUBECONFIG_DIR: Optional[str] = None    # répertoire de kubeconfigs, optionnel
+
+    # Monitoring
+    PROMETHEUS_URL: str = "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+    LOKI_URL: str = "http://loki-gateway.monitoring.svc.cluster.local"
+    GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: http://localhost:3000
 
     # Logging
     LOG_LEVEL: str = "INFO"

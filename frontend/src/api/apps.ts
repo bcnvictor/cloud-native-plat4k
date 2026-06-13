@@ -53,7 +53,7 @@ export const appsApi = {
     return data;
   },
 
-  scaffoldApp: async (payload: { name: string; owner: string; template: string; scaffolding?: { port: number; replicas: number } }) => {
+  scaffoldApp: async (payload: { name: string; owner: string; template: string; scaffolding?: { port: number; replicas: number }; skip_first_deploy?: boolean; target_cluster_id?: number }) => {
     const { data } = await api.post<Application>('/apps/scaffold', payload);
     return data;
   },

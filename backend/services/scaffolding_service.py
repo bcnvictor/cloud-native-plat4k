@@ -14,12 +14,11 @@ from typing import Optional
 import anyio
 import yaml
 from fastapi import HTTPException, status
+from shared.models import ScaffoldingParams
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
-from backend.db.models import User
 from backend.gitlab.client import GitLabClient
-from shared.models import ScaffoldingParams
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +46,7 @@ class ScaffoldingService:
     async def scaffold(
         self,
         app_name: str,
+        app_slug: str,
         template: str,
         scaffolding_params: Optional[ScaffoldingParams] = None,
     ) -> tuple[str, str]:
@@ -87,7 +87,7 @@ class ScaffoldingService:
 
         try:
             project_info = await anyio.to_thread.run_sync(
-                partial(client.create_project, app_name, namespace_id),
+                partial(client.create_project, app_slug, namespace_id),
                 cancellable=True,
             )
         except Exception as e:
@@ -133,8 +133,8 @@ class ScaffoldingService:
                 )
 
         params = scaffolding_params or ScaffoldingParams()
-        batch.append({"file_path": "chart/values.yaml", "content": self._build_values_yaml(app_name, apps_namespace, params)})
-        batch.append({"file_path": "chart/Chart.yaml", "content": self._build_chart_yaml(app_name, params)})
+        batch.append({"file_path": "chart/values.yaml", "content": self._build_values_yaml(app_slug, apps_namespace, params)})
+        batch.append({"file_path": "chart/Chart.yaml", "content": self._build_chart_yaml(app_slug, params)})
 
         try:
             await anyio.to_thread.run_sync(
@@ -199,6 +199,7 @@ class ScaffoldingService:
             "app": {
                 "name": app_name,
                 "port": params.port,
+                "owner": "unknown",
             },
             "image": {
                 "repository": image_repo,

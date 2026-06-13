@@ -1,15 +1,15 @@
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from typing import List
 
-from backend.db.session import get_db
-from backend.db.models import User
-from backend.api.schemas.user import UserCreate, UserUpdate
-from shared.models import UserResponse, UserRole
 from backend.api.deps import require_role
+from backend.api.schemas.user import UserCreate, UserUpdate
+from backend.core.exceptions import BadRequestException, NotFoundException
 from backend.core.security import get_password_hash
-from backend.core.exceptions import NotFoundException, BadRequestException
+from backend.db.models import User
+from backend.db.session import get_db
+from fastapi import APIRouter, Depends, Request
+from shared.models import UserResponse, UserRole
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

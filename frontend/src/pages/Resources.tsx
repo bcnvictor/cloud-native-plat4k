@@ -125,8 +125,8 @@ export const Resources = () => {
       queryClient.invalidateQueries({ queryKey: ['apps'] });
       setSyncError('');
     },
-    onError: (err: any) => {
-      const detail = err.response?.data?.detail;
+    onError: (err: unknown) => {
+      const detail = (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
       setSyncError(typeof detail === 'string' ? detail : 'Synchronisation échouée');
     },
   });
