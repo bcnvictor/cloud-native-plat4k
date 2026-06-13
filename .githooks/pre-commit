@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v ruff >/dev/null 2>&1; then
+  echo "[CNP] ruff non trouvé — lint ignoré. Installe ruff : pip install ruff"
+  exit 0
+fi
+
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
+
+if [ -z "$STAGED_PY" ]; then
+  exit 0
+fi
+
+echo "$STAGED_PY" | xargs ruff check --fix --quiet
+echo "$STAGED_PY" | xargs git add
+
+if ! echo "$STAGED_PY" | xargs ruff check --quiet; then
+  echo "[CNP] ruff : erreurs non auto-réparables — commit annulé."
+  exit 1
+fi
+
+echo "[CNP] ruff : OK"

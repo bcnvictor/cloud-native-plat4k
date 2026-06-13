@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; RESET='\033[0m'
@@ -22,6 +22,12 @@ dc() {
     docker-compose "$@"
   fi
 }
+
+# ── Git hooks (one-time setup) ────────────────────────────────────────────────
+if [ "$(git config --local core.hooksPath 2>/dev/null)" != ".githooks" ]; then
+  git config core.hooksPath .githooks
+  info "Git hooks configurés → .githooks/"
+fi
 
 # ── Arguments ─────────────────────────────────────────────────────────────────
 #   ./start.sh         → rebuild + démarrer tout
@@ -52,7 +58,11 @@ fi
 # ── Migrations Alembic ────────────────────────────────────────────────────────
 # Toujours lancées : idempotentes et nécessaires après chaque pull avec migration
 info "Application des migrations Alembic..."
-dc exec -T backend alembic -c /app/backend/alembic.ini upgrade head
+if ! dc exec -T backend alembic -c /app/backend/alembic.ini upgrade head; then
+  warn "Migrations Alembic échouées."
+  warn "Si tu viens de changer de branche avec des migrations divergentes, lance : ./fix-db.sh"
+  exit 1
+fi
 
 # ── Utilisateur admin (optionnel) ─────────────────────────────────────────────
 ADMIN_EMAIL="${CNP_ADMIN_EMAIL:-admin@cnp.local}"

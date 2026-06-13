@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/auth';
 import { jwtDecode } from 'jwt-decode';
+import type { CnpJwtPayload } from '@/types';
 
 export const OAuthCallback = () => {
   const navigate = useNavigate();
@@ -25,7 +26,7 @@ export const OAuthCallback = () => {
     const userIdParam = params.get('user_id');
 
     try {
-      const payload: any = jwtDecode(accessToken);
+      const payload = jwtDecode<CnpJwtPayload>(accessToken);
       const userId = userIdParam ? parseInt(userIdParam, 10) : parseInt(payload.sub);
       // Prefer role from signed JWT payload; fall back to URL param as last resort
       const role = ((payload.role ?? params.get('role') ?? 'viewer') as 'admin' | 'viewer');

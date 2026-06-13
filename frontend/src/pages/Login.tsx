@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { authApi } from '@/api/auth';
 import { useAuthStore } from '@/store/auth';
 import { jwtDecode } from 'jwt-decode';
-import type { UserRole } from '@/types';
+import type { UserRole, CnpJwtPayload } from '@/types';
 
 export const Login = () => {
   const [email, setEmail] = useState('');
@@ -20,18 +20,18 @@ export const Login = () => {
     setLoading(true);
     try {
       const data = await authApi.login(email, password);
-      const payload: any = jwtDecode(data.access_token);
+      const payload = jwtDecode<CnpJwtPayload>(data.access_token);
       setAuth(data.access_token, {
         id: parseInt(payload.sub),
         email,
-        role: ((payload.role as UserRole) ?? 'viewer'),
+        role: (payload.role ?? 'viewer') as UserRole,
         is_active: true,
         created_at: new Date().toISOString(),
       });
       navigate('/');
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      if (Array.isArray(detail)) setError(detail.map((e: any) => e.msg).join('. '));
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+      if (Array.isArray(detail)) setError((detail as Array<{ msg: string }>).map((e) => e.msg).join('. '));
       else setError(typeof detail === 'string' ? detail : 'Connexion échouée');
     } finally {
       setLoading(false);

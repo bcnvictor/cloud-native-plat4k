@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from backend.gitlab.client import GitLabClient
 from backend.ci.detector import extract_project_path
 from backend.ci.templates import generate_gitlab_ci
+from backend.gitlab.client import GitLabClient
 
 logger = logging.getLogger(__name__)
 
@@ -13,12 +13,15 @@ logger = logging.getLogger(__name__)
 def inject_ci(
     app_id: int,
     app_name: str,
+    app_slug: str,
     repo_url: str,
     origin: str,
     framework: str,
     client: GitLabClient,
+    owner: str = "unknown",
     webhook_url: str | None = None,
     webhook_secret: str = "",
+    skip_first_run: bool = False,
 ) -> None:
     """Inject .gitlab-ci.yml into the app repo.
 
@@ -26,18 +29,19 @@ def inject_ci(
     - imported:   open a MR from a dedicated branch
     """
     project_path = extract_project_path(repo_url)
-    content = generate_gitlab_ci(app_name, app_id, framework)
+    content = generate_gitlab_ci(app_slug, app_id, framework, owner)
 
     if origin == "scaffolded":
         if client.file_exists(project_path, ".gitlab-ci.yml", ref="main"):
             raise RuntimeError(
                 f".gitlab-ci.yml already exists on main in {project_path} — injection skipped"
             )
+        commit_msg = "ci: inject CNP pipeline [skip ci]" if skip_first_run else "ci: inject CNP pipeline"
         client.push_file(
             project_path=project_path,
             file_path=".gitlab-ci.yml",
             content=content,
-            commit_message="ci: inject CNP pipeline [skip ci]",
+            commit_message=commit_msg,
             branch="main",
         )
         logger.info("CI injected via push on %s", project_path)

@@ -1,17 +1,18 @@
-from typing import Generator, Optional
-from fastapi import Depends, HTTPException, status, Request
+from typing import Optional
+
+from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
-from sqlalchemy.ext.asyncio import AsyncSession
+from jose import JWTError, jwt
+from shared.models import UserRole
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
-from backend.core.security import verify_api_key, get_api_key_hash
+from backend.core.exceptions import ForbiddenException, UnauthorizedException
+from backend.core.security import get_api_key_hash
+from backend.db.models import APIKey, User
 from backend.db.session import get_db
-from backend.db.models import User, APIKey
-from backend.core.exceptions import UnauthorizedException, ForbiddenException
 from backend.services.audit_service import AuditService
-from shared.models import UserRole
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login", auto_error=False)
 

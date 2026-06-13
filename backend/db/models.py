@@ -2,10 +2,19 @@
 SQLAlchemy models for the backend database.
 """
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum, JSON
+from shared.models import (
+    ApplicationStatus,
+    CloudType,
+    ClusterStatus,
+    DeploymentStatus,
+    ResourceStatus,
+    ResourceType,
+    UserRole,
+)
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
-from shared.models import CloudType, ResourceType, ResourceStatus, UserRole, ApplicationStatus, DeploymentStatus
 
 Base = declarative_base()
 
@@ -101,6 +110,7 @@ class Application(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    slug = Column(String, nullable=False, unique=True)
     repo_url = Column(String, nullable=True, unique=True)
     owner = Column(String, nullable=False)
     target_cluster_id = Column(Integer, ForeignKey("cluster_connections.id", ondelete="SET NULL"), nullable=True)
@@ -127,6 +137,12 @@ class ClusterConnection(Base):
     name = Column(String, nullable=False, unique=True)
     endpoint = Column(String, nullable=False)
     kubeconfig_secret_ref = Column(String, nullable=False)
+    status = Column(
+        SQLEnum(ClusterStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=ClusterStatus.UNKNOWN,
+    )
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
 

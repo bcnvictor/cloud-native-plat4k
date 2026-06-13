@@ -1,10 +1,12 @@
 from typing import List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
-from backend.db.models import Resource
-from shared.models import ResourceCreate, ResourceType, ResourceStatus, CloudType
+from shared.models import CloudType, ResourceCreate, ResourceStatus, ResourceType
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.core.exceptions import BadRequestException, NotFoundException
+from backend.db.models import Resource
+
 
 class ResourceService:
     def __init__(self, db: AsyncSession):
