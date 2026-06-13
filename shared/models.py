@@ -155,6 +155,7 @@ class ScaffoldingParams(BaseModel):
     image_tag: str = "latest"
     replicas: int = 1
     env: Dict[str, str] = {}
+    services: List[str] = []  # backing services to provision (e.g., ["postgresql"])
 
 
 class ApplicationCreate(ApplicationBase):

@@ -7,6 +7,7 @@ Projects are created in GITLAB_APPS_NAMESPACE using the bot token.
 Templates are resolved from GITLAB_TEMPLATES_NAMESPACE/{template}.
 """
 import logging
+import secrets
 from functools import partial
 from typing import Optional
 
@@ -133,7 +134,7 @@ class ScaffoldingService:
 
         params = scaffolding_params or ScaffoldingParams()
         batch.append({"file_path": "chart/values.yaml", "content": self._build_values_yaml(app_name, apps_namespace, params)})
-        batch.append({"file_path": "chart/Chart.yaml", "content": self._build_chart_yaml(app_name)})
+        batch.append({"file_path": "chart/Chart.yaml", "content": self._build_chart_yaml(app_name, params)})
 
         try:
             await anyio.to_thread.run_sync(
@@ -192,6 +193,8 @@ class ScaffoldingService:
             registry_host = settings.GITLAB_REGISTRY_URL.rstrip("/")
             image_repo = f"{registry_host}/{namespace}/{app_name}"
 
+        env_vars = dict(params.env)
+
         data = {
             "app": {
                 "name": app_name,
@@ -203,7 +206,7 @@ class ScaffoldingService:
                 "pullPolicy": "IfNotPresent",
             },
             "replicas": params.replicas,
-            "env": dict(params.env),
+            "env": env_vars,
             "resources": {
                 "requests": {"cpu": "100m", "memory": "128Mi"},
                 "limits": {"cpu": "500m", "memory": "256Mi"},
@@ -214,9 +217,30 @@ class ScaffoldingService:
                 "tls": False,
             },
         }
+
+        if "postgresql" in params.services:
+            db_password = secrets.token_urlsafe(16)
+            db_username = "appuser"
+            db_name = app_name.replace("-", "_")
+
+            data["postgresql"] = {
+                "enabled": True,
+                "auth": {
+                    "username": db_username,
+                    "password": db_password,
+                    "database": db_name,
+                },
+                "primary": {
+                    "persistence": {"size": "1Gi"},
+                },
+            }
+
+            env_vars["DATABASE_URL"] = (
+                f"postgresql://{db_username}:{db_password}@{app_name}-postgresql:5432/{db_name}"
+            )
         return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
 
-    def _build_chart_yaml(self, app_name: str) -> str:
+    def _build_chart_yaml(self, app_name: str, params: ScaffoldingParams) -> str:
         data = {
             "apiVersion": "v2",
             "name": app_name,
@@ -225,4 +249,14 @@ class ScaffoldingService:
             "version": "0.1.0",
             "appVersion": "0.1.0",
         }
+
+        if "postgresql" in params.services:
+            data["dependencies"] = [
+                {
+                    "name": "postgresql",
+                    "version": "15.5.x",
+                    "repository": "https://charts.bitnami.com/bitnami",
+                    "condition": "postgresql.enabled",
+                }
+            ]
         return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
