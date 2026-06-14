@@ -7,6 +7,50 @@ from cli.core.output import print_error, print_success, print_table, print_json
 app = typer.Typer(help="Manage CNP applications.")
 
 
+@app.command("scaffold")
+def scaffold_app(
+    name: str = typer.Option(..., "--name", "-n", help="Application name"),
+    template: str = typer.Option(..., "--template", "-t", help="Template name in GITLAB_TEMPLATES_NAMESPACE"),
+    owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Owner (defaults to logged-in user)"),
+    port: int = typer.Option(8000, "--port", "-p", help="Container port"),
+    replicas: int = typer.Option(1, "--replicas", "-r", help="Initial number of pods"),
+    postgresql: bool = typer.Option(False, "--postgresql", help="Provision a PostgreSQL backing service"),
+):
+    """Scaffold a new application from a CNP template."""
+    resolved_owner = owner or load_config().get("user_email", "")
+    if not resolved_owner:
+        print_error("Could not determine owner. Pass --owner or log in first (cnp auth login).")
+        raise typer.Exit(1)
+
+    services = ["postgresql"] if postgresql else []
+    payload = {
+        "name": name,
+        "owner": resolved_owner,
+        "template": template,
+        "scaffolding": {"port": port, "replicas": replicas, "services": services},
+    }
+
+    try:
+        data = client.post("/apps/scaffold", json=payload)
+        print_success(f"App '{data['name']}' scaffolded (id={data['id']})")
+        print_table(
+            "Scaffold result",
+            ["Field", "Value"],
+            [
+                ["id", data["id"]],
+                ["name", data["name"]],
+                ["owner", data["owner"]],
+                ["repo_url", data.get("repo_url") or "—"],
+                ["framework", data.get("framework") or "—"],
+                ["status", data["status"]],
+                ["ci_injected", data.get("ci_injected")],
+            ],
+        )
+    except Exception as e:
+        print_error(str(e))
+        raise typer.Exit(1)
+
+
 @app.command("onboard")
 def onboard_app(
     repo_url: str = typer.Option(..., "--repo-url", "-r", help="Internal GitLab repository URL"),
@@ -127,6 +171,31 @@ def get_app(id: int = typer.Argument(..., help="Application ID")):
     try:
         data = client.get(f"/apps/{id}")
         print_json(data)
+    except Exception as e:
+        print_error(str(e))
+        raise typer.Exit(1)
+
+
+@app.command("credentials")
+def get_credentials(
+    id: int = typer.Argument(..., help="Application ID"),
+    namespace: str = typer.Option(..., "--namespace", "-n", help="Kubernetes namespace where the app is deployed"),
+):
+    """Get PostgreSQL credentials for a CNP application."""
+    try:
+        data = client.get(f"/apps/{id}/services/postgresql/credentials", params={"namespace": namespace})
+        print_table(
+            "PostgreSQL credentials",
+            ["Field", "Value"],
+            [
+                ["host", data["host"]],
+                ["port", data["port"]],
+                ["username", data["username"]],
+                ["password", data["password"]],
+                ["database", data["database"]],
+                ["DATABASE_URL", data["database_url"]],
+            ],
+        )
     except Exception as e:
         print_error(str(e))
         raise typer.Exit(1)

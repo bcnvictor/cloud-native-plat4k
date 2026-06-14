@@ -21,7 +21,7 @@ function statusDot(s: ClusterConnection['status']): string {
   return '◌ ';
 }
 
-const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1', skip_first_deploy: false, target_cluster_id: '' };
+const EMPTY_SCAFFOLD = { name: '', template: '', port: '8000', replicas: '1', postgresql: false, pg_size: '1Gi', skip_first_deploy: false, target_cluster_id: '' };
 const EMPTY_ONBOARD = { name: '', repo_url: '', framework: '', target_cluster_id: '' };
 const EMPTY_IMPORT = { name: '', source_url: '', framework: '', target_cluster_id: '', raw: false };
 
@@ -96,6 +96,8 @@ export const NewApp = () => {
       scaffolding: {
         port: Number(scaffoldForm.port) || 8000,
         replicas: Number(scaffoldForm.replicas) || 1,
+        services: scaffoldForm.postgresql ? ['postgresql'] : [],
+        pg_size: scaffoldForm.pg_size,
       },
       skip_first_deploy: scaffoldForm.skip_first_deploy,
       target_cluster_id: scaffoldForm.target_cluster_id ? Number(scaffoldForm.target_cluster_id) : undefined,
@@ -251,6 +253,35 @@ export const NewApp = () => {
                     />
                     <span className="form-hint">Nombre de pods initiaux</span>
                   </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Backing services</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={scaffoldForm.postgresql}
+                      onChange={e => setScaffoldForm(f => ({ ...f, postgresql: e.target.checked }))}
+                    />
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                      PostgreSQL <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>(subchart Bitnami — DATABASE_URL injectée automatiquement)</span>
+                    </span>
+                  </label>
+                  {scaffoldForm.postgresql && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, paddingLeft: 24 }}>
+                      <label style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Taille du volume</label>
+                      <select
+                        className="form-select"
+                        style={{ fontSize: 12 }}
+                        value={scaffoldForm.pg_size}
+                        onChange={e => setScaffoldForm(f => ({ ...f, pg_size: e.target.value }))}
+                      >
+                        <option value="1Gi">1 Gi — Dev / test</option>
+                        <option value="5Gi">5 Gi — Standard</option>
+                        <option value="20Gi">20 Gi — Production</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 <div className="form-group">
