@@ -4,7 +4,8 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev curl && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    useradd -m cnpuser
 
 # Copy only dependency manifests first so the pip install layer is cached
 # independently of source changes.
@@ -34,16 +35,14 @@ RUN pip install --no-cache-dir -e /app/shared && \
     pip install --no-cache-dir -e /app/backend
 
 # Copy actual source (overwrites stubs; editable installs already wired).
-COPY ./backend /app/backend
-COPY ./shared /app/shared
-COPY ./infra/grafana /app/infra/grafana
+COPY --chown=cnpuser:cnpuser ./backend /app/backend
+COPY --chown=cnpuser:cnpuser ./shared /app/shared
 
-RUN useradd -m cnpuser && chown -R cnpuser:cnpuser /app
 USER cnpuser
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/api/v1/health/ || echo 1
+    CMD curl -f http://localhost:8000/api/v1/health/ || exit 1
 
 CMD alembic -c backend/alembic.ini upgrade head && uvicorn backend.main:app --host 0.0.0.0 --port 8000

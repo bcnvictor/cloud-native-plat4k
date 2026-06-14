@@ -6,11 +6,11 @@ Cette Cloud Native Platform (CNP) est un projet étudiant visant à abstraire et
 
 Le projet est divisé en plusieurs composants :
 
-- **Backend** : API REST construite avec FastAPI (Python) et SQLAlchemy/PostgreSQL. Fournit une couche d'abstraction (Adapter Pattern) pour communiquer avec les SDK des providers cloud.
+- **Backend** : API REST construite avec FastAPI (Python) et SQLAlchemy/PostgreSQL. Orchestre le cycle de vie des applications sur Kubernetes (AKS) et interagit avec GitLab via l'API Git.
 - **Frontend** : Single Page Application construite avec React, Vite, Tailwind CSS et TypeScript.
-- **CLI** : Interface en ligne de commande construite avec Typer (Python) pour gérer les ressources et s'authentifier via des clés API.
-- **Infrastructure** : Modules Terraform pour l'auto-hébergement de la plateforme sur Azure.
-- **Déploiement applicatif** : Templates Nomad pour l'orchestration des workloads utilisateurs sur les cloud cibles.
+- **CLI** : Interface en ligne de commande construite avec Typer (Python) pour scaffolder des apps, importer des repos et s'authentifier via des clés API.
+- **Infrastructure** : Modules Terraform pour l'auto-hébergement de la plateforme sur Azure (AKS).
+- **GitOps** : ArgoCD (pattern App of Apps) réconcilie l'état désiré depuis le dépôt `cnp-gitops`. Les pipelines applicatifs sont injectés automatiquement via `cnp-ci-modules` (GitLab CI).
 
 ## 📋 Prérequis
 
@@ -185,9 +185,21 @@ Les décisions d'architecture importantes sont documentées dans [`docs/adr/`](d
 | N° | Titre | Statut |
 |----|-------|--------|
 | [0000](docs/adr/0000-template.md) | Template ADR | — |
-| [0001](docs/adr/0001-architecture-initiale.md) | Architecture initiale de la CNP (v1) | Accepted |
-| [0002](docs/adr/0002-pivot-idp.md) | Pivot vers une IDP et refacto structurel| Accepted |
-| [0003](docs/adr/0003-git-hosting.md) | Provisionnement git pour les applications scaffoldées | Accepted |
+| [0001](docs/adr/0001-architecture-initiale.md) | Architecture initiale de la Cloud Native Platform (v1) | Accepted |
+| [0002](docs/adr/0002-pivot-idp.md) | Pivot vers une Internal Developer Platform (IDP) et refactoring structurel | Accepted |
+| [0003](docs/adr/0003-git-hosting.md) | Git hosting pour les applications scaffoldées | Obsolete (→ ADR-0013) |
+| [0004](docs/adr/0004-helm.md) | Helm vs manifests Kubernetes bruts dans les templates scaffoldés | Accepted |
+| [0005](docs/adr/0005-responsabilite-ci-vs-gitops.md) | Délimitation des responsabilités entre CI et GitOps | Accepted |
+| [0006](docs/adr/0006-oicd.md) | Authentification OIDC en phase 2 | TODO |
+| [0007](docs/adr/0007-idp-data-layer.md) | Modélisation de la couche données IDP (Application, ClusterConnection, Deployment) | Accepted |
+| [0008](docs/adr/0008-k8s-orchestration.md) | Branchement de l'orchestration Kubernetes réelle | Accepted |
+| [0009](docs/adr/0009-role-jwt-payload.md) | Rôle utilisateur encodé dans le payload JWT | Accepted |
+| [0010](docs/adr/0010-ci-plateforme-github-actions.md) | CI de la plateforme CNP — GitHub Actions + GHCR | Accepted |
+| [0011](docs/adr/0011-ci-injection.md) | Injection automatique de pipeline CI dans les repos applicatifs | Accepted |
+| [0012](docs/adr/0012-argocd-app-of-apps.md) | Modèle GitOps avec ArgoCD (App of Apps & Multiple Sources) | Accepted |
+| [0013](docs/adr/0013-migration-gitlab-saas.md) | Migration vers GitLab.com SaaS (free tier) | Accepted |
+| [0014](docs/adr/0014-app-lifecycle-v2.md) | Provisioning GitOps CI-driven et cycle de vie complet des apps | Accepted |
+| [0015](docs/adr/0015-service-discovery-cluster-health.md) | Service discovery multi-cluster et health-check des clusters | Accepted |
 
 ## Guide de contribution
 
