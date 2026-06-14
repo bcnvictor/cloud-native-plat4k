@@ -270,6 +270,42 @@ class AppService:
         await self.db.refresh(app)
         return app
 
+    async def get_postgresql_credentials(self, app_id: int, namespace: str):
+        from kubernetes.client.exceptions import ApiException
+        from shared.models import PostgreSQLCredentials
+
+        from backend.k8s.client import k8s_client
+
+        app = await self.get_app(app_id)
+        release_name = app.name
+        secret_name = f"{release_name}-postgresql"
+        username = "appuser"
+        database = release_name.replace("-", "_")
+        host = f"{release_name}-postgresql"
+
+        if not k8s_client.is_configured():
+            raise HTTPException(status_code=503, detail="Kubernetes client not configured")
+
+        try:
+            data = await anyio.to_thread.run_sync(
+                lambda: k8s_client.read_secret(namespace, secret_name),
+                cancellable=True,
+            )
+        except ApiException as e:
+            if e.status == 404:
+                raise HTTPException(status_code=404, detail=f"Secret '{secret_name}' not found in namespace '{namespace}'. Is PostgreSQL deployed?")
+            raise HTTPException(status_code=502, detail=f"Kubernetes error: {e.reason}")
+
+        password = data.get("password", "")
+        return PostgreSQLCredentials(
+            host=host,
+            port=5432,
+            username=username,
+            password=password,
+            database=database,
+            database_url=f"postgresql://{username}:{password}@{host}:5432/{database}",
+        )
+
     async def delete_app(self, app_id: int) -> None:
         app = await self.get_app(app_id)
         

@@ -5,7 +5,7 @@ from backend.db.models import User
 from backend.db.session import get_db
 from backend.services.app_service import AppService
 from backend.services.scaffolding_service import ScaffoldingService
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from shared.models import (
     ApplicationCreate,
     ApplicationExternalImportRequest,
@@ -13,6 +13,7 @@ from shared.models import (
     ApplicationResponse,
     ApplicationScaffoldRequest,
     ApplicationUpdate,
+    PostgreSQLCredentials,
     UserRole,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -93,6 +94,17 @@ async def create_app(
 ):
     """Register an app directly (no scaffold, no repo validation)."""
     return await AppService(db).create_app(payload)
+
+
+@router.get("/{app_id}/services/postgresql/credentials", response_model=PostgreSQLCredentials)
+async def get_postgresql_credentials(
+    app_id: int,
+    namespace: str = Query(..., description="Kubernetes namespace where the app is deployed"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Read PostgreSQL credentials from the K8s Secret created by the Bitnami subchart."""
+    return await AppService(db).get_postgresql_credentials(app_id, namespace)
 
 
 @router.put("/{app_id}", response_model=ApplicationResponse)

@@ -135,6 +135,8 @@ class ScaffoldingService:
         params = scaffolding_params or ScaffoldingParams()
         batch.append({"file_path": "chart/values.yaml", "content": self._build_values_yaml(app_slug, apps_namespace, params)})
         batch.append({"file_path": "chart/Chart.yaml", "content": self._build_chart_yaml(app_slug, params)})
+        if "postgresql" in params.services:
+            batch.append({"file_path": "chart/templates/postgresql.yaml", "content": self._build_postgresql_yaml()})
 
         try:
             await anyio.to_thread.run_sync(
@@ -226,13 +228,14 @@ class ScaffoldingService:
 
             data["postgresql"] = {
                 "enabled": True,
+                "image": {"tag": "16"},
                 "auth": {
                     "username": db_username,
                     "password": db_password,
                     "database": db_name,
                 },
                 "primary": {
-                    "persistence": {"size": "1Gi"},
+                    "persistence": {"size": params.pg_size},
                 },
             }
 
@@ -250,14 +253,95 @@ class ScaffoldingService:
             "version": "0.1.0",
             "appVersion": "0.1.0",
         }
-
-        if "postgresql" in params.services:
-            data["dependencies"] = [
-                {
-                    "name": "postgresql",
-                    "version": "15.5.x",
-                    "repository": "https://charts.bitnami.com/bitnami",
-                    "condition": "postgresql.enabled",
-                }
-            ]
         return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+
+    def _build_postgresql_yaml(self) -> str:
+        return """\
+{{- if .Values.postgresql.enabled }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "app.name" . }}-postgresql
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  username: {{ .Values.postgresql.auth.username }}
+  password: {{ .Values.postgresql.auth.password }}
+  database: {{ .Values.postgresql.auth.database }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "app.name" . }}-postgresql
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "app.name" . }}-postgresql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "app.name" . }}-postgresql
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "app.name" . }}-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "app.name" . }}-postgresql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "app.name" . }}-postgresql
+        app.kubernetes.io/managed-by: cnp
+    spec:
+      containers:
+        - name: postgresql
+          image: "docker.io/postgres:{{ .Values.postgresql.image.tag }}"
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.auth.database }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.auth.username }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.name" . }}-postgresql
+                  key: password
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.postgresql.auth.username | quote }}]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.primary.persistence.size }}
+{{- end }}
+"""

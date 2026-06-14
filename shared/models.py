@@ -12,15 +12,19 @@ from enum import Enum
 
 
 def compute_slug(name: str) -> str:
-    """Return an RFC 1123-compliant slug derived from name, capped at 50 chars.
+    """Return a DNS-1035-compliant slug derived from name, capped at 50 chars.
 
-    Returns an empty string when the name cannot be normalised (e.g. all
-    special characters).  Callers must treat an empty return as an error.
+    DNS-1035 requires names to start with a letter (Kubernetes Service/Pod names).
+    Returns an empty string when the name cannot be normalised.
+    Callers must treat an empty return as an error.
     """
     s = name.lower()
     s = re.sub(r"[^a-z0-9-]", "-", s)
     s = re.sub(r"-+", "-", s)
     s = s.strip("-")
+    # Prefix with 'app-' if first char is a digit (DNS-1035 requires leading letter)
+    if s and s[0].isdigit():
+        s = "app-" + s
     return s[:50]
 
 
@@ -178,6 +182,16 @@ class ScaffoldingParams(BaseModel):
     replicas: int = 1
     env: Dict[str, str] = {}
     services: List[str] = []  # backing services to provision (e.g., ["postgresql"])
+    pg_size: str = "1Gi"  # PVC size for PostgreSQL (e.g., "1Gi", "5Gi", "20Gi")
+
+
+class PostgreSQLCredentials(BaseModel):
+    host: str
+    port: int = 5432
+    username: str
+    password: str
+    database: str
+    database_url: str
 
 
 class ApplicationCreate(ApplicationBase):
