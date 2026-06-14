@@ -53,8 +53,16 @@ export const appsApi = {
     return data;
   },
 
-  scaffoldApp: async (payload: { name: string; owner: string; template: string; scaffolding?: { port: number; replicas: number }; skip_first_deploy?: boolean; target_cluster_id?: number }) => {
+  scaffoldApp: async (payload: { name: string; owner: string; template: string; scaffolding?: { port: number; replicas: number; services: string[]; pg_size?: string }; skip_first_deploy?: boolean; target_cluster_id?: number }) => {
     const { data } = await api.post<Application>('/apps/scaffold', payload);
+    return data;
+  },
+
+  getPostgresCredentials: async (appId: number, namespace: string) => {
+    const { data } = await api.get<{ host: string; port: number; username: string; password: string; database: string; database_url: string }>(
+      `/apps/${appId}/services/postgresql/credentials`,
+      { params: { namespace } },
+    );
     return data;
   },
 };
