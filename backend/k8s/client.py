@@ -83,6 +83,12 @@ class KubernetesClient:
         dep = self.apps_v1.read_namespaced_deployment(name=name, namespace=namespace)
         return (dep.status.ready_replicas or 0) >= 1
 
+    def read_secret(self, namespace: str, name: str) -> dict[str, str]:
+        """Read a K8s Secret and return its data decoded from base64."""
+        import base64
+        secret = self.core_v1.read_namespaced_secret(name=name, namespace=namespace)
+        return {k: base64.b64decode(v).decode() for k, v in (secret.data or {}).items()}
+
     def list_namespace_deployments(self, namespace: str) -> list[client.V1Deployment]:
         return self.apps_v1.list_namespaced_deployment(namespace=namespace).items
 
