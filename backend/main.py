@@ -41,17 +41,21 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.warning("Cluster discovery failed at startup — will rely on existing DB entries", exc_info=True)
 
-    # Configmap Grafana (existant)
+    # Configmap Grafana — fire-and-forget dans un thread pour ne pas bloquer le startup
+    # (l'appel K8s synchrone peut retrier 30+ s si le cluster est inaccessible en local)
     if k8s_client.is_configured() and FINOPS_DASHBOARD_JSON is not None:
-        try:
-            k8s_client.apply_configmap(
-                namespace="monitoring",
-                name="cnp-finops-dashboard",
-                data={"finops-dashboard.json": FINOPS_DASHBOARD_JSON},
-                labels={"grafana_dashboard": "1"},
-            )
-        except Exception:
-            logger.warning("Could not provision Grafana FinOps dashboard ConfigMap", exc_info=True)
+        async def _provision_grafana() -> None:
+            loop = asyncio.get_event_loop()
+            try:
+                await loop.run_in_executor(None, lambda: k8s_client.apply_configmap(
+                    namespace="monitoring",
+                    name="cnp-finops-dashboard",
+                    data={"finops-dashboard.json": FINOPS_DASHBOARD_JSON},
+                    labels={"grafana_dashboard": "1"},
+                ))
+            except Exception as e:
+                logger.warning("Could not provision Grafana FinOps dashboard ConfigMap: %s", e)
+        asyncio.create_task(_provision_grafana())
 
     # Lancement du worker
     task = asyncio.create_task(run_health_worker(settings.CLUSTER_HEALTH_INTERVAL))

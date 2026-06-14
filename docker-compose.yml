@@ -73,6 +73,9 @@ services:
         VITE_API_URL: /api/v1
     ports:
       - "80:80"
+    depends_on:
+      backend:
+        condition: service_started
     networks:
       - cnp_net
 
