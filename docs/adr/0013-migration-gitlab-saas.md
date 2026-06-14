@@ -1,15 +1,15 @@
-# ADR-0011 : Migration vers GitLab.com SaaS (free tier)
+# ADR-0013 : Migration vers GitLab.com SaaS (free tier)
 
 ## Statut
 
 Accepted : 2026-06-03
-Supersedes ADR-0003, ADR-0010
+Supersedes ADR-0003, ADR-0011
 
 ## Contexte
 
 ADR-0003 avait retenu `gitlab.cri.epita.fr` (instance GitLab EE de l'EPITA) comme forge Git pour la phase 1. Cette instance présentait un avantage immédiat (comptes EPITA existants, runners partagés, registry incluse) mais une contrainte structurelle : l'accès est conditionné au statut étudiant actif et ne peut pas être garanti au-delà de juin 2026.
 
-Par ailleurs, ADR-0010 documentait l'utilisation d'un PAT personnel faute de Group Access Token, dette directement liée à l'absence de droits admin sur l'instance EPITA.
+Par ailleurs, ADR-0011 documentait l'utilisation d'un PAT personnel faute de Group Access Token, dette directement liée à l'absence de droits admin sur l'instance EPITA.
 
 La migration était prévue. Elle a été anticipée en juin 2026 pour sécuriser la continuité du projet avant la soutenance.
 

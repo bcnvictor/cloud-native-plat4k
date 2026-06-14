@@ -1,4 +1,4 @@
-# ADR-0012 : Provisioning GitOps CI-driven et cycle de vie complet des apps
+# ADR-0014 : Provisioning GitOps CI-driven et cycle de vie complet des apps
 
 ## Statut
 
@@ -64,4 +64,4 @@ Négatif / Dette :
 ## Références
 
 - ADR-0005 : délimitation CI / GitOps
-- ADR-0010 : injection CI et comportement `skip_first_deploy`
+- ADR-0011 : injection CI et comportement `skip_first_deploy`

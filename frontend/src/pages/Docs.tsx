@@ -100,7 +100,7 @@ function PageContent({
         CNP est une Internal Developer Platform qui vous permet de scaffolder, déployer et observer des applications conteneurisées sur Kubernetes, sans connaissance préalable de k8s ou Terraform.
       </p>
       <h2 className="doc-h2">Installer le CLI</h2>
-      <CodeBlock>{`# Installer via pip\npip install cnp-cli\n\n# Configurer votre token\ncnp auth login --token cnp_xxxxxxxxxxxx\n\n# Vérifier la connexion\ncnp status`}</CodeBlock>
+      <CodeBlock>{`# Installer depuis le dépôt CNP\npip install -e ./cli\n\n# Se connecter (email + mot de passe)\ncnp auth login\n\n# Vérifier la connexion\ncnp auth status`}</CodeBlock>
       <Callout type="info">Le CLI stocke votre configuration dans ~/.cnp/config.toml. Ne commitez jamais ce fichier dans un repo Git.</Callout>
       <h2 className="doc-h2">Votre première application</h2>
       <div className="doc-steps">
@@ -135,8 +135,8 @@ function PageContent({
         Le scaffolding génère un projet prêt-à-déployer depuis un template officiel CNP, avec Dockerfile, manifests Kubernetes et pipeline CI/CD préconfigurés.
       </p>
       <h2 className="doc-h2">Via le CLI</h2>
-      <CodeBlock>{`# Lister les templates disponibles\ncnp template list\n\n# Scaffolder une app FastAPI\ncnp app create --template fastapi --name mon-service\n\n# Cloner le repo généré\ngit clone gitlab.com/votre-namespace/mon-service`}</CodeBlock>
-      <Callout type="tip">CNP crée un repo GitLab dans votre namespace et pousse le code généré. Vous pouvez cloner et commencer à coder immédiatement.</Callout>
+      <CodeBlock>{`# Scaffolder une app depuis un template\ncnp app scaffold --template fastapi --name mon-service\n\n# Cloner le repo généré\ngit clone https://gitlab.com/<namespace>/mon-service`}</CodeBlock>
+      <Callout type="tip">CNP crée un repo GitLab dans le namespace groupe CNP et pousse le code généré avec un pipeline CI préconfiguré. Vous pouvez cloner et commencer à coder immédiatement.</Callout>
       <div className="doc-nav-footer">
         <NavBtn to="premiers-pas" label="Premiers pas" dir="prev" onClick={nav} />
         <NavBtn to="importer" label="Importer un repo" dir="next" onClick={nav} />
@@ -151,10 +151,12 @@ function PageContent({
       </div>
       <h1 className="doc-h1">Importer un repo existant</h1>
       <p className="doc-lead">
-        CNP peut gérer le déploiement d'un repo GitLab existant sans scaffolding. Votre repo doit contenir un Dockerfile et des manifests Kubernetes valides.
+        CNP peut gérer le déploiement d'un repo existant sans scaffolding. Deux cas selon l'origine du repo.
       </p>
-      <h2 className="doc-h2">Structure attendue</h2>
-      <CodeBlock>{`mon-service/\n  Dockerfile\n  k8s/\n    deployment.yaml\n    service.yaml\n  .gitlab-ci.yml   # optionnel si CI CNP activée`}</CodeBlock>
+      <h2 className="doc-h2">Repo GitLab interne (onboard)</h2>
+      <CodeBlock>{`cnp app onboard --repo-url https://gitlab.com/namespace/mon-service --name mon-service`}</CodeBlock>
+      <h2 className="doc-h2">Repo public GitHub / GitLab (import)</h2>
+      <CodeBlock>{`cnp app import --source-url https://github.com/org/mon-repo --name mon-service`}</CodeBlock>
       <div className="doc-nav-footer">
         <NavBtn to="scaffolder" label="Scaffolder une app" dir="prev" onClick={nav} />
         <NavBtn to="deployer" label="Déployer sur AKS" dir="next" onClick={nav} />
@@ -169,10 +171,10 @@ function PageContent({
       </div>
       <h1 className="doc-h1">Déployer sur AKS</h1>
       <p className="doc-lead">
-        CNP orchestre le déploiement de vos applications sur Azure Kubernetes Service via un pipeline GitLab CI.
+        CNP orchestre le déploiement de vos applications sur Azure Kubernetes Service via GitLab CI et ArgoCD. Le déploiement est déclenché automatiquement à chaque push sur <code>main</code> (ou <code>release-dev-*</code> pour l'environnement dev).
       </p>
-      <CodeBlock>{`cnp app deploy --app mon-service --env production`}</CodeBlock>
-      <Callout type="info">Le cluster AKS est en autoscale 2–4 nodes. Utilisez az aks stop pour réduire les coûts hors usage.</Callout>
+      <CodeBlock>{`# Pusher sur main déclenche la CI, qui build l'image\n# et met à jour les manifestes ArgoCD automatiquement\ngit push origin main`}</CodeBlock>
+      <Callout type="info">Le cluster AKS est en autoscale 2–4 nodes. Utilisez « az aks stop » pour réduire les coûts hors usage.</Callout>
       <div className="doc-nav-footer">
         <NavBtn to="importer" label="Importer un repo" dir="prev" onClick={nav} />
         <NavBtn to="api-rest" label="API REST" dir="next" onClick={nav} />
@@ -190,7 +192,7 @@ function PageContent({
         L'API CNP expose les ressources de la plateforme via HTTP/JSON. Authentification via Bearer token ou header X-API-Key.
       </p>
       <h2 className="doc-h2">Base URL</h2>
-      <CodeBlock>https://api.cnp.example.com/v1</CodeBlock>
+      <CodeBlock>http://localhost:8000/api/v1</CodeBlock>
       <h2 className="doc-h2">Endpoints principaux</h2>
       <table className="doc-table">
         <thead>
@@ -198,11 +200,13 @@ function PageContent({
         </thead>
         <tbody>
           {[
-            ['GET /applications', 'GET', 'Lister les applications'],
-            ['POST /applications', 'POST', 'Créer une application'],
-            ['GET /applications/:id', 'GET', 'Détail d\'une application'],
-            ['POST /deployments', 'POST', 'Déclencher un déploiement'],
-            ['GET /templates', 'GET', 'Lister les templates'],
+            ['GET /apps', 'GET', 'Lister les applications'],
+            ['POST /apps', 'POST', 'Enregistrer une application'],
+            ['GET /apps/:id', 'GET', 'Détail d\'une application'],
+            ['DELETE /apps/:id', 'DELETE', 'Supprimer une application'],
+            ['GET /clusters', 'GET', 'Lister les clusters Kubernetes'],
+            ['POST /deployments', 'POST', 'Déclencher un déploiement K8s'],
+            ['GET /audit', 'GET', 'Consulter les logs d\'audit (admin)'],
           ].map(([ep, m, d]) => (
             <tr key={ep}><td>{ep}</td><td>{m}</td><td>{d}</td></tr>
           ))}
@@ -230,13 +234,17 @@ function PageContent({
         </thead>
         <tbody>
           {[
-            ['cnp auth login', 'Configurer le token d\'accès'],
-            ['cnp app list', 'Lister vos applications'],
-            ['cnp app create', 'Scaffolder une nouvelle app'],
-            ['cnp app deploy', 'Déclencher un déploiement'],
-            ['cnp app logs', 'Afficher les logs en live'],
-            ['cnp template list', 'Lister les templates'],
-            ['cnp status', 'Vérifier la connexion à l\'API'],
+            ['cnp auth login', 'Se connecter (email + mot de passe)'],
+            ['cnp auth status', 'Vérifier la connexion à l\'API'],
+            ['cnp auth logout', 'Se déconnecter'],
+            ['cnp app list', 'Lister les applications'],
+            ['cnp app scaffold', 'Scaffolder une app depuis un template'],
+            ['cnp app onboard', 'Onboarder un repo GitLab existant'],
+            ['cnp app import', 'Importer un repo public GitHub/GitLab'],
+            ['cnp app get <id>', 'Détail d\'une application'],
+            ['cnp app delete <id>', 'Supprimer une application'],
+            ['cnp cluster list', 'Lister les clusters disponibles'],
+            ['cnp credentials list', 'Lister les credentials cloud'],
           ].map(([cmd, desc]) => (
             <tr key={cmd}><td>{cmd}</td><td>{desc}</td></tr>
           ))}

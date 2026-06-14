@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     GITLAB_BOT_NAMESPACE: Optional[str] = None  # namespace owning cnp-ci-templates
     GITLAB_CI_PROJECT: Optional[str] = None     # chemin complet du repo CI (ex: 4k-cnp-2027/cnp-ci-modules)
     # GitOps — URL du dépôt cnp-gitops (injecté dans les .gitlab-ci.yml générés)
-    GITOPS_REPO_URL: str = "https://gitlab.com/4k-cnp-2027/cnp-gitops.git"
+    GITOPS_REPO_URL: str = ""  # URL of the cnp-gitops repo; must be set to enable GitOps provisioning
 
     # CNP API public URL (used in webhook registration)
     CNP_API_BASE_URL: str = "http://localhost:8000"
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
 
     # Monitoring
     PROMETHEUS_URL: str = "http://prometheus-operated.monitoring.svc.cluster.local:9090"
-    LOKI_URL: str = "http://loki-gateway.monitoring.svc.cluster.local"
+    LOKI_URL: str = "http://loki.monitoring.svc.cluster.local:3100"
     GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: http://localhost:3000
 
     # Logging
