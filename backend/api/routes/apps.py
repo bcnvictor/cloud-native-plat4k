@@ -1,6 +1,7 @@
 from typing import List
 
-from backend.api.deps import get_current_user, require_role
+from backend.api.deps import get_current_user, get_effective_tier, require_role
+from backend.api.schemas.members import MyAccessResponse
 from backend.db.models import User
 from backend.db.session import get_db
 from backend.services.app_service import AppService
@@ -45,6 +46,16 @@ async def get_app(
     current_user: User = Depends(get_current_user),
 ):
     return await AppService(db).get_app(app_id)
+
+
+@router.get("/{app_id}/my-access", response_model=MyAccessResponse)
+async def get_my_access(
+    app_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    tier = await get_effective_tier(current_user.id, app_id, db)
+    return MyAccessResponse(tier=tier, is_admin=current_user.is_admin)
 
 
 @router.post("/scaffold", response_model=ApplicationResponse, status_code=201)

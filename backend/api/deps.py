@@ -3,16 +3,76 @@ from typing import Optional
 from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from shared.models import UserRole
+from shared.models import CnpTier, MemberStatus, UserRole
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
 from backend.core.exceptions import ForbiddenException, UnauthorizedException
 from backend.core.security import get_api_key_hash
-from backend.db.models import APIKey, User
+from backend.db.models import APIKey, Application, AppMember, User
 from backend.db.session import get_db
 from backend.services.audit_service import AuditService
+
+_TIER_ORDER = [CnpTier.VIEWER, CnpTier.DEVELOPER, CnpTier.MAINTAINER, CnpTier.OWNER]
+
+
+def _access_level_to_tier(access_level: int) -> CnpTier:
+    if access_level >= 50:
+        return CnpTier.OWNER
+    if access_level >= 40:
+        return CnpTier.MAINTAINER
+    if access_level >= 30:
+        return CnpTier.DEVELOPER
+    return CnpTier.VIEWER
+
+
+async def get_effective_tier(user_id: int, app_id: int, db: AsyncSession) -> CnpTier:
+    result = await db.execute(select(Application).where(Application.id == app_id))
+    app = result.scalar_one_or_none()
+    if not app or not app.gitlab_project_id:
+        return CnpTier.VIEWER
+
+    result = await db.execute(
+        select(AppMember).where(
+            AppMember.gitlab_project_id == app.gitlab_project_id,
+            AppMember.cnp_user_id == user_id,
+            AppMember.status == MemberStatus.ACTIVE,
+        )
+    )
+    member = result.scalar_one_or_none()
+    if not member:
+        return CnpTier.VIEWER
+
+    return _access_level_to_tier(member.access_level)
+
+
+def require_tier(min_tier: CnpTier, app_id_param: str = "app_id"):
+    async def _checker(
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> User:
+        if current_user.is_admin:
+            raw_id = request.path_params.get(app_id_param)
+            if raw_id:
+                await AuditService(db).log_action(
+                    user_id=current_user.id,
+                    action=f"ADMIN_BYPASS_TIER:{min_tier.value}",
+                    app_id=int(raw_id),
+                )
+            return current_user
+
+        raw_id = request.path_params.get(app_id_param)
+        if not raw_id:
+            raise ForbiddenException()
+
+        tier = await get_effective_tier(current_user.id, int(raw_id), db)
+        if _TIER_ORDER.index(tier) < _TIER_ORDER.index(min_tier):
+            raise ForbiddenException()
+        return current_user
+
+    return _checker
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login", auto_error=False)
 
@@ -64,6 +124,12 @@ async def get_current_user(
         return user
 
     raise UnauthorizedException("Not authenticated")
+
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.is_admin:
+        raise ForbiddenException()
+    return current_user
 
 
 def require_role(role: UserRole):

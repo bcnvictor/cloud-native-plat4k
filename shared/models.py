@@ -54,6 +54,19 @@ class UserRole(str, Enum):
     VIEWER = "viewer"
 
 
+class MemberStatus(str, Enum):
+    ACTIVE = "active"
+    PENDING_INVITE = "pending_invite"
+    LEFT = "left"
+
+
+class CnpTier(str, Enum):
+    VIEWER = "viewer"
+    DEVELOPER = "developer"
+    MAINTAINER = "maintainer"
+    OWNER = "owner"
+
+
 class ResourceBase(BaseModel):
     cloud: CloudType
     type: ResourceType
