@@ -24,10 +24,6 @@ def upgrade() -> None:
     op.add_column('applications', sa.Column('gitlab_project_id', sa.BigInteger(), nullable=True))
     op.add_column('applications', sa.Column('owning_gitlab_group_id', sa.BigInteger(), nullable=True))
 
-    # enum type (shared by gitlab_group_members and app_members)
-    member_status = sa.Enum('active', 'pending_invite', 'left', name='memberstatus')
-    member_status.create(op.get_bind())
-
     # gitlab_groups
     op.create_table(
         'gitlab_groups',
@@ -46,7 +42,7 @@ def upgrade() -> None:
         sa.Column('gitlab_user_id', sa.BigInteger(), nullable=True),
         sa.Column('access_level', sa.Integer(), nullable=False),
         sa.Column('cnp_user_id', sa.Integer(), sa.ForeignKey('users.id', ondelete='SET NULL'), nullable=True),
-        sa.Column('status', sa.Enum('active', 'pending_invite', 'left', name='memberstatus', create_type=False), nullable=False, server_default='active'),
+        sa.Column('status', sa.Enum('active', 'pending_invite', 'left', name='memberstatus'), nullable=False, server_default='active'),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
         sa.UniqueConstraint('gitlab_group_id', 'gitlab_user_id', name='uq_group_member_gitlab_user'),
     )
