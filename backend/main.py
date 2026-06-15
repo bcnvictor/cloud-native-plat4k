@@ -9,6 +9,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from backend.api.routes import (
+    admin,
     apps,
     audit,
     auth,
@@ -28,6 +29,7 @@ from backend.k8s.client import k8s_client
 from backend.k8s.dashboards import FINOPS_DASHBOARD_JSON
 from backend.k8s.discovery import discover_clusters
 from backend.k8s.health_worker import run_health_worker
+from backend.services.gitlab_sync_service import run_gitlab_sync_worker
 
 logger = logging.getLogger(__name__)
 
@@ -57,12 +59,16 @@ async def lifespan(app: FastAPI):
                 logger.warning("Could not provision Grafana FinOps dashboard ConfigMap: %s", e)
         asyncio.create_task(_provision_grafana())
 
-    # Lancement du worker
-    task = asyncio.create_task(run_health_worker(settings.CLUSTER_HEALTH_INTERVAL))
+    # Lancement des workers
+    health_task = asyncio.create_task(run_health_worker(settings.CLUSTER_HEALTH_INTERVAL))
+    sync_task = asyncio.create_task(run_gitlab_sync_worker(settings.GITLAB_SYNC_INTERVAL_MINUTES))
     yield
-    task.cancel()
+    health_task.cancel()
+    sync_task.cancel()
     with suppress(asyncio.CancelledError):
-        await task
+        await health_task
+    with suppress(asyncio.CancelledError):
+        await sync_task
 
 
 # Rate limiting setup
@@ -108,3 +114,4 @@ app.include_router(health.router, prefix=f"{settings.API_V1_STR}/health", tags=[
 app.include_router(gitlab.router, prefix=f"{settings.API_V1_STR}/gitlab", tags=["gitlab"])
 app.include_router(webhooks.router, prefix=f"{settings.API_V1_STR}/webhooks", tags=["webhooks"])
 app.include_router(monitoring.router, prefix=f"{settings.API_V1_STR}/monitoring", tags=["monitoring"])
+app.include_router(admin.router, prefix=f"{settings.API_V1_STR}/admin", tags=["admin"])
