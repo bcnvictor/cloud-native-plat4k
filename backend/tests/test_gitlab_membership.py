@@ -58,7 +58,6 @@ async def is_admin_user(db_session):
         hashed_password=get_password_hash("superpass123"),
         role=UserRole.ADMIN,
         is_active=True,
-        is_admin=True,
         gitlab_user_id=999,
     )
     db_session.add(user)
@@ -74,7 +73,6 @@ async def regular_user(db_session):
         hashed_password=get_password_hash("pass123"),
         role=UserRole.DEV,
         is_active=True,
-        is_admin=False,
         gitlab_user_id=100,
     )
     db_session.add(user)
