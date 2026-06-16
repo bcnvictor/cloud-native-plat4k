@@ -65,7 +65,7 @@ async def get_app(
 async def list_app_members(
     app_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_tier(CnpTier.VIEWER)),
 ):
     result = await db.execute(select(Application).where(Application.id == app_id))
     app = result.scalar_one_or_none()
@@ -190,7 +190,7 @@ async def get_postgresql_credentials(
     app_id: int,
     namespace: str = Query(..., description="Kubernetes namespace where the app is deployed"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_tier(CnpTier.MAINTAINER)),
 ):
     """Read PostgreSQL credentials from the K8s Secret created by the Bitnami subchart."""
     return await AppService(db).get_postgresql_credentials(app_id, namespace)

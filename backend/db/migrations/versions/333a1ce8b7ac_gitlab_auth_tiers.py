@@ -1,15 +1,15 @@
 """GitLab authorization tiers (4K-67)
 
-Revision ID: f2b3c4d5e6a1
-Revises: e1a2b3c4d5f6
+Revision ID: 333a1ce8b7ac
+Revises: c5ead64c0fef
 Create Date: 2026-06-15 00:00:00.000000
 
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = 'f2b3c4d5e6a1'
-down_revision = 'e1a2b3c4d5f6'
+revision = '333a1ce8b7ac'
+down_revision = 'c5ead64c0fef'
 branch_labels = None
 depends_on = None
 

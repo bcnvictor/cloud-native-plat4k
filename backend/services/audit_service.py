@@ -21,7 +21,7 @@ class AuditService:
             ip_address=ip_address,
         )
         self.db.add(log)
-        await self.db.commit()
+        await self.db.flush()
 
     async def list_logs(self, limit: int = 100, offset: int = 0):
         query = select(AuditLog).order_by(desc(AuditLog.timestamp)).limit(limit).offset(offset)

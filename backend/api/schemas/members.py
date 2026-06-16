@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from shared.models import CnpTier, MemberStatus
 
 
@@ -42,9 +42,9 @@ class GroupMembershipRead(BaseModel):
 
 class AddMemberRequest(BaseModel):
     gitlab_user_id: int
-    access_level: int = 30  # Developer par défaut
+    access_level: int = Field(default=30, ge=10, le=40)
 
 
 class InviteMemberRequest(BaseModel):
     email: str
-    access_level: int = 30
+    access_level: int = Field(default=30, ge=10, le=40)

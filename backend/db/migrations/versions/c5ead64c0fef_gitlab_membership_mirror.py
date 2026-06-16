@@ -1,6 +1,6 @@
 """GitLab membership mirror (4K-65)
 
-Revision ID: e1a2b3c4d5f6
+Revision ID: c5ead64c0fef
 Revises: fa5e6a11f864
 Create Date: 2026-06-15 00:00:00.000000
 
@@ -8,7 +8,7 @@ Create Date: 2026-06-15 00:00:00.000000
 import sqlalchemy as sa
 from alembic import op
 
-revision = 'e1a2b3c4d5f6'
+revision = 'c5ead64c0fef'
 down_revision = 'fa5e6a11f864'
 branch_labels = None
 depends_on = None
