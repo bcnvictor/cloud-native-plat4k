@@ -49,15 +49,19 @@ class GitLabClient:
         Groups and subgroups are resolved via the groups API (supports full paths
         with slashes). Personal namespaces fall back to the namespaces search API.
         """
+        return self.get_namespace_id_for(self.namespace)
+
+    def get_namespace_id_for(self, path: str) -> int | None:
+        """Resolve an arbitrary namespace path to its numeric GitLab ID."""
         try:
-            group = self._gl.groups.get(self.namespace)
+            group = self._gl.groups.get(path)
             return group.id
         except Exception:
             pass
         try:
-            namespaces = self._gl.namespaces.list(search=self.namespace, all=True)
+            namespaces = self._gl.namespaces.list(search=path, all=True)
             for ns in namespaces:
-                if ns.full_path == self.namespace:
+                if ns.full_path == path:
                     return ns.id
         except Exception:
             pass

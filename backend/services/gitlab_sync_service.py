@@ -46,6 +46,39 @@ def _build_gitlab_client() -> Any | None:
     return _gl.Gitlab(url=settings.GITLAB_BASE_URL, private_token=token)
 
 
+async def _discover_subgroups(db: AsyncSession, gl: Any) -> int:
+    """Upsert direct subgroups of GITLAB_TEAMS_GROUP into gitlab_groups.
+
+    Returns the number of newly inserted groups.
+    """
+    parent_path = settings.GITLAB_TEAMS_GROUP
+    if not parent_path:
+        return 0
+    try:
+        parent = await asyncio.to_thread(gl.groups.get, parent_path)
+        subgroups = await asyncio.to_thread(lambda: parent.subgroups.list(all=True))
+    except Exception:
+        logger.exception("GitLab sync — cannot fetch subgroups of %s", parent_path)
+        return 0
+
+    created = 0
+    for sg in subgroups:
+        result = await db.execute(
+            select(GitLabGroup).where(GitLabGroup.gitlab_group_id == sg.id)
+        )
+        existing = result.scalar_one_or_none()
+        if existing:
+            existing.name = sg.name
+            existing.full_path = sg.full_path
+        else:
+            db.add(GitLabGroup(gitlab_group_id=sg.id, name=sg.name, full_path=sg.full_path))
+            created += 1
+
+    await db.flush()
+    logger.info("GitLab sync — discovered %d new subgroup(s) under %s", created, parent_path)
+    return created
+
+
 async def _resolve_cnp_user_id(db: AsyncSession, gitlab_user_id: int) -> int | None:
     """Return the CNP user.id whose gitlab_user_id matches, or None."""
     result = await db.execute(select(User.id).where(User.gitlab_user_id == gitlab_user_id))
@@ -58,7 +91,7 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
 
     try:
         gl_group = await asyncio.to_thread(gl.groups.get, group.gitlab_group_id)
-        gl_members = await asyncio.to_thread(lambda: gl_group.members.all(all=True))
+        gl_members = await asyncio.to_thread(lambda: gl_group.members_all.list(all=True))
     except Exception:
         logger.exception("GitLab sync — cannot fetch members for group %d", group.gitlab_group_id)
         return stats
@@ -110,7 +143,7 @@ async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
 
     try:
         gl_project = await asyncio.to_thread(gl.projects.get, project_id)
-        gl_members = await asyncio.to_thread(lambda: gl_project.members.all(all=True))
+        gl_members = await asyncio.to_thread(lambda: gl_project.members_all.list(all=True))
     except Exception:
         logger.exception("GitLab sync — cannot fetch members for project %d", project_id)
         return stats
@@ -204,6 +237,8 @@ async def run_gitlab_sync(db: AsyncSession) -> dict:
         "groups": {"created": 0, "updated": 0, "revoked": 0},
         "projects": {"created": 0, "updated": 0, "revoked": 0},
     }
+
+    await _discover_subgroups(db, gl)
 
     result = await db.execute(select(GitLabGroup))
     for group in result.scalars().all():

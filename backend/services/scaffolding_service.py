@@ -49,6 +49,7 @@ class ScaffoldingService:
         app_slug: str,
         template: str,
         scaffolding_params: Optional[ScaffoldingParams] = None,
+        target_namespace: Optional[str] = None,
     ) -> tuple[str, str]:
         """
         Runs the full scaffolding workflow.
@@ -62,7 +63,7 @@ class ScaffoldingService:
 
         template_path = f"{settings.GITLAB_TEMPLATES_NAMESPACE}/{template}"
         client = _get_bot_client()
-        apps_namespace = client.namespace
+        apps_namespace = target_namespace or client.namespace
 
         try:
             await anyio.to_thread.run_sync(
@@ -77,7 +78,7 @@ class ScaffoldingService:
             )
 
         namespace_id = await anyio.to_thread.run_sync(
-            client.get_namespace_id, cancellable=True
+            partial(client.get_namespace_id_for, apps_namespace), cancellable=True
         )
         if namespace_id is None:
             raise HTTPException(

@@ -2,12 +2,32 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { appsApi } from '@/api/apps';
+import { membersApi } from '@/api/members';
 import { monitoringApi } from '@/api/monitoring';
 import { grafanaLogsUrl, grafanaMetricsUrl } from '@/utils/grafanaLinks';
-import { ResourceStatus } from '@/types';
+import { CnpTier, ResourceStatus } from '@/types';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { APP_STATUS_MAP } from '@/utils/appStatus';
 import { timeAgo } from '@/utils/timeAgo';
+
+const TIER_ORDER: CnpTier[] = ['viewer', 'developer', 'maintainer', 'owner'];
+const TIER_COLOR: Record<CnpTier, string> = {
+  viewer: '#888',
+  developer: '#4a9eff',
+  maintainer: '#4caf50',
+  owner: '#f0b429',
+};
+
+function hasTier(actual: CnpTier, required: CnpTier): boolean {
+  return TIER_ORDER.indexOf(actual) >= TIER_ORDER.indexOf(required);
+}
+
+function initials(name: string | null): string {
+  if (!name) return '?';
+  const parts = name.split(/[@._-]/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
 
 const SoonBadge = () => (
   <span style={{
@@ -43,7 +63,7 @@ export const ResourceDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<'overview' | 'logs' | 'config'>('overview');
+  const [tab, setTab] = useState<'overview' | 'logs' | 'config' | 'membres'>('overview');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const { data: app, isLoading, isError } = useQuery({
@@ -78,6 +98,20 @@ export const ResourceDetail = () => {
     enabled: tab === 'logs' && !!app,
     refetchInterval: 30_000,
   });
+
+  const { data: members = [] } = useQuery({
+    queryKey: ['app-members', id],
+    queryFn: () => membersApi.listAppMembers(Number(id)),
+    enabled: !!id,
+  });
+
+  const { data: myAccess } = useQuery({
+    queryKey: ['my-access', id],
+    queryFn: () => membersApi.getMyAccess(Number(id)),
+    enabled: !!id,
+  });
+
+  const canDelete = myAccess ? (myAccess.is_admin || hasTier(myAccess.tier, 'maintainer')) : false;
 
   const deleteMutation = useMutation({
     mutationFn: () => appsApi.delete(Number(id)),
@@ -142,9 +176,9 @@ export const ResourceDetail = () => {
           </div>
         </div>
         <div className="tabs">
-          {(['overview', 'logs', 'config'] as const).map(t => (
+          {(['overview', 'logs', 'membres', 'config'] as const).map(t => (
             <button key={t} className={`tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
-              {t === 'overview' ? 'Vue d\'ensemble' : t === 'logs' ? 'Logs' : 'Configuration'}
+              {t === 'overview' ? 'Vue d\'ensemble' : t === 'logs' ? 'Logs' : t === 'membres' ? `Membres${members.length ? ` (${members.length})` : ''}` : 'Configuration'}
             </button>
           ))}
         </div>
@@ -300,6 +334,60 @@ export const ResourceDetail = () => {
           </div>
         )}
 
+        {tab === 'membres' && (
+          <div className="card">
+            <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Membres de l'équipe</span>
+              {myAccess && (
+                <span style={{ fontSize: 11, color: TIER_COLOR[myAccess.tier], fontWeight: 600 }}>
+                  Mon accès : {myAccess.tier}{myAccess.is_admin ? ' (admin)' : ''}
+                </span>
+              )}
+            </div>
+            {members.length === 0 ? (
+              <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: 12 }}>
+                Aucun membre synchronisé — déclenchez un sync GitLab pour peupler cette liste.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {members.map((m, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                      background: 'var(--bg-card)', border: '1px solid var(--border)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)',
+                    }}>
+                      {initials(m.display_name)}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{m.display_name ?? '—'}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>access_level {m.access_level}</div>
+                    </div>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      color: TIER_COLOR[m.tier_cnp],
+                      border: `1px solid ${TIER_COLOR[m.tier_cnp]}`,
+                      borderRadius: 4, padding: '2px 7px',
+                    }}>
+                      {m.tier_cnp}
+                    </span>
+                    <span style={{
+                      fontSize: 10, color: m.status === 'active' ? 'var(--green)' : 'var(--text-muted)',
+                      background: m.status === 'active' ? 'color-mix(in srgb, var(--green) 15%, transparent)' : 'var(--bg-card)',
+                      border: `1px solid ${m.status === 'active' ? 'color-mix(in srgb, var(--green) 40%, transparent)' : 'var(--border)'}`,
+                      borderRadius: 4, padding: '2px 7px',
+                    }}>
+                      {m.status === 'active' ? 'actif' : m.status === 'pending_invite' ? 'invitation' : 'parti'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {tab === 'config' && (
           <>
             <div className="card">
@@ -359,7 +447,12 @@ export const ResourceDetail = () => {
                   {deleteMessage}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                  <button className="btn-danger" onClick={() => setShowDeleteModal(true)} disabled={deleteMutation.isPending}>
+                  <button
+                    className="btn-danger"
+                    onClick={() => setShowDeleteModal(true)}
+                    disabled={deleteMutation.isPending || !canDelete}
+                    title={!canDelete ? 'Droits insuffisants (Maintainer requis)' : undefined}
+                  >
                     Supprimer
                   </button>
                 </div>

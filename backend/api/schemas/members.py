@@ -29,3 +29,12 @@ class GroupRead(BaseModel):
 class MyAccessResponse(BaseModel):
     tier: CnpTier
     is_admin: bool
+
+
+class GroupMembershipRead(BaseModel):
+    gitlab_group_id: int
+    name: str
+    full_path: str
+    access_level: int
+    tier_cnp: CnpTier
+    status: MemberStatus
