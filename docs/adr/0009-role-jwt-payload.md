@@ -3,6 +3,7 @@
 ## Statut
 
 Accepted
+Extended by ADR-0016 : `is_admin` (boolean, break-glass flag) ajouté au payload JWT ; le tier d'autorisation app-scoped (Viewer / Developer / Maintainer / Owner) n'est **pas** encodé dans le token — il est calculé à la volée depuis `app_members.access_level`.
 
 ## Contexte
 

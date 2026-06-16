@@ -118,12 +118,20 @@ en base sans itérer sur tous les enregistrements.
 À chaque requête avec `X-API-Key: <clé>`, le backend hache la valeur reçue et fait un `SELECT`
 sur la colonne `hashed_key`.
 
-### Contrôle d'accès par rôle (RBAC)
+### Contrôle d'accès (deux axes)
 
-Deux rôles : `ADMIN` et `VIEWER`.
+**Axe 1 — flag opérateur plateforme** (`is_admin`, encodé dans le JWT) : accès break-glass global, tout bypass est tracé dans `audit_logs`. Géré via `require_role(UserRole.ADMIN)` sur les routes d'administration.
 
-La dépendance `require_role(UserRole.ADMIN)` injectée dans une route restreint l'accès aux admins.
-Les admins ont accès à tout ; les viewers peuvent lire mais pas créer, supprimer ou gérer les utilisateurs.
+**Axe 2 — tier app-scoped** dérivé de l'`access_level` GitLab effectif, calculé à la volée depuis `app_members` (jamais encodé dans le JWT pour éviter la staleness) :
+
+| Tier CNP | access_level GitLab | Autorise |
+|---|---|---|
+| Viewer | ≤ 20 (Guest/Reporter) | Lecture catalogue |
+| Developer | 30 | Déploiement dev, config non sensible |
+| Maintainer | 40 | Déploiement prod, secrets, gestion membres |
+| Owner | 50 | Suppression, transfert |
+
+La dépendance `require_tier(CnpTier.MAINTAINER)` est injectable sur n'importe quel endpoint (cf. `api/deps.py`). Voir ADR-0016 pour le modèle complet.
 
 ---
 
@@ -141,6 +149,9 @@ Les admins ont accès à tout ; les viewers peuvent lire mais pas créer, suppri
 | `cluster_connections` | Clusters Kubernetes enregistrés (endpoint, référence au kubeconfig secret) |
 | `deployments`       | Log immuable des déploiements (application, cluster, version, statut)       |
 | `audit_logs`        | Journal des actions utilisateur                                             |
+| `gitlab_groups`     | Sous-groupes GitLab trackés (miroir ADR-0016)                               |
+| `gitlab_group_members` | Appartenance utilisateur ↔ groupe GitLab (status : active/pending/left) |
+| `app_members`       | Appartenance utilisateur ↔ projet GitLab (source de `get_effective_tier`)   |
 
 > Les tables `resources` et `cloud_credentials` sont présentes en base (migrations historiques)
 > mais ne sont plus exposées via l'API.
