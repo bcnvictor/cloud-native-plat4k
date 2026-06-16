@@ -7,11 +7,22 @@ from shared.models import (
     CloudType,
     ClusterStatus,
     DeploymentStatus,
+    MemberStatus,
     ResourceStatus,
     ResourceType,
     UserRole,
 )
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -27,6 +38,11 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(SQLEnum(UserRole), default=UserRole.DEV, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
+    gitlab_user_id = Column(BigInteger, nullable=True, unique=True, index=True)
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == UserRole.ADMIN
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
@@ -96,6 +112,7 @@ class AuditLog(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     action = Column(String, nullable=False) # e.g. "CREATE_RESOURCE", "DELETE_API_KEY"
     resource_id = Column(Integer, ForeignKey("resources.id", ondelete="SET NULL"), nullable=True)
+    app_id = Column(Integer, ForeignKey("applications.id", ondelete="SET NULL"), nullable=True)
     cloud = Column(SQLEnum(CloudType), nullable=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     ip_address = Column(String, nullable=True)
@@ -113,6 +130,8 @@ class Application(Base):
     slug = Column(String, nullable=False, unique=True)
     repo_url = Column(String, nullable=True, unique=True)
     owner = Column(String, nullable=False)
+    gitlab_project_id = Column(BigInteger, nullable=True)
+    owning_gitlab_group_id = Column(BigInteger, nullable=True)
     target_cluster_id = Column(Integer, ForeignKey("cluster_connections.id", ondelete="SET NULL"), nullable=True)
     origin = Column(String, nullable=True)
     source_url = Column(String, nullable=True)
@@ -166,3 +185,63 @@ class Deployment(Base):
 
     application = relationship("Application", back_populates="deployments")
     cluster = relationship("ClusterConnection", back_populates="deployments")
+
+
+# ── GitLab membership mirror (ADR-0013) ───────────────────────────────────────
+
+class GitLabGroup(Base):
+    __tablename__ = "gitlab_groups"
+
+    gitlab_group_id = Column(BigInteger, primary_key=True)
+    name = Column(String, nullable=False)
+    full_path = Column(String, nullable=False, unique=True)
+    synced_at = Column(DateTime(timezone=True), nullable=True)
+
+    members = relationship("GitLabGroupMember", back_populates="group", cascade="all, delete-orphan")
+
+
+class GitLabGroupMember(Base):
+    __tablename__ = "gitlab_group_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    gitlab_group_id = Column(BigInteger, ForeignKey("gitlab_groups.gitlab_group_id", ondelete="CASCADE"), nullable=False, index=True)
+    gitlab_user_id = Column(BigInteger, nullable=True)
+    access_level = Column(Integer, nullable=False)
+    cnp_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(
+        SQLEnum(MemberStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=MemberStatus.ACTIVE,
+    )
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    group = relationship("GitLabGroup", back_populates="members")
+    cnp_user = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint("gitlab_group_id", "gitlab_user_id", name="uq_group_member_gitlab_user"),
+    )
+
+
+class AppMember(Base):
+    __tablename__ = "app_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    gitlab_project_id = Column(BigInteger, nullable=False, index=True)
+    gitlab_user_id = Column(BigInteger, nullable=True)
+    email = Column(String, nullable=True)
+    access_level = Column(Integer, nullable=False)
+    cnp_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(
+        SQLEnum(MemberStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=MemberStatus.ACTIVE,
+    )
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    cnp_user = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint("gitlab_project_id", "gitlab_user_id", name="uq_app_member_gitlab_user"),
+        UniqueConstraint("gitlab_project_id", "email", name="uq_app_member_email"),
+    )

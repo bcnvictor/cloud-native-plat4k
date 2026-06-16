@@ -3,6 +3,7 @@
 ## Statut
 
 Accepted
+Extended by ADR-0016 : le tier d'autorisation app-scoped (Viewer / Developer / Maintainer / Owner) n'est **pas** encodé dans le token — il est calculé à la volée depuis `app_members.access_level`. `is_admin` n'est plus encodé dans le JWT ni stocké en base : c'est une propriété calculée (`role == ADMIN`) lue depuis la DB à chaque requête via `get_current_user`.
 
 ## Contexte
 
