@@ -275,9 +275,14 @@ async def run_gitlab_sync(db: AsyncSession) -> dict:
 
 
 async def run_gitlab_sync_for_user(db: AsyncSession, user_id: int) -> dict:
-    """Sync only the groups and projects the given user belongs to."""
+    """Sync groups and projects for one user, discovering new memberships from GitLab directly."""
     gl = _build_gitlab_client()
     if not gl:
+        return {"skipped": True}
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or not user.gitlab_user_id:
         return {"skipped": True}
 
     total: dict = {
@@ -285,22 +290,64 @@ async def run_gitlab_sync_for_user(db: AsyncSession, user_id: int) -> dict:
         "projects": {"created": 0, "updated": 0, "revoked": 0},
     }
 
-    result = await db.execute(
-        select(GitLabGroup)
-        .join(GitLabGroupMember, GitLabGroup.gitlab_group_id == GitLabGroupMember.gitlab_group_id)
-        .where(GitLabGroupMember.cnp_user_id == user_id)
+    # Ask GitLab directly which groups this user belongs to (catches new memberships)
+    try:
+        gl_groups = await asyncio.to_thread(
+            lambda: gl.groups.list(member_id=user.gitlab_user_id, all=True)
+        )
+    except Exception:
+        logger.exception("GitLab sync — cannot fetch groups for user gitlab_id=%d", user.gitlab_user_id)
+        gl_groups = []
+
+    # Upsert newly discovered groups into gitlab_groups
+    for gl_group in gl_groups:
+        res = await db.execute(
+            select(GitLabGroup).where(GitLabGroup.gitlab_group_id == gl_group.id)
+        )
+        existing = res.scalar_one_or_none()
+        if existing:
+            existing.name = gl_group.name
+            existing.full_path = gl_group.full_path
+        else:
+            db.add(GitLabGroup(
+                gitlab_group_id=gl_group.id,
+                name=gl_group.name,
+                full_path=gl_group.full_path,
+            ))
+    if gl_groups:
+        await db.flush()
+
+    # Sync each group's member list
+    group_ids = {g.id for g in gl_groups}
+    res = await db.execute(
+        select(GitLabGroup).where(GitLabGroup.gitlab_group_id.in_(group_ids))
     )
-    for group in result.scalars().all():
+    for group in res.scalars().all():
         s = await _sync_group(db, gl, group)
         for k in total["groups"]:
             total["groups"][k] += s[k]
 
-    result = await db.execute(
+    # Sync apps owned by the user's groups + apps where user already has a direct row
+    apps_to_sync: dict[int, Application] = {}
+    if group_ids:
+        res = await db.execute(
+            select(Application).where(
+                Application.gitlab_project_id.isnot(None),
+                Application.owning_gitlab_group_id.in_(group_ids),
+            )
+        )
+        for app in res.scalars().all():
+            apps_to_sync[app.id] = app
+
+    res = await db.execute(
         select(Application)
         .join(AppMember, Application.gitlab_project_id == AppMember.gitlab_project_id)
         .where(AppMember.cnp_user_id == user_id, Application.gitlab_project_id.isnot(None))
     )
-    for app in result.scalars().all():
+    for app in res.scalars().all():
+        apps_to_sync.setdefault(app.id, app)
+
+    for app in apps_to_sync.values():
         s = await _sync_project(db, gl, app)
         for k in total["projects"]:
             total["projects"][k] += s[k]

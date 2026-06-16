@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import List
@@ -8,16 +10,28 @@ from backend.api.schemas.auth import LoginPayload, RefreshTokenPayload, Token
 from backend.core.config import settings
 from backend.core.exceptions import UnauthorizedException
 from backend.db.models import APIKey, User
-from backend.db.session import get_db
+from backend.db.session import AsyncSessionLocal, get_db
 from backend.services.auth_service import AuthService
 from backend.services.credential_service import _build_fernet
 from backend.services.gitlab_oauth_service import GitLabOAuthService
+from backend.services.gitlab_sync_service import run_gitlab_sync_for_user
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from shared.models import APIKeyCreateResponse, APIKeyResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
+
+
+async def _trigger_user_sync(user_id: int) -> None:
+    """Fire-and-forget: sync GitLab memberships for a user using a fresh DB session."""
+    try:
+        async with AsyncSessionLocal() as db:
+            await run_gitlab_sync_for_user(db, user_id)
+    except Exception:
+        logger.exception("Background GitLab sync failed for user_id=%d", user_id)
 
 router = APIRouter()
 
@@ -32,6 +46,9 @@ async def login(
     payload = LoginPayload(email=form_data.username, password=form_data.password)
     user = await auth_service.authenticate_user(payload)
     access_token, refresh_token = auth_service.create_tokens(user)
+
+    if user.gitlab_user_id:
+        asyncio.create_task(_trigger_user_sync(user.id))
 
     response.set_cookie(
         key="refresh_token",
@@ -207,6 +224,7 @@ async def gitlab_callback(request: Request, response: Response, db: AsyncSession
     await db.refresh(user)
 
     # create JWT tokens and set refresh cookie
+    asyncio.create_task(_trigger_user_sync(user.id))
     auth_service = AuthService(db)
     access_jwt, refresh_jwt = auth_service.create_tokens(user)
     return_to = request.cookies.get("oauth_return_to")
