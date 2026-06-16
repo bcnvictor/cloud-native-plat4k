@@ -416,10 +416,9 @@ class AppService:
         
         # 1. Clean up GitOps repo (ArgoCD manifests)
         bot = _get_bot_client()
-        if bot:
+        if bot and settings.GITOPS_REPO_URL:
+            gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
             try:
-                gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
-                # ArgoCD manifests and values
                 await anyio.to_thread.run_sync(
                     lambda: bot.delete_directory_contents(
                         project_path=gitops_path,
@@ -428,6 +427,9 @@ class AppService:
                     ),
                     cancellable=True
                 )
+            except Exception:
+                logger.exception("Failed to clean up apps/ gitops directory for app %s", app.name)
+            try:
                 await anyio.to_thread.run_sync(
                     lambda: bot.delete_directory_contents(
                         project_path=gitops_path,
@@ -437,7 +439,7 @@ class AppService:
                     cancellable=True
                 )
             except Exception:
-                logger.exception("Failed to clean up gitops repository for app %s", app.name)
+                logger.exception("Failed to clean up argocd/ gitops directory for app %s", app.name)
         
         # 2. Delete the GitLab app repository if it was scaffolded
         if bot and app.origin == "scaffolded" and app.repo_url:

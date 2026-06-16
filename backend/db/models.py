@@ -38,8 +38,11 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(SQLEnum(UserRole), default=UserRole.DEV, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
-    is_admin = Column(Boolean, default=False, nullable=False)
     gitlab_user_id = Column(BigInteger, nullable=True, unique=True, index=True)
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == UserRole.ADMIN
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
