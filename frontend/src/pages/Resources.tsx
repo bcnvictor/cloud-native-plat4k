@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { appsApi } from '@/api/apps';
+import { membersApi } from '@/api/members';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { Application, ResourceStatus } from '@/types';
 import { useAuthStore } from '@/store/auth';
 import { APP_STATUS_MAP } from '@/utils/appStatus';
 import { timeAgo } from '@/utils/timeAgo';
+
 
 type DisplayStatus = ResourceStatus;
 
@@ -15,6 +17,7 @@ interface MockApp {
   id: number;
   name: string;
   desc: string;
+  team: string;
   env: string;
   source: 'scaffolded' | 'onboarded' | 'imported';
   status: DisplayStatus;
@@ -26,11 +29,11 @@ interface MockApp {
 }
 
 const MOCK_APPS: MockApp[] = [
-  { id: -1, name: 'api-gateway', desc: 'Reverse proxy & authentication layer', env: 'production', source: 'scaffolded', status: 'running', repoPath: 'gitlab.com/…/api-gateway', commitHash: 'a3f8c12', pods: 3, maxPods: 3, created_at: new Date(Date.now() - 3 * 60 * 1000).toISOString() },
-  { id: -2, name: 'user-service', desc: 'User management & profiles', env: 'production', source: 'scaffolded', status: 'pending', repoPath: 'gitlab.com/…/user-service', commitHash: 'e9d5c76', pods: 1, maxPods: 2, created_at: new Date(Date.now() - 30 * 1000).toISOString() },
-  { id: -3, name: 'payment-worker', desc: 'Async payment processing', env: 'production', source: 'onboarded', status: 'error', repoPath: 'gitlab.com/…/payment-worker', commitHash: 'h6a2z43', pods: 0, maxPods: 2, created_at: new Date(Date.now() - 12 * 60 * 1000).toISOString() },
-  { id: -4, name: 'frontend-app', desc: 'Main customer-facing interface', env: 'production', source: 'scaffolded', status: 'running', repoPath: 'gitlab.com/…/frontend-app', commitHash: 'j4y0x21', pods: 2, maxPods: 2, created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
-  { id: -5, name: 'notif-service', desc: 'Email & push notifications', env: 'staging', source: 'imported', status: 'stopped', repoPath: 'github.com/…/notif-service', commitHash: 'l2w8v09', pods: 0, maxPods: 0, created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() },
+  { id: -1, name: 'api-gateway', desc: 'Reverse proxy & authentication layer', team: '', env: 'production', source: 'scaffolded', status: 'running', repoPath: 'gitlab.com/…/api-gateway', commitHash: 'a3f8c12', pods: 3, maxPods: 3, created_at: new Date(Date.now() - 3 * 60 * 1000).toISOString() },
+  { id: -2, name: 'user-service', desc: 'User management & profiles', team: '', env: 'production', source: 'scaffolded', status: 'pending', repoPath: 'gitlab.com/…/user-service', commitHash: 'e9d5c76', pods: 1, maxPods: 2, created_at: new Date(Date.now() - 30 * 1000).toISOString() },
+  { id: -3, name: 'payment-worker', desc: 'Async payment processing', team: '', env: 'production', source: 'onboarded', status: 'error', repoPath: 'gitlab.com/…/payment-worker', commitHash: 'h6a2z43', pods: 0, maxPods: 2, created_at: new Date(Date.now() - 12 * 60 * 1000).toISOString() },
+  { id: -4, name: 'frontend-app', desc: 'Main customer-facing interface', team: '', env: 'production', source: 'scaffolded', status: 'running', repoPath: 'gitlab.com/…/frontend-app', commitHash: 'j4y0x21', pods: 2, maxPods: 2, created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+  { id: -5, name: 'notif-service', desc: 'Email & push notifications', team: '', env: 'staging', source: 'imported', status: 'stopped', repoPath: 'github.com/…/notif-service', commitHash: 'l2w8v09', pods: 0, maxPods: 0, created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() },
 ];
 
 function originToSource(origin: string | undefined): 'scaffolded' | 'onboarded' | 'imported' {
@@ -39,16 +42,20 @@ function originToSource(origin: string | undefined): 'scaffolded' | 'onboarded' 
   return 'imported';
 }
 
-function appToDisplay(app: Application): MockApp {
+function appToDisplay(app: Application, groupById?: Map<number, string>): MockApp {
   const pods = app.status === 'deployed' ? 2 : app.status === 'onboarding' ? 1 : 0;
   const repoPath = app.repo_url
     ? app.repo_url.replace(/^https?:\/\//, '').replace(/\.git$/, '')
     : `gitlab.com/…/${app.name}`;
   const source = originToSource(app.origin ?? undefined);
+  const groupName = app.owning_gitlab_group_id && groupById
+    ? (groupById.get(app.owning_gitlab_group_id) ?? null)
+    : null;
   return {
     id: app.id,
     name: app.name,
-    desc: app.owner,
+    desc: app.name,
+    team: groupName ?? app.owner,
     env: app.origin ?? 'k8s',
     source,
     status: APP_STATUS_MAP[app.status],
@@ -94,17 +101,28 @@ export const Resources = () => {
   const location = useLocation();
   const queryClient = useQueryClient();
   const user = useAuthStore(s => s.user);
+  const activeGroupId = useAuthStore(s => s.activeGroupId);
 
   const { data: apiApps = [], isLoading, refetch } = useQuery({
     queryKey: ['apps'],
     queryFn: () => appsApi.list(),
   });
 
+  const { data: myGroups = [] } = useQuery({
+    queryKey: ['my-groups'],
+    queryFn: () => membersApi.getMyGroups(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const groupById = new Map(myGroups.map(g => [g.gitlab_group_id, g.name]));
+
   useEffect(() => {
     refetch();
   }, [location.key, refetch]);
 
-  const apiDisplayApps = apiApps.map(appToDisplay);
+  const groupFiltered = activeGroupId
+    ? apiApps.filter(a => a.owning_gitlab_group_id === activeGroupId)
+    : apiApps;
+  const apiDisplayApps = groupFiltered.map(app => appToDisplay(app, groupById));
   const filtered = filterStatus ? apiDisplayApps.filter(a => a.status === filterStatus) : apiDisplayApps;
 
   /* Fall back to mock data when API returns nothing */
@@ -266,7 +284,7 @@ function AppCard({ app, onOpen, onDelete, isMock }: {
   onDelete: (id: number) => void;
   isMock?: boolean;
 }) {
-  const { id, name, desc, env, source, status, repoPath, commitHash, pods, maxPods, created_at } = app;
+  const { id, name, desc, team, env, source, status, repoPath, commitHash, pods, maxPods, created_at } = app;
 
   return (
     <div className={cardClass(status)} onClick={onOpen} style={{ cursor: isMock ? 'default' : 'pointer' }}>
@@ -274,7 +292,15 @@ function AppCard({ app, onOpen, onDelete, isMock }: {
         <div>
           <div className="app-name">{name}</div>
           <div className="app-desc">{desc}</div>
-          <span className={`env-tag ${env}`} style={{ marginTop: 6, display: 'inline-block' }}>{env}</span>
+          <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span className={`env-tag ${env}`} style={{ display: 'inline-block' }}>{env}</span>
+            {team && (
+              <span className="team-chip">
+                <i className="ti ti-users-group" aria-hidden="true" />
+                {team}
+              </span>
+            )}
+          </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

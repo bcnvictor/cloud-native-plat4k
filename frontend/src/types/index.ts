@@ -10,6 +10,39 @@ export interface CnpJwtPayload {
 
 export type ApplicationStatus = 'onboarding' | 'ready' | 'deployed';
 export type DeploymentStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+export type CnpTier = 'viewer' | 'developer' | 'maintainer' | 'owner';
+
+export interface AppMember {
+  cnp_user_id: number | null;
+  display_name: string | null;
+  access_level: number;
+  tier_cnp: CnpTier;
+  status: 'active' | 'pending_invite' | 'left';
+}
+
+export interface MyAccess {
+  tier: CnpTier;
+  is_admin: boolean;
+}
+
+export interface GroupMembership {
+  gitlab_group_id: number;
+  name: string;
+  full_path: string;
+  access_level: number;
+  tier_cnp: CnpTier;
+  status: 'active' | 'pending_invite' | 'left';
+}
+
+export interface UserMe {
+  id: number;
+  email: string;
+  role: UserRole;
+  is_active: boolean;
+  is_admin: boolean;
+  gitlab_user_id: number | null;
+  created_at: string;
+}
 
 export interface Application {
   id: number;
@@ -19,6 +52,8 @@ export interface Application {
   origin: string | null;
   source_url: string | null;
   status: ApplicationStatus;
+  gitlab_project_id?: number | null;
+  owning_gitlab_group_id?: number | null;
   created_at: string;
   updated_at: string | null;
 }

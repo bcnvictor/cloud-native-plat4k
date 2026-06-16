@@ -33,7 +33,7 @@ function renderLogin() {
 describe('Login', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    const fakeState = { token: null, user: null, setAuth: mockSetAuth, clearAuth: vi.fn() };
+    const fakeState = { token: null, user: null, activeGroupId: null, setAuth: mockSetAuth, clearAuth: vi.fn(), setActiveGroup: vi.fn() };
     mockUseAuthStore.mockImplementation((selector: (state: typeof fakeState) => unknown) => selector(fakeState));
   });
 

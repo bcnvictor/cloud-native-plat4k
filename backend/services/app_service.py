@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ci.detector import detect_framework, extract_project_path
 from backend.ci.injector import inject_ci
 from backend.core.config import settings
-from backend.db.models import Application, ClusterConnection
+from backend.db.models import Application, ClusterConnection, GitLabGroup
 from backend.gitlab.client import GitLabClient
 from backend.k8s.client import k8s_client
 
@@ -68,6 +68,7 @@ class AppService:
 
     async def scaffold_app(self, payload: ApplicationScaffoldRequest) -> Application:
         slug = _validated_slug(payload.name)
+        target_namespace = await self._resolve_group_namespace(payload.owning_gitlab_group_id)
         from backend.services.scaffolding_service import ScaffoldingService
         svc = ScaffoldingService(self.db)
         repo_url, project_path = await svc.scaffold(
@@ -75,6 +76,7 @@ class AppService:
             app_slug=slug,
             template=payload.template,
             scaffolding_params=payload.scaffolding,
+            target_namespace=target_namespace,
         )
         data = {
             "name": payload.name,
@@ -83,6 +85,7 @@ class AppService:
             "repo_url": repo_url,
             "origin": "scaffolded",
             "framework": payload.template,
+            "owning_gitlab_group_id": payload.owning_gitlab_group_id,
         }
         return await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
 
@@ -134,6 +137,7 @@ class AppService:
             "origin": "onboarded",
             "framework": framework or "generic",
             "target_cluster_id": payload.target_cluster_id,
+            "owning_gitlab_group_id": payload.owning_gitlab_group_id,
         }
         return await self._save_app(data)
 
@@ -149,7 +153,10 @@ class AppService:
                 detail="GITLAB_BOT_TOKEN not configured — cannot import external repo",
             )
 
-        apps_namespace = settings.GITLAB_APPS_NAMESPACE
+        apps_namespace = (
+            await self._resolve_group_namespace(payload.owning_gitlab_group_id)
+            or settings.GITLAB_APPS_NAMESPACE
+        )
         if not apps_namespace:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -189,8 +196,19 @@ class AppService:
             "origin": "imported",
             "framework": framework or "generic",
             "target_cluster_id": payload.target_cluster_id,
+            "owning_gitlab_group_id": payload.owning_gitlab_group_id,
         }
         return await self._save_app(data, skip_ci=payload.raw)
+
+    async def _resolve_group_namespace(self, owning_gitlab_group_id: int | None) -> str | None:
+        """Return the full_path of the GitLab group, or None if not found / not set."""
+        if not owning_gitlab_group_id:
+            return None
+        result = await self.db.execute(
+            select(GitLabGroup).where(GitLabGroup.gitlab_group_id == owning_gitlab_group_id)
+        )
+        group = result.scalar_one_or_none()
+        return group.full_path if group else None
 
     async def create_app(self, payload: ApplicationCreate) -> Application:
         data = payload.model_dump()

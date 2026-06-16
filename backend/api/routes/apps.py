@@ -1,8 +1,13 @@
 from typing import List
 
-from backend.api.deps import get_current_user, get_effective_tier, require_role
-from backend.api.schemas.members import MyAccessResponse
-from backend.db.models import User
+from backend.api.deps import (
+    _access_level_to_tier,
+    get_current_user,
+    get_effective_tier,
+    require_role,
+)
+from backend.api.schemas.members import MemberRead, MyAccessResponse
+from backend.db.models import Application, AppMember, User
 from backend.db.session import get_db
 from backend.services.app_service import AppService
 from backend.services.scaffolding_service import ScaffoldingService
@@ -17,6 +22,7 @@ from shared.models import (
     PostgreSQLCredentials,
     UserRole,
 )
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
@@ -46,6 +52,33 @@ async def get_app(
     current_user: User = Depends(get_current_user),
 ):
     return await AppService(db).get_app(app_id)
+
+
+@router.get("/{app_id}/members", response_model=List[MemberRead])
+async def list_app_members(
+    app_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    result = await db.execute(select(Application).where(Application.id == app_id))
+    app = result.scalar_one_or_none()
+    if not app or not app.gitlab_project_id:
+        return []
+    result = await db.execute(
+        select(AppMember, User)
+        .outerjoin(User, AppMember.cnp_user_id == User.id)
+        .where(AppMember.gitlab_project_id == app.gitlab_project_id)
+    )
+    return [
+        MemberRead(
+            cnp_user_id=m.cnp_user_id,
+            display_name=u.email if u else None,
+            access_level=m.access_level,
+            tier_cnp=_access_level_to_tier(m.access_level),
+            status=m.status,
+        )
+        for m, u in result.all()
+    ]
 
 
 @router.get("/{app_id}/my-access", response_model=MyAccessResponse)

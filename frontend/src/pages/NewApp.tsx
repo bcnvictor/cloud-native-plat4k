@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { appsApi, AppTemplate } from '@/api/apps';
 import { clustersApi, type ClusterConnection } from '@/api/clusters';
+import { membersApi } from '@/api/members';
 import { useAuthStore } from '@/store/auth';
 
 function computeSlug(name: string): string {
@@ -30,7 +31,15 @@ export const NewApp = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useAuthStore(s => s.user);
+  const activeGroupId = useAuthStore(s => s.activeGroupId);
   const owner = user?.email ?? '';
+
+  const { data: myGroups = [] } = useQuery({
+    queryKey: ['my-groups'],
+    queryFn: () => membersApi.getMyGroups(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const activeGroup = myGroups.find(g => g.gitlab_group_id === activeGroupId) ?? null;
 
   const [scaffoldForm, setScaffoldForm] = useState(EMPTY_SCAFFOLD);
   const [scaffoldError, setScaffoldError] = useState<string | null>(null);
@@ -101,6 +110,7 @@ export const NewApp = () => {
       },
       skip_first_deploy: scaffoldForm.skip_first_deploy,
       target_cluster_id: scaffoldForm.target_cluster_id ? Number(scaffoldForm.target_cluster_id) : undefined,
+      owning_gitlab_group_id: activeGroupId,
     });
   };
 
@@ -113,6 +123,7 @@ export const NewApp = () => {
       repo_url: onboardForm.repo_url,
       framework: onboardForm.framework || undefined,
       target_cluster_id: onboardForm.target_cluster_id ? Number(onboardForm.target_cluster_id) : undefined,
+      owning_gitlab_group_id: activeGroupId,
     });
   };
 
@@ -126,6 +137,7 @@ export const NewApp = () => {
       framework: importForm.framework || undefined,
       target_cluster_id: importForm.target_cluster_id ? Number(importForm.target_cluster_id) : undefined,
       raw: importForm.raw,
+      owning_gitlab_group_id: activeGroupId,
     });
   };
 
@@ -148,6 +160,39 @@ export const NewApp = () => {
 
       <div className="page-content" style={{ alignItems: 'center' }}>
         <div style={{ width: '100%', maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Namespace banner */}
+          {activeGroup ? (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 14px', borderRadius: 8,
+              background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
+            }}>
+              <i className="ti ti-users-group" style={{ fontSize: 15, color: 'var(--accent)', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Cette application sera rattachée à l'équipe{' '}
+                  <strong style={{ color: 'var(--text-primary)' }}>{activeGroup.name}</strong>
+                  {' '}— sous-groupe GitLab{' '}
+                  <code style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--accent)' }}>{activeGroup.full_path}</code>
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 14px', borderRadius: 8,
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+            }}>
+              <i className="ti ti-info-circle" style={{ fontSize: 15, color: 'var(--text-muted)', flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Aucun contexte d'équipe sélectionné — l'application ne sera pas rattachée à un groupe.
+                {myGroups.length > 0 && ' Sélectionnez une équipe dans la sidebar pour la rattacher.'}
+              </span>
+            </div>
+          )}
 
           {/* Mode selector */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
