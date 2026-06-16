@@ -11,6 +11,7 @@ from shared.models import (
     ApplicationStatus,
     ApplicationUpdate,
     ClusterStatus,
+    MemberStatus,
     compute_slug,
 )
 from sqlalchemy import select
@@ -19,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ci.detector import detect_framework, extract_project_path
 from backend.ci.injector import inject_ci
 from backend.core.config import settings
-from backend.db.models import Application, ClusterConnection, GitLabGroup
+from backend.db.models import Application, AppMember, ClusterConnection, GitLabGroup, User
 from backend.gitlab.client import GitLabClient
 from backend.k8s.client import k8s_client
 
@@ -209,6 +210,92 @@ class AppService:
         )
         group = result.scalar_one_or_none()
         return group.full_path if group else None
+
+    async def add_member(self, app_id: int, gitlab_user_id: int, access_level: int) -> AppMember:
+        app = await self.get_app(app_id)
+        if not app.gitlab_project_id:
+            raise HTTPException(status_code=422, detail="App has no linked GitLab project")
+
+        bot = _get_bot_client()
+        if not bot:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="GITLAB_BOT_TOKEN not configured")
+
+        try:
+            await anyio.to_thread.run_sync(
+                partial(bot.add_project_member, app.gitlab_project_id, gitlab_user_id, access_level),
+                cancellable=True,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"GitLab error: {e}")
+
+        result = await self.db.execute(select(User).where(User.gitlab_user_id == gitlab_user_id))
+        cnp_user = result.scalar_one_or_none()
+        cnp_user_id = cnp_user.id if cnp_user else None
+
+        result = await self.db.execute(
+            select(AppMember).where(
+                AppMember.gitlab_project_id == app.gitlab_project_id,
+                AppMember.gitlab_user_id == gitlab_user_id,
+            )
+        )
+        member = result.scalar_one_or_none()
+        if member:
+            member.access_level = access_level
+            member.status = MemberStatus.ACTIVE
+            if cnp_user_id:
+                member.cnp_user_id = cnp_user_id
+        else:
+            member = AppMember(
+                gitlab_project_id=app.gitlab_project_id,
+                gitlab_user_id=gitlab_user_id,
+                access_level=access_level,
+                cnp_user_id=cnp_user_id,
+                status=MemberStatus.ACTIVE,
+            )
+            self.db.add(member)
+        await self.db.commit()
+        await self.db.refresh(member)
+        return member
+
+    async def invite_member(self, app_id: int, email: str, access_level: int) -> AppMember:
+        app = await self.get_app(app_id)
+        if not app.gitlab_project_id:
+            raise HTTPException(status_code=422, detail="App has no linked GitLab project")
+
+        bot = _get_bot_client()
+        if not bot:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="GITLAB_BOT_TOKEN not configured")
+
+        try:
+            await anyio.to_thread.run_sync(
+                partial(bot.invite_project_member, app.gitlab_project_id, email, access_level),
+                cancellable=True,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"GitLab error: {e}")
+
+        result = await self.db.execute(
+            select(AppMember).where(
+                AppMember.gitlab_project_id == app.gitlab_project_id,
+                AppMember.email == email,
+            )
+        )
+        member = result.scalar_one_or_none()
+        if member:
+            member.access_level = access_level
+            member.status = MemberStatus.PENDING_INVITE
+        else:
+            member = AppMember(
+                gitlab_project_id=app.gitlab_project_id,
+                gitlab_user_id=None,
+                email=email,
+                access_level=access_level,
+                status=MemberStatus.PENDING_INVITE,
+            )
+            self.db.add(member)
+        await self.db.commit()
+        await self.db.refresh(member)
+        return member
 
     async def create_app(self, payload: ApplicationCreate) -> Application:
         data = payload.model_dump()

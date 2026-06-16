@@ -38,3 +38,13 @@ class GroupMembershipRead(BaseModel):
     access_level: int
     tier_cnp: CnpTier
     status: MemberStatus
+
+
+class AddMemberRequest(BaseModel):
+    gitlab_user_id: int
+    access_level: int = 30  # Developer par défaut
+
+
+class InviteMemberRequest(BaseModel):
+    email: str
+    access_level: int = 30
