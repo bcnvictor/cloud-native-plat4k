@@ -264,6 +264,47 @@ async def run_gitlab_sync(db: AsyncSession) -> dict:
     return total
 
 
+async def run_gitlab_sync_for_user(db: AsyncSession, user_id: int) -> dict:
+    """Sync only the groups and projects the given user belongs to."""
+    gl = _build_gitlab_client()
+    if not gl:
+        return {"skipped": True}
+
+    total: dict = {
+        "groups": {"created": 0, "updated": 0, "revoked": 0},
+        "projects": {"created": 0, "updated": 0, "revoked": 0},
+    }
+
+    result = await db.execute(
+        select(GitLabGroup)
+        .join(GitLabGroupMember, GitLabGroup.gitlab_group_id == GitLabGroupMember.gitlab_group_id)
+        .where(GitLabGroupMember.cnp_user_id == user_id)
+    )
+    for group in result.scalars().all():
+        s = await _sync_group(db, gl, group)
+        for k in total["groups"]:
+            total["groups"][k] += s[k]
+
+    result = await db.execute(
+        select(Application)
+        .join(AppMember, Application.gitlab_project_id == AppMember.gitlab_project_id)
+        .where(AppMember.cnp_user_id == user_id, Application.gitlab_project_id.isnot(None))
+    )
+    for app in result.scalars().all():
+        s = await _sync_project(db, gl, app)
+        for k in total["projects"]:
+            total["projects"][k] += s[k]
+
+    await db.commit()
+    logger.info(
+        "User sync complete (user_id=%d) — groups: +%d ~%d -%d | projects: +%d ~%d -%d",
+        user_id,
+        total["groups"]["created"], total["groups"]["updated"], total["groups"]["revoked"],
+        total["projects"]["created"], total["projects"]["updated"], total["projects"]["revoked"],
+    )
+    return total
+
+
 async def run_gitlab_sync_worker(interval_minutes: int = 15) -> None:
     """Background worker: runs a full sync cycle every interval_minutes."""
     logger.info("GitLab sync worker started (interval: %d min)", interval_minutes)

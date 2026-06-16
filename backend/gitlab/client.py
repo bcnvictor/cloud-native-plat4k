@@ -277,6 +277,21 @@ class GitLabClient:
         items = project.repository_tree(ref=ref, recursive=True, all=True)
         return [{"name": i["name"], "type": i["type"], "path": i["path"]} for i in items]
 
+    def add_project_member(self, project_id: int, gitlab_user_id: int, access_level: int) -> None:
+        """Add or update a user's membership on a GitLab project (by numeric IDs)."""
+        project = self._gl.projects.get(project_id)
+        try:
+            project.members.create({"user_id": gitlab_user_id, "access_level": access_level})
+        except Exception:
+            member = project.members.get(gitlab_user_id)
+            member.access_level = access_level
+            member.save()
+
+    def invite_project_member(self, project_id: int, email: str, access_level: int) -> None:
+        """Send a GitLab project invitation to an email address."""
+        project = self._gl.projects.get(project_id)
+        project.invitations.create({"email": email, "access_level": access_level})
+
     def delete_directory_contents(self, project_path: str, directory_path: str, commit_message: str, branch: str = "main") -> None:
         """Deletes all files within a directory using the Commits API."""
         try:

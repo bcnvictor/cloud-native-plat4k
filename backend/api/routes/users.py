@@ -141,7 +141,7 @@ async def get_user_groups(
 @router.post("/me/sync-teams")
 async def sync_my_teams(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    from backend.services.gitlab_sync_service import run_gitlab_sync
-    return await run_gitlab_sync(db)
+    from backend.services.gitlab_sync_service import run_gitlab_sync_for_user
+    return await run_gitlab_sync_for_user(db, current_user.id)

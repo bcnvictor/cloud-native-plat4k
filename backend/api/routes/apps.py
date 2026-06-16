@@ -5,8 +5,14 @@ from backend.api.deps import (
     get_current_user,
     get_effective_tier,
     require_role,
+    require_tier,
 )
-from backend.api.schemas.members import MemberRead, MyAccessResponse
+from backend.api.schemas.members import (
+    AddMemberRequest,
+    InviteMemberRequest,
+    MemberRead,
+    MyAccessResponse,
+)
 from backend.db.models import Application, AppMember, User
 from backend.db.session import get_db
 from backend.services.app_service import AppService
@@ -19,6 +25,7 @@ from shared.models import (
     ApplicationResponse,
     ApplicationScaffoldRequest,
     ApplicationUpdate,
+    CnpTier,
     PostgreSQLCredentials,
     UserRole,
 )
@@ -79,6 +86,44 @@ async def list_app_members(
         )
         for m, u in result.all()
     ]
+
+
+@router.post("/{app_id}/members", response_model=MemberRead, status_code=201)
+async def add_app_member(
+    app_id: int,
+    payload: AddMemberRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_tier(CnpTier.MAINTAINER)),
+):
+    """Add a known GitLab user to the app project (write-through mirror)."""
+    member = await AppService(db).add_member(app_id, payload.gitlab_user_id, payload.access_level)
+    result = await db.execute(select(User).where(User.id == member.cnp_user_id)) if member.cnp_user_id else None
+    cnp_user = result.scalar_one_or_none() if result else None
+    return MemberRead(
+        cnp_user_id=member.cnp_user_id,
+        display_name=cnp_user.email if cnp_user else None,
+        access_level=member.access_level,
+        tier_cnp=_access_level_to_tier(member.access_level),
+        status=member.status,
+    )
+
+
+@router.post("/{app_id}/invitations", response_model=MemberRead, status_code=201)
+async def invite_app_member(
+    app_id: int,
+    payload: InviteMemberRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_tier(CnpTier.MAINTAINER)),
+):
+    """Invite a user by email to the app project (write-through mirror)."""
+    member = await AppService(db).invite_member(app_id, payload.email, payload.access_level)
+    return MemberRead(
+        cnp_user_id=None,
+        display_name=payload.email,
+        access_level=member.access_level,
+        tier_cnp=_access_level_to_tier(member.access_level),
+        status=member.status,
+    )
 
 
 @router.get("/{app_id}/my-access", response_model=MyAccessResponse)
