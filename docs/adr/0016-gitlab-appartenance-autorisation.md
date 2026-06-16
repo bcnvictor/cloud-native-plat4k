@@ -3,7 +3,7 @@
 ## Statut
 
 Accepted : 2026-06-16
-Extends ADR-0009 (rôles globaux JWT — `is_admin` ajouté au payload, tier app-scoped sorti du JWT)
+Extends ADR-0009 (rôles globaux JWT — tier app-scoped sorti du JWT ; `is_admin` désormais propriété calculée, non encodé dans le token)
 
 ## Contexte
 
@@ -55,7 +55,7 @@ Le miroir est une **projection reconstructible** : en cas de corruption, on purg
 
 Aucune hiérarchie CNP parallèle. L'autorisation repose sur deux axes seulement :
 
-a. **Flag opérateur plateforme** (`is_admin`), binaire et global. C'est une porte de secours (break-glass) : l'admin voit tout en détail et peut tout faire, y compris les actions destructrices, quel que soit son access_level GitLab. **Tout usage de cet override est tracé dans l'audit log** (`action = ADMIN_BYPASS_TIER:<tier>`, `app_id`, `user_id`, `timestamp`). L'admin n'est pas pour autant ajouté comme membre des groupes GitLab.
+a. **Flag opérateur plateforme** (`is_admin`), binaire et global. Dérivé de `role == ADMIN` — propriété calculée sur le modèle `User`, plus de colonne DB séparée (supprimée en migration `g3c5d7e9f1b2`). C'est une porte de secours (break-glass) : l'admin voit tout en détail et peut tout faire, y compris les actions destructrices, quel que soit son access_level GitLab. **Tout usage de cet override est tracé dans l'audit log** (`action = ADMIN_BYPASS_TIER:<tier>`, `app_id`, `user_id`, `timestamp`). L'admin n'est pas pour autant ajouté comme membre des groupes GitLab.
 
 b. **Tier dérivé de l'`access_level` GitLab effectif**, collapsé en 4 tiers (GitLab garde ses 6 niveaux comme vérité, CNP en dérive 4) :
 
@@ -68,7 +68,7 @@ b. **Tier dérivé de l'`access_level` GitLab effectif**, collapsé en 4 tiers (
 
 Plus un **plancher catalogue** pour les non-membres (voir section 7). "Lead dev d'une équipe" = Maintainer+ sur le sous-groupe, pas un rôle CNP distinct.
 
-Le tier n'est **pas encodé dans le JWT** pour éviter la staleness — il est calculé à la volée depuis `app_members` à chaque requête. Le JWT contient uniquement `is_admin`. L'endpoint `GET /apps/{id}/my-access` retourne `{tier, is_admin}` pour informer le frontend.
+Le tier n'est **pas encodé dans le JWT** pour éviter la staleness — il est calculé à la volée depuis `app_members` à chaque requête. Le JWT contient `role` (cf. ADR-0009) ; `is_admin` en est dérivé côté serveur et n'est plus dans le payload token. L'endpoint `GET /apps/{id}/my-access` retourne `{tier, is_admin}` pour informer le frontend.
 
 ### 5. Frontières d'autorisation clés (DICP)
 
