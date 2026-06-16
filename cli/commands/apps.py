@@ -2,7 +2,7 @@ import typer
 from typing import Optional
 from cli.core.client import client
 from cli.core.config import load_config
-from cli.core.output import print_error, print_success, print_table, print_json
+from cli.core.output import print_error, print_success, print_table, print_json, console
 
 app = typer.Typer(help="Manage CNP applications.")
 
@@ -212,6 +212,80 @@ def delete_app(
     try:
         client.delete(f"/apps/{id}")
         print_success(f"Application {id} deleted.")
+    except Exception as e:
+        print_error(str(e))
+        raise typer.Exit(1)
+
+
+@app.command("members")
+def list_members(
+    id: int = typer.Argument(..., help="Application ID"),
+):
+    """List members of a CNP application (requires Maintainer+)."""
+    try:
+        data = client.get(f"/apps/{id}/members")
+        if not data:
+            typer.echo("No members found.")
+            return
+        print_table(
+            f"Members — app {id}",
+            ["CNP User ID", "Display Name", "Access Level", "Tier", "Status"],
+            [
+                [
+                    m.get("cnp_user_id") or "—",
+                    m.get("display_name") or "—",
+                    m.get("access_level"),
+                    m.get("tier_cnp"),
+                    m.get("status"),
+                ]
+                for m in data
+            ],
+        )
+    except Exception as e:
+        print_error(str(e))
+        raise typer.Exit(1)
+
+
+@app.command("add-member")
+def add_member(
+    id: int = typer.Argument(..., help="Application ID"),
+    gitlab_user_id: int = typer.Option(..., "--gitlab-user-id", "-u", help="GitLab numeric user ID"),
+    access_level: int = typer.Option(30, "--access-level", "-a", help="Access level (10=Guest, 30=Developer, 40=Maintainer, 50=Owner)"),
+):
+    """Add a GitLab user to an app project (write-through, requires Maintainer+)."""
+    try:
+        data = client.post(f"/apps/{id}/members", json={"gitlab_user_id": gitlab_user_id, "access_level": access_level})
+        print_success(f"Member added — tier: {data.get('tier_cnp')}, status: {data.get('status')}")
+    except Exception as e:
+        print_error(str(e))
+        raise typer.Exit(1)
+
+
+@app.command("invite")
+def invite_member(
+    id: int = typer.Argument(..., help="Application ID"),
+    email: str = typer.Option(..., "--email", "-e", help="Email address to invite"),
+    access_level: int = typer.Option(30, "--access-level", "-a", help="Access level (10=Guest, 30=Developer, 40=Maintainer, 50=Owner)"),
+):
+    """Invite a user by email to an app project (write-through, requires Maintainer+)."""
+    try:
+        data = client.post(f"/apps/{id}/invitations", json={"email": email, "access_level": access_level})
+        print_success(f"Invitation sent to {email} — tier: {data.get('tier_cnp')}, status: {data.get('status')}")
+    except Exception as e:
+        print_error(str(e))
+        raise typer.Exit(1)
+
+
+@app.command("access")
+def my_access(
+    id: int = typer.Argument(..., help="Application ID"),
+):
+    """Show your effective access tier on a CNP application."""
+    try:
+        data = client.get(f"/apps/{id}/my-access")
+        tier = data.get("tier", "—")
+        is_admin = data.get("is_admin", False)
+        console.print(f"Tier: [bold]{tier}[/bold]" + ("  [yellow](admin override)[/yellow]" if is_admin else ""))
     except Exception as e:
         print_error(str(e))
         raise typer.Exit(1)

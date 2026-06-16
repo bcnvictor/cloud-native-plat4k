@@ -157,6 +157,7 @@ async def gitlab_callback(request: Request, response: Response, db: AsyncSession
     profile = await oauth.get_user(access_token)
     email = profile.get("email")
     username = profile.get("username") or profile.get("name") or ""
+    gitlab_user_id = profile.get("id")
     if not email:
         raise UnauthorizedException("GitLab account has no email")
 
@@ -166,11 +167,14 @@ async def gitlab_callback(request: Request, response: Response, db: AsyncSession
     if not user:
         from backend.core.security import get_password_hash
         from shared.models import UserRole
-        new_user = User(email=email, hashed_password=get_password_hash(secrets.token_urlsafe(24)), role=UserRole.DEV)
+        new_user = User(email=email, hashed_password=get_password_hash(secrets.token_urlsafe(24)), role=UserRole.DEV, gitlab_user_id=gitlab_user_id)
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
         user = new_user
+    elif user.gitlab_user_id != gitlab_user_id:
+        user.gitlab_user_id = gitlab_user_id
+        await db.commit()
 
     # store/update GitLabCredential
     fernet = _build_fernet()
