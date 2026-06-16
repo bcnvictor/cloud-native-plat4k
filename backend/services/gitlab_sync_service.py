@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -22,6 +23,9 @@ from backend.db.session import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
+_gl_module_lock = threading.Lock()
+_gl_module: Any = None
+
 
 def _build_gitlab_client() -> Any | None:
     """Build a python-gitlab client from the configured bot/service token.
@@ -29,21 +33,27 @@ def _build_gitlab_client() -> Any | None:
     Imported lazily to avoid a naming conflict: backend/gitlab/ shadows python-gitlab
     when backend/ is on sys.path (which pytest adds because pyproject.toml lives there).
     In production (cloud-native-plat4k/ on PYTHONPATH) the import resolves correctly.
+    The sys.path surgery runs at most once (double-checked lock) to avoid races.
     """
+    global _gl_module
     token = settings.GITLAB_BOT_TOKEN or settings.GITLAB_TOKEN
     if not token:
         return None
-    import sys as _sys
-    # Find python-gitlab in site-packages, not the local backend/gitlab/ shadow
-    _backend_path = str(__file__).split("/services/")[0]  # .../backend
-    _orig_path = list(_sys.path)
-    _sys.path = [p for p in _sys.path if not (p == _backend_path or p.rstrip("/") == _backend_path)]
-    try:
-        import importlib as _il
-        _gl = _il.import_module("gitlab")
-    finally:
-        _sys.path = _orig_path
-    return _gl.Gitlab(url=settings.GITLAB_BASE_URL, private_token=token)
+
+    if _gl_module is None:
+        with _gl_module_lock:
+            if _gl_module is None:
+                import importlib as _il
+                import sys as _sys
+                _backend_path = str(__file__).split("/services/")[0]
+                _orig_path = list(_sys.path)
+                _sys.path = [p for p in _sys.path if not (p == _backend_path or p.rstrip("/") == _backend_path)]
+                try:
+                    _gl_module = _il.import_module("gitlab")
+                finally:
+                    _sys.path = _orig_path
+
+    return _gl_module.Gitlab(url=settings.GITLAB_BASE_URL, private_token=token)
 
 
 async def _discover_subgroups(db: AsyncSession, gl: Any) -> int:
@@ -192,7 +202,7 @@ async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
     # Upsert pending invites — never transition to left while still in list
     for inv in gl_invitations:
         email = inv.invite_email
-        access_level = getattr(inv, "access_level", 30)
+        access_level = getattr(inv, "access_level", 10)
         if email in existing_by_email:
             row = existing_by_email[email]
             row.access_level = access_level

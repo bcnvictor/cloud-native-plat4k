@@ -1,14 +1,14 @@
 """drop is_admin column — derived from role property
 
-Revision ID: g3c5d7e9f1b2
-Revises: f2b3c4d5e6a1
+Revision ID: cfc5e4e75804
+Revises: 8df6e2b70264
 Create Date: 2026-06-16
 
 """
 from alembic import op
 
-revision = 'g3c5d7e9f1b2'
-down_revision = 'a0b1c2d3e4f5'
+revision = 'cfc5e4e75804'
+down_revision = '8df6e2b70264'
 branch_labels = None
 depends_on = None
 

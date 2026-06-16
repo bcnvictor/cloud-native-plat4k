@@ -310,7 +310,7 @@ class TestAdminSyncGitlab:
 class TestSyncGroup:
     async def test_creates_new_member(self, db_session, gitlab_group):
         gl_group_mock = MagicMock()
-        gl_group_mock.members.all.return_value = [_make_gl_member(gl_id=7, access_level=40)]
+        gl_group_mock.members_all.list.return_value = [_make_gl_member(gl_id=7, access_level=40)]
         gl = MagicMock()
         gl.groups.get.return_value = gl_group_mock
 
@@ -337,7 +337,7 @@ class TestSyncGroup:
         await db_session.commit()
 
         gl_group_mock = MagicMock()
-        gl_group_mock.members.all.return_value = [_make_gl_member(gl_id=7, access_level=40)]
+        gl_group_mock.members_all.list.return_value = [_make_gl_member(gl_id=7, access_level=40)]
         gl = MagicMock()
         gl.groups.get.return_value = gl_group_mock
 
@@ -360,7 +360,7 @@ class TestSyncGroup:
         await db_session.commit()
 
         gl_group_mock = MagicMock()
-        gl_group_mock.members.all.return_value = []  # member gone from GitLab
+        gl_group_mock.members_all.list.return_value = []  # member gone from GitLab
         gl = MagicMock()
         gl.groups.get.return_value = gl_group_mock
 
@@ -379,7 +379,7 @@ class TestSyncGroup:
     async def test_links_cnp_user_id_on_upsert(self, db_session, gitlab_group, regular_user):
         """User with gitlab_user_id=100 should be linked via cnp_user_id."""
         gl_group_mock = MagicMock()
-        gl_group_mock.members.all.return_value = [_make_gl_member(gl_id=100, access_level=30)]
+        gl_group_mock.members_all.list.return_value = [_make_gl_member(gl_id=100, access_level=30)]
         gl = MagicMock()
         gl.groups.get.return_value = gl_group_mock
 
@@ -396,7 +396,7 @@ class TestSyncGroup:
 class TestSyncProject:
     async def test_creates_active_member(self, db_session, app_with_project):
         gl_project_mock = MagicMock()
-        gl_project_mock.members.all.return_value = [_make_gl_member(gl_id=7, access_level=30)]
+        gl_project_mock.members_all.list.return_value = [_make_gl_member(gl_id=7, access_level=30)]
         gl_project_mock.invitations.list.return_value = []
         gl = MagicMock()
         gl.projects.get.return_value = gl_project_mock
@@ -413,7 +413,7 @@ class TestSyncProject:
 
     async def test_creates_pending_invite(self, db_session, app_with_project):
         gl_project_mock = MagicMock()
-        gl_project_mock.members.all.return_value = []
+        gl_project_mock.members_all.list.return_value = []
         gl_project_mock.invitations.list.return_value = [
             _make_gl_invitation("new@user.com", access_level=30)
         ]
@@ -441,7 +441,7 @@ class TestSyncProject:
         await db_session.commit()
 
         gl_project_mock = MagicMock()
-        gl_project_mock.members.all.return_value = []
+        gl_project_mock.members_all.list.return_value = []
         gl_project_mock.invitations.list.return_value = [
             _make_gl_invitation("invited@user.com")
         ]
@@ -465,7 +465,7 @@ class TestSyncProject:
         await db_session.commit()
 
         gl_project_mock = MagicMock()
-        gl_project_mock.members.all.return_value = []
+        gl_project_mock.members_all.list.return_value = []
         gl_project_mock.invitations.list.return_value = []  # invite cancelled in GitLab
         gl = MagicMock()
         gl.projects.get.return_value = gl_project_mock
@@ -487,7 +487,7 @@ class TestSyncProject:
         await db_session.commit()
 
         gl_project_mock = MagicMock()
-        gl_project_mock.members.all.return_value = []
+        gl_project_mock.members_all.list.return_value = []
         gl_project_mock.invitations.list.return_value = []
         gl = MagicMock()
         gl.projects.get.return_value = gl_project_mock
@@ -514,9 +514,9 @@ class TestRunGitlabSync:
 
     async def test_syncs_groups_and_projects(self, db_session, gitlab_group, app_with_project):
         gl_group_mock = MagicMock()
-        gl_group_mock.members.all.return_value = [_make_gl_member(gl_id=5, access_level=30)]
+        gl_group_mock.members_all.list.return_value = [_make_gl_member(gl_id=5, access_level=30)]
         gl_project_mock = MagicMock()
-        gl_project_mock.members.all.return_value = [_make_gl_member(gl_id=6, access_level=40)]
+        gl_project_mock.members_all.list.return_value = [_make_gl_member(gl_id=6, access_level=40)]
         gl_project_mock.invitations.list.return_value = []
 
         gl_mock = MagicMock()
