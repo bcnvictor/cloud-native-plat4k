@@ -1,5 +1,5 @@
-from contextlib import asynccontextmanager
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,13 +61,13 @@ def extract_single_context_kubeconfig(config_data: dict, context_name: str) -> d
 async def bootstrap_cluster_if_needed() -> None:
     import os
 
-    from sqlalchemy import select
     import yaml
+    from shared.models import ClusterConnectionCreate
+    from sqlalchemy import select
 
     from backend.db.models import ClusterConnection
     from backend.db.session import AsyncSessionLocal
     from backend.services.cluster_service import ClusterService
-    from shared.models import ClusterConnectionCreate
 
     kubeconfig_files = []
     dir_path = "/tmp/kubeconfigs"

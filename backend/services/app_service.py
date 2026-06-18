@@ -1,17 +1,8 @@
-from functools import partial
 import logging
+from functools import partial
 
 import anyio
 from fastapi import HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from backend.ci.detector import detect_framework, extract_project_path
-from backend.ci.injector import inject_ci
-from backend.core.config import settings
-from backend.db.models import Application, ClusterConnection
-from backend.gitlab.client import GitLabClient
-from backend.k8s.client import get_k8s_client_for_cluster
 from shared.models import (
     ApplicationCreate,
     ApplicationExternalImportRequest,
@@ -21,6 +12,15 @@ from shared.models import (
     ApplicationUpdate,
     compute_slug,
 )
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.ci.detector import detect_framework, extract_project_path
+from backend.ci.injector import inject_ci
+from backend.core.config import settings
+from backend.db.models import Application, ClusterConnection
+from backend.gitlab.client import GitLabClient
+from backend.k8s.client import get_k8s_client_for_cluster
 
 logger = logging.getLogger(__name__)
 
