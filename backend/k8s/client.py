@@ -17,9 +17,10 @@ class KubernetesClient:
         self._load_config(kubeconfig_yaml)
 
     def _load_config(self, kubeconfig_yaml: Optional[str] = None) -> None:
-        import tempfile
         import os
-        from kubernetes.client import Configuration, ApiClient
+        import tempfile
+
+        from kubernetes.client import ApiClient, Configuration
 
         try:
             config_obj = Configuration()

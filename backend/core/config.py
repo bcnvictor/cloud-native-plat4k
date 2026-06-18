@@ -86,7 +86,9 @@ settings = Settings()
 
 def bootstrap_from_vault(settings_obj: Settings) -> None:
     import logging
+
     import hvac.exceptions
+
     from backend.vault.client import vault_client
 
     logger = logging.getLogger(__name__)

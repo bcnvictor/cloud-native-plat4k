@@ -1,5 +1,7 @@
 import logging
+
 import hvac
+
 from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
