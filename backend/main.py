@@ -1,5 +1,5 @@
-import logging
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +21,7 @@ from backend.api.routes import (
     users,
     webhooks,
 )
-from backend.core.config import settings, bootstrap_from_vault
+from backend.core.config import bootstrap_from_vault, settings
 from backend.k8s.client import k8s_client
 from backend.k8s.dashboards import FINOPS_DASHBOARD_JSON
 
@@ -60,10 +60,12 @@ def extract_single_context_kubeconfig(config_data: dict, context_name: str) -> d
 
 async def bootstrap_cluster_if_needed() -> None:
     import os
-    import yaml
+
     from sqlalchemy import select
-    from backend.db.session import AsyncSessionLocal
+    import yaml
+
     from backend.db.models import ClusterConnection
+    from backend.db.session import AsyncSessionLocal
     from backend.services.cluster_service import ClusterService
     from shared.models import ClusterConnectionCreate
 
