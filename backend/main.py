@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
+from functools import partial
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,8 +37,11 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Charge/Bootstrap les secrets depuis Vault en priorité
-    bootstrap_from_vault(settings)
+    # Charge/Bootstrap les secrets depuis Vault en priorité.
+    # hvac est synchrone (basé sur requests) — on l'exécute dans le thread pool
+    # pour ne pas bloquer l'event loop asyncio au démarrage.
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, partial(bootstrap_from_vault, settings))
 
     if k8s_client.is_configured() and FINOPS_DASHBOARD_JSON is not None:
         # Discovery au démarrage
