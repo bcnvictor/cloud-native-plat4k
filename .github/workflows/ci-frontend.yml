@@ -88,6 +88,8 @@ jobs:
       POSTGRES_DB: cnp_e2e
       SECURE_COOKIES: 'false'
       BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
+      VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+      VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
