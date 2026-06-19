@@ -14,8 +14,6 @@ services:
       - cnp_net
 
   backend:
-    volumes:
-      - ~/.kube/config:/tmp/kubeconfig:ro
     depends_on:
       db:
         condition: service_healthy
