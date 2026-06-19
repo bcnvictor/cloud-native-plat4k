@@ -6,21 +6,25 @@ This avoids duplicating code between the client and server.
 import re
 
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
 
 
 def compute_slug(name: str) -> str:
-    """Return an RFC 1123-compliant slug derived from name, capped at 50 chars.
+    """Return a DNS-1035-compliant slug derived from name, capped at 50 chars.
 
-    Returns an empty string when the name cannot be normalised (e.g. all
-    special characters).  Callers must treat an empty return as an error.
+    DNS-1035 requires names to start with a letter (Kubernetes Service/Pod names).
+    Returns an empty string when the name cannot be normalised.
+    Callers must treat an empty return as an error.
     """
     s = name.lower()
     s = re.sub(r"[^a-z0-9-]", "-", s)
     s = re.sub(r"-+", "-", s)
     s = s.strip("-")
+    # Prefix with 'app-' if first char is a digit (DNS-1035 requires leading letter)
+    if s and s[0].isdigit():
+        s = "app-" + s
     return s[:50]
 
 
@@ -48,6 +52,19 @@ class UserRole(str, Enum):
     ADMIN = "admin"
     DEV = "dev"
     VIEWER = "viewer"
+
+
+class MemberStatus(str, Enum):
+    ACTIVE = "active"
+    PENDING_INVITE = "pending_invite"
+    LEFT = "left"
+
+
+class CnpTier(str, Enum):
+    VIEWER = "viewer"
+    DEVELOPER = "developer"
+    MAINTAINER = "maintainer"
+    OWNER = "owner"
 
 
 class ResourceBase(BaseModel):
@@ -141,10 +158,17 @@ class AuditLogResponse(BaseModel):
 
 # ── IDP entities ──────────────────────────────────────────────────────────────
 
+class ClusterStatus(str, Enum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+    UNKNOWN = "unknown"
+
+
 class ApplicationStatus(str, Enum):
     ONBOARDING = "onboarding"
     READY = "ready"
     DEPLOYED = "deployed"
+    DEGRADED = "degraded"
 
 
 class DeploymentStatus(str, Enum):
@@ -170,6 +194,17 @@ class ScaffoldingParams(BaseModel):
     image_tag: str = "latest"
     replicas: int = 1
     env: Dict[str, str] = {}
+    services: List[str] = []  # backing services to provision (e.g., ["postgresql"])
+    pg_size: str = "1Gi"  # PVC size for PostgreSQL (e.g., "1Gi", "5Gi", "20Gi")
+
+
+class PostgreSQLCredentials(BaseModel):
+    host: str
+    port: int = 5432
+    username: str
+    password: str
+    database: str
+    database_url: str
 
 
 class ApplicationCreate(ApplicationBase):
@@ -183,6 +218,7 @@ class ApplicationScaffoldRequest(BaseModel):
     template: str  # name of the template repo in GITLAB_TEMPLATES_NAMESPACE (ex: "python-fastapi")
     scaffolding: Optional[ScaffoldingParams] = None
     skip_first_deploy: bool = False  # si True, ne provisionne pas ArgoCD au scaffold (utile quand la 1ère image n'est pas encore buildée)
+    owning_gitlab_group_id: Optional[int] = None
 
 
 class ApplicationOnboardRequest(BaseModel):
@@ -192,6 +228,7 @@ class ApplicationOnboardRequest(BaseModel):
     repo_url: str
     framework: Optional[str] = None
     target_cluster_id: Optional[int] = None
+    owning_gitlab_group_id: Optional[int] = None
 
 
 class ApplicationExternalImportRequest(BaseModel):
@@ -202,6 +239,7 @@ class ApplicationExternalImportRequest(BaseModel):
     framework: Optional[str] = None
     target_cluster_id: Optional[int] = None
     raw: bool = False
+    owning_gitlab_group_id: Optional[int] = None
 
 
 class ApplicationUpdate(BaseModel):
@@ -211,6 +249,7 @@ class ApplicationUpdate(BaseModel):
     origin: Optional[str] = None
     framework: Optional[str] = None
     status: Optional[ApplicationStatus] = None
+    target_cluster_id: Optional[int] = None
 
 
 class ApplicationResponse(ApplicationBase):
@@ -220,6 +259,7 @@ class ApplicationResponse(ApplicationBase):
     target_cluster_id: Optional[int] = None
     ci_injected: Optional[bool] = None
     last_pipeline_status: Optional[str] = None
+    owning_gitlab_group_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -245,6 +285,8 @@ class ClusterConnectionUpdate(BaseModel):
 class ClusterConnectionResponse(ClusterConnectionBase):
     id: int
     kubeconfig_secret_ref: str
+    status: ClusterStatus = ClusterStatus.UNKNOWN
+    last_seen_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

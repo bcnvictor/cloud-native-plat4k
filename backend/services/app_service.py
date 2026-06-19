@@ -10,6 +10,8 @@ from shared.models import (
     ApplicationScaffoldRequest,
     ApplicationStatus,
     ApplicationUpdate,
+    ClusterStatus,
+    MemberStatus,
     compute_slug,
 )
 from sqlalchemy import select
@@ -18,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ci.detector import detect_framework, extract_project_path
 from backend.ci.injector import inject_ci
 from backend.core.config import settings
-from backend.db.models import Application, ClusterConnection
+from backend.db.models import Application, AppMember, ClusterConnection, GitLabGroup, User
 from backend.gitlab.client import GitLabClient
 from backend.k8s.client import get_k8s_client_for_cluster
 
@@ -67,6 +69,7 @@ class AppService:
 
     async def scaffold_app(self, payload: ApplicationScaffoldRequest) -> Application:
         slug = _validated_slug(payload.name)
+        target_namespace = await self._resolve_group_namespace(payload.owning_gitlab_group_id)
         from backend.services.scaffolding_service import ScaffoldingService
         svc = ScaffoldingService(self.db)
         repo_url, project_path = await svc.scaffold(
@@ -74,6 +77,7 @@ class AppService:
             app_slug=slug,
             template=payload.template,
             scaffolding_params=payload.scaffolding,
+            target_namespace=target_namespace,
         )
         data = {
             "name": payload.name,
@@ -82,6 +86,7 @@ class AppService:
             "repo_url": repo_url,
             "origin": "scaffolded",
             "framework": payload.template,
+            "owning_gitlab_group_id": payload.owning_gitlab_group_id,
         }
         return await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
 
@@ -133,6 +138,7 @@ class AppService:
             "origin": "onboarded",
             "framework": framework or "generic",
             "target_cluster_id": payload.target_cluster_id,
+            "owning_gitlab_group_id": payload.owning_gitlab_group_id,
         }
         return await self._save_app(data)
 
@@ -148,7 +154,10 @@ class AppService:
                 detail="GITLAB_BOT_TOKEN not configured — cannot import external repo",
             )
 
-        apps_namespace = settings.GITLAB_APPS_NAMESPACE
+        apps_namespace = (
+            await self._resolve_group_namespace(payload.owning_gitlab_group_id)
+            or settings.GITLAB_APPS_NAMESPACE
+        )
         if not apps_namespace:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -188,8 +197,105 @@ class AppService:
             "origin": "imported",
             "framework": framework or "generic",
             "target_cluster_id": payload.target_cluster_id,
+            "owning_gitlab_group_id": payload.owning_gitlab_group_id,
         }
         return await self._save_app(data, skip_ci=payload.raw)
+
+    async def _resolve_group_namespace(self, owning_gitlab_group_id: int | None) -> str | None:
+        """Return the full_path of the GitLab group, or None if not found / not set."""
+        if not owning_gitlab_group_id:
+            return None
+        result = await self.db.execute(
+            select(GitLabGroup).where(GitLabGroup.gitlab_group_id == owning_gitlab_group_id)
+        )
+        group = result.scalar_one_or_none()
+        return group.full_path if group else None
+
+    async def add_member(self, app_id: int, gitlab_user_id: int, access_level: int) -> AppMember:
+        app = await self.get_app(app_id)
+        if not app.gitlab_project_id:
+            raise HTTPException(status_code=422, detail="App has no linked GitLab project")
+
+        bot = _get_bot_client()
+        if not bot:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="GITLAB_BOT_TOKEN not configured")
+
+        try:
+            await anyio.to_thread.run_sync(
+                partial(bot.add_project_member, app.gitlab_project_id, gitlab_user_id, access_level),
+                cancellable=True,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"GitLab error: {e}")
+
+        result = await self.db.execute(select(User).where(User.gitlab_user_id == gitlab_user_id))
+        cnp_user = result.scalar_one_or_none()
+        cnp_user_id = cnp_user.id if cnp_user else None
+
+        result = await self.db.execute(
+            select(AppMember).where(
+                AppMember.gitlab_project_id == app.gitlab_project_id,
+                AppMember.gitlab_user_id == gitlab_user_id,
+            )
+        )
+        member = result.scalar_one_or_none()
+        if member:
+            member.access_level = access_level
+            member.status = MemberStatus.ACTIVE
+            if cnp_user_id:
+                member.cnp_user_id = cnp_user_id
+        else:
+            member = AppMember(
+                gitlab_project_id=app.gitlab_project_id,
+                gitlab_user_id=gitlab_user_id,
+                access_level=access_level,
+                cnp_user_id=cnp_user_id,
+                status=MemberStatus.ACTIVE,
+            )
+            self.db.add(member)
+        await self.db.commit()
+        await self.db.refresh(member)
+        return member
+
+    async def invite_member(self, app_id: int, email: str, access_level: int) -> AppMember:
+        app = await self.get_app(app_id)
+        if not app.gitlab_project_id:
+            raise HTTPException(status_code=422, detail="App has no linked GitLab project")
+
+        bot = _get_bot_client()
+        if not bot:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="GITLAB_BOT_TOKEN not configured")
+
+        try:
+            await anyio.to_thread.run_sync(
+                partial(bot.invite_project_member, app.gitlab_project_id, email, access_level),
+                cancellable=True,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"GitLab error: {e}")
+
+        result = await self.db.execute(
+            select(AppMember).where(
+                AppMember.gitlab_project_id == app.gitlab_project_id,
+                AppMember.email == email,
+            )
+        )
+        member = result.scalar_one_or_none()
+        if member:
+            member.access_level = access_level
+            member.status = MemberStatus.PENDING_INVITE
+        else:
+            member = AppMember(
+                gitlab_project_id=app.gitlab_project_id,
+                gitlab_user_id=None,
+                email=email,
+                access_level=access_level,
+                status=MemberStatus.PENDING_INVITE,
+            )
+            self.db.add(member)
+        await self.db.commit()
+        await self.db.refresh(member)
+        return member
 
     async def create_app(self, payload: ApplicationCreate) -> Application:
         data = payload.model_dump()
@@ -224,6 +330,7 @@ class AppService:
                         origin=app.origin,
                         framework=app.framework or "generic",
                         client=bot,
+                        owner=app.owner,
                         webhook_url=webhook_url,
                         webhook_secret=settings.GITLAB_WEBHOOK_SECRET or "",
                         skip_first_run=skip_gitops,
@@ -244,21 +351,74 @@ class AppService:
 
     async def update_app(self, app_id: int, payload: ApplicationUpdate) -> Application:
         app = await self.get_app(app_id)
+
+        # Validation du nouveau cluster cible si réassignation
+        new_cluster_id = payload.model_dump(exclude_unset=True).get("target_cluster_id")
+        if new_cluster_id is not None and new_cluster_id != app.target_cluster_id:
+            cluster_result = await self.db.execute(
+                select(ClusterConnection).where(ClusterConnection.id == new_cluster_id)
+            )
+            target_cluster = cluster_result.scalar_one_or_none()
+            if target_cluster is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster not found")
+            # Seul OFFLINE (panne confirmée) bloque. UNKNOWN est autorisé : cluster pas
+            # encore sondé ou ref non-fichier — le bloquer le rendrait inutilisable.
+            if target_cluster.status == ClusterStatus.OFFLINE:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Cluster '{target_cluster.name}' is currently offline",
+                )
+
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(app, field, value)
         await self.db.commit()
         await self.db.refresh(app)
         return app
 
+    async def get_postgresql_credentials(self, app_id: int, namespace: str):
+        from kubernetes.client.exceptions import ApiException
+        from shared.models import PostgreSQLCredentials
+
+        from backend.k8s.client import k8s_client
+
+        app = await self.get_app(app_id)
+        release_name = app.name
+        secret_name = f"{release_name}-postgresql"
+        username = "appuser"
+        database = release_name.replace("-", "_")
+        host = f"{release_name}-postgresql"
+
+        if not k8s_client.is_configured():
+            raise HTTPException(status_code=503, detail="Kubernetes client not configured")
+
+        try:
+            data = await anyio.to_thread.run_sync(
+                lambda: k8s_client.read_secret(namespace, secret_name),
+                cancellable=True,
+            )
+        except ApiException as e:
+            if e.status == 404:
+                raise HTTPException(status_code=404, detail=f"Secret '{secret_name}' not found in namespace '{namespace}'. Is PostgreSQL deployed?")
+            raise HTTPException(status_code=502, detail=f"Kubernetes error: {e.reason}")
+
+        password = data.get("password", "")
+        return PostgreSQLCredentials(
+            host=host,
+            port=5432,
+            username=username,
+            password=password,
+            database=database,
+            database_url=f"postgresql://{username}:{password}@{host}:5432/{database}",
+        )
+
     async def delete_app(self, app_id: int) -> None:
         app = await self.get_app(app_id)
         
         # 1. Clean up GitOps repo (ArgoCD manifests)
         bot = _get_bot_client()
-        if bot:
+        if bot and settings.GITOPS_REPO_URL:
             try:
                 gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
-                # ArgoCD manifests and values
                 await anyio.to_thread.run_sync(
                     lambda: bot.delete_directory_contents(
                         project_path=gitops_path,
@@ -267,6 +427,9 @@ class AppService:
                     ),
                     cancellable=True
                 )
+            except Exception:
+                logger.exception("Failed to clean up apps/ gitops directory for app %s", app.name)
+            try:
                 await anyio.to_thread.run_sync(
                     lambda: bot.delete_directory_contents(
                         project_path=gitops_path,
@@ -276,7 +439,7 @@ class AppService:
                     cancellable=True
                 )
             except Exception:
-                logger.exception("Failed to clean up gitops repository for app %s", app.name)
+                logger.exception("Failed to clean up argocd/ gitops directory for app %s", app.name)
         
         # 2. Delete the GitLab app repository if it was scaffolded
         if bot and app.origin == "scaffolded" and app.repo_url:

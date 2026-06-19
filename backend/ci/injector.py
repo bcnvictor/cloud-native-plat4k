@@ -18,6 +18,7 @@ def inject_ci(
     origin: str,
     framework: str,
     client: GitLabClient,
+    owner: str = "unknown",
     webhook_url: str | None = None,
     webhook_secret: str = "",
     skip_first_run: bool = False,
@@ -28,7 +29,7 @@ def inject_ci(
     - imported:   open a MR from a dedicated branch
     """
     project_path = extract_project_path(repo_url)
-    content = generate_gitlab_ci(app_slug, app_id, framework)
+    content = generate_gitlab_ci(app_slug, app_id, framework, owner)
 
     if origin == "scaffolded":
         if client.file_exists(project_path, ".gitlab-ci.yml", ref="main"):

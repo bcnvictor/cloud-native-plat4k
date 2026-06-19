@@ -5,8 +5,16 @@ from cli.core.output import print_error, print_success, print_table, print_json
 
 app = typer.Typer(help="Manage Kubernetes cluster connections.")
 
+_STATUS_LABEL = {
+    "online":  "[green]● online[/green]",
+    "offline": "[red]○ offline[/red]",
+    "unknown": "[yellow]◌ unknown[/yellow]",
+}
+
 @app.command("list")
-def list_clusters(output: str = typer.Option("table", help="Output format: table or json")):
+def list_clusters(
+    output: str = typer.Option("table", "--output", "-o", help="Output format: table or json"),
+):
     """List all registered Kubernetes clusters."""
     try:
         data = client.get("/clusters/")
@@ -87,7 +95,7 @@ def update_cluster(
             print_error("No fields to update. Please specify --name, --endpoint, or --kubeconfig.")
             raise typer.Exit(1)
 
-        data = client.put(f"/clusters/{id}", json=payload)
+        client.put(f"/clusters/{id}", json=payload)
         print_success(f"Cluster connection {id} updated successfully.")
     except Exception as e:
         print_error(str(e))

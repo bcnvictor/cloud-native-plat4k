@@ -38,12 +38,12 @@ export const appsApi = {
     return data;
   },
 
-  onboardApp: async (payload: { name: string; owner: string; repo_url: string; framework?: string; target_cluster_id?: number }) => {
+  onboardApp: async (payload: { name: string; owner: string; repo_url: string; framework?: string; target_cluster_id?: number; owning_gitlab_group_id?: number | null }) => {
     const { data } = await api.post<Application>('/apps/onboard', payload);
     return data;
   },
 
-  importApp: async (payload: { name: string; owner: string; source_url: string; framework?: string; target_cluster_id?: number; raw?: boolean }) => {
+  importApp: async (payload: { name: string; owner: string; source_url: string; framework?: string; target_cluster_id?: number; raw?: boolean; owning_gitlab_group_id?: number | null }) => {
     const { data } = await api.post<Application>('/apps/import', payload);
     return data;
   },
@@ -53,8 +53,16 @@ export const appsApi = {
     return data;
   },
 
-  scaffoldApp: async (payload: { name: string; owner: string; template: string; scaffolding?: { port: number; replicas: number }; skip_first_deploy?: boolean }) => {
+  scaffoldApp: async (payload: { name: string; owner: string; template: string; scaffolding?: { port: number; replicas: number; services: string[]; pg_size?: string }; skip_first_deploy?: boolean; target_cluster_id?: number; owning_gitlab_group_id?: number | null }) => {
     const { data } = await api.post<Application>('/apps/scaffold', payload);
+    return data;
+  },
+
+  getPostgresCredentials: async (appId: number, namespace: string) => {
+    const { data } = await api.get<{ host: string; port: number; username: string; password: string; database: string; database_url: string }>(
+      `/apps/${appId}/services/postgresql/credentials`,
+      { params: { namespace } },
+    );
     return data;
   },
 };

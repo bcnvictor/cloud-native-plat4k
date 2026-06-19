@@ -2,10 +2,32 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { appsApi } from '@/api/apps';
-import { ResourceStatus } from '@/types';
+import { membersApi } from '@/api/members';
+import { monitoringApi } from '@/api/monitoring';
+import { grafanaLogsUrl, grafanaMetricsUrl } from '@/utils/grafanaLinks';
+import { CnpTier, ResourceStatus } from '@/types';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { APP_STATUS_MAP } from '@/utils/appStatus';
 import { timeAgo } from '@/utils/timeAgo';
+
+const TIER_ORDER: CnpTier[] = ['viewer', 'developer', 'maintainer', 'owner'];
+const TIER_COLOR: Record<CnpTier, string> = {
+  viewer: '#888',
+  developer: '#4a9eff',
+  maintainer: '#4caf50',
+  owner: '#f0b429',
+};
+
+function hasTier(actual: CnpTier, required: CnpTier): boolean {
+  return TIER_ORDER.indexOf(actual) >= TIER_ORDER.indexOf(required);
+}
+
+function initials(name: string | null): string {
+  if (!name) return '?';
+  const parts = name.split(/[@._-]/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
 
 const SoonBadge = () => (
   <span style={{
@@ -28,20 +50,20 @@ const STATUS_LABEL: Record<DisplayStatus, string> = {
   error: 'Échec',
 };
 
-const MOCK_LOGS = [
-  ['10:23:01', 'INFO', 'Application initialized successfully'],
-  ['10:23:45', 'INFO', 'Health check passed'],
-  ['10:26:33', 'WARN', 'High resource usage: 95%'],
-  ['10:28:00', 'INFO', 'Auto-scaling triggered'],
-  ['10:30:02', 'INFO', 'Health check passed — all services healthy'],
-  ['10:31:18', 'INFO', 'Metrics reported to monitoring'],
-];
+const levelColor = (level: string) => {
+  switch (level) {
+    case 'ERROR': case 'CRITICAL': case 'FATAL': return '#FCA5A5';
+    case 'WARN': return '#FCD34D';
+    case 'DEBUG': return 'rgba(255,255,255,0.35)';
+    default: return '#6EE7B7';
+  }
+};
 
 export const ResourceDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<'overview' | 'logs' | 'config'>('overview');
+  const [tab, setTab] = useState<'overview' | 'logs' | 'config' | 'membres'>('overview');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const { data: app, isLoading, isError } = useQuery({
@@ -55,6 +77,41 @@ export const ResourceDetail = () => {
     queryFn: () => appsApi.listDeployments(Number(id)),
     enabled: !!id,
   });
+
+  const { data: monitoringConfig } = useQuery({
+    queryKey: ['monitoring-config'],
+    queryFn: monitoringApi.getConfig,
+    staleTime: Infinity,
+  });
+
+  const { data: metrics } = useQuery({
+    queryKey: ['monitoring-metrics'],
+    queryFn: monitoringApi.getMetrics,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+    enabled: !!app,
+  });
+
+  const { data: appLogs = [], isLoading: logsLoading, isError: logsError } = useQuery({
+    queryKey: ['app-logs', app?.name],
+    queryFn: () => monitoringApi.getAppLogs(app!.name, 50),
+    enabled: tab === 'logs' && !!app,
+    refetchInterval: 30_000,
+  });
+
+  const { data: members = [] } = useQuery({
+    queryKey: ['app-members', id],
+    queryFn: () => membersApi.listAppMembers(Number(id)),
+    enabled: !!id,
+  });
+
+  const { data: myAccess } = useQuery({
+    queryKey: ['my-access', id],
+    queryFn: () => membersApi.getMyAccess(Number(id)),
+    enabled: !!id,
+  });
+
+  const canDelete = myAccess ? (myAccess.is_admin || hasTier(myAccess.tier, 'maintainer')) : false;
 
   const deleteMutation = useMutation({
     mutationFn: () => appsApi.delete(Number(id)),
@@ -93,6 +150,11 @@ export const ResourceDetail = () => {
   const { name, owner, origin, repo_url, status, created_at } = app;
   const displayStatus = APP_STATUS_MAP[status];
 
+  const appCpu = metrics?.cpu_by_app.find(r => r.app === name);
+  const appRam = metrics?.ram_by_app.find(r => r.app === name);
+  const maxCpu = metrics?.cpu_by_app.reduce((m, r) => Math.max(m, r.value), 0.001) ?? 0.001;
+  const maxRam = metrics?.ram_by_app.reduce((m, r) => Math.max(m, r.value), 1) ?? 1;
+
   const deleteMessage = origin === 'scaffolded'
     ? "Cette action supprimera définitivement l'application de la base de données, les manifestes de déploiement (GitOps/ArgoCD), ainsi que le dépôt source sur GitLab. Cette action est irréversible."
     : "Cette action supprimera définitivement l'application de la base de données et les manifestes de déploiement (GitOps/ArgoCD). Le dépôt source sur GitLab ne sera PAS supprimé. Cette action est irréversible.";
@@ -112,19 +174,11 @@ export const ResourceDetail = () => {
             </div>
             {origin && <span className={`env-tag ${origin}`}>{origin}</span>}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-ghost">
-              <i className="ti ti-terminal-2" aria-hidden="true" />Logs
-            </button>
-            <button className="btn btn-primary">
-              <i className="ti ti-rocket" aria-hidden="true" />Déployer
-            </button>
-          </div>
         </div>
         <div className="tabs">
-          {(['overview', 'logs', 'config'] as const).map(t => (
+          {(['overview', 'logs', 'membres', 'config'] as const).map(t => (
             <button key={t} className={`tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
-              {t === 'overview' ? 'Vue d\'ensemble' : t === 'logs' ? 'Logs' : 'Configuration'}
+              {t === 'overview' ? 'Vue d\'ensemble' : t === 'logs' ? 'Logs' : t === 'membres' ? `Membres${members.length ? ` (${members.length})` : ''}` : 'Configuration'}
             </button>
           ))}
         </div>
@@ -154,25 +208,35 @@ export const ResourceDetail = () => {
                 </div>
               </div>
 
-              <div className="meta-card" style={{ position: 'relative' }}>
-                <div className="meta-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  Ressources — usage
-                  <SoonBadge />
+              <div className="meta-card">
+                <div className="meta-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>Ressources — usage</span>
+                  {monitoringConfig?.grafana_url && (
+                    <a href={grafanaMetricsUrl(monitoringConfig.grafana_url, name)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <i className="ti ti-external-link" style={{ fontSize: 10 }} />Grafana
+                    </a>
+                  )}
                 </div>
-                <div style={{ opacity: 0.4, pointerEvents: 'none' }}>
-                  <div className="resource-bar-header">
-                    <span>CPU</span><span>—</span>
-                  </div>
-                  <div className="resource-bar-track">
-                    <div className="resource-bar-fill" style={{ width: '0%', background: 'var(--accent)' }} />
-                  </div>
-                  <div className="resource-bar-header">
-                    <span>Mémoire</span><span>—</span>
-                  </div>
-                  <div className="resource-bar-track">
-                    <div className="resource-bar-fill" style={{ width: '0%', background: 'var(--green)' }} />
-                  </div>
-                </div>
+                {!metrics ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: 11, padding: '8px 0' }}>Prometheus indisponible</div>
+                ) : (
+                  <>
+                    <div className="resource-bar-header">
+                      <span>CPU</span>
+                      <span style={{ fontFamily: 'var(--mono)' }}>{appCpu ? (appCpu.value < 0.01 ? `${(appCpu.value * 1000).toFixed(1)}m` : `${appCpu.value.toFixed(3)} cores`) : '—'}</span>
+                    </div>
+                    <div className="resource-bar-track">
+                      <div className="resource-bar-fill" style={{ width: `${appCpu ? (appCpu.value / maxCpu) * 100 : 0}%`, background: 'var(--accent)' }} />
+                    </div>
+                    <div className="resource-bar-header">
+                      <span>Mémoire</span>
+                      <span style={{ fontFamily: 'var(--mono)' }}>{appRam ? `${appRam.value.toFixed(0)} Mo` : '—'}</span>
+                    </div>
+                    <div className="resource-bar-track">
+                      <div className="resource-bar-fill" style={{ width: `${appRam ? (appRam.value / maxRam) * 100 : 0}%`, background: 'var(--green)' }} />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="meta-card">
@@ -230,36 +294,97 @@ export const ResourceDetail = () => {
         )}
 
         {tab === 'logs' && (
-          <div style={{ position: 'relative' }}>
-            <div className="terminal" style={{ filter: 'blur(2px)', opacity: 0.35, pointerEvents: 'none', userSelect: 'none' }}>
-              <div className="terminal-header">
+          <div className="terminal">
+            <div className="terminal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div className="terminal-dots">
                   {['#EF4444', '#F59E0B', '#10B981'].map(c => (
                     <div key={c} className="terminal-dot" style={{ background: c }} />
                   ))}
                 </div>
                 <span className="terminal-title">{name} — stdout</span>
-                <div className="logs-live"><span className="live-dot" />live</div>
+                {!logsError && !logsLoading && <div className="logs-live"><span className="live-dot" />live</div>}
               </div>
-              <div className="terminal-body">
-                {MOCK_LOGS.map(([ts, lvl, msg], i) => (
-                  <div key={i}>
-                    <span style={{ color: 'rgba(255,255,255,0.25)', marginRight: 10 }}>{ts}</span>
-                    <span style={{ color: lvl === 'INFO' ? '#6EE7B7' : lvl === 'WARN' ? '#FCD34D' : '#FCA5A5', marginRight: 8 }}>{lvl}</span>
-                    <span style={{ color: 'rgba(255,255,255,0.65)' }}>{msg}</span>
+              {monitoringConfig?.grafana_url && (
+                <a href={grafanaLogsUrl(monitoringConfig.grafana_url, name)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <i className="ti ti-external-link" style={{ fontSize: 10 }} />Grafana
+                </a>
+              )}
+            </div>
+            <div className="terminal-body">
+              {logsLoading && (
+                <div style={{ color: 'rgba(255,255,255,0.35)' }}>Chargement…</div>
+              )}
+              {logsError && (
+                <div style={{ color: '#FCA5A5' }}>Loki indisponible — logs inaccessibles</div>
+              )}
+              {!logsLoading && !logsError && appLogs.length === 0 && (
+                <div style={{ color: 'rgba(255,255,255,0.35)' }}>Aucun log trouvé pour cette application</div>
+              )}
+              {appLogs.map((entry, i) => (
+                <div key={i}>
+                  <span style={{ color: 'rgba(255,255,255,0.25)', marginRight: 10 }}>
+                    {new Date(entry.ts * 1000).toISOString().slice(11, 19)}
+                  </span>
+                  <span style={{ color: levelColor(entry.level), marginRight: 8 }}>{entry.level}</span>
+                  <span style={{ color: 'rgba(255,255,255,0.65)' }}>{entry.msg}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tab === 'membres' && (
+          <div className="card">
+            <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Membres de l'équipe</span>
+              {myAccess && (
+                <span style={{ fontSize: 11, color: TIER_COLOR[myAccess.tier], fontWeight: 600 }}>
+                  Mon accès : {myAccess.tier}{myAccess.is_admin ? ' (admin)' : ''}
+                </span>
+              )}
+            </div>
+            {members.length === 0 ? (
+              <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: 12 }}>
+                Aucun membre synchronisé — déclenchez un sync GitLab pour peupler cette liste.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {members.map((m, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                      background: 'var(--bg-card)', border: '1px solid var(--border)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)',
+                    }}>
+                      {initials(m.display_name)}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{m.display_name ?? '—'}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>access_level {m.access_level}</div>
+                    </div>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      color: TIER_COLOR[m.tier_cnp],
+                      border: `1px solid ${TIER_COLOR[m.tier_cnp]}`,
+                      borderRadius: 4, padding: '2px 7px',
+                    }}>
+                      {m.tier_cnp}
+                    </span>
+                    <span style={{
+                      fontSize: 10, color: m.status === 'active' ? 'var(--green)' : 'var(--text-muted)',
+                      background: m.status === 'active' ? 'color-mix(in srgb, var(--green) 15%, transparent)' : 'var(--bg-card)',
+                      border: `1px solid ${m.status === 'active' ? 'color-mix(in srgb, var(--green) 40%, transparent)' : 'var(--border)'}`,
+                      borderRadius: 4, padding: '2px 7px',
+                    }}>
+                      {m.status === 'active' ? 'actif' : m.status === 'pending_invite' ? 'invitation' : 'parti'}
+                    </span>
                   </div>
                 ))}
               </div>
-            </div>
-            <div style={{
-              position: 'absolute', inset: 0,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              gap: 10,
-            }}>
-              <i className="ti ti-clock" aria-hidden="true" style={{ fontSize: 28, color: 'var(--text-muted)' }} />
-              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>Logs en temps réel — bientôt disponible</span>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Intégration kubectl logs / Loki à venir</span>
-            </div>
+            )}
           </div>
         )}
 
@@ -322,7 +447,12 @@ export const ResourceDetail = () => {
                   {deleteMessage}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                  <button className="btn-danger" onClick={() => setShowDeleteModal(true)} disabled={deleteMutation.isPending}>
+                  <button
+                    className="btn-danger"
+                    onClick={() => setShowDeleteModal(true)}
+                    disabled={deleteMutation.isPending || !canDelete}
+                    title={!canDelete ? 'Droits insuffisants (Maintainer requis)' : undefined}
+                  >
                     Supprimer
                   </button>
                 </div>

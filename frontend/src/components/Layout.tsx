@@ -1,6 +1,8 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/store/auth';
 import { authApi } from '@/api/auth';
+import { membersApi } from '@/api/members';
 
 function initials(email: string): string {
   const name = email.split('@')[0];
@@ -10,9 +12,21 @@ function initials(email: string): string {
 }
 
 export const Layout = () => {
-  const { user, clearAuth } = useAuthStore();
+  const { user, clearAuth, activeGroupId, setActiveGroup } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
+
+  const { data: myGroups = [] } = useQuery({
+    queryKey: ['my-groups'],
+    queryFn: () => membersApi.getMyGroups(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: () => membersApi.syncTeams(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['apps'] }),
+  });
 
   const handleLogout = async () => {
     try { await authApi.logout(); } finally {
@@ -56,6 +70,27 @@ export const Layout = () => {
           </div>
         </div>
 
+        {myGroups.length > 0 && (
+          <div className="sb-team-switcher">
+            <div className="sb-team-label">
+              <i className="ti ti-users-group" aria-hidden="true" />
+              Équipe
+            </div>
+            <select
+              className="sb-team-select"
+              value={activeGroupId ?? ''}
+              onChange={e => setActiveGroup(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">Toutes les équipes</option>
+              {myGroups.map(g => (
+                <option key={g.gitlab_group_id} value={g.gitlab_group_id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <nav className="sb-nav">
           {navItem('/resources', 'ti-layout-grid', 'Applications', ['/resources', '/'])}
           {navItem('/dashboard', 'ti-activity', 'Monitoring', ['/dashboard'])}
@@ -75,10 +110,25 @@ export const Layout = () => {
 
         <div className="sb-user">
           <div className="sb-avatar">{initials(user?.email ?? 'U')}</div>
-          <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            style={{ minWidth: 0, flex: 1, cursor: 'pointer' }}
+            onClick={() => navigate('/profile')}
+            title="Mon profil"
+          >
             <div className="sb-user-email">{user?.email}</div>
             <div className="sb-user-role">{user?.role}</div>
           </div>
+          <button
+            className="sb-logout"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            title="Synchroniser mes équipes GitLab"
+            style={{ marginRight: 4 }}
+          >
+            <i className={`ti ${syncMutation.isPending ? 'ti-loader-2' : 'ti-refresh'}`} aria-hidden="true"
+              style={syncMutation.isPending ? { animation: 'spin 1s linear infinite' } : undefined}
+            />
+          </button>
           <button className="sb-logout" onClick={handleLogout} title="Déconnexion">
             <i className="ti ti-logout" aria-hidden="true" />
           </button>

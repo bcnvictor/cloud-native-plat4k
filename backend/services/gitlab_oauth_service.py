@@ -43,12 +43,23 @@ class GitLabOAuthService:
     async def _request_token(self, data: Dict) -> Dict:
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{self.base}/oauth/token", data=data, timeout=10)
-            resp.raise_for_status()
+            if not resp.is_success:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"GitLab OAuth token exchange failed ({resp.status_code}). "
+                           "Check GITLAB_OAUTH_CLIENT_ID, GITLAB_OAUTH_CLIENT_SECRET and GITLAB_OAUTH_REDIRECT_URI.",
+                )
             return resp.json()
 
     async def get_user(self, access_token: str) -> Dict:
         headers = {"Authorization": f"Bearer {access_token}"}
         async with httpx.AsyncClient() as client:
             resp = await client.get(f"{self.base}/api/v4/user", headers=headers, timeout=10)
-            resp.raise_for_status()
+            if not resp.is_success:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"GitLab user profile fetch failed ({resp.status_code}).",
+                )
             return resp.json()
