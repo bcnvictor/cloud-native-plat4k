@@ -1,9 +1,9 @@
 import typer
 import getpass
 import socket
-from cli.core.client import APIClient, get_base_url
+from cli.core.client import client
 from cli.core.config import load_config, save_config, CONFIG_FILE
-from cli.core.output import print_error, print_success, console
+from cli.core.output import print_error, print_success, print_table, console
 import requests
 import webbrowser
 import threading
@@ -46,7 +46,7 @@ def login(
     except requests.exceptions.HTTPError as e:
         try:
             print_error(e.response.json().get("detail", str(e)))
-        except:
+        except Exception:
             print_error(str(e))
     except Exception as e:
         print_error(str(e))
@@ -131,7 +131,7 @@ def oauth_login(
     except requests.exceptions.HTTPError as e:
         try:
             print_error(e.response.json().get("detail", str(e)))
-        except:
+        except Exception:
             print_error(str(e))
     except Exception as e:
         print_error(str(e))
@@ -156,3 +156,62 @@ def status():
     console.print(f"User: [blue]{config.get('user_email')}[/blue]")
     console.print(f"API URL: [green]{config.get('api_url')}[/green]")
     console.print(f"API Key: ***{config.get('api_key')[-4:]}")
+
+
+@app.command("me")
+def me():
+    """Show your CNP profile and team memberships."""
+    try:
+        user = client.get("/users/me")
+        console.print("\n[bold]Profile[/bold]")
+        console.print(f"  Email   : [blue]{user.get('email')}[/blue]")
+        console.print(f"  Role    : {user.get('role')}")
+        console.print(f"  Admin   : {'[yellow]yes[/yellow]' if user.get('is_admin') else 'no'}")
+        console.print(f"  GitLab ID: {user.get('gitlab_user_id') or '[dim]not linked[/dim]'}")
+
+        groups = client.get("/users/me/groups")
+        if groups:
+            console.print()
+            print_table(
+                "My Teams",
+                ["Group ID", "Name", "Full Path", "Tier", "Status"],
+                [
+                    [
+                        g["gitlab_group_id"],
+                        g["name"],
+                        g["full_path"],
+                        g["tier_cnp"],
+                        g["status"],
+                    ]
+                    for g in groups
+                ],
+            )
+        else:
+            console.print("\n[dim]No team memberships found. Run 'cnp auth sync-teams' to refresh.[/dim]")
+    except Exception as e:
+        print_error(str(e))
+        raise typer.Exit(1)
+
+
+@app.command("sync-teams")
+def sync_teams():
+    """Trigger an immediate GitLab membership sync for your account."""
+    try:
+        data = client.post("/users/me/sync-teams")
+        if data.get("skipped"):
+            console.print("[yellow]⚠[/yellow]  Sync skipped — GITLAB_BOT_TOKEN not configured.")
+            return
+        g = data.get("groups", {})
+        p = data.get("projects", {})
+        console.print("[green]✓[/green]  Sync complete")
+        print_table(
+            "Results",
+            ["Scope", "Created", "Updated", "Revoked"],
+            [
+                ["groups", g.get("created", 0), g.get("updated", 0), g.get("revoked", 0)],
+                ["projects", p.get("created", 0), p.get("updated", 0), p.get("revoked", 0)],
+            ],
+        )
+    except Exception as e:
+        print_error(str(e))
+        raise typer.Exit(1)

@@ -1,11 +1,15 @@
 from backend.core.config import settings
 
-_ALLOWED_FRAMEWORKS = {"python", "generic"}
+_ALLOWED_FRAMEWORKS = {"python", "nodejs", "go", "generic"}
 
-# Maps template/framework names to their CI framework key
+# Maps template/framework names to their CI framework key.
+# Scaffolded apps store the template name as their framework (see app_service),
+# so every template name must resolve to an allowed CI framework key here.
 _FRAMEWORK_ALIASES = {
     "python-fastapi": "python",
     "python-flask": "python",
+    "react-vite": "nodejs",
+    "node-express": "nodejs",
 }
 
 
@@ -20,7 +24,7 @@ def _ci_templates_project() -> str:
     ns = settings.GITLAB_BOT_NAMESPACE or "cnp"
     return f"{ns}/cnp-ci-modules"
 
-def generate_gitlab_ci(app_slug: str, app_id: int, framework: str) -> str:
+def generate_gitlab_ci(app_slug: str, app_id: int, framework: str, owner: str = "unknown") -> str:
     """Generate the minimal .gitlab-ci.yml to inject into a user repo."""
     framework = _FRAMEWORK_ALIASES.get(framework, framework)
     if framework not in _ALLOWED_FRAMEWORKS:
@@ -28,6 +32,7 @@ def generate_gitlab_ci(app_slug: str, app_id: int, framework: str) -> str:
 
     templates_project = _ci_templates_project()
     safe_slug = _yaml_escape(app_slug)
+    safe_owner = _yaml_escape(owner)
     gitops_repo = _yaml_escape(settings.GITOPS_REPO_URL)
     gitops_app_path = f"apps/{safe_slug}"
 
@@ -36,6 +41,7 @@ def generate_gitlab_ci(app_slug: str, app_id: int, framework: str) -> str:
         "variables:\n",
         f'  CNP_APP_NAME: "{safe_slug}"\n',
         f'  CNP_APP_ID: "{app_id}"\n',
+        f'  CNP_APP_OWNER: "{safe_owner}"\n',
         f'  CNP_GITOPS_REPO: "{gitops_repo}"\n',
         f'  CNP_GITOPS_APP_PATH: "{gitops_app_path}"\n',
         "\n",

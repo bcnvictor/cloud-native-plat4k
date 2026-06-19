@@ -39,22 +39,25 @@ services:
       - GITLAB_OAUTH_SCOPES=${GITLAB_OAUTH_SCOPES:-api read_user}
       - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://localhost}
       - CLI_REDIRECT_BASE_URL=${CLI_REDIRECT_BASE_URL:-http://localhost:8765}
-      - BACKEND_CORS_ORIGINS=["http://localhost:3000","http://localhost"]
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-["http://localhost:3000","http://localhost"]}
       - K8S_TARGET_NAMESPACE=${K8S_TARGET_NAMESPACE:-default}
       - K8S_IMAGE_PULL_SECRET=${K8S_IMAGE_PULL_SECRET:-}
       - GITLAB_BASE_URL=${GITLAB_BASE_URL:-https://gitlab.com}
       - GITLAB_BOT_TOKEN=${GITLAB_BOT_TOKEN:-}
       - GITLAB_BOT_NAMESPACE=${GITLAB_BOT_NAMESPACE:-}
+      - GITLAB_TEAMS_GROUP=${GITLAB_TEAMS_GROUP:-}
       - GITLAB_APPS_NAMESPACE=${GITLAB_APPS_NAMESPACE:-}
       - GITLAB_TEMPLATES_NAMESPACE=${GITLAB_TEMPLATES_NAMESPACE:-}
       - GITLAB_REGISTRY_URL=${GITLAB_REGISTRY_URL:-registry.gitlab.com}
       - GITLAB_CI_PROJECT=${GITLAB_CI_PROJECT:-}
       - CNP_API_BASE_URL=${CNP_API_BASE_URL:-http://localhost:8000}
       - GITLAB_WEBHOOK_SECRET=${GITLAB_WEBHOOK_SECRET:-}
+      - GITOPS_REPO_URL=${GITOPS_REPO_URL:-}
       - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus-operated.monitoring.svc.cluster.local:9090}
       - LOKI_URL=${LOKI_URL:-http://loki.monitoring.svc.cluster.local:3100}
       - VAULT_ADDR=${VAULT_ADDR:-http://vault:8200}
       - VAULT_TOKEN=${VAULT_TOKEN:-cnp-dev-token}
+      - GRAFANA_URL=${GRAFANA_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -93,7 +96,7 @@ services:
       - "80:80"
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     networks:
       - cnp_net
 

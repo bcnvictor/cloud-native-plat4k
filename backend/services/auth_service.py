@@ -34,7 +34,7 @@ class AuthService:
 
     def create_tokens(self, user: User) -> Tuple[str, str]:
         role = user.role.value if hasattr(user.role, "value") else str(user.role)
-        access_token = create_access_token(subject=user.id, role=role)
+        access_token = create_access_token(subject=user.id, role=role, is_admin=user.is_admin)
         refresh_token = create_refresh_token(subject=user.id)
         return access_token, refresh_token
 

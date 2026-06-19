@@ -49,15 +49,19 @@ class GitLabClient:
         Groups and subgroups are resolved via the groups API (supports full paths
         with slashes). Personal namespaces fall back to the namespaces search API.
         """
+        return self.get_namespace_id_for(self.namespace)
+
+    def get_namespace_id_for(self, path: str) -> int | None:
+        """Resolve an arbitrary namespace path to its numeric GitLab ID."""
         try:
-            group = self._gl.groups.get(self.namespace)
+            group = self._gl.groups.get(path)
             return group.id
         except Exception:
             pass
         try:
-            namespaces = self._gl.namespaces.list(search=self.namespace, all=True)
+            namespaces = self._gl.namespaces.list(search=path, all=True)
             for ns in namespaces:
-                if ns.full_path == self.namespace:
+                if ns.full_path == path:
                     return ns.id
         except Exception:
             pass
@@ -273,23 +277,35 @@ class GitLabClient:
         items = project.repository_tree(ref=ref, recursive=True, all=True)
         return [{"name": i["name"], "type": i["type"], "path": i["path"]} for i in items]
 
+    def add_project_member(self, project_id: int, gitlab_user_id: int, access_level: int) -> None:
+        """Add or update a user's membership on a GitLab project (by numeric IDs)."""
+        project = self._gl.projects.get(project_id)
+        try:
+            project.members.create({"user_id": gitlab_user_id, "access_level": access_level})
+        except Exception:
+            member = project.members.get(gitlab_user_id)
+            member.access_level = access_level
+            member.save()
+
+    def invite_project_member(self, project_id: int, email: str, access_level: int) -> None:
+        """Send a GitLab project invitation to an email address."""
+        project = self._gl.projects.get(project_id)
+        project.invitations.create({"email": email, "access_level": access_level})
+
     def delete_directory_contents(self, project_path: str, directory_path: str, commit_message: str, branch: str = "main") -> None:
         """Deletes all files within a directory using the Commits API."""
-        try:
-            project = self.get_project(project_path)
-            items = project.repository_tree(path=directory_path, ref=branch, recursive=True, all=True)
-            actions = []
-            for item in items:
-                if item["type"] == "blob":
-                    actions.append({"action": "delete", "file_path": item["path"]})
+        project = self.get_project(project_path)
+        items = project.repository_tree(path=directory_path, ref=branch, recursive=True, all=True)
+        actions = []
+        for item in items:
+            if item["type"] == "blob":
+                actions.append({"action": "delete", "file_path": item["path"]})
 
-            if not actions:
-                return
+        if not actions:
+            return
 
-            project.commits.create({
-                "branch": branch,
-                "commit_message": commit_message,
-                "actions": actions,
-            })
-        except Exception:
-            logger.exception("Failed to delete directory %s in %s", directory_path, project_path)
+        project.commits.create({
+            "branch": branch,
+            "commit_message": commit_message,
+            "actions": actions,
+        })
