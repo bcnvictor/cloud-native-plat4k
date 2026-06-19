@@ -79,10 +79,13 @@ services:
     cap_add:
       - IPC_LOCK
     healthcheck:
-      test: ["CMD", "vault", "status"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
+      # vault status retourne exit 2 quand sealed (état normal avant unseal),
+      # ce qui ne doit pas être considéré comme un échec — on accepte 0 et 2.
+      test: ["CMD-SHELL", "vault status; s=$?; [ $s -eq 0 ] || [ $s -eq 2 ]"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     networks:
       - cnp_net
 

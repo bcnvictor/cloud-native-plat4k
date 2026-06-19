@@ -78,12 +78,19 @@ docker compose exec -it vault vault login
    ```
 
 2. **Créer la policy pour le backend** :
+
+   Selon le mode de bootstrapping choisi, deux policies sont disponibles :
+
+   **Option A — Bootstrapping automatique (recommandé pour la simplicité)** : le backend s'auto-configure en production au premier démarrage. Le token applicatif doit pouvoir écrire dans `cnp/*` **uniquement lors du premier boot**, puis la policy peut être resserrée ensuite.
+
    Créez un fichier local temporaire `cnp-backend-policy.hcl` contenant :
    ```hcl
+   # Lecture des secrets de la plateforme (settings, clés)
    path "secret/data/cnp/*" {
-     capabilities = ["read"]
+     capabilities = ["read", "create", "update"]
    }
 
+   # Gestion complète des kubeconfigs de clusters
    path "secret/data/clusters/*" {
      capabilities = ["read", "create", "update", "delete"]
    }
@@ -91,7 +98,37 @@ docker compose exec -it vault vault login
    path "secret/delete/clusters/*" {
      capabilities = ["update"]
    }
+
+   path "secret/metadata/clusters/*" {
+     capabilities = ["delete"]
+   }
    ```
+
+   **Option B — Bootstrapping manuel (plus sécurisé)** : vous initialisez `secret/cnp/platform` vous-même avec le Root Token (voir étape 2.5b), et le token applicatif n'a que `read` sur `cnp/*`.
+
+   ```hcl
+   # Lecture seule des secrets de la plateforme
+   path "secret/data/cnp/*" {
+     capabilities = ["read"]
+   }
+
+   # Gestion complète des kubeconfigs de clusters
+   path "secret/data/clusters/*" {
+     capabilities = ["read", "create", "update", "delete"]
+   }
+
+   path "secret/delete/clusters/*" {
+     capabilities = ["update"]
+   }
+
+   path "secret/metadata/clusters/*" {
+     capabilities = ["delete"]
+   }
+   ```
+
+   > [!IMPORTANT]
+   > Si vous choisissez l'Option B, vous **devez** pré-remplir `secret/cnp/platform` avec le Root Token **avant** de démarrer le backend (voir étape 2.5b). Sans cela, le backend s'arrêtera avec une erreur `Vault Forbidden on write`.
+
    Enregistrez la policy dans Vault :
    ```bash
    docker compose exec -T vault vault policy write cnp-backend - < cnp-backend-policy.hcl
@@ -113,15 +150,39 @@ docker compose exec -it vault vault login
 
 ### Étape 2.5 : Lancement du Backend
 
-Une fois Vault opérationnel, initialisé, et le token configuré dans le `.env` de production, lancez le backend :
+#### 2.5a — Avec bootstrapping automatique (Option A)
+
+Une fois Vault opérationnel, initialisé, unsealed, et le token configuré dans le `.env` de production :
 
 ```bash
 docker compose -f docker-compose.yml up -d backend db frontend
 ```
 
-Au tout premier démarrage, le backend détectera que le chemin `secret/cnp/platform` est vierge et y poussera automatiquement les valeurs de `SECRET_KEY` et `POSTGRES_PASSWORD` de votre fichier `.env` de production.
+Au premier démarrage, le backend détectera que le chemin `secret/cnp/platform` est vierge et y poussera automatiquement les valeurs de `SECRET_KEY` et `POSTGRES_PASSWORD` de votre fichier `.env` de production.
 
-Une fois cette étape validée, vous pouvez supprimer (ou laisser en guise de documentation) les variables `SECRET_KEY` et `POSTGRES_PASSWORD` du fichier `.env` de production : le backend lira dorénavant les valeurs en mémoire directement depuis Vault.
+Une fois cette étape validée, vous pouvez supprimer (ou laisser en guise de documentation) les variables `SECRET_KEY` et `POSTGRES_PASSWORD` du fichier `.env` de production : le backend les lira dorénavant directement depuis Vault.
+
+#### 2.5b — Avec bootstrapping manuel (Option B)
+
+Si vous avez choisi la policy en lecture seule sur `cnp/*`, pré-remplissez les secrets **avant** de démarrer le backend avec le Root Token :
+
+```bash
+docker compose exec -it vault vault login
+# Entrer le Root Token
+
+docker compose exec vault vault kv put secret/cnp/platform \
+  SECRET_KEY="VotreCleSecreteDePlusDe32Caracteres" \
+  POSTGRES_SERVER="db" \
+  POSTGRES_USER="${POSTGRES_USER}" \
+  POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
+  POSTGRES_DB="${POSTGRES_DB}"
+```
+
+Puis démarrez le backend :
+
+```bash
+docker compose -f docker-compose.yml up -d backend db frontend
+```
 
 ---
 

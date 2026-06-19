@@ -11,10 +11,18 @@ class VaultClient:
     def __init__(self):
         self._client = None
 
+    # Timeout réseau en secondes pour tous les appels hvac (basé sur requests).
+    # Évite un blocage indéfini si Vault est injoignable.
+    _TIMEOUT: int = 10
+
     @property
     def client(self) -> hvac.Client:
         if self._client is None:
-            self._client = hvac.Client(url=settings.VAULT_ADDR, token=settings.VAULT_TOKEN)
+            self._client = hvac.Client(
+                url=settings.VAULT_ADDR,
+                token=settings.VAULT_TOKEN,
+                timeout=self._TIMEOUT,
+            )
         return self._client
 
     def get_secret(self, path: str, mount_point: str = "secret") -> dict:
