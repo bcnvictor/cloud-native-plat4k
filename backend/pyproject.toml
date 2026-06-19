@@ -24,8 +24,9 @@ dependencies = [
     "httpx",
     "python-gitlab",
     "python-multipart",
-    "pyyaml",
-    "hvac"
+    "pyyaml",   # _validate_kubeconfig dans cluster_service
+    "hvac",
+    "anyio>=4.0",  # anyio.move_on_after + anyio.to_thread dans cluster_service
 ]
 
 [tool.setuptools]
@@ -52,3 +53,4 @@ test = [
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
