@@ -25,18 +25,23 @@ function StatusIcon({ status }: { status: DeploymentStatus }) {
   return <IconLoader2 size={16} className="text-muted-foreground animate-spin" />;
 }
 
-// MOCK: commitMessage, branch, duration, author, imageTag, gitlabPipelineUrl sont générés côté client
+// MOCK: commitMessage, branch, duration, author, imageTag sont générés côté client
 // décommissionner quand ces champs sont stockés en DB et renvoyés par GET /deployments/
-function enrichDeployment(d: Deployment, index: number) {
+// gitlabPipelineUrl est dérivé de app.source_url + deployment.version (commit hash)
+function enrichDeployment(d: Deployment, index: number, repoUrl?: string | null) {
+  const commitHash = d.version.slice(0, 8);
+  const gitlabPipelineUrl = repoUrl
+    ? `${repoUrl.replace(/\/$/, '')}/-/pipelines?sha=${d.version}`
+    : null;
   return {
     ...d,
-    commitHash: d.version.slice(0, 8),
+    commitHash,
     commitMessage: index === 0 ? 'feat: add user authentication' : `chore: bump version to ${d.version.slice(0, 6)}`,
     branch: 'main',
     duration: 95 + index * 12,
     author: 'alice.martin',
-    imageTag: `registry.cnp.internal/app:${d.version.slice(0, 8)}`,
-    gitlabPipelineUrl: null,
+    imageTag: `registry.cnp.internal/app:${commitHash}`,
+    gitlabPipelineUrl,
     isCurrent: index === 0 && d.status === 'succeeded',
   };
 }
@@ -59,7 +64,7 @@ export function DeploymentsTab() {
     );
   }
 
-  const enriched = deployments.map(enrichDeployment);
+  const enriched = deployments.map((d, i) => enrichDeployment(d, i, app?.repo_url ?? app?.source_url));
 
   return (
     <div className="bg-card border border-border rounded-md divide-y divide-border">
@@ -125,17 +130,19 @@ export function DeploymentsTab() {
                     </div>
                   ))}
                 </dl>
-                <div className="flex justify-end">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={<IconBrandGitlab size={13} />}
-                    onClick={() => d.gitlabPipelineUrl && window.open(d.gitlabPipelineUrl, '_blank')}
-                  >
-                    Voir le pipeline
-                    <IconExternalLink size={11} className="ml-1 opacity-60" />
-                  </Button>
-                </div>
+                {d.gitlabPipelineUrl && (
+                  <div className="flex justify-end">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<IconBrandGitlab size={13} />}
+                      onClick={() => window.open(d.gitlabPipelineUrl!, '_blank')}
+                    >
+                      Voir le pipeline
+                      <IconExternalLink size={11} className="ml-1 opacity-60" />
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

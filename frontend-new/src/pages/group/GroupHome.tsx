@@ -11,11 +11,12 @@ import {
   IconBox,
   IconUserPlus,
   IconUsers,
+  IconWifiOff,
 } from '@tabler/icons-react';
 import { Button } from '@/components/ui/Button';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useGroupApps } from '@/hooks/useGroupApps';
-import { useAppMetrics } from '@/hooks/useAppMetrics';
+import { useGroupMetrics } from '@/hooks/useAppMetrics';
 import { useScopeStore } from '@/store/scope';
 import { useAuthStore } from '@/store/auth';
 import { appsApi } from '@/api/apps';
@@ -74,7 +75,6 @@ export function GroupHome() {
   const group = useCurrentGroup();
   const { setScope } = useScopeStore();
   const { user } = useAuthStore();
-  const groupMetrics = useAppMetrics(slug ?? '');
 
   useEffect(() => {
     if (slug) setScope('group', slug);
@@ -88,6 +88,8 @@ export function GroupHome() {
     queryFn: () => (groupAppIds[0] ? appsApi.getMembers(groupAppIds[0]) : Promise.resolve([])),
     enabled: groupAppIds.length > 0,
   });
+
+  const groupMetrics = useGroupMetrics(apps.map((a) => a.name));
 
   const statusCounts = apps.reduce<Record<string, number>>((acc, a) => {
     const s = getAppHealth(a);
@@ -137,18 +139,21 @@ export function GroupHome() {
       {/* Metrics row */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         <MetricCard
-          label="CPU agrégé"
-          value={groupMetrics.cpu.current.toFixed(1)}
-          unit="%"
+          label="CPU moyen"
+          value={groupMetrics.available ? groupMetrics.cpu.current.toFixed(1) : '—'}
+          unit={groupMetrics.available ? '%' : undefined}
           icon={<IconCpu size={14} />}
-          sparkline={groupMetrics.cpu.series}
+          sublabel={!groupMetrics.available ? (
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <IconWifiOff size={11} /> Prometheus indisponible
+            </span>
+          ) : undefined}
         />
         <MetricCard
-          label="RAM agrégée"
-          value={groupMetrics.ram.current.toFixed(1)}
-          unit="%"
+          label="RAM totale"
+          value={groupMetrics.available ? groupMetrics.ram.current.toFixed(0) : '—'}
+          unit={groupMetrics.available ? 'MB' : undefined}
           icon={<IconDatabase size={14} />}
-          sparkline={groupMetrics.ram.series}
         />
         <MetricCard
           label="Apps par statut"

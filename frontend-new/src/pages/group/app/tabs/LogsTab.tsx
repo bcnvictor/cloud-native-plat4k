@@ -2,9 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   IconDownload,
-  IconPlayerPlay,
-  IconPlayerPause,
   IconSearch,
+  IconWifiOff,
 } from '@tabler/icons-react';
 import { useAppLogs } from '@/hooks/useAppLogs';
 import { Button } from '@/components/ui/Button';
@@ -31,21 +30,17 @@ export function LogsTab() {
   const { appSlug } = useParams<{ appSlug: string }>();
   const [level, setLevel] = useState('ALL');
   const [search, setSearch] = useState('');
-  const [live, setLive] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const { data: logs = [], isLoading } = useAppLogs({
+  const { data: logs = [], isLoading, isError } = useAppLogs({
     appSlug: appSlug!,
     level,
     search,
-    live,
   });
 
   useEffect(() => {
-    if (live) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [logs, live]);
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
 
   function exportLogs() {
     const text = logs.map((l) => `[${l.timestamp}] ${l.level} ${l.message}`).join('\n');
@@ -81,14 +76,6 @@ export function LogsTab() {
           />
         </div>
         <Button
-          variant={live ? 'primary' : 'secondary'}
-          size="sm"
-          icon={live ? <IconPlayerPause size={13} /> : <IconPlayerPlay size={13} />}
-          onClick={() => setLive((v) => !v)}
-        >
-          Live
-        </Button>
-        <Button
           variant="ghost"
           size="sm"
           icon={<IconDownload size={13} />}
@@ -103,6 +90,11 @@ export function LogsTab() {
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Spinner size="lg" />
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+            <IconWifiOff size={20} />
+            <p className="text-xs font-mono">Loki indisponible — vérifier la connexion cluster</p>
           </div>
         ) : logs.length === 0 ? (
           <p className="px-4 py-8 text-xs text-muted-foreground text-center font-mono">
@@ -145,12 +137,10 @@ export function LogsTab() {
           {search && ` · "${search}"`}
           {' '}· {logs.length} entrée{logs.length !== 1 ? 's' : ''}
         </span>
-        {live && (
-          <span className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-            Live
-          </span>
-        )}
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+          Live
+        </span>
       </div>
     </div>
   );
