@@ -78,6 +78,11 @@ export function TopNav() {
                 disabled: true,
               },
               {
+                key: 'profile',
+                label: 'Mon profil',
+                onClick: () => navigate('/profile'),
+              },
+              {
                 key: 'logout',
                 label: 'Se déconnecter',
                 divider: true,

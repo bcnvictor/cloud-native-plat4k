@@ -67,6 +67,7 @@ export function GroupSettings() {
     },
   });
 
+  // MOCK: pas d'endpoint PATCH /groups/:id — décommissionner quand cet endpoint existe
   async function handleSave() {
     setIsSaving(true);
     try {
@@ -147,6 +148,7 @@ export function GroupSettings() {
                     </p>
                     <p className="text-xs text-muted-foreground truncate">{m.email}</p>
                   </div>
+                  {/* MOCK: onChange no-op — décommissionner en câblant PATCH /apps/:id/members/:userId */}
                   <Select
                     options={TIER_OPTIONS}
                     value={m.tier_cnp}
@@ -156,6 +158,7 @@ export function GroupSettings() {
                   />
                   <button
                     disabled={isOwner}
+                    onClick={() => !isOwner && m.cnp_user_id && appsApi.removeMember(firstAppId!, m.cnp_user_id).then(() => qc.invalidateQueries({ queryKey: ['members', firstAppId] }))}
                     className="text-muted-foreground hover:text-danger transition-colors disabled:opacity-30 disabled:pointer-events-none"
                   >
                     <IconTrash size={15} />

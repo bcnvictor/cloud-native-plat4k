@@ -1,3 +1,4 @@
+// MOCK: aucun endpoint FinOps backend (prévu S2) — décommissionner quand GET /finops/ existe
 import { FinOpsData } from '@/types';
 
 export const FINOPS_MOCK: FinOpsData = {

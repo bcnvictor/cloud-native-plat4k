@@ -68,6 +68,7 @@ export function OverviewTab() {
             <dl className="flex flex-col gap-2">
               {[
                 { label: 'Commit', value: currentDeploy.version, mono: true },
+                // MOCK: branch et trigger hardcodés — décommissionner quand stockés en DB
                 { label: 'Branche', value: 'main', mono: true },
                 { label: 'Déployé', value: timeAgo(currentDeploy.deployed_at) },
                 { label: 'Cluster', value: `cluster-${currentDeploy.cluster_id}`, mono: true },
@@ -87,6 +88,7 @@ export function OverviewTab() {
         </Card>
 
         {/* Injected services */}
+        {/* MOCK: liste hardcodée PostgreSQL+Redis toujours "healthy" — décommissionner quand GET /apps/:id/services existe */}
         <Card>
           <h2 className="text-sm font-medium text-foreground mb-3">Services injectés</h2>
           <ul className="flex flex-col gap-2">

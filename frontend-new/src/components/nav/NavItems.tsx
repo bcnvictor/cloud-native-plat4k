@@ -12,6 +12,8 @@ const ADMIN_NAV = [
   { label: 'Clusters', path: () => '/admin/clusters' },
   { label: 'FinOps', path: () => '/admin/finops' },
   { label: 'Apps', path: () => '/admin/apps' },
+  { label: 'Utilisateurs', path: () => '/admin/users' },
+  { label: 'Audit', path: () => '/admin/audit' },
   { label: 'Settings', path: () => '/admin/settings' },
 ];
 

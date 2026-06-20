@@ -1,3 +1,4 @@
+// MOCK: pas d'endpoint métriques cluster (CPU/RAM/pods/namespaces) — décommissionner quand GET /clusters/:id/metrics existe
 import { ClusterMetrics } from '@/types';
 
 export const CLUSTER_METRICS: Record<string, ClusterMetrics> = {

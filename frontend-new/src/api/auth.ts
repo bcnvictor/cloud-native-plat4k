@@ -1,5 +1,5 @@
 import { api } from './client';
-import { UserMe } from '@/types';
+import { UserMe, ApiKey } from '@/types';
 
 export const authApi = {
   async login(email: string, password: string): Promise<{ access_token: string }> {
@@ -26,6 +26,20 @@ export const authApi = {
       headers: { Authorization: `Bearer ${token}` },
     });
     return res.data;
+  },
+
+  async listApiKeys(): Promise<ApiKey[]> {
+    const res = await api.get<ApiKey[]>('/auth/apikeys');
+    return res.data;
+  },
+
+  async createApiKey(label: string): Promise<ApiKey & { key: string }> {
+    const res = await api.post<ApiKey & { key: string }>(`/auth/apikeys?label=${encodeURIComponent(label)}`);
+    return res.data;
+  },
+
+  async deleteApiKey(id: number): Promise<void> {
+    await api.delete(`/auth/apikeys/${id}`);
   },
 
   initiateGitLab(): void {

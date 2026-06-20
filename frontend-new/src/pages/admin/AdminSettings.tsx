@@ -34,6 +34,11 @@ export function AdminSettings() {
     onError: () => setGitlabConnected(false),
   });
 
+  const saveGitlabMutation = useMutation({
+    mutationFn: () => gitlabApi.saveCredentials(gitlabToken, gitlabGroup),
+    onSuccess: () => setGitlabToken(''),
+  });
+
   const registerClusterMutation = useMutation({
     mutationFn: () =>
       clustersApi.register({
@@ -122,7 +127,15 @@ export function AdminSettings() {
             >
               Tester la connexion
             </Button>
-            <Button variant="primary" size="sm">Sauvegarder</Button>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={saveGitlabMutation.isPending}
+              disabled={!gitlabToken || !gitlabGroup}
+              onClick={() => saveGitlabMutation.mutate()}
+            >
+              Sauvegarder
+            </Button>
           </div>
         </div>
       </Card>
