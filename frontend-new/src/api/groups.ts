@@ -1,9 +1,14 @@
 import { api } from './client';
-import { GroupMembership } from '@/types';
+import { AppMember, GroupMembership } from '@/types';
 
 export const groupsApi = {
   async getMyGroups(): Promise<GroupMembership[]> {
     const res = await api.get<GroupMembership[]>('/users/me/groups');
+    return res.data;
+  },
+
+  async getMembers(gitlabGroupId: number): Promise<AppMember[]> {
+    const res = await api.get<AppMember[]>(`/groups/${gitlabGroupId}/members`);
     return res.data;
   },
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { IconEye, IconEyeOff, IconPlus, IconTrash } from '@tabler/icons-react';
@@ -18,17 +18,29 @@ export function SettingsTab() {
   const qc = useQueryClient();
 
   const [name, setName] = useState(app?.name ?? '');
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(app?.description ?? '');
+  const descRef = useRef<HTMLTextAreaElement>(null);
+
+  const autoResize = useCallback(() => {
+    const el = descRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
   const [maskedKeys, setMaskedKeys] = useState<Set<string>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
-    if (app) setName(app.name);
-  }, [app]);
+    if (app) {
+      setName(app.name);
+      setDescription(app.description ?? '');
+      setTimeout(autoResize, 0);
+    }
+  }, [app, autoResize]);
 
   const updateMutation = useMutation({
-    mutationFn: () => appsApi.updateApp(app!.id, { name }),
+    mutationFn: () => appsApi.updateApp(app!.id, { name, description: description || undefined }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['app', appSlug] }),
   });
 
@@ -77,19 +89,24 @@ export function SettingsTab() {
             hint="Le slug est immuable."
             className="text-muted-foreground"
           />
-          <Input
-            label="Description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Description optionnelle"
-          />
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">Description</label>
+            <textarea
+              ref={descRef}
+              value={description}
+              onChange={(e) => { setDescription(e.target.value); autoResize(); }}
+              placeholder="Description optionnelle"
+              rows={2}
+              className="w-full resize-none overflow-hidden rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
           <div className="flex justify-end">
             <Button
               variant="primary"
               size="sm"
               loading={updateMutation.isPending}
               onClick={() => updateMutation.mutate()}
-              disabled={name === app.name}
+              disabled={name === app.name && description === (app.description ?? '')}
             >
               Sauvegarder
             </Button>

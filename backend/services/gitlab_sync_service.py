@@ -120,6 +120,7 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
         if m.id in existing:
             row = existing[m.id]
             row.access_level = m.access_level
+            row.username = getattr(m, 'username', None)
             row.status = MemberStatus.ACTIVE
             if cnp_user_id:
                 row.cnp_user_id = cnp_user_id
@@ -129,6 +130,7 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
             db.add(GitLabGroupMember(
                 gitlab_group_id=group.gitlab_group_id,
                 gitlab_user_id=m.id,
+                username=getattr(m, 'username', None),
                 access_level=m.access_level,
                 cnp_user_id=cnp_user_id,
                 status=MemberStatus.ACTIVE,

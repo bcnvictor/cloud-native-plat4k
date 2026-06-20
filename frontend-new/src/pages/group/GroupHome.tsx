@@ -19,7 +19,7 @@ import { useGroupApps } from '@/hooks/useGroupApps';
 import { useGroupMetrics } from '@/hooks/useAppMetrics';
 import { useScopeStore } from '@/store/scope';
 import { useAuthStore } from '@/store/auth';
-import { appsApi } from '@/api/apps';
+import { groupsApi } from '@/api/groups';
 import { getAppHealth } from '@/utils/appHealth';
 import { MetricCard } from '@/components/MetricCard';
 import { Card } from '@/components/ui/Card';
@@ -82,11 +82,10 @@ export function GroupHome() {
 
   const { data: apps = [] } = useGroupApps(group?.gitlab_group_id);
 
-  const groupAppIds = apps.map((a) => a.id);
   const { data: members = [] } = useQuery({
-    queryKey: ['members', groupAppIds[0]],
-    queryFn: () => (groupAppIds[0] ? appsApi.getMembers(groupAppIds[0]) : Promise.resolve([])),
-    enabled: groupAppIds.length > 0,
+    queryKey: ['group-members', group?.gitlab_group_id],
+    queryFn: () => groupsApi.getMembers(group!.gitlab_group_id),
+    enabled: !!group?.gitlab_group_id,
   });
 
   const groupMetrics = useGroupMetrics(apps.map((a) => a.name));
