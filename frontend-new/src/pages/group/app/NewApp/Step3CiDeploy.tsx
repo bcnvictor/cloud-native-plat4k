@@ -29,7 +29,7 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
               key={t.value}
               onClick={() => onChange({ trigger: t.value })}
               className={cn(
-                'flex items-center gap-3 p-4 rounded-md border-2 text-left transition-colors',
+                'flex items-center gap-3 p-4 rounded-md border-2 text-left transition-colors bg-card',
                 selected ? 'border-foreground' : 'border-border hover:border-muted-foreground'
               )}
             >

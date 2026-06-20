@@ -27,7 +27,8 @@ export const appsApi = {
 
   async scaffoldApp(payload: {
     name: string;
-    template_id: string;
+    owner: string;
+    template: string;
     owning_gitlab_group_id?: number;
   }): Promise<Application> {
     const res = await api.post<Application>('/apps/scaffold', payload);
@@ -36,6 +37,7 @@ export const appsApi = {
 
   async onboardApp(payload: {
     name: string;
+    owner: string;
     repo_url: string;
     owning_gitlab_group_id?: number;
   }): Promise<Application> {

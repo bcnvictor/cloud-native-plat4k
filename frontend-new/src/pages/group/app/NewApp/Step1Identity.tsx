@@ -94,7 +94,7 @@ export function Step1Identity({ data, onChange, onNext, onCancel }: Props) {
       {data.origin === 'scaffold' && templates.length > 0 && (
         <Select
           label="Framework"
-          options={templates.map((t) => ({ value: t.id, label: t.name }))}
+          options={templates.map((t) => ({ value: t.path, label: t.name }))}
           value={data.framework}
           onChange={(v) => onChange({ framework: v })}
           placeholder="Choisir un framework…"

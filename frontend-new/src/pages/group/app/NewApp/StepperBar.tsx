@@ -10,32 +10,38 @@ interface StepperStep {
 
 interface StepperBarProps {
   steps: StepperStep[];
+  onStepClick?: (index: number) => void;
+  locked?: boolean;
 }
 
-export function StepperBar({ steps }: StepperBarProps) {
+export function StepperBar({ steps, onStepClick, locked = false }: StepperBarProps) {
   return (
     <div className="flex items-center gap-0 mb-8">
       {steps.flatMap((step, i) => {
+        const clickable = step.state === 'done' && !locked;
         const circle = (
-          <div
+          <button
             key={`step-${i}`}
+            type="button"
+            onClick={() => clickable && onStepClick?.(i)}
             className={cn(
-              'w-7 h-7 rounded-full text-xs font-medium flex items-center justify-center shrink-0',
-              step.state === 'active' || step.state === 'done'
-                ? 'bg-primary text-white'
-                : 'bg-zinc-100 text-zinc-400'
+              'w-9 h-9 rounded-full text-sm font-semibold flex items-center justify-center shrink-0 transition-colors',
+              step.state === 'active' && 'bg-primary text-white cursor-default',
+              step.state === 'done' && !locked && 'bg-primary text-white cursor-pointer hover:bg-primary/80',
+              step.state === 'done' && locked && 'bg-primary text-white cursor-not-allowed opacity-60',
+              step.state === 'todo' && 'bg-zinc-100 text-zinc-400 cursor-default',
             )}
           >
             {step.state === 'done' ? (
-              <IconCheck size={12} strokeWidth={2.5} />
+              <IconCheck size={14} strokeWidth={2.5} />
             ) : (
               i + 1
             )}
-          </div>
+          </button>
         );
         const line =
           i < steps.length - 1 ? (
-            <div key={`line-${i}`} className="flex-1 h-px bg-zinc-200" />
+            <div key={`line-${i}`} className="flex-1 h-0.5 bg-zinc-200" />
           ) : null;
         return line ? [circle, line] : [circle];
       })}

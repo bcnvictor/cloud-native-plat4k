@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useBlocker } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useScopeStore } from '@/store/scope';
@@ -53,12 +53,14 @@ export function NewApp() {
       if (step1.origin === 'scaffold') {
         return appsApi.scaffoldApp({
           name: step1.name,
-          template_id: step1.framework,
+          owner: group?.full_path ?? slug ?? '',
+          template: step1.framework,
           owning_gitlab_group_id: group?.gitlab_group_id,
         });
       } else {
         return appsApi.onboardApp({
           name: step1.name,
+          owner: group?.full_path ?? slug ?? '',
           repo_url: step1.repoUrl,
           owning_gitlab_group_id: group?.gitlab_group_id,
         });
@@ -76,6 +78,12 @@ export function NewApp() {
     },
   });
 
+  // Bloquer toute navigation (TopNav, breadcrumb, back browser) pendant la création
+  const blocker = useBlocker(createMutation.isPending);
+  useEffect(() => {
+    if (blocker.state === 'blocked') blocker.reset();
+  }, [blocker]);
+
   const steps = STEP_LABELS.map((label, i) => ({
     label,
     state:
@@ -84,7 +92,11 @@ export function NewApp() {
 
   return (
     <div className="max-w-xl mx-auto px-6 py-8">
-      <StepperBar steps={steps} />
+      <StepperBar
+        steps={steps}
+        onStepClick={(i) => setStep(i + 1)}
+        locked={createMutation.isPending}
+      />
 
       {step === 1 && (
         <Step1Identity
