@@ -6,7 +6,7 @@ export function RootLayout() {
   return (
     <>
       <TopNav />
-      <main className="pt-topnav min-h-screen max-w-[1440px] mx-auto px-8">
+      <main className="pt-topnav min-h-screen">
         <Outlet />
       </main>
       <Toaster />

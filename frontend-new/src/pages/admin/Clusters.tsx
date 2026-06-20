@@ -25,7 +25,7 @@ export function Clusters() {
     : Object.keys(CLUSTER_METRICS);
 
   return (
-    <div className="py-6">
+    <div className="max-w-[1440px] mx-auto px-8 py-6">
       <div className="mb-6">
         <Breadcrumb items={[{ label: 'Plateforme' }, { label: 'Clusters' }]} />
         <h1 className="text-xl font-semibold text-foreground">Clusters</h1>
