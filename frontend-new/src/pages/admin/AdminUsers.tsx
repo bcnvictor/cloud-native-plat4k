@@ -1,8 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { IconRefresh } from '@tabler/icons-react';
 import { useScopeStore } from '@/store/scope';
 import { Breadcrumb } from '@/components/Breadcrumb';
 import { usersApi } from '@/api/users';
+import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
@@ -20,6 +22,7 @@ export function AdminUsers() {
   useEffect(() => { setScope('admin'); }, [setScope]);
 
   const qc = useQueryClient();
+  const [syncDone, setSyncDone] = useState(false);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['admin-users'],
@@ -32,14 +35,44 @@ export function AdminUsers() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
   });
 
+  const syncMutation = useMutation({
+    mutationFn: usersApi.syncAll,
+    onSuccess: () => {
+      setSyncDone(true);
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+      qc.invalidateQueries({ queryKey: ['group-members'] });
+      setTimeout(() => setSyncDone(false), 3000);
+    },
+  });
+
   return (
     <div className="max-w-[1440px] mx-auto px-8 py-6">
-      <div className="mb-6">
-        <Breadcrumb items={[{ label: 'Plateforme', to: '/admin/clusters' }, { label: 'Utilisateurs' }]} />
-        <h1 className="text-xl font-semibold text-foreground">Utilisateurs</h1>
-        <p className="text-sm text-muted-foreground">
-          {users.length} utilisateur{users.length !== 1 ? 's' : ''}
-        </p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <Breadcrumb items={[{ label: 'Plateforme', to: '/admin/clusters' }, { label: 'Utilisateurs' }]} />
+          <h1 className="text-xl font-semibold text-foreground">Utilisateurs</h1>
+          <p className="text-sm text-muted-foreground">
+            {users.length} utilisateur{users.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 mt-1">
+          {syncDone && (
+            <span className="text-xs text-success-text">Sync terminé</span>
+          )}
+          {syncMutation.isError && (
+            <span className="text-xs text-danger-text">Erreur lors du sync</span>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+          >
+            <IconRefresh size={14} className={syncMutation.isPending ? 'animate-spin' : ''} />
+            {syncMutation.isPending ? 'Sync en cours…' : 'Sync équipes & utilisateurs'}
+          </Button>
+        </div>
       </div>
 
       <div className="bg-card border border-border rounded-md overflow-hidden">

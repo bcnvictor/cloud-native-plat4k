@@ -11,4 +11,9 @@ export const usersApi = {
     const res = await api.patch<AdminUser>(`/users/${id}`, payload);
     return res.data;
   },
+
+  async syncAll(): Promise<unknown> {
+    const res = await api.post('/admin/sync-gitlab');
+    return res.data;
+  },
 };
