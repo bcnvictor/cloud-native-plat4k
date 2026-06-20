@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useScopeStore } from '@/store/scope';
 import { appsApi } from '@/api/apps';
+import { useToast } from '@/components/ui/toast';
 import { Step1Data, ServiceConfig, CiDeployConfig } from '@/types';
 import { computeSlug } from '@/utils/slugify';
 import { StepperBar } from './StepperBar';
@@ -44,6 +45,7 @@ export function NewApp() {
     targetClusterId: null,
     advancedOpen: false,
   });
+  const { toast } = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const createMutation = useMutation({
@@ -64,10 +66,14 @@ export function NewApp() {
     },
     onSuccess: (app) => {
       qc.invalidateQueries({ queryKey: ['apps'] });
+      toast({ title: 'Application créée', description: `${app.name} est en cours de provisioning.` });
       const appSlug = computeSlug(app.name);
       navigate(`/groups/${slug}/apps/${appSlug}`);
     },
-    onError: () => setSubmitError('Erreur lors de la création. Réessayez.'),
+    onError: () => {
+      setSubmitError('Erreur lors de la création. Réessayez.');
+      toast({ title: 'Erreur', variant: 'destructive' });
+    },
   });
 
   const steps = STEP_LABELS.map((label, i) => ({

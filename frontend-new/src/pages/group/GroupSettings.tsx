@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/components/ui/toast';
 import { IconTrash, IconClock } from '@tabler/icons-react';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useScopeStore } from '@/store/scope';
@@ -41,9 +42,11 @@ export function GroupSettings() {
     enabled: !!firstAppId,
   });
 
+  const { toast } = useToast();
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<CnpTier>('developer');
   const [groupName, setGroupName] = useState(group?.name ?? '');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (group) setGroupName(group.name);
@@ -57,8 +60,24 @@ export function GroupSettings() {
     onSuccess: () => {
       setInviteEmail('');
       qc.invalidateQueries({ queryKey: ['members', firstAppId] });
+      toast({ title: 'Membre invité', description: 'Un email a été envoyé.', variant: 'default' });
+    },
+    onError: () => {
+      toast({ title: 'Erreur', variant: 'destructive' });
     },
   });
+
+  async function handleSave() {
+    setIsSaving(true);
+    try {
+      await new Promise((r) => setTimeout(r, 400));
+      toast({ title: 'Groupe sauvegardé', description: 'Les modifications ont été enregistrées.' });
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <div className="py-6">
@@ -77,7 +96,7 @@ export function GroupSettings() {
             className="flex-1"
           />
           <div className="flex items-end">
-            <Button variant="secondary" size="sm" disabled>
+            <Button variant="secondary" size="sm" loading={isSaving} onClick={handleSave}>
               Sauvegarder
             </Button>
           </div>

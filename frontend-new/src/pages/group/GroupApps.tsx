@@ -1,16 +1,14 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { IconPlus, IconFilter } from '@tabler/icons-react';
+import { IconFilter, IconPlus, IconRocket, IconSearch } from '@tabler/icons-react';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useGroupApps } from '@/hooks/useGroupApps';
 import { useScopeStore } from '@/store/scope';
 import { getAppHealth } from '@/utils/appHealth';
 import { AppRow } from '@/components/AppRow';
 import { Breadcrumb } from '@/components/Breadcrumb';
-import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { Spinner } from '@/components/ui/Spinner';
+import { Skeleton } from '@/components/ui/skeleton';
 import { computeSlug } from '@/utils/slugify';
 
 export function GroupApps() {
@@ -18,12 +16,16 @@ export function GroupApps() {
   const navigate = useNavigate();
   const group = useCurrentGroup();
   const { setScope } = useScopeStore();
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (slug) setScope('group', slug);
   }, [slug, setScope]);
 
   const { data: apps = [], isLoading } = useGroupApps(group?.gitlab_group_id);
+  const filteredApps = apps.filter((a) =>
+    a.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="py-6">
@@ -37,6 +39,15 @@ export function GroupApps() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 px-3 h-8 bg-white border border-zinc-200 rounded-lg">
+            <IconSearch size={14} className="text-zinc-400 shrink-0" />
+            <input
+              placeholder="Rechercher..."
+              className="border-none outline-none text-sm bg-transparent w-40"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
           <Button
             variant="ghost"
             size="sm"
@@ -57,21 +68,30 @@ export function GroupApps() {
 
       {/* List */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <Spinner size="lg" />
+        <div className="flex flex-col gap-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-[60px] w-full rounded-lg" />
+          ))}
         </div>
-      ) : apps.length === 0 ? (
-        <EmptyState
-          title="Aucune application"
-          description="Créez votre première application pour commencer."
-          action={{
-            label: 'New app',
-            onClick: () => navigate(`/groups/${slug}/apps/new`),
-          }}
-        />
+      ) : filteredApps.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-4">
+          <IconRocket size={40} className="text-zinc-300" />
+          <div className="flex flex-col items-center gap-1">
+            <p className="text-sm font-medium text-zinc-500">Aucune application</p>
+            <p className="text-xs text-zinc-400">Créez votre première application pour démarrer</p>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<IconPlus size={14} />}
+            onClick={() => navigate(`/groups/${slug}/apps/new`)}
+          >
+            Nouvelle application
+          </Button>
+        </div>
       ) : (
-        <Card padding="none">
-          {apps.map((app) => {
+        <div className="flex flex-col gap-2">
+          {filteredApps.map((app) => {
             const appSlug = computeSlug(app.name);
             return (
               <AppRow
@@ -82,7 +102,7 @@ export function GroupApps() {
               />
             );
           })}
-        </Card>
+        </div>
       )}
     </div>
   );

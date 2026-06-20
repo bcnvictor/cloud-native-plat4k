@@ -33,8 +33,13 @@ export function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-dotted">
-      <div className="w-full max-w-sm">
-        <div className="bg-card border border-border rounded-lg p-8 shadow-sm">
+      <div className="flex flex-col items-center gap-6 w-full max-w-sm mx-auto">
+        {/* Logo */}
+        <div className="w-20 h-20 rounded-2xl bg-[#0C1236] flex items-center justify-center shrink-0 overflow-hidden">
+          <img src="/favicon.svg" className="w-12 h-12 object-contain" alt="CNP" />
+        </div>
+
+        <div className="bg-card border border-border rounded-lg p-8 shadow-sm w-full">
           <h1 className="text-xl font-semibold text-foreground mb-1">
             Cloud Native Platform
           </h1>

@@ -1,5 +1,6 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { IconBrandDocker, IconCircleCheckFilled } from '@tabler/icons-react';
+import { IconBrandDocker, IconCheck } from '@tabler/icons-react';
 import { Step1Data } from '@/types';
 import { appsApi } from '@/api/apps';
 import { gitlabApi } from '@/api/gitlab';
@@ -42,7 +43,7 @@ export function Step1Identity({ data, onChange, onNext, onCancel }: Props) {
     enabled: data.origin === 'onboard',
   });
 
-  const slug = computeSlug(data.name);
+  const slug = useMemo(() => computeSlug(data.name), [data.name]);
   const isValid = data.name.length > 0;
 
   return (
@@ -58,15 +59,14 @@ export function Step1Identity({ data, onChange, onNext, onCancel }: Props) {
               className={cn(
                 'relative p-4 rounded-md border-2 text-left transition-colors',
                 selected
-                  ? 'border-foreground bg-background'
+                  ? 'border-primary bg-background'
                   : 'border-border bg-card hover:border-muted-foreground'
               )}
             >
               {selected && (
-                <IconCircleCheckFilled
-                  size={16}
-                  className="absolute top-2 right-2 text-info"
-                />
+                <span className="absolute top-2 right-2 bg-[#007BA7] text-white rounded-full w-5 h-5 flex items-center justify-center">
+                  <IconCheck size={11} strokeWidth={2.5} />
+                </span>
               )}
               <IconBrandDocker size={20} className="text-muted-foreground mb-2" />
               <p className="text-sm font-medium text-foreground">{o.label}</p>
@@ -76,15 +76,19 @@ export function Step1Identity({ data, onChange, onNext, onCancel }: Props) {
         })}
       </div>
 
-      {/* Name */}
-      <Input
-        label="Nom de l'application"
-        value={data.name}
-        onChange={(e) => onChange({ name: e.target.value })}
-        placeholder="my-awesome-app"
-        hint={data.name ? `Slug : ${slug}` : undefined}
-        autoFocus
-      />
+      {/* Name + slug preview */}
+      <div>
+        <Input
+          label="Nom de l'application"
+          value={data.name}
+          onChange={(e) => onChange({ name: e.target.value })}
+          placeholder="my-awesome-app"
+          autoFocus
+        />
+        {data.name && (
+          <p className="text-xs text-zinc-400 mt-1 font-mono">Slug : {slug}</p>
+        )}
+      </div>
 
       {/* Conditional: framework or repo */}
       {data.origin === 'scaffold' && templates.length > 0 && (

@@ -3,7 +3,7 @@ import { cn } from '@/lib/cn';
 import { IconLoader2 } from '@tabler/icons-react';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline';
   size?: 'sm' | 'md';
   loading?: boolean;
   icon?: React.ReactNode;
@@ -12,6 +12,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 const VARIANTS = {
   primary: 'bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active',
   secondary: 'bg-secondary text-foreground border border-border hover:bg-accent',
+  outline: 'bg-transparent text-zinc-700 border border-zinc-200 hover:bg-zinc-50',
   ghost: 'text-foreground hover:bg-accent',
   danger: 'bg-danger text-white hover:opacity-90',
 };

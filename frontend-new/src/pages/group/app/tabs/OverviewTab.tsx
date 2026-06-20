@@ -1,30 +1,22 @@
 import { useQuery } from '@tanstack/react-query';
-import { IconCpu, IconDatabase, IconServer, IconClock, IconCircleCheck } from '@tabler/icons-react';
+import { IconBrandGitlab, IconCircleCheck, IconClock, IconCpu, IconDatabase, IconServer, IconWorld } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { appsApi } from '@/api/apps';
-import { monitoringApi } from '@/api/monitoring';
 import { MetricCard } from '@/components/MetricCard';
 import { Card } from '@/components/ui/Card';
 import { AppStatusBadge } from '@/components/AppStatusBadge';
 import { Spinner } from '@/components/ui/Spinner';
 import { timeAgo } from '@/utils/timeAgo';
-
-const SPARK_CPU = [8,12,10,14,18,16,20,24,22,26,28,25,22,19,23,26,24,22,25,23].map((v,t) => ({ t, v }));
-const SPARK_RAM = [32,34,36,38,37,41,43,45,44,47,50,52,50,48,51,53,55,53,52,55].map((v,t) => ({ t, v }));
+import { useAppMetrics } from '@/hooks/useAppMetrics';
 
 export function OverviewTab() {
   const { app, isLoading } = useAppDetail();
+  const metrics = useAppMetrics(app?.name ?? '');
 
   const { data: deployments = [] } = useQuery({
     queryKey: ['deployments', app?.id],
     queryFn: () => appsApi.listDeployments(app!.id),
     enabled: !!app,
-  });
-
-  const { data: metrics } = useQuery({
-    queryKey: ['monitoring-metrics'],
-    queryFn: monitoringApi.getMetrics,
-    staleTime: 60_000,
   });
 
   if (isLoading) {
@@ -35,7 +27,6 @@ export function OverviewTab() {
     );
   }
 
-  const appMetric = metrics?.apps?.find((m) => m.app_name === app?.name);
   const currentDeploy = deployments.find((d) => d.status === 'succeeded');
 
   return (
@@ -44,26 +35,26 @@ export function OverviewTab() {
       <div className="grid grid-cols-4 gap-4">
         <MetricCard
           label="CPU"
-          value={appMetric?.cpu_percent?.toFixed(1) ?? '—'}
+          value={metrics.cpu.current.toFixed(1)}
           unit="%"
           icon={<IconCpu size={14} />}
-          sparkline={SPARK_CPU}
+          sparkline={metrics.cpu.series}
         />
         <MetricCard
           label="RAM"
-          value={appMetric ? (appMetric.ram_mb / 1024).toFixed(1) : '—'}
-          unit="Gi"
+          value={metrics.ram.current.toFixed(1)}
+          unit="%"
           icon={<IconDatabase size={14} />}
-          sparkline={SPARK_RAM}
+          sparkline={metrics.ram.series}
         />
         <MetricCard
           label="Replicas"
-          value="1/1"
+          value={metrics.replicas.current}
           icon={<IconServer size={14} />}
         />
         <MetricCard
           label="Uptime"
-          value={currentDeploy ? timeAgo(currentDeploy.deployed_at) : '—'}
+          value={currentDeploy ? timeAgo(currentDeploy.deployed_at) : metrics.uptime.current}
           icon={<IconClock size={14} />}
         />
       </div>
@@ -118,6 +109,38 @@ export function OverviewTab() {
           </ul>
         </Card>
       </div>
+
+      {/* Quick access */}
+      <Card>
+        <h2 className="text-sm font-medium text-foreground mb-3">Accès rapide</h2>
+        <div className="grid grid-cols-2 gap-3">
+          {app?.source_url ? (
+            <a
+              href={app.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-sm text-[#007BA7] hover:underline"
+            >
+              <IconBrandGitlab size={16} />
+              GitLab
+            </a>
+          ) : (
+            <span className="flex items-center gap-2 text-sm text-zinc-400">
+              <IconBrandGitlab size={16} />
+              GitLab non configuré
+            </span>
+          )}
+          <a
+            href={`https://${app?.name}.cnp.internal`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-sm text-[#007BA7] hover:underline"
+          >
+            <IconWorld size={16} />
+            {app?.name}.cnp.internal
+          </a>
+        </div>
+      </Card>
     </div>
   );
 }
