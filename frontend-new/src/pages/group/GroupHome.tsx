@@ -214,10 +214,10 @@ export function GroupHome() {
             ) : (
               members.map((m, i) => (
                 <li key={i} className="flex items-center gap-3 px-4 py-2.5">
-                  <Avatar name={m.display_name ?? m.email ?? 'U'} size="sm" />
+                  <Avatar name={m.display_name ?? '?'} size="sm" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-foreground truncate">
-                      {m.display_name ?? m.email}
+                      {m.display_name ?? <span className="italic text-muted-foreground">sync en attente</span>}
                     </p>
                     <p className="text-xs text-muted-foreground">{m.tier_cnp}</p>
                   </div>

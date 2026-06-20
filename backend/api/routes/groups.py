@@ -6,10 +6,12 @@ from backend.db.models import GitLabGroupMember, User
 from backend.db.session import get_db
 from fastapi import APIRouter, Depends
 from shared.models import MemberStatus
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
+
+_BOT_USERNAMES = {'4k-service-bot'}
 
 
 @router.get("/{gitlab_group_id}/members", response_model=List[MemberRead])
@@ -24,6 +26,10 @@ async def list_group_members(
         .where(
             GitLabGroupMember.gitlab_group_id == gitlab_group_id,
             GitLabGroupMember.status == MemberStatus.ACTIVE,
+            or_(
+                GitLabGroupMember.username.is_(None),
+                GitLabGroupMember.username.not_in(_BOT_USERNAMES),
+            ),
         )
     )
     return [
