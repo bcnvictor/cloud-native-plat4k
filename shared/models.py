@@ -11,6 +11,18 @@ from datetime import datetime
 from enum import Enum
 
 
+def sanitize_k8s_label_value(value: str) -> str:
+    """Sanitize an arbitrary string into a valid Kubernetes label value (max 63 chars).
+
+    Mirrors the transformations applied in the Helm _helpers.tpl cnp.io/owner label.
+    """
+    s = value.replace("@", "-at-").replace("/", "-")
+    s = re.sub(r"[^A-Za-z0-9\-_.]", "-", s)
+    s = re.sub(r"-+", "-", s)
+    s = s.strip("-").strip(".")
+    return s[:63]
+
+
 def compute_slug(name: str) -> str:
     """Return a DNS-1035-compliant slug derived from name, capped at 50 chars.
 

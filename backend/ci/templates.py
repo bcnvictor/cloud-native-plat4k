@@ -1,3 +1,5 @@
+from shared.models import sanitize_k8s_label_value
+
 from backend.core.config import settings
 
 _ALLOWED_FRAMEWORKS = {"python", "nodejs", "go", "generic"}
@@ -32,7 +34,7 @@ def generate_gitlab_ci(app_slug: str, app_id: int, framework: str, owner: str = 
 
     templates_project = _ci_templates_project()
     safe_slug = _yaml_escape(app_slug)
-    safe_owner = _yaml_escape(owner)
+    safe_owner = _yaml_escape(sanitize_k8s_label_value(owner))
     gitops_repo = _yaml_escape(settings.GITOPS_REPO_URL)
     gitops_app_path = f"apps/{safe_slug}"
 
