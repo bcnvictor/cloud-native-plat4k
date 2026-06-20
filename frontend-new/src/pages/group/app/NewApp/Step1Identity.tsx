@@ -1,0 +1,140 @@
+import { useQuery } from '@tanstack/react-query';
+import { IconBrandDocker, IconCircleCheckFilled } from '@tabler/icons-react';
+import { Step1Data } from '@/types';
+import { appsApi } from '@/api/apps';
+import { gitlabApi } from '@/api/gitlab';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { computeSlug } from '@/utils/slugify';
+import { cn } from '@/lib/cn';
+
+interface Props {
+  data: Step1Data;
+  onChange: (d: Partial<Step1Data>) => void;
+  onNext: () => void;
+  onCancel: () => void;
+}
+
+const ORIGINS: Array<{ value: 'scaffold' | 'onboard'; label: string; desc: string }> = [
+  {
+    value: 'scaffold',
+    label: 'Scaffold',
+    desc: 'Crée un nouveau projet GitLab depuis un template.',
+  },
+  {
+    value: 'onboard',
+    label: 'Onboard',
+    desc: 'Référence un repo GitLab existant.',
+  },
+];
+
+export function Step1Identity({ data, onChange, onNext, onCancel }: Props) {
+  const { data: templates = [] } = useQuery({
+    queryKey: ['templates'],
+    queryFn: appsApi.listTemplates,
+    enabled: data.origin === 'scaffold',
+  });
+
+  const { data: projects = [] } = useQuery({
+    queryKey: ['gitlab-projects'],
+    queryFn: gitlabApi.listProjects,
+    enabled: data.origin === 'onboard',
+  });
+
+  const slug = computeSlug(data.name);
+  const isValid = data.name.length > 0;
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Origin cards */}
+      <div className="grid grid-cols-2 gap-3">
+        {ORIGINS.map((o) => {
+          const selected = data.origin === o.value;
+          return (
+            <button
+              key={o.value}
+              onClick={() => onChange({ origin: o.value })}
+              className={cn(
+                'relative p-4 rounded-md border-2 text-left transition-colors',
+                selected
+                  ? 'border-foreground bg-background'
+                  : 'border-border bg-card hover:border-muted-foreground'
+              )}
+            >
+              {selected && (
+                <IconCircleCheckFilled
+                  size={16}
+                  className="absolute top-2 right-2 text-info"
+                />
+              )}
+              <IconBrandDocker size={20} className="text-muted-foreground mb-2" />
+              <p className="text-sm font-medium text-foreground">{o.label}</p>
+              <p className="text-xs text-muted-foreground mt-1">{o.desc}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Name */}
+      <Input
+        label="Nom de l'application"
+        value={data.name}
+        onChange={(e) => onChange({ name: e.target.value })}
+        placeholder="my-awesome-app"
+        hint={data.name ? `Slug : ${slug}` : undefined}
+        autoFocus
+      />
+
+      {/* Conditional: framework or repo */}
+      {data.origin === 'scaffold' && templates.length > 0 && (
+        <Select
+          label="Framework"
+          options={templates.map((t) => ({ value: t.id, label: t.name }))}
+          value={data.framework}
+          onChange={(v) => onChange({ framework: v })}
+          placeholder="Choisir un framework…"
+        />
+      )}
+
+      {data.origin === 'scaffold' && templates.length === 0 && (
+        <Select
+          label="Framework"
+          options={[
+            { value: 'fastapi', label: 'FastAPI' },
+            { value: 'nextjs', label: 'Next.js' },
+            { value: 'django', label: 'Django' },
+            { value: 'express', label: 'Express' },
+          ]}
+          value={data.framework}
+          onChange={(v) => onChange({ framework: v })}
+          placeholder="Choisir un framework…"
+        />
+      )}
+
+      {data.origin === 'onboard' && (
+        <Select
+          label="Repo GitLab"
+          options={
+            projects.length > 0
+              ? projects.map((p) => ({ value: p.web_url, label: p.full_path }))
+              : [{ value: '', label: 'Aucun projet disponible', disabled: true }]
+          }
+          value={data.repoUrl}
+          onChange={(v) => onChange({ repoUrl: v })}
+          placeholder="Sélectionner un repo…"
+        />
+      )}
+
+      {/* Buttons */}
+      <div className="flex justify-between mt-2">
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Annuler
+        </Button>
+        <Button variant="primary" size="sm" disabled={!isValid} onClick={onNext}>
+          Suivant
+        </Button>
+      </div>
+    </div>
+  );
+}

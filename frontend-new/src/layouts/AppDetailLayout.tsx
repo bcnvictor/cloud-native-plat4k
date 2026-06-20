@@ -1,0 +1,144 @@
+import { useEffect, createContext, useContext } from 'react';
+import { Outlet, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { IconBrandGitlab, IconDots, IconBrandDocker } from '@tabler/icons-react';
+import { appsApi } from '@/api/apps';
+import { useScopeStore } from '@/store/scope';
+import { Application } from '@/types';
+import { AppStatusBadge } from '@/components/AppStatusBadge';
+import { Button } from '@/components/ui/Button';
+import { Spinner } from '@/components/ui/Spinner';
+import { getAppHealth } from '@/utils/appHealth';
+import { cn } from '@/lib/cn';
+
+interface AppDetailContext {
+  app: Application | null;
+  isLoading: boolean;
+}
+
+const Ctx = createContext<AppDetailContext>({ app: null, isLoading: false });
+export const useAppDetail = () => useContext(Ctx);
+
+const TABS = [
+  { key: '', label: 'Overview' },
+  { key: 'deployments', label: 'Deployments' },
+  { key: 'logs', label: 'Logs' },
+  { key: 'settings', label: 'Settings' },
+];
+
+export function AppDetailLayout() {
+  const { slug, appSlug } = useParams<{ slug: string; appSlug: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { setScope } = useScopeStore();
+
+  useEffect(() => {
+    if (slug) setScope('group', slug);
+  }, [slug, setScope]);
+
+  const { data: app, isLoading } = useQuery({
+    queryKey: ['app', appSlug],
+    queryFn: () => appsApi.getBySlug(appSlug!),
+    enabled: !!appSlug,
+  });
+
+  const health = app ? getAppHealth(app) : 'stopped';
+  const basePath = `/groups/${slug}/apps/${appSlug}`;
+
+  function activeTab(): string {
+    const seg = location.pathname.replace(basePath, '').replace(/^\//, '');
+    return seg;
+  }
+
+  function navigate_to(tabKey: string) {
+    navigate(tabKey ? `${basePath}/${tabKey}` : basePath);
+  }
+
+  return (
+    <Ctx.Provider value={{ app: app ?? null, isLoading }}>
+      {/* App sub-header */}
+      <div className="bg-background border-b border-border sticky top-[var(--topnav-height)] z-30">
+        <div>
+          {/* App header row */}
+          <div className="flex items-center gap-3 py-3">
+            {isLoading ? (
+              <Spinner size="md" />
+            ) : (
+              <>
+                <div className="h-9 w-9 flex items-center justify-center rounded-md bg-background-subtle border border-border shrink-0">
+                  <IconBrandDocker size={20} className="text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-sm font-medium text-foreground">{app?.name ?? appSlug}</h1>
+                    {app && <AppStatusBadge status={health} />}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {app?.origin ?? 'scaffold'} ·{' '}
+                    {app?.framework ?? 'app'} · {slug}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {app?.source_url && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<IconBrandGitlab size={14} />}
+                      onClick={() => window.open(app.source_url!, '_blank')}
+                    >
+                      GitLab
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm">
+                    <IconDots size={15} />
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Unhealthy alert */}
+          {health === 'unhealthy' && (
+            <div className="flex items-center gap-2 py-2 mb-1 px-3 bg-danger-subtle rounded-md text-xs text-danger-text">
+              <span>⚠</span>
+              <span>L'application est en erreur.</span>
+              <button
+                className="underline ml-auto"
+                onClick={() => navigate_to('logs')}
+              >
+                Voir les logs
+              </button>
+            </div>
+          )}
+
+          {/* Tab bar */}
+          <div className="flex">
+            {TABS.map((tab) => {
+              const current = activeTab();
+              const isActive = tab.key === current;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => navigate_to(tab.key)}
+                  className={cn(
+                    'px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors',
+                    isActive
+                      ? 'font-medium text-foreground border-foreground'
+                      : 'text-muted-foreground border-transparent hover:text-foreground'
+                  )}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Tab content */}
+      <div className="py-6">
+        <Outlet />
+      </div>
+    </Ctx.Provider>
+  );
+}

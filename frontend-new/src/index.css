@@ -1,0 +1,38 @@
+@import "../tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply text-foreground font-sans text-base;
+    background-color: #EBEBEB;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-1;
+  }
+}
+
+@layer utilities {
+  .pt-topnav {
+    padding-top: var(--topnav-height);
+  }
+}
+
+/* Non-layered overrides win over @layer utilities — fixes oklch(var()) double-wrap */
+.bg-background        { background-color: oklch(1 0 0); }
+.bg-background-subtle { background-color: oklch(0.985 0 0); }
+
+.bg-dotted {
+  background-color: #EBEBEB;
+  background-image: radial-gradient(circle, #C8C8CC 1px, transparent 1px);
+  background-size: 20px 20px;
+}

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CNP — Flow New App</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --color-background-primary: #ffffff;
+    --color-background-secondary: #f4f4f5;
+    --color-background-tertiary: #e4e4e7;
+    --color-background-info: #dbeafe;
+    --color-background-danger: #fee2e2;
+    --color-border-primary: #52525b;
+    --color-border-secondary: #a1a1aa;
+    --color-border-tertiary: #d4d4d8;
+    --color-text-primary: #18181b;
+    --color-text-secondary: #3f3f46;
+    --color-text-tertiary: #71717a;
+    --color-text-info: #1d4ed8;
+    --color-text-success: #16a34a;
+    --color-text-warning: #d97706;
+    --color-text-danger: #dc2626;
+    --border-radius-sm: 4px;
+    --border-radius-md: 6px;
+    --border-radius-lg: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-sans); background: #fafafa; color: var(--color-text-primary); padding: 32px; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+  .meta { font-size: 13px; color: var(--color-text-tertiary); margin-bottom: 40px; }
+  .section { margin-bottom: 48px; }
+  .section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-text-tertiary); margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--color-border-tertiary); }
+  .wireframe-label { font-size: 12px; color: var(--color-text-tertiary); margin: 0 0 8px; }
+  .wireframe-wrap { margin-bottom: 32px; }
+  .topbar { display:flex;align-items:center;gap:18px;padding:0 14px;height:52px;background:var(--color-background-secondary);border-bottom:0.5px solid var(--color-border-tertiary); }
+  .scope-btn { display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md); }
+  .avatar-sm { width:22px;height:22px;border-radius:var(--border-radius-md);background:var(--color-background-info);color:var(--color-text-info);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500; }
+  .nav-item { padding:6px 12px;border-radius:var(--border-radius-md);font-size:14px;color:var(--color-text-secondary); }
+  .nav-item.active { font-weight:500;background:var(--color-background-primary); }
+  .actions-right { display:flex;align-items:center;gap:13px;color:var(--color-text-tertiary); }
+  .user-avatar { width:26px;height:26px;border-radius:50%;background:var(--color-background-info);color:var(--color-text-info);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500; }
+  .stepper-bar { display:flex;align-items:center;width:100%;max-width:560px; }
+  .step-node { display:flex;align-items:center;gap:6px; }
+  .step-num { width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px; }
+  .step-num.active { background:var(--color-background-primary);border:0.5px solid var(--color-border-primary);font-weight:600; }
+  .step-num.done { background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary); }
+  .step-num.todo { background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);color:var(--color-text-tertiary); }
+  .step-label { font-size:13px; }
+  .step-label.active { font-weight:500; }
+  .step-label.done, .step-label.todo { color:var(--color-text-tertiary); }
+  .step-divider { flex:1;height:0.5px;background:var(--color-border-tertiary);margin:0 10px; }
+  .page-content { padding:24px 20px;background:var(--color-background-tertiary);display:flex;flex-direction:column;gap:20px;align-items:center; }
+  .form-wrap { width:100%;max-width:560px;display:flex;flex-direction:column;gap:14px; }
+  .field-label { font-size:12px;color:var(--color-text-secondary);margin-bottom:5px; }
+  .field-input { height:34px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);padding:0 10px;display:flex;align-items:center; }
+  .field-hint { font-size:11px;color:var(--color-text-tertiary);margin-top:4px; }
+  .btn-row { display:flex;justify-content:space-between;align-items:center;padding-top:4px; }
+  .btn { padding:6px 14px;font-size:13px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary);cursor:pointer; }
+  .btn-secondary { color:var(--color-text-tertiary);background:transparent; }
+  .btn-primary { font-weight:500;background:var(--color-background-primary);border-color:var(--color-border-secondary); }
+</style>
+</head>
+<body>
+<h1>CNP — Flow New App</h1>
+<p class="meta">Stepper 4 étapes + page détail app (états) — 19 juin 2026</p>
+
+<!-- ==================== STEPPER ==================== -->
+<div class="section">
+<div class="section-label">Stepper /apps/new</div>
+
+<!-- ETAPE 1 -->
+<div class="wireframe-wrap">
+<p class="wireframe-label">Étape 1 / 4 — Identité (Scaffold sélectionné)</p>
+<div style="border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;">
+  <div class="topbar">
+    <div class="scope-btn"><span class="avatar-sm">TA</span><span style="font-size:14px;font-weight:500;">Team Alpha</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--color-text-tertiary);"></i></div>
+    <nav style="display:flex;gap:4px;flex:1;"><span class="nav-item">Home</span><span class="nav-item active">Apps</span><span class="nav-item">Settings</span></nav>
+    <div class="actions-right"><i class="ti ti-search" style="font-size:18px;"></i><i class="ti ti-bell" style="font-size:18px;"></i><span class="user-avatar">VC</span></div>
+  </div>
+  <div class="page-content">
+    <div class="stepper-bar">
+      <div class="step-node"><span class="step-num active">1</span><span class="step-label active">Identité</span></div>
+      <div class="step-divider"></div>
+      <div class="step-node"><span class="step-num todo">2</span><span class="step-label todo">Services</span></div>
+      <div class="step-divider"></div>
+      <div class="step-node"><span class="step-num todo">3</span><span class="step-label todo">CI & Deploy</span></div>
+      <div class="step-divider"></div>
+      <div class="step-node"><span class="step-num todo">4</span><span class="step-label todo">Recap</span></div>
+    </div>
+    <div class="form-wrap">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="padding:14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-primary);border-radius:var(--border-radius-md);display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="width:28px;height:28px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-sparkles" style="font-size:14px;"></i></span>
+            <p style="font-size:13px;font-weight:500;">Scaffold</p>
+            <i class="ti ti-circle-check-filled" style="font-size:16px;color:var(--color-text-info);margin-left:auto;"></i>
+          </div>
+          <p style="font-size:11px;color:var(--color-text-tertiary);">CNP crée le repo depuis un template et injecte le CI.</p>
+        </div>
+        <div style="padding:14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="width:28px;height:28px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-git-branch" style="font-size:14px;"></i></span>
+            <p style="font-size:13px;font-weight:500;">Onboard</p>
+          </div>
+          <p style="font-size:11px;color:var(--color-text-tertiary);">Connecte un repo GitLab existant.</p>
+        </div>
+      </div>
+      <div>
+        <p class="field-label">Nom de l'application</p>
+        <div class="field-input"><span style="font-size:13px;color:var(--color-text-tertiary);">ex. api-commandes</span></div>
+        <p class="field-hint">Slug généré automatiquement : api-commandes</p>
+      </div>
+      <div>
+        <p class="field-label">Framework</p>
+        <div class="field-input" style="justify-content:space-between;"><span style="font-size:13px;color:var(--color-text-tertiary);">Sélectionner un framework</span><i class="ti ti-chevron-down" style="font-size:14px;color:var(--color-text-tertiary);"></i></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary">Annuler</button>
+        <button class="btn btn-primary">Suivant</button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ETAPE 2 -->
+<div class="wireframe-wrap">
+<p class="wireframe-label">Étape 2 / 4 — Services (DB cochée et expandée)</p>
+<div style="border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;">
+  <div class="topbar">
+    <div class="scope-btn"><span class="avatar-sm">TA</span><span style="font-size:14px;font-weight:500;">Team Alpha</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--color-text-tertiary);"></i></div>
+    <nav style="display:flex;gap:4px;flex:1;"><span class="nav-item">Home</span><span class="nav-item active">Apps</span><span class="nav-item">Settings</span></nav>
+    <div class="actions-right"><i class="ti ti-search" style="font-size:18px;"></i><i class="ti ti-bell" style="font-size:18px;"></i><span class="user-avatar">VC</span></div>
+  </div>
+  <div class="page-content">
+    <div class="stepper-bar">
+      <div class="step-node"><span class="step-num done"><i class="ti ti-check" style="font-size:12px;color:var(--color-text-tertiary);"></i></span><span class="step-label done">Identité</span></div>
+      <div class="step-divider"></div>
+      <div class="step-node"><span class="step-num active">2</span><span class="step-label active">Services</span></div>
+      <div class="step-divider"></div>
+      <div class="step-node"><span class="step-num todo">3</span><span class="step-label todo">CI & Deploy</span></div>
+      <div class="step-divider"></div>
+      <div class="step-node"><span class="step-num todo">4</span><span class="step-label todo">Recap</span></div>
+    </div>
+    <div class="form-wrap">
+      <p style="font-size:12px;color:var(--color-text-tertiary);">Services optionnels à injecter dans l'application.</p>
+      <!-- DB cochée expandée -->
+      <div style="border:0.5px solid var(--color-border-primary);border-radius:var(--border-radius-md);overflow:hidden;background:var(--color-background-primary);">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;">
+          <span style="width:28px;height:28px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-database" style="font-size:14px;"></i></span>
+          <div style="flex:1;"><p style="font-size:13px;font-weight:500;">Base de données</p><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:2px;">Injection d'une instance PostgreSQL managée.</p></div>
+          <i class="ti ti-circle-check-filled" style="font-size:18px;color:var(--color-text-info);"></i>
+        </div>
+        <div style="border-top:0.5px solid var(--color-border-tertiary);padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:var(--color-background-secondary);">
+          <div><p class="field-label">Type</p><div class="field-input" style="justify-content:space-between;"><span style="font-size:13px;">PostgreSQL</span><i class="ti ti-chevron-down" style="font-size:14px;color:var(--color-text-tertiary);"></i></div></div>
+          <div><p class="field-label">Nom de la base</p><div class="field-input"><span style="font-size:13px;color:var(--color-text-tertiary);">api-commandes-db</span></div></div>
+        </div>
+      </div>
+      <!-- Keycloak non coché -->
+      <div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;">
+          <span style="width:28px;height:28px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-lock" style="font-size:14px;"></i></span>
+          <div style="flex:1;"><p style="font-size:13px;font-weight:500;">Authentification</p><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:2px;">Injection Keycloak avec realm et client préconfigurés.</p></div>
+          <span style="width:18px;height:18px;border-radius:50%;border:0.5px solid var(--color-border-tertiary);"></span>
+        </div>
+      </div>
+      <!-- Cache non coché -->
+      <div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;">
+          <span style="width:28px;height:28px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-puzzle" style="font-size:14px;"></i></span>
+          <div style="flex:1;"><p style="font-size:13px;font-weight:500;">Cache</p><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:2px;">Injection Redis pour la mise en cache applicative.</p></div>
+          <span style="width:18px;height:18px;border-radius:50%;border:0.5px solid var(--color-border-tertiary);"></span>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary">Précédent</button>
+        <button class="btn btn-primary">Suivant</button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ETAPE 3 -->
+<div class="wireframe-wrap">
+<p class="wireframe-label">Étape 3 / 4 — CI & Déploiement (advanced options fermées)</p>
+<div style="border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;">
+  <div class="topbar">
+    <div class="scope-btn"><span class="avatar-sm">TA</span><span style="font-size:14px;font-weight:500;">Team Alpha</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--color-text-tertiary);"></i></div>
+    <nav style="display:flex;gap:4px;flex:1;"><span class="nav-item">Home</span><span class="nav-item active">Apps</span><span class="nav-item">Settings</span></nav>
+    <div class="actions-right"><i class="ti ti-search" style="font-size:18px;"></i><i class="ti ti-bell" style="font-size:18px;"></i><span class="user-avatar">VC</span></div>
+  </div>
+  <div class="page-content">
+    <div class="stepper-bar">
+      <div class="step-node"><span class="step-num done"><i class="ti ti-check" style="font-size:12px;color:var(--color-text-tertiary);"></i></span><span class="step-label done">Identité</span></div>
+      <div class="step-divider"></div>
+      <div class="step-node"><span class="step-num done"><i class="ti ti-check" style="font-size:12px;color:var(--color-text-tertiary);"></i></span><span class="step-label done">Services</span></div>
+      <div class="step-divider"></div>
+      <div class="step-node"><span class="step-num active">3</span><span class="step-label active">CI & Deploy</span></div>
+      <div class="step-divider"></div>
+      <div class="step-node"><span class="step-num todo">4</span><span class="step-label todo">Recap</span></div>
+    </div>
+    <div class="form-wrap">
+      <div>
+        <p class="field-label">Trigger de déploiement</p>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:0.5px solid var(--color-border-primary);border-radius:var(--border-radius-md);background:var(--color-background-primary);cursor:pointer;">
+            <span style="width:16px;height:16px;border-radius:50%;border:0.5px solid var(--color-border-primary);background:var(--color-background-info);display:flex;align-items:center;justify-content:center;"><span style="width:6px;height:6px;border-radius:50%;background:var(--color-background-primary);"></span></span>
+            <div><p style="font-size:13px;font-weight:500;">Sur chaque commit</p><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:2px;">Déploiement automatique à chaque push sur la branche principale.</p></div>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);cursor:pointer;">
+            <span style="width:16px;height:16px;border-radius:50%;border:0.5px solid var(--color-border-tertiary);"></span>
+            <div><p style="font-size:13px;font-weight:500;">Sur tag</p><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:2px;">Déploiement uniquement sur création d'un tag Git (ex. v1.0.0).</p></div>
+          </label>
+        </div>
+      </div>
+      <div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer;">
+          <span style="font-size:13px;color:var(--color-text-tertiary);">Options avancées</span>
+          <i class="ti ti-chevron-down" style="font-size:14px;color:var(--color-text-tertiary);"></i>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--color-text-tertiary);">Variables d'env, nombre de replicas et cluster cible sont configurables ici ou depuis le détail de l'app après création.</p>
+      <div class="btn-row">
+        <button class="btn btn-secondary">Précédent</button>
+        <button class="btn btn-primary">Suivant</button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ETAPE 4 -->
+<div class="wireframe-wrap">
+<p class="wireframe-label">Étape 4 / 4 — Recap avant soumission</p>
+<div style="border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;">
+  <div class="topbar">
+    <div class="scope-btn"><span class="avatar-sm">TA</span><span style="font-size:14px;font-weight:500;">Team Alpha</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--color-text-tertiary);"></i></div>
+    <nav style="display:flex;gap:4px;flex:1;"><span class="nav-item">Home</span><span class="nav-item active">Apps</span><span class="nav-item">Settings</span></nav>
+    <div class="actions-right"><i class="ti ti-search" style="font-size:18px;"></i><i class="ti ti-bell" style="font-size:18px;"></i><span class="user-avatar">VC</span></div>
+  </div>
+  <div class="page-content">
+    <div class="stepper-bar">
+      <div class="step-node"><span class="step-num done"><i class="ti ti-check" style="font-size:12px;color:var(--color-text-tertiary);"></i></span><span class="step-label done">Identité</span></div>
+      <div class="step-divider"></div>
+      <div class="step-node"><span class="step-num done"><i class="ti ti-check" style="font-size:12px;color:var(--color-text-tertiary);"></i></span><span class="step-label done">Services</span></div>
+      <div class="step-divider"></div>
+      <div class="step-node"><span class="step-num done"><i class="ti ti-check" style="font-size:12px;color:var(--color-text-tertiary);"></i></span><span class="step-label done">CI & Deploy</span></div>
+      <div class="step-divider"></div>
+      <div class="step-node"><span class="step-num active">4</span><span class="step-label active">Recap</span></div>
+    </div>
+    <div class="form-wrap">
+      <div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);overflow:hidden;">
+        <div style="padding:10px 14px;border-bottom:0.5px solid var(--color-border-tertiary);"><p style="font-size:12px;font-weight:500;">Identité</p></div>
+        <div style="padding:10px 14px;display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Nom</span><span style="font-size:12px;">api-commandes</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Slug</span><span style="font-size:12px;font-family:var(--font-mono);">api-commandes</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Origine</span><span style="font-size:12px;">Scaffold</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Framework</span><span style="font-size:12px;">FastAPI</span></div>
+        </div>
+      </div>
+      <div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);overflow:hidden;">
+        <div style="padding:10px 14px;border-bottom:0.5px solid var(--color-border-tertiary);"><p style="font-size:12px;font-weight:500;">Services</p></div>
+        <div style="padding:10px 14px;display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Base de données</span><span style="font-size:12px;">PostgreSQL — api-commandes-db</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Authentification</span><span style="font-size:12px;color:var(--color-text-tertiary);">Non</span></div>
+        </div>
+      </div>
+      <div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);overflow:hidden;">
+        <div style="padding:10px 14px;border-bottom:0.5px solid var(--color-border-tertiary);"><p style="font-size:12px;font-weight:500;">CI & Déploiement</p></div>
+        <div style="padding:10px 14px;display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Trigger</span><span style="font-size:12px;">Sur chaque commit</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Cluster cible</span><span style="font-size:12px;color:var(--color-text-tertiary);">Par défaut (cnp-aks)</span></div>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary">Précédent</button>
+        <button class="btn btn-primary">Créer l'application</button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ==================== PAGE DETAIL APP ==================== -->
+<div class="section">
+<div class="section-label">Page détail app — états et onglets</div>
+
+<!-- DETAIL OVERVIEW HEALTHY -->
+<div class="wireframe-wrap">
+<p class="wireframe-label">Onglet Overview — état Healthy</p>
+<div style="border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;">
+  <div class="topbar">
+    <div class="scope-btn"><span class="avatar-sm">TA</span><span style="font-size:14px;font-weight:500;">Team Alpha</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--color-text-tertiary);"></i></div>
+    <nav style="display:flex;gap:4px;flex:1;"><span class="nav-item">Home</span><span class="nav-item active">Apps</span><span class="nav-item">Settings</span></nav>
+    <div class="actions-right"><i class="ti ti-search" style="font-size:18px;"></i><i class="ti ti-bell" style="font-size:18px;"></i><span class="user-avatar">VC</span></div>
+  </div>
+  <div style="background:var(--color-background-tertiary);">
+    <div style="padding:12px 20px 0;border-bottom:0.5px solid var(--color-border-tertiary);background:var(--color-background-secondary);">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="width:36px;height:36px;border-radius:var(--border-radius-md);background:var(--color-background-tertiary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-brand-docker" style="font-size:18px;"></i></span>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;"><p style="font-size:15px;font-weight:500;">api-commandes</p><span style="font-size:11px;color:var(--color-text-success);display:flex;align-items:center;gap:4px;"><i class="ti ti-circle-filled" style="font-size:8px;"></i>Healthy</span></div>
+            <p style="font-size:12px;color:var(--color-text-tertiary);margin-top:2px;">scaffold · FastAPI · Team Alpha</p>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 10px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);font-size:12px;color:var(--color-text-secondary);"><i class="ti ti-external-link" style="font-size:13px;"></i>GitLab</div>
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 10px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);font-size:12px;color:var(--color-text-secondary);"><i class="ti ti-dots" style="font-size:13px;"></i></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:0;">
+        <span style="padding:8px 14px;font-size:13px;font-weight:500;border-bottom:2px solid var(--color-border-primary);margin-bottom:-0.5px;">Overview</span>
+        <span style="padding:8px 14px;font-size:13px;color:var(--color-text-tertiary);border-bottom:2px solid transparent;margin-bottom:-0.5px;">Deployments</span>
+        <span style="padding:8px 14px;font-size:13px;color:var(--color-text-tertiary);border-bottom:2px solid transparent;margin-bottom:-0.5px;">Logs</span>
+        <span style="padding:8px 14px;font-size:13px;color:var(--color-text-tertiary);border-bottom:2px solid transparent;margin-bottom:-0.5px;">Settings</span>
+      </div>
+    </div>
+    <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;">
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
+        <div style="padding:12px 14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);"><p style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:4px;">CPU</p><p style="font-size:16px;font-weight:500;">34%</p></div>
+        <div style="padding:12px 14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);"><p style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:4px;">RAM</p><p style="font-size:16px;font-weight:500;">210 MB</p></div>
+        <div style="padding:12px 14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);"><p style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:4px;">Replicas</p><p style="font-size:16px;font-weight:500;">2 / 2</p></div>
+        <div style="padding:12px 14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);"><p style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:4px;">Uptime</p><p style="font-size:16px;font-weight:500;">2h 14m</p></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="padding:14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);display:flex;flex-direction:column;gap:10px;">
+          <p style="font-size:12px;font-weight:500;">Déploiement courant</p>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Commit</span><span style="font-size:12px;font-family:var(--font-mono);">a3f92c1</span></div>
+            <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Branche</span><span style="font-size:12px;font-family:var(--font-mono);">main</span></div>
+            <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Déployé</span><span style="font-size:12px;">il y a 2h</span></div>
+            <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Cluster</span><span style="font-size:12px;">cnp-aks</span></div>
+            <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--color-text-tertiary);">Trigger</span><span style="font-size:12px;">commit</span></div>
+          </div>
+        </div>
+        <div style="padding:14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);display:flex;flex-direction:column;gap:10px;">
+          <p style="font-size:12px;font-weight:500;">Services injectés</p>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="width:26px;height:26px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-database" style="font-size:13px;"></i></span>
+            <div><p style="font-size:12px;font-weight:500;">PostgreSQL</p><p style="font-size:11px;color:var(--color-text-tertiary);font-family:var(--font-mono);margin-top:1px;">api-commandes-db</p></div>
+            <span style="margin-left:auto;font-size:11px;color:var(--color-text-success);display:flex;align-items:center;gap:3px;"><i class="ti ti-circle-filled" style="font-size:7px;"></i>OK</span>
+          </div>
+          <div style="margin-top:auto;padding-top:6px;border-top:0.5px solid var(--color-border-tertiary);"><p style="font-size:11px;color:var(--color-text-tertiary);">Port exposé : <span style="font-family:var(--font-mono);">8080</span></p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ETATS HEADER -->
+<div class="wireframe-wrap">
+<p class="wireframe-label">Variantes header : Deploying / Unhealthy (avec bandeau) / Stopped</p>
+<div style="display:flex;flex-direction:column;gap:10px;">
+  <div style="border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;">
+    <div style="padding:12px 20px;background:var(--color-background-secondary);border-bottom:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="width:32px;height:32px;border-radius:var(--border-radius-md);background:var(--color-background-tertiary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-brand-docker" style="font-size:16px;"></i></span>
+        <div><div style="display:flex;align-items:center;gap:8px;"><p style="font-size:14px;font-weight:500;">api-commandes</p><span style="font-size:11px;color:var(--color-text-tertiary);display:flex;align-items:center;gap:4px;"><i class="ti ti-loader-2" style="font-size:12px;"></i>Deploying</span></div><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:2px;">scaffold · FastAPI · Team Alpha</p></div>
+      </div>
+      <div style="display:flex;gap:4px;"><span style="padding:6px 10px;font-size:12px;color:var(--color-text-tertiary);">Overview</span><span style="padding:6px 10px;font-size:12px;color:var(--color-text-tertiary);">Deployments</span><span style="padding:6px 10px;font-size:12px;color:var(--color-text-tertiary);">Logs</span><span style="padding:6px 10px;font-size:12px;color:var(--color-text-tertiary);">Settings</span></div>
+    </div>
+  </div>
+  <div style="border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;">
+    <div style="padding:12px 20px;background:var(--color-background-secondary);border-bottom:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="width:32px;height:32px;border-radius:var(--border-radius-md);background:var(--color-background-tertiary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-brand-docker" style="font-size:16px;"></i></span>
+        <div><div style="display:flex;align-items:center;gap:8px;"><p style="font-size:14px;font-weight:500;">api-commandes</p><span style="font-size:11px;color:var(--color-text-danger);display:flex;align-items:center;gap:4px;"><i class="ti ti-circle-filled" style="font-size:8px;"></i>Unhealthy</span></div><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:2px;">scaffold · FastAPI · Team Alpha</p></div>
+      </div>
+      <div style="display:flex;gap:4px;"><span style="padding:6px 10px;font-size:12px;color:var(--color-text-tertiary);">Overview</span><span style="padding:6px 10px;font-size:12px;color:var(--color-text-tertiary);">Deployments</span><span style="padding:6px 10px;font-size:12px;color:var(--color-text-tertiary);">Logs</span><span style="padding:6px 10px;font-size:12px;color:var(--color-text-tertiary);">Settings</span></div>
+    </div>
+    <div style="padding:8px 20px;background:var(--color-background-secondary);border-bottom:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;gap:8px;">
+      <i class="ti ti-alert-triangle" style="font-size:14px;color:var(--color-text-warning);"></i>
+      <p style="font-size:12px;color:var(--color-text-secondary);">1 replica sur 2 en échec. <span style="text-decoration:underline;cursor:pointer;">Voir les logs</span></p>
+    </div>
+  </div>
+  <div style="border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;">
+    <div style="padding:12px 20px;background:var(--color-background-secondary);display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="width:32px;height:32px;border-radius:var(--border-radius-md);background:var(--color-background-tertiary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-brand-docker" style="font-size:16px;"></i></span>
+        <div><div style="display:flex;align-items:center;gap:8px;"><p style="font-size:14px;font-weight:500;">api-commandes</p><span style="font-size:11px;color:var(--color-text-tertiary);display:flex;align-items:center;gap:4px;"><i class="ti ti-minus" style="font-size:10px;"></i>Stopped</span></div><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:2px;">scaffold · FastAPI · Team Alpha</p></div>
+      </div>
+      <div style="display:flex;gap:4px;"><span style="padding:6px 10px;font-size:12px;color:var(--color-text-tertiary);">Overview</span><span style="padding:6px 10px;font-size:12px;color:var(--color-text-tertiary);">Deployments</span><span style="padding:6px 10px;font-size:12px;color:var(--color-text-tertiary);">Logs</span><span style="padding:6px 10px;font-size:12px;color:var(--color-text-tertiary);">Settings</span></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- DEPLOYMENTS -->
+<div class="wireframe-wrap">
+<p class="wireframe-label">Onglet Deployments — liste avec ligne expandée (escape hatch GitLab)</p>
+<div style="border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;">
+  <div class="topbar">
+    <div class="scope-btn"><span class="avatar-sm">TA</span><span style="font-size:14px;font-weight:500;">Team Alpha</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--color-text-tertiary);"></i></div>
+    <nav style="display:flex;gap:4px;flex:1;"><span class="nav-item">Home</span><span class="nav-item active">Apps</span><span class="nav-item">Settings</span></nav>
+    <div class="actions-right"><i class="ti ti-search" style="font-size:18px;"></i><i class="ti ti-bell" style="font-size:18px;"></i><span class="user-avatar">VC</span></div>
+  </div>
+  <div style="background:var(--color-background-tertiary);">
+    <div style="padding:12px 20px 0;border-bottom:0.5px solid var(--color-border-tertiary);background:var(--color-background-secondary);">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <span style="width:32px;height:32px;border-radius:var(--border-radius-md);background:var(--color-background-tertiary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-brand-docker" style="font-size:16px;"></i></span>
+        <div><div style="display:flex;align-items:center;gap:8px;"><p style="font-size:14px;font-weight:500;">api-commandes</p><span style="font-size:11px;color:var(--color-text-success);display:flex;align-items:center;gap:4px;"><i class="ti ti-circle-filled" style="font-size:8px;"></i>Healthy</span></div><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:2px;">scaffold · FastAPI · Team Alpha</p></div>
+      </div>
+      <div style="display:flex;gap:0;">
+        <span style="padding:8px 14px;font-size:13px;color:var(--color-text-tertiary);border-bottom:2px solid transparent;margin-bottom:-0.5px;">Overview</span>
+        <span style="padding:8px 14px;font-size:13px;font-weight:500;border-bottom:2px solid var(--color-border-primary);margin-bottom:-0.5px;">Deployments</span>
+        <span style="padding:8px 14px;font-size:13px;color:var(--color-text-tertiary);border-bottom:2px solid transparent;margin-bottom:-0.5px;">Logs</span>
+        <span style="padding:8px 14px;font-size:13px;color:var(--color-text-tertiary);border-bottom:2px solid transparent;margin-bottom:-0.5px;">Settings</span>
+      </div>
+    </div>
+    <div style="padding:16px 20px;display:flex;flex-direction:column;gap:8px;">
+      <!-- Ligne expandée -->
+      <div style="background:var(--color-background-primary);border:0.5px solid var(--color-border-primary);border-radius:var(--border-radius-md);overflow:hidden;">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;">
+          <i class="ti ti-circle-check-filled" style="font-size:16px;color:var(--color-text-success);flex-shrink:0;"></i>
+          <div style="flex:1;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;align-items:center;">
+            <div><p style="font-size:12px;font-weight:500;font-family:var(--font-mono);">a3f92c1</p><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:2px;">fix: null pointer on order</p></div>
+            <div style="display:flex;align-items:center;gap:5px;"><i class="ti ti-git-branch" style="font-size:12px;color:var(--color-text-tertiary);"></i><span style="font-size:12px;font-family:var(--font-mono);">main</span></div>
+            <span style="font-size:12px;color:var(--color-text-tertiary);">il y a 2h · 1m 43s</span>
+            <span style="font-size:11px;color:var(--color-text-tertiary);text-align:right;">courant</span>
+          </div>
+          <i class="ti ti-chevron-up" style="font-size:14px;color:var(--color-text-tertiary);"></i>
+        </div>
+        <div style="border-top:0.5px solid var(--color-border-tertiary);padding:12px 14px 12px 40px;background:var(--color-background-secondary);display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+          <div style="display:flex;gap:16px;">
+            <div><p style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:2px;">Auteur</p><p style="font-size:12px;">vc &lt;vic@team-alpha.io&gt;</p></div>
+            <div><p style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:2px;">Trigger</p><p style="font-size:12px;">commit sur main</p></div>
+            <div><p style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:2px;">Image</p><p style="font-size:12px;font-family:var(--font-mono);">registry.gitlab.com/ta/api-commandes:a3f92c1</p></div>
+          </div>
+          <a style="display:flex;align-items:center;gap:6px;padding:6px 12px;font-size:12px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-secondary);white-space:nowrap;text-decoration:none;flex-shrink:0;"><i class="ti ti-brand-gitlab" style="font-size:14px;"></i>Voir le pipeline<i class="ti ti-external-link" style="font-size:12px;color:var(--color-text-tertiary);"></i></a>
+        </div>
+      </div>
+      <!-- Lignes collapsed -->
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);">
+        <i class="ti ti-circle-check" style="font-size:16px;color:var(--color-text-tertiary);flex-shrink:0;"></i>
+        <div style="flex:1;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;align-items:center;">
+          <div><p style="font-size:12px;font-weight:500;font-family:var(--font-mono);">b12d44e</p><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:2px;">feat: add order endpoint</p></div>
+          <div style="display:flex;align-items:center;gap:5px;"><i class="ti ti-git-branch" style="font-size:12px;color:var(--color-text-tertiary);"></i><span style="font-size:12px;font-family:var(--font-mono);">main</span></div>
+          <span style="font-size:12px;color:var(--color-text-tertiary);">il y a 5h · 2m 01s</span><span></span>
+        </div>
+        <i class="ti ti-chevron-down" style="font-size:14px;color:var(--color-text-tertiary);"></i>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);">
+        <i class="ti ti-circle-x" style="font-size:16px;color:var(--color-text-danger);flex-shrink:0;"></i>
+        <div style="flex:1;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;align-items:center;">
+          <div><p style="font-size:12px;font-weight:500;font-family:var(--font-mono);">c88a01f</p><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:2px;">chore: update deps</p></div>
+          <div style="display:flex;align-items:center;gap:5px;"><i class="ti ti-git-branch" style="font-size:12px;color:var(--color-text-tertiary);"></i><span style="font-size:12px;font-family:var(--font-mono);">main</span></div>
+          <span style="font-size:12px;color:var(--color-text-tertiary);">il y a 1j · 0m 38s</span><span></span>
+        </div>
+        <i class="ti ti-chevron-down" style="font-size:14px;color:var(--color-text-tertiary);"></i>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+</div>
+</body>
+</html>
