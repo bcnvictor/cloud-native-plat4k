@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { IconBrandGitlab, IconCircleCheck, IconClock, IconCpu, IconDatabase, IconServer, IconWorld } from '@tabler/icons-react';
+import { IconAlertTriangle, IconBrandGitlab, IconCircleCheck, IconClock, IconCpu, IconDatabase, IconServer } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { appsApi } from '@/api/apps';
 import { MetricCard } from '@/components/MetricCard';
@@ -33,17 +33,23 @@ export function OverviewTab() {
     <div className="flex flex-col gap-5">
       {/* Metrics */}
       <div className="grid grid-cols-4 gap-4">
+        {!metrics.available && (
+          <div className="col-span-4 flex items-center gap-2 px-3 py-2 rounded-md bg-muted/40 border border-border text-xs text-muted-foreground">
+            <IconAlertTriangle size={13} className="shrink-0" />
+            Métriques indisponibles — vérifier la connexion Prometheus
+          </div>
+        )}
         <MetricCard
           label="CPU"
-          value={metrics.cpu.current.toFixed(1)}
-          unit="%"
+          value={metrics.available ? metrics.cpu.current.toFixed(1) : '—'}
+          unit={metrics.available ? '%' : undefined}
           icon={<IconCpu size={14} />}
           sparkline={metrics.cpu.series}
         />
         <MetricCard
           label="RAM"
-          value={metrics.ram.current.toFixed(1)}
-          unit="%"
+          value={metrics.available ? metrics.ram.current.toFixed(0) : '—'}
+          unit={metrics.available ? metrics.ramUnit : undefined}
           icon={<IconDatabase size={14} />}
           sparkline={metrics.ram.series}
         />
@@ -54,7 +60,7 @@ export function OverviewTab() {
         />
         <MetricCard
           label="Uptime"
-          value={currentDeploy ? timeAgo(currentDeploy.deployed_at) : metrics.uptime.current}
+          value={currentDeploy ? timeAgo(currentDeploy.deployed_at) : '—'}
           icon={<IconClock size={14} />}
         />
       </div>
@@ -115,33 +121,22 @@ export function OverviewTab() {
       {/* Quick access */}
       <Card>
         <h2 className="text-sm font-medium text-foreground mb-3">Accès rapide</h2>
-        <div className="grid grid-cols-2 gap-3">
-          {app?.source_url ? (
-            <a
-              href={app.source_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-sm text-[#007BA7] hover:underline"
-            >
-              <IconBrandGitlab size={16} />
-              GitLab
-            </a>
-          ) : (
-            <span className="flex items-center gap-2 text-sm text-zinc-400">
-              <IconBrandGitlab size={16} />
-              GitLab non configuré
-            </span>
-          )}
+        {(app?.repo_url ?? app?.source_url) ? (
           <a
-            href={`https://${app?.name}.cnp.internal`}
+            href={(app!.repo_url ?? app!.source_url)!}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm text-[#007BA7] hover:underline"
           >
-            <IconWorld size={16} />
-            {app?.name}.cnp.internal
+            <IconBrandGitlab size={16} />
+            {app!.repo_url ?? app!.source_url}
           </a>
-        </div>
+        ) : (
+          <span className="flex items-center gap-2 text-sm text-muted-foreground">
+            <IconBrandGitlab size={16} />
+            GitLab non configuré
+          </span>
+        )}
       </Card>
     </div>
   );

@@ -1,72 +1,71 @@
-// MOCK: GET /monitoring/metrics existe mais non câblé — décommissionner en remplaçant mockMetrics() par un appel réel
 import { useQuery } from '@tanstack/react-query';
+import { monitoringApi } from '@/api/monitoring';
+import { MetricPoint } from '@/types';
 
-export interface SparkPoint { t: number; v: number }
+export type SparkPoint = MetricPoint;
 
 export interface AppMetrics {
   cpu:      { current: number; series: SparkPoint[] };
   ram:      { current: number; series: SparkPoint[] };
+  ramUnit:  'MB' | '%';
   replicas: { current: string };
   uptime:   { current: string };
+  available: boolean;
 }
 
-function fnv1a(str: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
+const UNAVAILABLE: AppMetrics = {
+  cpu:      { current: 0, series: [] },
+  ram:      { current: 0, series: [] },
+  ramUnit:  'MB',
+  replicas: { current: '—' },
+  uptime:   { current: '—' },
+  available: false,
+};
 
-function lcg(seed: number): () => number {
-  let s = seed;
-  return () => {
-    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
-    return s / 0xffffffff;
-  };
-}
+const SHARED_OPTS = {
+  queryKey: ['monitoring-metrics'] as const,
+  queryFn:  monitoringApi.getMetrics,
+  retry:    false,
+  refetchInterval: 30_000,
+  staleTime:       25_000,
+};
 
-function buildSeries(rng: () => number, base: number, spread: number): SparkPoint[] {
-  let prev = base;
-  return Array.from({ length: 20 }, (_, t) => {
-    prev = Math.round(Math.max(1, Math.min(99, prev + (rng() - 0.5) * spread)));
-    return { t, v: prev };
-  });
-}
+export function useAppMetrics(appName: string): AppMetrics {
+  const { data, isError } = useQuery({ ...SHARED_OPTS, enabled: !!appName });
 
-function formatUptime(rng: () => number): string {
-  const days  = Math.floor(rng() * 8);
-  const hours = Math.floor(rng() * 24);
-  const mins  = Math.floor(rng() * 60);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
-}
+  const appData = Array.isArray(data?.apps)
+    ? data!.apps.find((a) => a.app_name === appName)
+    : undefined;
 
-function mockMetrics(appSlug: string): AppMetrics {
-  const rng = lcg(fnv1a(appSlug));
-
-  const cpuBase = 15 + rng() * 45;
-  const ramBase = 35 + rng() * 40;
-
-  const cpuSeries = buildSeries(rng, cpuBase, 18);
-  const ramSeries = buildSeries(rng, ramBase, 12);
+  if (isError || !appData) return UNAVAILABLE;
 
   return {
-    cpu:      { current: cpuSeries[cpuSeries.length - 1].v, series: cpuSeries },
-    ram:      { current: ramSeries[ramSeries.length - 1].v, series: ramSeries },
-    replicas: { current: '1/1' },
-    uptime:   { current: formatUptime(rng) },
+    cpu:      { current: appData.cpu_current,    series: appData.cpu_series },
+    ram:      { current: appData.ram_current_mb, series: appData.ram_series },
+    ramUnit:  'MB',
+    replicas: { current: '—' },
+    uptime:   { current: '—' },
+    available: true,
   };
 }
 
-export function useAppMetrics(appSlug: string): AppMetrics {
-  const { data } = useQuery<AppMetrics>({
-    queryKey: ['app-metrics', appSlug],
-    queryFn: () => Promise.resolve(mockMetrics(appSlug)),
-    staleTime: Infinity,
-    enabled: !!appSlug,
-  });
-  return data ?? mockMetrics(appSlug);
+export function useGroupMetrics(appNames: string[]): AppMetrics {
+  const { data, isError } = useQuery({ ...SHARED_OPTS, enabled: appNames.length > 0 });
+
+  if (isError || !Array.isArray(data?.apps) || appNames.length === 0) return UNAVAILABLE;
+
+  const matched = data!.apps.filter((a) => appNames.includes(a.app_name));
+  if (matched.length === 0) return UNAVAILABLE;
+
+  const avgCpu   = matched.reduce((s, a) => s + a.cpu_current, 0) / matched.length;
+  const totalRam = matched.reduce((s, a) => s + a.ram_current_mb, 0);
+
+  return {
+    cpu:      { current: avgCpu,   series: [] },
+    ram:      { current: totalRam, series: [] },
+    ramUnit:  'MB',
+    replicas: { current: '—' },
+    uptime:   { current: '—' },
+    available: true,
+  };
 }

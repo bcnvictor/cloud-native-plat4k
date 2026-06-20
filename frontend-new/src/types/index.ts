@@ -113,12 +113,15 @@ export interface LogEntry {
   pod?: string;
 }
 
+export interface MetricPoint { t: number; v: number }
+
 export interface MonitoringMetrics {
   apps: Array<{
     app_name: string;
-    cpu_percent: number;
-    ram_mb: number;
-    cost_estimate: number;
+    cpu_current: number;
+    cpu_series: MetricPoint[];
+    ram_current_mb: number;
+    ram_series: MetricPoint[];
   }>;
 }
 

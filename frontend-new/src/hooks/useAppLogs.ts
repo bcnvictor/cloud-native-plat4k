@@ -6,7 +6,6 @@ interface UseAppLogsOptions {
   appSlug: string;
   level?: string;
   search?: string;
-  live?: boolean;
   limit?: number;
 }
 
@@ -14,7 +13,6 @@ export function useAppLogs({
   appSlug,
   level,
   search,
-  live = false,
   limit = 200,
 }: UseAppLogsOptions) {
   return useQuery<LogEntry[]>({
@@ -31,7 +29,7 @@ export function useAppLogs({
       }
       return entries;
     },
-    refetchInterval: live ? 3000 : false,
-    staleTime: live ? 0 : 30000,
+    refetchInterval: 5_000,
+    staleTime: 0,
   });
 }
