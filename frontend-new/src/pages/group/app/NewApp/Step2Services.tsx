@@ -23,18 +23,21 @@ const SERVICES = [
     icon: <IconDatabase size={18} />,
     label: 'Base de données',
     desc: 'PostgreSQL managé dans le cluster',
+    soon: false,
   },
   {
     key: 'auth' as const,
     icon: <IconLock size={18} />,
     label: 'Authentification',
     desc: 'Keycloak — SSO et gestion des utilisateurs',
+    soon: true,
   },
   {
     key: 'cache' as const,
     icon: <IconBolt size={18} />,
     label: 'Cache',
     desc: 'Redis — cache en mémoire',
+    soon: true,
   },
 ];
 
@@ -57,13 +60,23 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
           <div
             key={svc.key}
             className={cn(
-              'border-2 rounded-md transition-colors',
-              enabled ? 'border-foreground' : 'border-border'
+              'border-2 rounded-md transition-colors bg-card',
+              svc.soon
+                ? 'border-border opacity-60'
+                : enabled
+                ? 'border-foreground'
+                : 'border-border'
             )}
           >
             <button
-              className="w-full flex items-center gap-3 p-4 text-left"
+              type="button"
+              disabled={svc.soon}
+              className={cn(
+                'w-full flex items-center gap-3 p-4 text-left',
+                svc.soon ? 'cursor-not-allowed' : 'cursor-pointer'
+              )}
               onClick={() => {
+                if (svc.soon) return;
                 if (svc.key === 'database') {
                   onChange({ database: { ...data.database, enabled: !data.database.enabled } });
                 } else if (svc.key === 'auth') {
@@ -78,13 +91,15 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
                 <p className="text-sm font-medium text-foreground">{svc.label}</p>
                 <p className="text-xs text-muted-foreground">{svc.desc}</p>
               </div>
-              <span>
-                {enabled ? (
-                  <IconCircleCheckFilled size={18} className="text-info" />
-                ) : (
-                  <span className="h-[18px] w-[18px] rounded-full border-2 border-border block" />
-                )}
-              </span>
+              {svc.soon ? (
+                <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                  Bientôt
+                </span>
+              ) : enabled ? (
+                <IconCircleCheckFilled size={18} className="text-info" />
+              ) : (
+                <span className="h-[18px] w-[18px] rounded-full border-2 border-border block" />
+              )}
             </button>
 
             {svc.key === 'database' && data.database.enabled && (

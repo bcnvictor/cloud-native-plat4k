@@ -132,10 +132,9 @@ export interface EnvVar {
 }
 
 export interface AppTemplate {
-  id: string;
   name: string;
-  description: string;
-  framework: string;
+  path: string;
+  web_url: string;
 }
 
 export interface GitLabProject {

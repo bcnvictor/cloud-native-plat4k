@@ -20,7 +20,7 @@ function RecapSection({
   rows: Array<{ label: string; value: string; mono?: boolean }>;
 }) {
   return (
-    <div className="border border-border rounded-md overflow-hidden">
+    <div className="border border-border rounded-md overflow-hidden bg-card">
       <div className="px-4 py-2.5 bg-background-subtle border-b border-border">
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           {title}
