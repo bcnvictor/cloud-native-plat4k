@@ -7,6 +7,8 @@ import { NavItems } from './NavItems';
 import { Avatar } from '@/components/Avatar';
 import { Dropdown } from '@/components/ui/Dropdown';
 
+const notificationCount = 0;
+
 export function TopNav() {
   const { user, clearAuth } = useAuthStore();
   const navigate = useNavigate();
@@ -19,7 +21,8 @@ export function TopNav() {
 
   return (
     <header
-      className="fixed top-0 left-0 right-0 z-40 flex items-center h-12 px-4 border-b border-zinc-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
+      className="fixed top-0 left-0 right-0 z-40 flex items-center h-12 px-4 border-b border-zinc-200 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-[8px]"
+      style={{ background: 'rgba(255,255,255,0.85)' }}
     >
       {/* Logo */}
       <Link to="/" className="shrink-0">
@@ -29,7 +32,7 @@ export function TopNav() {
       </Link>
 
       {/* Divider */}
-      <div className="w-px h-4 bg-border mx-2 shrink-0" />
+      <div className="w-px h-4 bg-zinc-200 mx-2 shrink-0" />
 
       {/* Left: scope switcher */}
       <div className="flex items-center shrink-0 mr-4">
@@ -50,10 +53,15 @@ export function TopNav() {
           <IconSearch size={16} />
         </button>
         <button
-          className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          className="relative h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
           aria-label="Notifications"
         >
           <IconBell size={16} />
+          {notificationCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-danger text-white text-[10px] flex items-center justify-center leading-none">
+              {notificationCount > 9 ? '9+' : notificationCount}
+            </span>
+          )}
         </button>
 
         {user && (

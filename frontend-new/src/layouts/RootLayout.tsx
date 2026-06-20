@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import { TopNav } from '@/components/nav/TopNav';
+import { Toaster } from '@/components/ui/toast';
 
 export function RootLayout() {
   return (
@@ -8,6 +9,7 @@ export function RootLayout() {
       <main className="pt-topnav min-h-screen max-w-[1440px] mx-auto px-8">
         <Outlet />
       </main>
+      <Toaster />
     </>
   );
 }

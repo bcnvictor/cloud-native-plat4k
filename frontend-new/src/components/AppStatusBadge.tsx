@@ -27,6 +27,11 @@ export function AppStatusBadge({
       {showDot && (
         isAnimated ? (
           <IconLoader2 size={10} className="animate-spin shrink-0" />
+        ) : status === 'healthy' ? (
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
+          </span>
         ) : (
           <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', STATUS_DOT[status])} />
         )

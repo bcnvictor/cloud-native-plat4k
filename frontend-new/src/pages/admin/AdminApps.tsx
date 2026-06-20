@@ -7,7 +7,7 @@ import { appsApi } from '@/api/apps';
 import { groupsApi } from '@/api/groups';
 import { AppStatusBadge } from '@/components/AppStatusBadge';
 import { Button } from '@/components/ui/Button';
-import { Spinner } from '@/components/ui/Spinner';
+import { Skeleton } from '@/components/ui/skeleton';
 import { getAppHealth } from '@/utils/appHealth';
 
 export function AdminApps() {
@@ -46,43 +46,47 @@ export function AdminApps() {
         </Button>
       </div>
 
-      {isLoading ? (
-        <div className="flex justify-center py-16"><Spinner size="lg" /></div>
-      ) : (
-        <div className="bg-card border border-border rounded-md overflow-hidden">
-          {/* Header */}
-          <div className="grid grid-cols-[24px_1fr_1fr_1fr_1fr] gap-4 px-4 py-2 border-b border-border bg-background-subtle">
-            {['', 'Nom', 'Groupe', 'Cluster', 'Origine'].map((h) => (
-              <p key={h} className="text-xs font-medium text-muted-foreground">{h}</p>
-            ))}
-          </div>
-
-          {/* Rows */}
-          {apps.map((app) => {
-            const health = getAppHealth(app);
-            return (
-              <div
-                key={app.id}
-                className="grid grid-cols-[24px_1fr_1fr_1fr_1fr] gap-4 px-4 py-2.5 border-b border-border last:border-0 items-center hover:bg-accent transition-colors"
-              >
-                <AppStatusBadge status={health} showDot size="sm" />
-                <p className="text-sm font-medium text-foreground truncate">{app.name}</p>
-                <p className="text-sm text-muted-foreground truncate">
-                  {groupName(app.owning_gitlab_group_id)}
-                </p>
-                <p className="text-xs font-mono text-muted-foreground">—</p>
-                <p className="text-xs text-muted-foreground">{app.origin ?? 'scaffold'}</p>
-              </div>
-            );
-          })}
-
-          {apps.length === 0 && (
-            <p className="px-4 py-8 text-sm text-muted-foreground text-center">
-              Aucune application.
-            </p>
-          )}
+      <div className="bg-card border border-border rounded-md overflow-hidden">
+        {/* Header */}
+        <div className="grid grid-cols-[24px_1fr_1fr_1fr_1fr] gap-4 px-4 py-2 border-b border-border bg-background-subtle">
+          {['', 'Nom', 'Groupe', 'Cluster', 'Origine'].map((h) => (
+            <p key={h} className="text-xs font-medium text-muted-foreground">{h}</p>
+          ))}
         </div>
-      )}
+
+        {isLoading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="px-4 py-3 border-b border-border last:border-0">
+              <Skeleton className="h-6 w-full rounded" />
+            </div>
+          ))
+        ) : (
+          <>
+            {apps.map((app) => {
+              const health = getAppHealth(app);
+              return (
+                <div
+                  key={app.id}
+                  className="grid grid-cols-[24px_1fr_1fr_1fr_1fr] gap-4 px-4 py-2.5 border-b border-border last:border-0 items-center hover:bg-accent transition-colors"
+                >
+                  <AppStatusBadge status={health} showDot size="sm" />
+                  <p className="text-sm font-medium text-foreground truncate">{app.name}</p>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {groupName(app.owning_gitlab_group_id)}
+                  </p>
+                  <p className="text-xs font-mono text-muted-foreground">—</p>
+                  <p className="text-xs text-muted-foreground">{app.origin ?? 'scaffold'}</p>
+                </div>
+              );
+            })}
+            {apps.length === 0 && (
+              <p className="px-4 py-8 text-sm text-muted-foreground text-center">
+                Aucune application.
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

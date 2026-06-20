@@ -2,13 +2,13 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   IconChevronDown,
-  IconServer2,
+  IconBuilding,
+  IconServer,
 } from '@tabler/icons-react';
 import { groupsApi } from '@/api/groups';
 import { useAuthStore } from '@/store/auth';
 import { useScopeStore } from '@/store/scope';
 import { Dropdown, DropdownItem } from '@/components/ui/Dropdown';
-import { Avatar } from '@/components/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
 
@@ -57,7 +57,7 @@ export function ScopeSwitcher() {
                 <Badge variant="primary">admin</Badge>
               </span>
             ),
-            icon: <IconServer2 size={14} />,
+            icon: <IconServer size={14} className="text-primary" />,
             active: activeScope === 'admin',
             onClick: () => navigate('/admin/clusters'),
           },
@@ -70,13 +70,13 @@ export function ScopeSwitcher() {
   const triggerLabel =
     activeScope === 'admin' ? (
       <span className="flex items-center gap-2">
-        <IconServer2 size={16} className="text-muted-foreground shrink-0" />
+        <IconServer size={16} className="text-primary shrink-0" />
         <span className="text-sm font-medium">Plateforme</span>
         <Badge variant="primary">admin</Badge>
       </span>
     ) : activeGroup ? (
       <span className="flex items-center gap-2">
-        <Avatar name={activeGroup.name} size="sm" shape="rounded" />
+        <IconBuilding size={16} className="text-primary shrink-0" />
         <span className="text-sm font-medium max-w-[120px] truncate">
           {activeGroup.name}
         </span>

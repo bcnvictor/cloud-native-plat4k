@@ -18,8 +18,8 @@ export function AppRow({ app, healthStatus, onClick }: AppRowProps) {
     <button
       onClick={onClick}
       className={cn(
-        'w-full flex items-center gap-3 px-4 py-4 text-left transition-colors',
-        'border-b border-border last:border-0 hover:bg-accent',
+        'w-full flex items-center gap-3 px-4 py-3 text-left',
+        'bg-white rounded-lg border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm transition-all cursor-pointer',
         isProvisioning && 'opacity-70'
       )}
     >
@@ -29,10 +29,17 @@ export function AppRow({ app, healthStatus, onClick }: AppRowProps) {
 
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-foreground truncate">{app.name}</p>
-        <p className="text-xs text-muted-foreground">
-          {app.origin ?? 'scaffold'} · déployé{' '}
-          {timeAgo(app.updated_at ?? app.created_at)}
-        </p>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <p className="text-xs text-muted-foreground">
+            {app.origin ?? 'scaffold'} · déployé{' '}
+            {timeAgo(app.updated_at ?? app.created_at)}
+          </p>
+          {app.framework && (
+            <span className="font-mono text-xs text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
+              {app.framework}
+            </span>
+          )}
+        </div>
       </div>
 
       <AppStatusBadge status={healthStatus} />

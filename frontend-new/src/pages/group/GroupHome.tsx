@@ -10,22 +10,22 @@ import {
   IconAlertTriangle,
   IconBox,
   IconUserPlus,
+  IconUsers,
 } from '@tabler/icons-react';
+import { Button } from '@/components/ui/Button';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useGroupApps } from '@/hooks/useGroupApps';
+import { useAppMetrics } from '@/hooks/useAppMetrics';
 import { useScopeStore } from '@/store/scope';
 import { useAuthStore } from '@/store/auth';
-import { monitoringApi } from '@/api/monitoring';
 import { appsApi } from '@/api/apps';
+import { getAppHealth } from '@/utils/appHealth';
 import { MetricCard } from '@/components/MetricCard';
 import { Card } from '@/components/ui/Card';
 import { Avatar } from '@/components/Avatar';
 import { timeAgo } from '@/utils/timeAgo';
 import { ActivityEvent } from '@/types';
-import { getAppHealth } from '@/utils/appHealth';
 
-const SPARK_CPU = [22,28,24,31,40,38,45,52,48,55,58,54,60,57,51,47,43,49,53,50].map((v,t) => ({ t, v }));
-const SPARK_RAM = [42,44,47,49,48,52,55,57,60,62,64,61,65,68,70,72,69,71,73,74].map((v,t) => ({ t, v }));
 
 const MOCK_ACTIVITY: ActivityEvent[] = [
   { id: '1', type: 'deploy_success', appName: 'auth-service', timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString() },
@@ -73,17 +73,13 @@ export function GroupHome() {
   const group = useCurrentGroup();
   const { setScope } = useScopeStore();
   const { user } = useAuthStore();
+  const groupMetrics = useAppMetrics(slug ?? '');
 
   useEffect(() => {
     if (slug) setScope('group', slug);
   }, [slug, setScope]);
 
   const { data: apps = [] } = useGroupApps(group?.gitlab_group_id);
-  const { data: metrics } = useQuery({
-    queryKey: ['monitoring-metrics'],
-    queryFn: monitoringApi.getMetrics,
-    staleTime: 60_000,
-  });
 
   const groupAppIds = apps.map((a) => a.id);
   const { data: members = [] } = useQuery({
@@ -92,17 +88,42 @@ export function GroupHome() {
     enabled: groupAppIds.length > 0,
   });
 
-  const healthyCount = apps.filter((a) => getAppHealth(a) === 'healthy').length;
-  const deployments7d = 12; // mock
+  const statusCounts = apps.reduce<Record<string, number>>((acc, a) => {
+    const s = getAppHealth(a);
+    acc[s] = (acc[s] ?? 0) + 1;
+    return acc;
+  }, {});
 
-  const groupMetrics = metrics?.apps?.filter((m) =>
-    apps.some((a) => a.name === m.app_name)
+  const STATUS_COLORS: Record<string, { dot: string; label: string }> = {
+    healthy:      { dot: 'bg-success',  label: 'text-success-text' },
+    deploying:    { dot: 'bg-warning',  label: 'text-warning-text' },
+    updating:     { dot: 'bg-warning',  label: 'text-warning-text' },
+    unhealthy:    { dot: 'bg-danger',   label: 'text-danger-text' },
+    stopped:      { dot: 'bg-zinc-400', label: 'text-zinc-500' },
+    provisioning: { dot: 'bg-info',     label: 'text-info-text' },
+  };
+
+  const statusBadges = (
+    <div className="flex flex-col gap-1">
+      {Object.entries(statusCounts).map(([status, count]) => {
+        const c = STATUS_COLORS[status] ?? { dot: 'bg-zinc-400', label: 'text-zinc-500' };
+        return (
+          <span key={status} className="inline-flex items-center gap-1">
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${c.dot}`} />
+            <span className={`text-xs font-normal ${c.label}`}>{count} {status}</span>
+          </span>
+        );
+      })}
+      {apps.length === 0 && (
+        <span className="text-xs text-muted-foreground">—</span>
+      )}
+    </div>
   );
-  const totalCpu = groupMetrics?.reduce((s, m) => s + m.cpu_percent, 0) ?? 0;
-  const totalRam = groupMetrics?.reduce((s, m) => s + m.ram_mb, 0) ?? 0;
+
+  const deployments7d = 12;
 
   return (
-    <div className="py-6">
+    <div className="pt-8 pb-6">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-foreground">{group?.name ?? '…'}</h1>
         <p className="text-sm text-muted-foreground">
@@ -115,27 +136,27 @@ export function GroupHome() {
       <div className="grid grid-cols-4 gap-4 mb-6">
         <MetricCard
           label="CPU agrégé"
-          value={totalCpu.toFixed(1)}
+          value={groupMetrics.cpu.current.toFixed(1)}
           unit="%"
           icon={<IconCpu size={14} />}
-          sparkline={SPARK_CPU}
+          sparkline={groupMetrics.cpu.series}
         />
         <MetricCard
           label="RAM agrégée"
-          value={(totalRam / 1024).toFixed(1)}
-          unit="Gi"
+          value={groupMetrics.ram.current.toFixed(1)}
+          unit="%"
           icon={<IconDatabase size={14} />}
-          sparkline={SPARK_RAM}
+          sparkline={groupMetrics.ram.series}
         />
         <MetricCard
           label="Apps par statut"
-          value={`${healthyCount}/${apps.length}`}
-          sublabel="healthy"
+          value={statusBadges}
           icon={<IconApps size={14} />}
         />
         <MetricCard
           label="Deployments 7j"
           value={deployments7d}
+          sublabel={<span className="text-success-text">+2 vs semaine dernière</span>}
           icon={<IconActivity size={14} />}
         />
       </div>
@@ -147,12 +168,12 @@ export function GroupHome() {
           <div className="px-4 py-3 border-b border-border">
             <h2 className="text-sm font-medium text-foreground">Activité récente</h2>
           </div>
-          <ul className="divide-y divide-border">
+          <ul className="divide-y divide-zinc-100">
             {MOCK_ACTIVITY.map((ev) => (
               <li key={ev.id} className="flex items-center gap-3 px-4 py-2.5">
                 <span className="shrink-0">{ACTIVITY_ICON[ev.type]}</span>
                 <span className="flex-1 text-xs text-foreground">{activityLabel(ev)}</span>
-                <span className="text-xs text-muted-foreground shrink-0">
+                <span className="text-xs text-zinc-400 shrink-0">
                   {timeAgo(ev.timestamp)}
                 </span>
               </li>
@@ -171,9 +192,19 @@ export function GroupHome() {
               Gérer
             </button>
           </div>
-          <ul className="divide-y divide-border">
+          <ul className="divide-y divide-zinc-100">
             {members.length === 0 ? (
-              <li className="px-4 py-3 text-xs text-muted-foreground">Aucun membre</li>
+              <li className="flex flex-col items-center justify-center gap-3 px-4 py-8">
+                <IconUsers size={24} className="text-zinc-300" />
+                <span className="text-sm text-zinc-400">Aucun membre pour l'instant</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate(`/groups/${slug}/settings`)}
+                >
+                  Inviter un membre
+                </Button>
+              </li>
             ) : (
               members.map((m, i) => (
                 <li key={i} className="flex items-center gap-3 px-4 py-2.5">
