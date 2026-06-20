@@ -74,6 +74,10 @@ export const appsApi = {
     await api.delete(`/apps/${appId}/members/${userId}`);
   },
 
+  async deleteApp(id: number): Promise<void> {
+    await api.delete(`/apps/${id}`);
+  },
+
   async getEnvVars(_appId: number): Promise<EnvVar[]> {
     // Not in backend yet — return empty for S1
     return [];

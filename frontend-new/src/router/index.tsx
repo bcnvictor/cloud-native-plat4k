@@ -17,6 +17,9 @@ import { Clusters } from '@/pages/admin/Clusters';
 import { FinOps } from '@/pages/admin/FinOps';
 import { AdminApps } from '@/pages/admin/AdminApps';
 import { AdminSettings } from '@/pages/admin/AdminSettings';
+import { AdminUsers } from '@/pages/admin/AdminUsers';
+import { AdminAudit } from '@/pages/admin/AdminAudit';
+import { Profile } from '@/pages/Profile';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -56,7 +59,21 @@ export const router = createBrowserRouter([
           { path: '/admin/clusters', element: <Clusters /> },
           { path: '/admin/finops', element: <FinOps /> },
           { path: '/admin/apps', element: <AdminApps /> },
+          { path: '/admin/users', element: <AdminUsers /> },
+          { path: '/admin/audit', element: <AdminAudit /> },
           { path: '/admin/settings', element: <AdminSettings /> },
+        ],
+      },
+    ],
+  },
+
+  {
+    element: <ProtectedRoute />,
+    children: [
+      {
+        element: <RootLayout />,
+        children: [
+          { path: '/profile', element: <Profile /> },
         ],
       },
     ],

@@ -25,6 +25,8 @@ function StatusIcon({ status }: { status: DeploymentStatus }) {
   return <IconLoader2 size={16} className="text-muted-foreground animate-spin" />;
 }
 
+// MOCK: commitMessage, branch, duration, author, imageTag, gitlabPipelineUrl sont générés côté client
+// décommissionner quand ces champs sont stockés en DB et renvoyés par GET /deployments/
 function enrichDeployment(d: Deployment, index: number) {
   return {
     ...d,

@@ -1,24 +1,27 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { IconEye, IconEyeOff, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { appsApi } from '@/api/apps';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { EnvVar } from '@/types';
 import { computeSlug } from '@/utils/slugify';
 
 export function SettingsTab() {
   const { app, isLoading } = useAppDetail();
-  const { appSlug } = useParams<{ appSlug: string }>();
+  const { slug, appSlug } = useParams<{ slug: string; appSlug: string }>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
 
   const [name, setName] = useState(app?.name ?? '');
   const [description, setDescription] = useState('');
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
   const [maskedKeys, setMaskedKeys] = useState<Set<string>>(new Set());
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (app) setName(app.name);
@@ -27,6 +30,11 @@ export function SettingsTab() {
   const updateMutation = useMutation({
     mutationFn: () => appsApi.updateApp(app!.id, { name }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['app', appSlug] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => appsApi.deleteApp(app!.id),
+    onSuccess: () => navigate(`/groups/${slug}/apps`),
   });
 
   function addEnvVar() {
@@ -48,7 +56,7 @@ export function SettingsTab() {
 
   if (isLoading || !app) return null;
 
-  const slug = computeSlug(app.name);
+  const appSlugComputed = computeSlug(app.name);
 
   return (
     <div className="flex flex-col gap-5 max-w-2xl">
@@ -63,7 +71,7 @@ export function SettingsTab() {
           />
           <Input
             label="Slug"
-            value={slug}
+            value={appSlugComputed}
             readOnly
             mono
             hint="Le slug est immuable."
@@ -90,6 +98,7 @@ export function SettingsTab() {
       </Card>
 
       {/* Env vars */}
+      {/* MOCK: getEnvVars/updateEnvVars sont des stubs côté api/apps.ts — décommissionner quand le backend expose GET/PUT /apps/:id/envvars */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-medium text-foreground">Variables d'environnement</h2>
@@ -168,6 +177,28 @@ export function SettingsTab() {
           </>
         )}
       </Card>
+      {/* Danger Zone */}
+      <Card className="border-danger/30">
+        <h2 className="text-sm font-medium text-danger mb-1">Zone de danger</h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          La suppression est irréversible.
+          {app.origin === 'scaffold' && ' Le dépôt GitLab associé sera également supprimé.'}
+        </p>
+        <Button variant="danger" size="sm" onClick={() => setDeleteOpen(true)}>
+          Supprimer cette application
+        </Button>
+      </Card>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={() => deleteMutation.mutate()}
+        title="Supprimer l'application"
+        description={`Confirmez la suppression de « ${app.name} ». Cette action est irréversible.`}
+        confirmLabel="Supprimer"
+        variant="danger"
+        loading={deleteMutation.isPending}
+      />
     </div>
   );
 }

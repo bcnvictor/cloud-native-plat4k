@@ -27,6 +27,7 @@ import { timeAgo } from '@/utils/timeAgo';
 import { ActivityEvent } from '@/types';
 
 
+// MOCK: pas d'endpoint activity feed — décommissionner quand GET /groups/:id/activity existe
 const MOCK_ACTIVITY: ActivityEvent[] = [
   { id: '1', type: 'deploy_success', appName: 'auth-service', timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString() },
   { id: '2', type: 'provisioning', appName: 'api-gateway', timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString() },
@@ -120,6 +121,7 @@ export function GroupHome() {
     </div>
   );
 
+  // MOCK: hardcodé — décommissionner en calculant depuis GET /deployments/?group_id=...&since=7d
   const deployments7d = 12;
 
   return (

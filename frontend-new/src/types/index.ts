@@ -186,3 +186,32 @@ export interface CiDeployConfig {
   targetClusterId: number | null;
   advancedOpen: boolean;
 }
+
+export interface ApiKey {
+  id: number;
+  label: string;
+  key_prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  is_active: boolean;
+}
+
+export interface AuditLog {
+  id: number;
+  user_id: number | null;
+  action: string;
+  cloud?: string | null;
+  resource_id?: string | null;
+  ip_address?: string | null;
+  created_at: string;
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  role: UserRole;
+  is_active: boolean;
+  is_admin: boolean;
+  gitlab_user_id: number | null;
+  created_at: string;
+}

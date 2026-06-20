@@ -1,3 +1,4 @@
+// MOCK: GET /monitoring/metrics existe mais non câblé — décommissionner en remplaçant mockMetrics() par un appel réel
 import { useQuery } from '@tanstack/react-query';
 
 export interface SparkPoint { t: number; v: number }
