@@ -41,6 +41,7 @@ services:
       - CLI_REDIRECT_BASE_URL=${CLI_REDIRECT_BASE_URL:-http://localhost:8765}
       - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-["http://localhost:3000","http://localhost"]}
       - KUBECONFIG_PATH=/tmp/kubeconfig
+      - KUBECONFIG_DIR=${KUBECONFIG_DIR:-}
       - K8S_TARGET_NAMESPACE=${K8S_TARGET_NAMESPACE:-default}
       - K8S_IMAGE_PULL_SECRET=${K8S_IMAGE_PULL_SECRET:-}
       - GITLAB_BASE_URL=${GITLAB_BASE_URL:-https://gitlab.com}
@@ -61,6 +62,10 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ~/.kube/config:/tmp/kubeconfig:ro
+      # Kubeconfigs multi-cluster auto-découverts en ClusterConnection (ex: cloud privé k3s cnp-k3s).
+      # En prod, pointer KUBECONFIG_DIR_HOST sur le dossier hôte (ex: /etc/cnp/kubeconfigs) et
+      # KUBECONFIG_DIR sur la cible montée ci-dessous pour activer la discovery (cf. ADR-0017).
+      - ${KUBECONFIG_DIR_HOST:-./infra/oracle/k3s/kubeconfigs}:/etc/cnp/kubeconfigs:ro
     depends_on:
       db:
         condition: service_healthy

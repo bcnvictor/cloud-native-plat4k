@@ -1,7 +1,9 @@
 import logging
+import os
 from typing import Optional
 
 from kubernetes import client, config
+from kubernetes.client import Configuration
 from kubernetes.client.exceptions import ApiException
 from kubernetes.config.config_exception import ConfigException
 
@@ -11,10 +13,18 @@ logger = logging.getLogger(__name__)
 
 
 class KubernetesClient:
-    def __init__(self):
-        self._core_v1: Optional[client.CoreV1Api] = None
-        self._apps_v1: Optional[client.AppsV1Api] = None
-        self._load_config()
+    def __init__(
+        self,
+        core_v1: Optional[client.CoreV1Api] = None,
+        apps_v1: Optional[client.AppsV1Api] = None,
+        load_default: bool = True,
+    ):
+        # Quand des API objects sont fournis (client par-cluster construit via
+        # ``from_kubeconfig``), on ne touche pas à la config kubernetes globale.
+        self._core_v1: Optional[client.CoreV1Api] = core_v1
+        self._apps_v1: Optional[client.AppsV1Api] = apps_v1
+        if core_v1 is None and apps_v1 is None and load_default:
+            self._load_config()
 
     def _load_config(self) -> None:
         try:
@@ -29,6 +39,22 @@ class KubernetesClient:
             self._apps_v1 = client.AppsV1Api()
         except (ConfigException, OSError) as e:
             logger.warning("Kubernetes config unavailable, client disabled: %s", e)
+
+    @classmethod
+    def from_kubeconfig(cls, kubeconfig_path: str, context: Optional[str] = None) -> "KubernetesClient":
+        """Construit un client isolé pointant vers un cluster donné.
+
+        Utilise une ``Configuration`` dédiée (jamais la config globale du process), comme
+        ``health_worker.probe_cluster``, pour que plusieurs clients par-cluster coexistent
+        sans interférence.
+        """
+        cfg = Configuration()
+        config.load_kube_config(config_file=kubeconfig_path, context=context, client_configuration=cfg)
+        api_client = client.ApiClient(configuration=cfg)
+        return cls(
+            core_v1=client.CoreV1Api(api_client=api_client),
+            apps_v1=client.AppsV1Api(api_client=api_client),
+        )
 
     @property
     def core_v1(self) -> client.CoreV1Api:
@@ -111,3 +137,28 @@ class KubernetesClient:
 
 
 k8s_client = KubernetesClient()
+
+
+def client_for_cluster(cluster) -> KubernetesClient:
+    """Retourne le client Kubernetes ciblant une ``ClusterConnection`` donnée.
+
+    Résout la dette documentée dans l'ADR-0008 : le déploiement est désormais routé vers
+    le cluster désigné par ``cluster_id`` plutôt que vers le singleton global.
+
+    - ``kubeconfig_secret_ref`` est un fichier kubeconfig lisible -> client dédié construit
+      à partir de ce fichier, en sélectionnant le contexte ``cluster.name`` (convention de
+      ``discovery.py``). C'est le cas du cluster privé k3s `cnp-k3s` enregistré via
+      ``KUBECONFIG_DIR``.
+    - sinon (ref vide, secret K8s non monté, etc.) -> repli sur le client global
+      (in-cluster / ``KUBECONFIG_PATH``), c.-à-d. le cluster AKS par défaut.
+    """
+    ref = getattr(cluster, "kubeconfig_secret_ref", None)
+    if ref and os.path.isfile(ref):
+        try:
+            return KubernetesClient.from_kubeconfig(ref, context=cluster.name)
+        except (ConfigException, OSError) as e:
+            logger.warning(
+                "Cluster %s: cannot build client from kubeconfig '%s' (%s) — falling back to global client",
+                cluster.name, ref, e,
+            )
+    return k8s_client

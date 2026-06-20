@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
 from backend.db.models import Application, ClusterConnection, Deployment
-from backend.k8s.client import k8s_client
+from backend.k8s.client import client_for_cluster
 from backend.k8s.manifests import build_deployment, build_service, sanitize_k8s_name
 
 logger = logging.getLogger(__name__)
@@ -85,8 +85,16 @@ class DeploymentService:
         namespace = settings.K8S_TARGET_NAMESPACE
         image = f"{app.repo_url}:{payload.version}"
 
-        if not k8s_client.is_configured():
-            logger.error("Kubernetes client not configured; cannot deploy %s", resource_name)
+        # Routage par cluster : on instancie le client K8s à partir du kubeconfig de la
+        # ClusterConnection ciblée (ADR-0008 dette résolue / ADR-0017), au lieu d'un
+        # singleton global figé sur le cluster AKS.
+        target_client = client_for_cluster(cluster)
+
+        if not target_client.is_configured():
+            logger.error(
+                "Kubernetes client for cluster %s not configured; cannot deploy %s",
+                cluster.name, resource_name,
+            )
             deployment.status = DeploymentStatus.FAILED
             await self.db.commit()
             await self.db.refresh(deployment)
@@ -102,10 +110,10 @@ class DeploymentService:
             k8s_service = build_service(name=resource_name, namespace=namespace)
 
             await anyio.to_thread.run_sync(
-                partial(k8s_client.apply_deployment, namespace, k8s_deployment)
+                partial(target_client.apply_deployment, namespace, k8s_deployment)
             )
             await anyio.to_thread.run_sync(
-                partial(k8s_client.apply_service, namespace, k8s_service)
+                partial(target_client.apply_service, namespace, k8s_service)
             )
 
             deployment.status = DeploymentStatus.RUNNING

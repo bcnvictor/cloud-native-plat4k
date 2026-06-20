@@ -1,0 +1,8 @@
+# Kubeconfigs récupérés (contiennent les credentials d'admin du cluster) — jamais versionnés.
+cnp-k3s.yaml
+*.kubeconfig
+*.yaml.local
+
+# Kubeconfigs déposés ici sont montés dans le backend mais jamais versionnés.
+kubeconfigs/*
+!kubeconfigs/.gitkeep
