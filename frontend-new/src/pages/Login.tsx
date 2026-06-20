@@ -1,0 +1,89 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { authApi } from '@/api/auth';
+import { useAuthStore } from '@/store/auth';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { IconBrandGitlab } from '@tabler/icons-react';
+
+export function Login() {
+  const navigate = useNavigate();
+  const { setAuth } = useAuthStore();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const { access_token } = await authApi.login(email, password);
+      // Fetch user profile with the token explicitly — store isn't populated yet
+      const user = await authApi.meWithToken(access_token);
+      setAuth(access_token, user);
+      navigate('/');
+    } catch {
+      setError('Email ou mot de passe incorrect.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-dotted">
+      <div className="w-full max-w-sm">
+        <div className="bg-card border border-border rounded-lg p-8 shadow-sm">
+          <h1 className="text-xl font-semibold text-foreground mb-1">
+            Cloud Native Platform
+          </h1>
+          <p className="text-sm text-muted-foreground mb-6">
+            Connectez-vous à votre espace
+          </p>
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <Input
+              label="Email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+              autoFocus
+            />
+            <Input
+              label="Mot de passe"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+            />
+
+            {error && <p className="text-xs text-danger-text">{error}</p>}
+
+            <Button variant="primary" type="submit" loading={loading} className="w-full justify-center mt-1">
+              Se connecter
+            </Button>
+          </form>
+
+          <div className="flex items-center gap-3 my-4">
+            <div className="flex-1 border-t border-border" />
+            <span className="text-xs text-muted-foreground">ou</span>
+            <div className="flex-1 border-t border-border" />
+          </div>
+
+          <Button
+            variant="secondary"
+            className="w-full justify-center"
+            icon={<IconBrandGitlab size={16} />}
+            onClick={() => authApi.initiateGitLab()}
+          >
+            Continuer avec GitLab
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
