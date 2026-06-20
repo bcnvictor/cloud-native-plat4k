@@ -32,7 +32,7 @@ export function AdminApps() {
   }
 
   return (
-    <div className="py-6">
+    <div className="max-w-[1440px] mx-auto px-8 py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <Breadcrumb items={[{ label: 'Plateforme', to: '/admin/clusters' }, { label: 'Apps' }]} />
@@ -48,8 +48,8 @@ export function AdminApps() {
 
       <div className="bg-card border border-border rounded-md overflow-hidden">
         {/* Header */}
-        <div className="grid grid-cols-[24px_1fr_1fr_1fr_1fr] gap-4 px-4 py-2 border-b border-border bg-background-subtle">
-          {['', 'Nom', 'Groupe', 'Cluster', 'Origine'].map((h) => (
+        <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-4 px-4 py-2 border-b border-border bg-background-subtle">
+          {['Nom', 'Groupe', 'Cluster', 'Origine'].map((h) => (
             <p key={h} className="text-xs font-medium text-muted-foreground">{h}</p>
           ))}
         </div>
@@ -67,10 +67,12 @@ export function AdminApps() {
               return (
                 <div
                   key={app.id}
-                  className="grid grid-cols-[24px_1fr_1fr_1fr_1fr] gap-4 px-4 py-2.5 border-b border-border last:border-0 items-center hover:bg-accent transition-colors"
+                  className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-4 px-4 py-2.5 border-b border-border last:border-0 items-center hover:bg-accent transition-colors"
                 >
-                  <AppStatusBadge status={health} showDot size="sm" />
-                  <p className="text-sm font-medium text-foreground truncate">{app.name}</p>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <AppStatusBadge status={health} showDot size="sm" />
+                    <p className="text-sm font-medium text-foreground truncate">{app.name}</p>
+                  </div>
                   <p className="text-sm text-muted-foreground truncate">
                     {groupName(app.owning_gitlab_group_id)}
                   </p>

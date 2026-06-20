@@ -123,7 +123,7 @@ export function GroupHome() {
   const deployments7d = 12;
 
   return (
-    <div className="pt-8 pb-6">
+    <div className="max-w-[1440px] mx-auto px-8 pt-8 pb-6">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-foreground">{group?.name ?? '…'}</h1>
         <p className="text-sm text-muted-foreground">

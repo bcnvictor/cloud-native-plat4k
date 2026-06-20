@@ -56,91 +56,93 @@ export function AppDetailLayout() {
 
   return (
     <Ctx.Provider value={{ app: app ?? null, isLoading }}>
-      {/* ── Header zone — full-bleed within main ── */}
-      <div className="bg-white border-b border-zinc-200 sticky top-[var(--topnav-height)] z-30 -mx-8 px-8">
-        {/* Breadcrumb */}
-        <div className="pt-3">
-          <Breadcrumb
-            items={[
-              { label: 'Apps', to: `/groups/${slug}/apps` },
-              { label: app?.name ?? appSlug ?? '' },
-            ]}
-          />
-        </div>
-
-        {/* App identity row */}
-        <div className="flex items-center gap-3 pb-3">
-          {isLoading ? (
-            <Spinner size="md" />
-          ) : (
-            <>
-              <div className="w-10 h-10 rounded-xl bg-[#D9F0F7] flex items-center justify-center text-[#007BA7] shrink-0">
-                <IconBrandDocker size={20} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h1 className="text-sm font-semibold text-foreground">{app?.name ?? appSlug}</h1>
-                  {app && <AppStatusBadge status={health} />}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {app?.origin ?? 'scaffold'} · {app?.framework ?? 'app'} · {slug}
-                </p>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {app?.source_url && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={<IconBrandGitlab size={14} />}
-                    onClick={() => window.open(app.source_url!, '_blank')}
-                  >
-                    GitLab
-                  </Button>
-                )}
-                <Button variant="ghost" size="sm">
-                  <IconDots size={15} />
-                </Button>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Unhealthy alert */}
-        {health === 'unhealthy' && (
-          <div className="flex items-center gap-2 py-2 mb-1 px-3 bg-danger-subtle rounded-md text-xs text-danger-text">
-            <span>⚠</span>
-            <span>L'application est en erreur.</span>
-            <button className="underline ml-auto" onClick={() => navigateTo('logs')}>
-              Voir les logs
-            </button>
+      {/* ── Header zone — full-bleed ── */}
+      <div className="bg-white border-b border-zinc-200 sticky top-[var(--topnav-height)] z-30 w-full">
+        <div className="max-w-[1440px] mx-auto px-8">
+          {/* Breadcrumb */}
+          <div className="pt-3">
+            <Breadcrumb
+              items={[
+                { label: 'Apps', to: `/groups/${slug}/apps` },
+                { label: app?.name ?? appSlug ?? '' },
+              ]}
+            />
           </div>
-        )}
 
-        {/* Tab bar — flush to bottom of header */}
-        <div className="flex">
-          {TABS.map((tab) => {
-            const isActive = tab.key === activeTab();
-            return (
-              <button
-                key={tab.key}
-                onClick={() => navigateTo(tab.key)}
-                className={cn(
-                  'px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors',
-                  isActive
-                    ? 'font-medium text-primary border-primary'
-                    : 'text-muted-foreground border-transparent hover:text-foreground'
-                )}
-              >
-                {tab.label}
+          {/* App identity row */}
+          <div className="flex items-center gap-3 pb-3">
+            {isLoading ? (
+              <Spinner size="md" />
+            ) : (
+              <>
+                <div className="w-10 h-10 rounded-xl bg-[#D9F0F7] flex items-center justify-center text-[#007BA7] shrink-0">
+                  <IconBrandDocker size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-sm font-semibold text-foreground">{app?.name ?? appSlug}</h1>
+                    {app && <AppStatusBadge status={health} />}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {app?.origin ?? 'scaffold'} · {app?.framework ?? 'app'} · {slug}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {app?.source_url && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<IconBrandGitlab size={14} />}
+                      onClick={() => window.open(app.source_url!, '_blank')}
+                    >
+                      GitLab
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm">
+                    <IconDots size={15} />
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Unhealthy alert */}
+          {health === 'unhealthy' && (
+            <div className="flex items-center gap-2 py-2 mb-1 px-3 bg-danger-subtle rounded-md text-xs text-danger-text">
+              <span>⚠</span>
+              <span>L'application est en erreur.</span>
+              <button className="underline ml-auto" onClick={() => navigateTo('logs')}>
+                Voir les logs
               </button>
-            );
-          })}
+            </div>
+          )}
+
+          {/* Tab bar — flush to bottom of header */}
+          <div className="flex">
+            {TABS.map((tab) => {
+              const isActive = tab.key === activeTab();
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => navigateTo(tab.key)}
+                  className={cn(
+                    'px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors',
+                    isActive
+                      ? 'font-medium text-primary border-primary'
+                      : 'text-muted-foreground border-transparent hover:text-foreground'
+                  )}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* ── Content zone — gray page background ── */}
-      <div className="-mx-8 bg-[#EBEBEB]">
-        <div className="px-8 py-6">
+      <div className="bg-background-subtle">
+        <div className="max-w-[1440px] mx-auto px-8 py-6">
           <Outlet />
         </div>
       </div>

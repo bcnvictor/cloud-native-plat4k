@@ -20,7 +20,7 @@
      BACKGROUNDS
      ----------------------------------------------------------- */
   --background:          oklch(1 0 0);           /* page bg : blanc pur */
-  --background-subtle:   oklch(0.985 0 0);        /* sidebar, panels */
+  --background-subtle:   oklch(0.968 0 0);        /* sidebar, panels — zinc-100 #F4F4F4 */
   --card:                oklch(1 0 0);
   --card-foreground:     oklch(0.141 0.005 285.823);
   --popover:             oklch(1 0 0);

@@ -28,7 +28,7 @@ export function GroupApps() {
   );
 
   return (
-    <div className="py-6">
+    <div className="max-w-[1440px] mx-auto px-8 py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>

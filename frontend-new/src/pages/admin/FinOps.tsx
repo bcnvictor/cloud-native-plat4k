@@ -35,7 +35,7 @@ export function FinOps() {
   const creditPct = Math.round((data.azureCreditsUsed / data.azureCreditsTotal) * 100);
 
   return (
-    <div className="py-6">
+    <div className="max-w-[1440px] mx-auto px-8 py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <Breadcrumb items={[{ label: 'Plateforme', to: '/admin/clusters' }, { label: 'FinOps' }]} />

@@ -49,7 +49,7 @@ export function AdminSettings() {
   });
 
   return (
-    <div className="py-6">
+    <div className="max-w-[1440px] mx-auto px-8 py-6">
       <Breadcrumb items={[{ label: 'Plateforme', to: '/admin/clusters' }, { label: 'Settings' }]} />
       <h1 className="text-xl font-semibold text-foreground mb-6">Settings plateforme</h1>
       <div className="max-w-2xl flex flex-col gap-6">

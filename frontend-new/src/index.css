@@ -11,7 +11,7 @@
 
   body {
     @apply text-foreground font-sans text-base;
-    background-color: #EBEBEB;
+    background-color: var(--background-subtle);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -29,10 +29,10 @@
 
 /* Non-layered overrides win over @layer utilities — fixes oklch(var()) double-wrap */
 .bg-background        { background-color: oklch(1 0 0); }
-.bg-background-subtle { background-color: oklch(0.985 0 0); }
+.bg-background-subtle { background-color: oklch(0.961 0 0); }
 
 .bg-dotted {
-  background-color: #EBEBEB;
+  background-color: var(--background-subtle);
   background-image: radial-gradient(circle, #C8C8CC 1px, transparent 1px);
   background-size: 20px 20px;
 }
