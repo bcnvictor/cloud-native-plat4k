@@ -7,6 +7,7 @@ import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useScopeStore } from '@/store/scope';
 import { Breadcrumb } from '@/components/Breadcrumb';
 import { appsApi } from '@/api/apps';
+import { groupsApi } from '@/api/groups';
 import { useGroupApps } from '@/hooks/useGroupApps';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -37,9 +38,9 @@ export function GroupSettings() {
   const firstAppId = apps[0]?.id;
 
   const { data: members = [] } = useQuery({
-    queryKey: ['members', firstAppId],
-    queryFn: () => (firstAppId ? appsApi.getMembers(firstAppId) : Promise.resolve([])),
-    enabled: !!firstAppId,
+    queryKey: ['group-members', group?.gitlab_group_id],
+    queryFn: () => groupsApi.getMembers(group!.gitlab_group_id),
+    enabled: !!group?.gitlab_group_id,
   });
 
   const { toast } = useToast();
@@ -59,7 +60,7 @@ export function GroupSettings() {
         : Promise.reject('no app'),
     onSuccess: () => {
       setInviteEmail('');
-      qc.invalidateQueries({ queryKey: ['members', firstAppId] });
+      qc.invalidateQueries({ queryKey: ['group-members', group?.gitlab_group_id] });
       toast({ title: 'Membre invité', description: 'Un email a été envoyé.', variant: 'default' });
     },
     onError: () => {
@@ -158,7 +159,7 @@ export function GroupSettings() {
                   />
                   <button
                     disabled={isOwner}
-                    onClick={() => !isOwner && m.cnp_user_id && appsApi.removeMember(firstAppId!, m.cnp_user_id).then(() => qc.invalidateQueries({ queryKey: ['members', firstAppId] }))}
+                    onClick={() => !isOwner && m.cnp_user_id && appsApi.removeMember(firstAppId!, m.cnp_user_id).then(() => qc.invalidateQueries({ queryKey: ['group-members', group?.gitlab_group_id] }))}
                     className="text-muted-foreground hover:text-danger transition-colors disabled:opacity-30 disabled:pointer-events-none"
                   >
                     <IconTrash size={15} />

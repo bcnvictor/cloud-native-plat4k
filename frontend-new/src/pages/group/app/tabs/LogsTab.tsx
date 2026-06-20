@@ -2,10 +2,12 @@ import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   IconDownload,
+  IconExternalLink,
   IconSearch,
   IconWifiOff,
 } from '@tabler/icons-react';
 import { useAppLogs } from '@/hooks/useAppLogs';
+import { useMonitoringConfig, useLokiUrl } from '@/hooks/useMonitoringConfig';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
@@ -26,20 +28,29 @@ const LEVEL_OPTIONS = [
   { value: 'ERROR', label: 'ERROR' },
 ];
 
+const ENV_OPTIONS = [
+  { value: 'dev', label: 'dev' },
+  { value: 'prod', label: 'prod' },
+];
+
 export function LogsTab() {
   const { appSlug } = useParams<{ appSlug: string }>();
+  const [env, setEnv] = useState('dev');
   const [level, setLevel] = useState('ALL');
   const [search, setSearch] = useState('');
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const topRef = useRef<HTMLDivElement>(null);
+  const grafanaUrl = useMonitoringConfig();
+  const lokiUrl = useLokiUrl(grafanaUrl, appSlug!);
 
   const { data: logs = [], isLoading, isError } = useAppLogs({
     appSlug: appSlug!,
+    namespace: env,
     level,
     search,
   });
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    topRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
   function exportLogs() {
@@ -56,10 +67,10 @@ export function LogsTab() {
       {/* Controls */}
       <div className="flex items-center gap-2 flex-wrap">
         <Select
-          options={[{ value: appSlug!, label: appSlug! }]}
-          value={appSlug!}
-          onChange={() => {}}
-          className="w-40"
+          options={ENV_OPTIONS}
+          value={env}
+          onChange={setEnv}
+          className="w-24"
         />
         <Select
           options={LEVEL_OPTIONS}
@@ -75,6 +86,17 @@ export function LogsTab() {
             suffix={<IconSearch size={13} />}
           />
         </div>
+        {lokiUrl && (
+          <a
+            href={lokiUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <IconExternalLink size={13} />
+            Open in Loki
+          </a>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -102,6 +124,7 @@ export function LogsTab() {
           </p>
         ) : (
           <div className="overflow-auto max-h-[600px] text-xs font-mono">
+            <div ref={topRef} />
             <table className="w-full">
               <tbody>
                 {logs.map((log, i) => (
@@ -125,7 +148,6 @@ export function LogsTab() {
                 ))}
               </tbody>
             </table>
-            <div ref={bottomRef} />
           </div>
         )}
       </div>

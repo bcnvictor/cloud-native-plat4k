@@ -1,5 +1,6 @@
 import React from 'react';
 import { ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { IconExternalLink } from '@tabler/icons-react';
 import { cn } from '@/lib/cn';
 
 export interface SparkPoint { t: number; v: number }
@@ -11,10 +12,11 @@ interface MetricCardProps {
   icon?: React.ReactNode;
   sublabel?: React.ReactNode;
   sparkline?: SparkPoint[];
+  externalUrl?: string;
   className?: string;
 }
 
-export function MetricCard({ label, value, unit, icon, sublabel, sparkline, className }: MetricCardProps) {
+export function MetricCard({ label, value, unit, icon, sublabel, sparkline, externalUrl, className }: MetricCardProps) {
   const isPrimitive = typeof value === 'string' || typeof value === 'number';
 
   return (
@@ -22,7 +24,20 @@ export function MetricCard({ label, value, unit, icon, sublabel, sparkline, clas
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs text-zinc-400 font-normal uppercase tracking-wide">{label}</p>
-          {icon && <span className="text-zinc-300">{icon}</span>}
+          <div className="flex items-center gap-1.5">
+            {icon && <span className="text-zinc-300">{icon}</span>}
+            {externalUrl && (
+              <a
+                href={externalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-zinc-400 hover:text-zinc-200 transition-colors"
+                title="Voir dans Grafana"
+              >
+                <IconExternalLink size={11} />
+              </a>
+            )}
+          </div>
         </div>
 
         {isPrimitive ? (

@@ -192,6 +192,7 @@ class DeploymentStatus(str, Enum):
 
 class ApplicationBase(BaseModel):
     name: str
+    description: Optional[str] = None
     repo_url: Optional[str] = None
     owner: str
     origin: Optional[str] = None
@@ -256,6 +257,7 @@ class ApplicationExternalImportRequest(BaseModel):
 
 class ApplicationUpdate(BaseModel):
     name: Optional[str] = None
+    description: Optional[str] = None
     repo_url: Optional[str] = None
     owner: Optional[str] = None
     origin: Optional[str] = None
