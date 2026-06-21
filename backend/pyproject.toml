@@ -24,12 +24,14 @@ dependencies = [
     "httpx",
     "python-gitlab",
     "python-multipart",
-    "pyyaml"
+    "pyyaml",   # _validate_kubeconfig dans cluster_service
+    "hvac",
+    "anyio>=4.0",  # anyio.move_on_after + anyio.to_thread dans cluster_service
 ]
 
 [tool.setuptools]
 package-dir = {"backend" = "."}
-packages = ["backend", "backend.api", "backend.core", "backend.db", "backend.k8s", "backend.gitlab", "backend.services", "backend.api.schemas"]
+packages = ["backend", "backend.api", "backend.core", "backend.db", "backend.k8s", "backend.gitlab", "backend.services", "backend.api.schemas", "backend.vault"]
 
 [tool.ruff]
 line-length = 100
@@ -51,3 +53,4 @@ test = [
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

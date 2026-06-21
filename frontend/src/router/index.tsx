@@ -11,9 +11,11 @@ import { Credentials } from '@/pages/Credentials';
 import { ApiKeys } from '@/pages/ApiKeys';
 import { Users } from '@/pages/admin/Users';
 import { Audit } from '@/pages/admin/Audit';
+import { Clusters } from '@/pages/admin/Clusters';
 import { MyProjects } from '@/pages/MyProjects';
 import { Docs } from '@/pages/Docs';
 import { Profile } from '@/pages/Profile';
+
 
 export const router = createBrowserRouter([
   {
@@ -54,6 +56,7 @@ export const router = createBrowserRouter([
         children: [
           { path: 'users', element: <Users /> },
           { path: 'audit', element: <Audit /> },
+          { path: 'clusters', element: <Clusters /> },
         ],
       },
     ],
