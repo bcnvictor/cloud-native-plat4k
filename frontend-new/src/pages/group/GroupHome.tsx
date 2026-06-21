@@ -115,7 +115,7 @@ export function GroupHome() {
     <div className="max-w-[1440px] mx-auto px-8 pt-8 pb-6">
       <div className="text-center pt-8 pb-6">
         <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-2">Overview</p>
-        <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-[#0C1236] via-[#007BA7] to-[#4CA5C8] bg-clip-text text-transparent">
+        <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-[#007BA7] via-[#4CA5C8] to-[#007BA7] bg-clip-text text-transparent animate-gradient-shift">
           {group?.name ?? '…'}
         </h1>
         <p className="text-xs text-zinc-400 mt-2">
