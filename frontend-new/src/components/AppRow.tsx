@@ -19,7 +19,7 @@ export function AppRow({ app, healthStatus, onClick }: AppRowProps) {
       onClick={onClick}
       className={cn(
         'w-full flex items-center gap-3 px-4 py-3 text-left',
-        'bg-white rounded-lg border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm transition-all cursor-pointer',
+        'bg-white rounded-lg border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 hover:-translate-y-0.5 hover:shadow-md transition-all duration-150 cursor-pointer',
         isProvisioning && 'opacity-70'
       )}
     >

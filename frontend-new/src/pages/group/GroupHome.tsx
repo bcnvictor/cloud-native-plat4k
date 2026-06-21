@@ -69,6 +69,12 @@ function firstNameFromEmail(email: string): string {
   return part.charAt(0).toUpperCase() + part.slice(1);
 }
 
+const HEALTH_BADGE = {
+  healthy: { wrap: 'bg-success-subtle text-success-text border-success-border', dot: 'bg-success',  label: 'Healthy' },
+  warning: { wrap: 'bg-warning-subtle text-warning-text border-warning-border', dot: 'bg-warning',  label: 'Warning' },
+  danger:  { wrap: 'bg-danger-subtle text-danger-text border-danger-border',    dot: 'bg-danger',   label: 'Unhealthy' },
+} as const;
+
 export function GroupHome() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -95,6 +101,13 @@ export function GroupHome() {
     acc[s] = (acc[s] ?? 0) + 1;
     return acc;
   }, {});
+
+  const groupHealth: 'healthy' | 'warning' | 'danger' =
+    statusCounts['unhealthy']
+      ? 'danger'
+      : statusCounts['deploying'] || statusCounts['updating'] || statusCounts['provisioning']
+      ? 'warning'
+      : 'healthy';
 
   const STATUS_COLORS: Record<string, { dot: string; label: string }> = {
     healthy:      { dot: 'bg-success',  label: 'text-success-text' },
@@ -127,11 +140,19 @@ export function GroupHome() {
 
   return (
     <div className="max-w-[1440px] mx-auto px-8 pt-8 pb-6">
-      <div className="mb-6">
+      <div className="mb-6 flex flex-col gap-1.5">
         <h1 className="text-xl font-semibold text-foreground">{group?.name ?? '…'}</h1>
-        <p className="text-sm text-muted-foreground">
-          {user ? `${greeting()}, ${firstNameFromEmail(user.email)} · ` : ''}
-          {apps.length} app{apps.length !== 1 ? 's' : ''} · {members.length} membres
+        {user && (
+          <p className="text-sm text-muted-foreground">
+            {greeting()}, {firstNameFromEmail(user.email)}
+          </p>
+        )}
+        <span className={`inline-flex items-center gap-1.5 text-xs border rounded-full px-2.5 py-0.5 w-fit ${HEALTH_BADGE[groupHealth].wrap}`}>
+          <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${HEALTH_BADGE[groupHealth].dot}`} />
+          {HEALTH_BADGE[groupHealth].label}
+        </span>
+        <p className="text-xs text-muted-foreground">
+          {apps.length} app · {members.length} membres · {deployments7d} déploiements cette semaine
         </p>
       </div>
 

@@ -20,7 +20,7 @@ export function Card({
     <div
       onClick={onClick}
       className={cn(
-        'bg-background border border-border rounded-lg',
+        'bg-background border border-border rounded-lg shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all duration-150',
         padding === 'sm' && 'p-3',
         padding === 'md' && 'p-4',
         hoverable && 'cursor-pointer transition-shadow hover:shadow-sm',

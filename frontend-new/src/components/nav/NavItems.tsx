@@ -31,10 +31,10 @@ export function NavItems() {
           end={item.label === 'Home'}
           className={({ isActive }) =>
             cn(
-              'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+              'px-3 py-1.5 rounded-md text-sm transition-colors',
               isActive
-                ? 'text-[#007BA7]'
-                : 'text-zinc-500 hover:text-zinc-900 hover:bg-[#D9F0F7]'
+                ? 'text-primary font-semibold bg-primary/10'
+                : 'text-zinc-500 font-medium hover:text-zinc-900 hover:bg-zinc-100'
             )
           }
         >
