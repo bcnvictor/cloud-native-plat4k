@@ -22,7 +22,7 @@ from backend.ci.injector import inject_ci
 from backend.core.config import settings
 from backend.db.models import Application, AppMember, ClusterConnection, GitLabGroup, User
 from backend.gitlab.client import GitLabClient
-from backend.k8s.client import k8s_client
+from backend.k8s.client import get_k8s_client_for_cluster
 
 logger = logging.getLogger(__name__)
 
@@ -457,19 +457,43 @@ class AppService:
         await self.db.commit()
 
     async def sync_from_k8s(self) -> list[Application]:
-        if not k8s_client.is_configured():
-            raise HTTPException(status_code=503, detail="Kubernetes client not configured")
+        # Fetch all registered clusters
+        clusters_result = await self.db.execute(select(ClusterConnection))
+        clusters = clusters_result.scalars().all()
+        if not clusters:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="No clusters registered. Please register a cluster first.",
+            )
 
+        k8s_deps = []
         namespace = settings.K8S_TARGET_NAMESPACE
 
-        # Point 3 : timeout sur l'appel bloquant K8s
-        with anyio.move_on_after(10) as cancel_scope:
-            k8s_deps = await anyio.to_thread.run_sync(
-                partial(k8s_client.list_namespace_deployments, namespace),
-                cancellable=True,
+        for cluster in clusters:
+            client = get_k8s_client_for_cluster(cluster)
+            if not client.is_configured():
+                logger.warning("Kubernetes client for cluster %s is not configured", cluster.name)
+                continue
+
+            try:
+                with anyio.move_on_after(10) as cancel_scope:
+                    deps = await anyio.to_thread.run_sync(
+                        partial(client.list_namespace_deployments, namespace),
+                        cancellable=True,
+                    )
+                if cancel_scope.cancelled_caught:
+                    logger.warning("Kubernetes API timeout for cluster %s", cluster.name)
+                    continue
+                k8s_deps.extend(deps)
+            except Exception as e:
+                logger.error("Failed to list deployments on cluster %s: %s", cluster.name, e)
+                continue
+
+        if not k8s_deps:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Kubernetes clusters unavailable or not configured",
             )
-        if cancel_scope.cancelled_caught:
-            raise HTTPException(status_code=504, detail="K8s API timeout")
 
         # Point 1 : une seule requête pour tous les noms
         names = [dep.metadata.name for dep in k8s_deps]

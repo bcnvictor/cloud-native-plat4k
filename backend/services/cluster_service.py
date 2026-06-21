@@ -1,3 +1,6 @@
+import logging
+
+import anyio
 from fastapi import HTTPException, status
 from shared.models import ClusterConnectionCreate, ClusterConnectionUpdate
 from sqlalchemy import select
@@ -5,6 +8,43 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import ClusterConnection
+
+logger = logging.getLogger(__name__)
+
+# Timeout (secondes) accordé à chaque opération Vault dans ce service.
+# Au-delà, la requête est annulée et une 504 est renvoyée au client.
+_VAULT_TIMEOUT = 15
+
+
+def _validate_kubeconfig(kubeconfig_yaml: str) -> None:
+    """Vérifie que le kubeconfig est un YAML valide avec les champs requis.
+
+    Lève une HTTPException 422 si la validation échoue, afin de rejeter
+    les payloads incorrects avant tout accès à la base de données ou à Vault.
+    """
+    import yaml
+
+    try:
+        data = yaml.safe_load(kubeconfig_yaml)
+    except yaml.YAMLError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Kubeconfig invalide : YAML malformé — {e}",
+        )
+
+    if not isinstance(data, dict):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Kubeconfig invalide : la racine doit être un mapping YAML",
+        )
+
+    required_keys = ("apiVersion", "clusters", "users", "contexts")
+    missing = [k for k in required_keys if k not in data]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Kubeconfig invalide : champs requis manquants : {', '.join(missing)}",
+        )
 
 
 class ClusterService:
@@ -23,7 +63,16 @@ class ClusterService:
         return cluster
 
     async def create_cluster(self, payload: ClusterConnectionCreate) -> ClusterConnection:
-        cluster = ClusterConnection(**payload.model_dump())
+        # ── #5 : Validation YAML avant tout accès DB ou Vault ────────────────
+        kubeconfig_data = payload.kubeconfig
+        _validate_kubeconfig(kubeconfig_data)
+
+        # Préparer le payload DB (sans kubeconfig — stocké dans Vault)
+        db_payload = payload.model_dump()
+        db_payload.pop("kubeconfig", None)
+        db_payload["kubeconfig_secret_ref"] = "pending"
+
+        cluster = ClusterConnection(**db_payload)
         self.db.add(cluster)
         try:
             await self.db.commit()
@@ -34,11 +83,77 @@ class ClusterService:
                 detail=f"Cluster with name '{payload.name}' already exists",
             )
         await self.db.refresh(cluster)
+
+        # ── #8 : Stocker le kubeconfig dans Vault (avec timeout) ──────────────
+        from backend.vault.client import vault_client
+        vault_path = f"clusters/{cluster.id}"
+        try:
+            with anyio.move_on_after(_VAULT_TIMEOUT) as cancel_scope:
+                await anyio.to_thread.run_sync(
+                    lambda: vault_client.put_secret(path=vault_path, secret={"kubeconfig": kubeconfig_data}),
+                    cancellable=True,
+                )
+            if cancel_scope.cancelled_caught:
+                await self.db.delete(cluster)
+                await self.db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Vault timeout lors du stockage du kubeconfig (> 15 s)",
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            # Nettoyage DB en cas d'erreur Vault
+            await self.db.delete(cluster)
+            await self.db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to store cluster kubeconfig in Vault: {e}",
+            )
+
+        # Mettre à jour la référence secrète
+        cluster.kubeconfig_secret_ref = f"secret/{vault_path}"
+        await self.db.commit()
+        await self.db.refresh(cluster)
         return cluster
 
     async def update_cluster(self, cluster_id: int, payload: ClusterConnectionUpdate) -> ClusterConnection:
         cluster = await self.get_cluster(cluster_id)
-        for field, value in payload.model_dump(exclude_unset=True).items():
+
+        # ── #5 : Validation YAML si un nouveau kubeconfig est fourni ──────────
+        kubeconfig_data = payload.kubeconfig
+        if kubeconfig_data is not None:
+            _validate_kubeconfig(kubeconfig_data)
+
+        # ── #8 : Mettre à jour le kubeconfig dans Vault (avec timeout) ────────
+        if kubeconfig_data is not None:
+            from backend.vault.client import vault_client
+            try:
+                with anyio.move_on_after(_VAULT_TIMEOUT) as cancel_scope:
+                    await anyio.to_thread.run_sync(
+                        lambda: vault_client.put_secret(
+                            path=f"clusters/{cluster.id}",
+                            secret={"kubeconfig": kubeconfig_data},
+                        ),
+                        cancellable=True,
+                    )
+                if cancel_scope.cancelled_caught:
+                    raise HTTPException(
+                        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                        detail="Vault timeout lors de la mise à jour du kubeconfig (> 15 s)",
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to update cluster kubeconfig in Vault: {e}",
+                )
+
+        db_payload = payload.model_dump(exclude_unset=True)
+        db_payload.pop("kubeconfig", None)
+
+        for field, value in db_payload.items():
             setattr(cluster, field, value)
         try:
             await self.db.commit()
@@ -61,4 +176,34 @@ class ClusterService:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Cannot delete cluster: active deployments reference it",
+            )
+
+        # ── #8 + #9 : Nettoyage Vault après suppression DB réussie ───────────
+        # Si cette étape échoue, le secret Vault devient orphelin (inaccessible
+        # sans l'entrée DB, mais toujours présent dans Vault). On logue en ERROR
+        # pour signaler cette désynchronisation à l'opérateur.
+        from backend.vault.client import vault_client
+        try:
+            with anyio.move_on_after(_VAULT_TIMEOUT) as cancel_scope:
+                await anyio.to_thread.run_sync(
+                    lambda: vault_client.delete_secret(path=f"clusters/{cluster_id}"),
+                    cancellable=True,
+                )
+            if cancel_scope.cancelled_caught:
+                logger.error(
+                    "Vault timeout lors de la suppression du secret clusters/%s. "
+                    "Le secret est orphelin dans Vault et doit être supprimé manuellement : "
+                    "`vault kv metadata delete secret/clusters/%s`",
+                    cluster_id,
+                    cluster_id,
+                )
+        except Exception as e:
+            # ── #9 : ERROR (et non warning) — le secret est orphelin dans Vault ──
+            logger.error(
+                "Échec de la suppression du kubeconfig dans Vault pour le cluster %s : %s. "
+                "Le secret est orphelin et doit être supprimé manuellement : "
+                "`vault kv metadata delete secret/clusters/%s`",
+                cluster_id,
+                e,
+                cluster_id,
             )

@@ -54,9 +54,18 @@ AUTH=(-H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json")
 
 # 2. Enregistrement du cluster (idempotent)
 echo "[2/4] Enregistrement du cluster AKS..."
+
+KUBECONFIG_FILE="${KUBECONFIG:-~/.kube/config}"
+KUBECONFIG_FILE="${KUBECONFIG_FILE/#\~/$HOME}"
+if [ -f "$KUBECONFIG_FILE" ]; then
+  KUBECONFIG_CONTENT=$(cat "$KUBECONFIG_FILE" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read()))")
+else
+  KUBECONFIG_CONTENT='""'
+fi
+
 CLUSTER_RESP=$(curl -s -X POST "$CNP_URL/clusters/" \
   "${AUTH[@]}" \
-  -d "{\"name\":\"cnp-aks\",\"endpoint\":\"$CLUSTER_ENDPOINT\",\"kubeconfig_secret_ref\":\"kubeconfig-aks\"}")
+  -d "{\"name\":\"cnp-aks\",\"endpoint\":\"$CLUSTER_ENDPOINT\",\"kubeconfig\":$KUBECONFIG_CONTENT}")
 HTTP_CODE=$(echo "$CLUSTER_RESP" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('id','conflict'))" 2>/dev/null || echo "error")
 
 # Si 409, récupère l'id depuis GET /clusters/
