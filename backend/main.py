@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
+from functools import partial
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +24,7 @@ from backend.api.routes import (
     users,
     webhooks,
 )
-from backend.core.config import settings
+from backend.core.config import bootstrap_from_vault, settings
 from backend.db.session import AsyncSessionLocal
 from backend.k8s.client import k8s_client
 from backend.k8s.dashboards import FINOPS_DASHBOARD_JSON
@@ -36,12 +37,19 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Discovery au démarrage
-    async with AsyncSessionLocal() as db:
-        try:
-            await discover_clusters(db)
-        except Exception:
-            logger.warning("Cluster discovery failed at startup — will rely on existing DB entries", exc_info=True)
+    # Charge/Bootstrap les secrets depuis Vault en priorité.
+    # hvac est synchrone (basé sur requests) — on l'exécute dans le thread pool
+    # pour ne pas bloquer l'event loop asyncio au démarrage.
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, partial(bootstrap_from_vault, settings))
+
+    if k8s_client.is_configured() and FINOPS_DASHBOARD_JSON is not None:
+        # Discovery au démarrage
+        async with AsyncSessionLocal() as db:
+            try:
+                await discover_clusters(db)
+            except Exception:
+                logger.warning("Cluster discovery failed at startup — will rely on existing DB entries", exc_info=True)
 
     # Configmap Grafana — fire-and-forget dans un thread pour ne pas bloquer le startup
     # (l'appel K8s synchrone peut retrier 30+ s si le cluster est inaccessible en local)

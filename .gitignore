@@ -2,6 +2,9 @@
 .claude
 __pycache__/
 *.pyc
+vault-init-output.json
+vault-root-token.txt
+vault-unseal-keys.txt
 node_modules/
 dist/
 build/

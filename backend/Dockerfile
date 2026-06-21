@@ -20,7 +20,8 @@ RUN mkdir -p /app/shared/shared \
              /app/backend/db \
              /app/backend/k8s \
              /app/backend/gitlab \
-             /app/backend/services && \
+             /app/backend/services \
+             /app/backend/vault && \
     touch /app/shared/shared/__init__.py \
           /app/backend/__init__.py \
           /app/backend/api/__init__.py \
@@ -29,7 +30,8 @@ RUN mkdir -p /app/shared/shared \
           /app/backend/db/__init__.py \
           /app/backend/k8s/__init__.py \
           /app/backend/gitlab/__init__.py \
-          /app/backend/services/__init__.py
+          /app/backend/services/__init__.py \
+          /app/backend/vault/__init__.py
 
 RUN pip install --no-cache-dir -e /app/shared && \
     pip install --no-cache-dir -e /app/backend
