@@ -2,7 +2,7 @@
 
 Ce guide documente le déploiement de la plateforme CNP (backend FastAPI + Postgres + frontend) sur la VM Oracle Cloud `cnp-control`, et la procédure de redéploiement pour l'équipe (4K-61).
 
-## ⚠️ Règle critique
+## Règle critique
 
 **Ne jamais éteindre, redémarrer ou supprimer la VM `cnp-control`.** Elle tourne en free tier OCI (Ampere A1, ARM64) et est très difficile à reprovisionner si elle est perdue. Toute opération sur l'instance (stop/terminate/reboot) doit être validée explicitement au préalable.
 
@@ -13,7 +13,7 @@ Ce guide documente le déploiement de la plateforme CNP (backend FastAPI + Postg
 - **Stack** : `docker compose` — db, backend, frontend, pgadmin, vault (profile `production`)
 - **Exposition** : HTTPS public via Cloudflare Tunnel (`cloudflared.service`) — `https://cnp.cloud-native-plat4k.me`
 - **Firewall** : UFW actif, seul le port 22 (SSH) est ouvert en entrée
-- **Secrets** : gérés par HashiCorp Vault (bootstrappé au premier démarrage depuis le `.env`)
+- **Secrets** : gérés par HashiCorp Vault — bootstrappé au premier démarrage, policy `cnp-backend` créée, token applicatif en place (root token non utilisé par le backend)
 - **`.env`** : permissions `600`, non versionné — contient uniquement les variables nécessaires au démarrage de l'infra (voir section Gestion des secrets)
 
 ## Accès à la plateforme
@@ -72,7 +72,7 @@ Ce guide documente le déploiement de la plateforme CNP (backend FastAPI + Postg
 
 ## Procédure post-reboot
 
-> ⚠️ Après tout redémarrage de la VM (même involontaire), Vault repart en état **Sealed** et le backend refuse de démarrer. Il faut impérativement unsealer Vault avant de relancer les services.
+> ATTENTION : Après tout redémarrage de la VM (même involontaire), Vault repart en état **Sealed** et le backend refuse de démarrer. Il faut impérativement unsealer Vault avant de relancer les services.
 
 ```bash
 cd ~/cloud-native-plat4k
@@ -102,9 +102,9 @@ POSTGRES_USER=cnpuser
 POSTGRES_PASSWORD=cnppass
 POSTGRES_DB=cnp
 
-# Connexion à Vault (backend)
+# Connexion à Vault (backend) — token applicatif avec policy cnp-backend (pas le root token)
 VAULT_ADDR=http://vault:8200
-VAULT_TOKEN=hvs.xxxxxxxxxxxx   # token applicatif (pas le root token)
+VAULT_TOKEN=hvs.xxxxxxxxxxxx
 
 # Orchestration docker-compose
 COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.tunnel.yml
