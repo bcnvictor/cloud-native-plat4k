@@ -38,6 +38,16 @@
 .bg-background        { background-color: oklch(1 0 0); }
 .bg-background-subtle { background-color: oklch(0.961 0 0); }
 
+@keyframes gradient-shift {
+  0%   { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
+.animate-gradient-shift {
+  background-size: 200% auto;
+  animation: gradient-shift 4s linear infinite;
+}
+
 .bg-dotted {
   background-color: var(--background-subtle);
   background-image: radial-gradient(circle, #C8C8CC 1px, transparent 1px);

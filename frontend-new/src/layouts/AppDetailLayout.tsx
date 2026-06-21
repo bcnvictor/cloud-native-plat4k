@@ -75,12 +75,12 @@ export function AppDetailLayout() {
               <Spinner size="md" />
             ) : (
               <>
-                <div className="w-10 h-10 rounded-xl bg-[#D9F0F7] flex items-center justify-center text-[#007BA7] shrink-0">
-                  <IconBrandDocker size={20} />
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #0C1236 0%, #007BA7 100%)' }}>
+                  <IconBrandDocker size={24} color="white" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h1 className="text-sm font-semibold text-foreground">{app?.name ?? appSlug}</h1>
+                    <h1 className="text-xl font-bold tracking-tight text-foreground">{app?.name ?? appSlug}</h1>
                     {app && <AppStatusBadge status={health} />}
                   </div>
                   <p className="text-xs text-muted-foreground">
