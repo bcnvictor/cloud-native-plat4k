@@ -23,18 +23,21 @@ En production, Vault est configuré de manière sécurisée (mode serveur standa
 
 ### Étape 2.1 : Lancement sécurisé (sans les overrides de dev)
 
-Pour s'assurer que les configurations et services de développement (comme pgAdmin ou le mode dev de Vault) ne soient pas déployés en production, lancez explicitement Docker Compose en ciblant uniquement le fichier de configuration de base :
+Le service Vault est déclaré sous le profile `production` dans `docker-compose.yml`. Pour le démarrer :
 
 ```bash
-docker compose -f docker-compose.yml up -d vault
+cd ~/cloud-native-plat4k
+docker compose --profile production up -d vault
 ```
+
+> **Note TLS** : Vault est configuré avec `tls_disable = true` (voir `vault.hcl`). Toutes les commandes `vault exec` doivent donc passer `VAULT_ADDR=http://127.0.0.1:8200` explicitement — sans quoi le CLI tente une connexion HTTPS et échoue.
 
 ### Étape 2.2 : Initialisation du coffre (première fois uniquement)
 
 Lors du premier lancement de Vault sur la VM `cnp-control`, exécutez la commande d'initialisation :
 
 ```bash
-docker compose exec vault vault operator init -key-shares=5 -key-threshold=3
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 vault vault operator init -key-shares=5 -key-threshold=3
 ```
 
 Cette commande génère :
@@ -48,33 +51,37 @@ Cette commande génère :
 
 Après chaque redémarrage du conteneur Vault ou de la VM `cnp-control`, Vault démarre dans l'état **Sealed** (verrouillé) et refuse de servir les requêtes.
 
-Pour le déverrouiller, 3 personnes différentes (ou l'administrateur détenant les clés) doivent exécuter la commande suivante avec 3 des 5 clés d'unseal générées lors de l'initialisation :
+Pour le déverrouiller, exécutez 3 fois la commande suivante avec 3 des 5 clés d'unseal générées lors de l'initialisation :
 
 ```bash
-docker compose exec -it vault vault operator unseal
-# Saisir la clé 1
-
-docker compose exec -it vault vault operator unseal
-# Saisir la clé 2
-
-docker compose exec -it vault vault operator unseal
-# Saisir la clé 3
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 vault vault operator unseal <clé_1>
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 vault vault operator unseal <clé_2>
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 vault vault operator unseal <clé_3>
 ```
 
 Une fois le seuil de 3 clés atteint, la sortie affichera `Sealed: false`.
+
+Vérification :
+```bash
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 vault vault status
+```
+
+Puis relancer le backend (qui a échoué à démarrer en attendant Vault) :
+```bash
+docker compose up -d
+```
 
 ### Étape 2.4 : Configuration initiale de la production
 
 Une fois Vault unsealed, connectez-vous avec le Root Token :
 
 ```bash
-docker compose exec -it vault vault login
-# Entrer le Root Token de production
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault vault status
 ```
 
 1. **Activer le moteur KV v2** :
    ```bash
-   docker compose exec vault vault secrets enable -path=secret kv-v2
+   docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault vault secrets enable -path=secret kv-v2
    ```
 
 2. **Créer la policy pour le backend** :
@@ -188,27 +195,42 @@ docker compose -f docker-compose.yml up -d backend db frontend
 
 ## 🛠️ 3. Dépannage et Administration
 
+### Procédure post-reboot (cnp-control)
+
+Après tout redémarrage de la VM, Vault repart **Sealed**. Le backend ne peut pas démarrer tant que Vault n'est pas unsealed.
+
+```bash
+cd ~/cloud-native-plat4k
+
+# Unsealer (3 clés sur 5)
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 vault vault operator unseal <clé_1>
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 vault vault operator unseal <clé_2>
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 vault vault operator unseal <clé_3>
+
+# Vérifier (Sealed: false)
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 vault vault status
+
+# Relancer le backend
+docker compose up -d
+```
+
 ### Vérifier le statut de Vault
 
-Pour vérifier si Vault est opérationnel et s'il est sealed :
 ```bash
-docker compose exec vault vault status
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 vault vault status
 ```
 
 ### Rotation des Secrets de la Plateforme
 
-Pour modifier ou renouveler la `SECRET_KEY` ou le mot de passe de base de données dans Vault :
+Pour modifier ou renouveler un secret dans Vault :
 ```bash
-# Se connecter avec le Root Token
-docker compose exec -it vault vault login
-
-# Mettre à jour le secret
-docker compose exec vault vault kv put secret/cnp/platform \
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault \
+  vault kv put secret/cnp/platform \
   SECRET_KEY="NouvelleCleSuperSecreteDePlusDe32Caracteres" \
   POSTGRES_PASSWORD="NouveauMotDePasseDB"
 ```
 
 Redémarrez le backend pour charger la nouvelle configuration :
 ```bash
-docker compose -f docker-compose.yml restart backend
+docker compose restart backend
 ```
