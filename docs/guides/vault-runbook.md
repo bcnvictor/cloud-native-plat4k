@@ -136,24 +136,39 @@ docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_tok
    > [!IMPORTANT]
    > Si vous choisissez l'Option B, vous **devez** pré-remplir `secret/cnp/platform` avec le Root Token **avant** de démarrer le backend (voir étape 2.5b). Sans cela, le backend s'arrêtera avec une erreur `Vault Forbidden on write`.
 
-   Enregistrez la policy dans Vault :
+   Enregistrez la policy directement dans Vault (inline, sans fichier temporaire) :
    ```bash
-   docker compose exec -T vault vault policy write cnp-backend - < cnp-backend-policy.hcl
-   rm cnp-backend-policy.hcl
+   docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault \
+     vault policy write cnp-backend - << 'EOF'
+   path "secret/data/cnp/*" {
+     capabilities = ["read", "create", "update"]
+   }
+   path "secret/data/clusters/*" {
+     capabilities = ["read", "create", "update", "delete"]
+   }
+   path "secret/delete/clusters/*" {
+     capabilities = ["update"]
+   }
+   path "secret/metadata/clusters/*" {
+     capabilities = ["delete"]
+   }
+   EOF
    ```
 
 3. **Générer le token applicatif pour le backend** :
-   Générez un token renouvelable associé à la policy `cnp-backend` :
    ```bash
-   docker compose exec vault vault token create -policy=cnp-backend -period=720h
+   docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault \
+     vault token create -policy=cnp-backend -period=720h -format=json
    ```
-   Copiez le token généré de type `hvs.xxxxxxxx...`.
+   Copiez le `client_token` retourné (`hvs.xxxxxxxx...`).
 
-4. **Injecter le token dans l'environnement de production** :
-   Sur `cnp-control`, éditez le fichier `.env` de production :
-   ```env
-   VAULT_TOKEN=hvs.le_token_applicatif_genere
+4. **Injecter le token dans le `.env` de production et redémarrer** :
+   ```bash
+   sed -i "s|^VAULT_TOKEN=.*|VAULT_TOKEN=hvs.le_token_applicatif|" .env
+   docker compose up -d
    ```
+
+   > **Important** : le Root Token ne doit plus être utilisé après cette étape. Conservez-le uniquement dans votre gestionnaire de mots de passe d'équipe pour les opérations d'administration Vault (rotation des secrets, création de nouvelles policies).
 
 ### Étape 2.5 : Lancement du Backend
 
@@ -190,6 +205,25 @@ Puis démarrez le backend :
 ```bash
 docker compose -f docker-compose.yml up -d backend db frontend
 ```
+
+---
+
+---
+
+## Etat actuel sur `cnp-control` (référence)
+
+> Mis à jour le 2026-06-21. Ce qui a été fait en production sur la VM Oracle.
+
+| Étape | Statut | Notes |
+|---|---|---|
+| Service Vault démarré (`--profile production`) | OK | `docker compose --profile production up -d vault` |
+| Vault initialisé (5 shares / threshold 3) | OK | Clés stockées dans le gestionnaire de mots de passe |
+| Vault unsealed | OK | À refaire après chaque reboot (voir procédure post-reboot) |
+| KV v2 activé sur `secret/` | OK | `vault secrets enable -path=secret kv-v2` |
+| `secret/cnp/platform` bootstrappé | OK | Bootstrap automatique au premier démarrage backend |
+| Policy `cnp-backend` créée | OK | Accès `read/create/update` sur `cnp/*` et `clusters/*` |
+| Token applicatif en place | OK | Root token **non utilisé** par le backend |
+| `.env` nettoyé | OK | Seuls `POSTGRES_*`, `VAULT_ADDR`, `VAULT_TOKEN`, `COMPOSE_FILE` |
 
 ---
 
