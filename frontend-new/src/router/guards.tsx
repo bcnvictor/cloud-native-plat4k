@@ -35,7 +35,7 @@ export function AdminRoute() {
 }
 
 export function RootRedirect() {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const { data: groups = [], isLoading } = useQuery({
     queryKey: ['my-groups'],
     queryFn: groupsApi.getMyGroups,
@@ -53,5 +53,7 @@ export function RootRedirect() {
   }
 
   const firstSlug = groups[0] ? groupsApi.getSlug(groups[0]) : null;
-  return <Navigate to={firstSlug ? `/groups/${firstSlug}` : '/login'} replace />;
+  if (firstSlug) return <Navigate to={`/groups/${firstSlug}`} replace />;
+  if (user?.is_admin) return <Navigate to="/admin/clusters" replace />;
+  return <Navigate to="/login" replace />;
 }
