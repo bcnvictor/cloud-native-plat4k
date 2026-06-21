@@ -2,7 +2,7 @@ import { IconChevronDown, IconChevronUp, IconPlus, IconTrash } from '@tabler/ico
 import { CiDeployConfig } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 
 interface Props {
   data: CiDeployConfig;

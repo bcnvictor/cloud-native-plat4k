@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 
 const LEVEL_COLORS: Record<string, string> = {
   ERROR: 'text-danger-text bg-danger-subtle',

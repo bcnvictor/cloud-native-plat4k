@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useScopeStore } from '@/store/scope';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 
 const GROUP_NAV = [
   { label: 'Home', path: (slug: string) => `/groups/${slug}` },

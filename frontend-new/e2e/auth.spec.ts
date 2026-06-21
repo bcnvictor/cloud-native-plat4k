@@ -9,7 +9,7 @@ test.describe('Login', () => {
   });
 
   test('affiche le formulaire de login', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: /connexion|login|cnp/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /cloud native platform/i })).toBeVisible();
     await expect(page.getByLabel(/email/i)).toBeVisible();
     await expect(page.getByLabel(/mot de passe|password/i)).toBeVisible();
   });
@@ -27,7 +27,7 @@ test.describe('Login', () => {
     await page.getByLabel(/mot de passe|password/i).fill('wrong-password');
     await page.getByRole('button', { name: /connexion|login|se connecter/i }).click();
 
-    await expect(page.getByRole('alert').or(page.locator('[class*=error]'))).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('p.text-danger-text')).toBeVisible({ timeout: 5_000 });
     await expect(page).toHaveURL(/\/login/);
   });
 

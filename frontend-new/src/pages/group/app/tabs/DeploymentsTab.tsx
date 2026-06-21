@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { timeAgo, formatDuration } from '@/utils/timeAgo';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 
 function StatusIcon({ status }: { status: DeploymentStatus }) {
   if (status === 'succeeded') return <IconCircleCheck size={16} className="text-success-text" />;

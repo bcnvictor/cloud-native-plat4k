@@ -1,4 +1,4 @@
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 import { getInitials, getAvatarColor } from '@/utils/initials';
 
 interface AvatarProps {

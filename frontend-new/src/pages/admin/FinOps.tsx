@@ -7,7 +7,7 @@ import { finopsApi } from '@/api/finops';
 import { MetricCard } from '@/components/MetricCard';
 import { Card } from '@/components/ui/Card';
 import { Select } from '@/components/ui/Select';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 
 function ProgressBar({ value, max, className }: { value: number; max: number; className?: string }) {
   const pct = Math.min((value / max) * 100, 100);

@@ -53,10 +53,11 @@ test.describe('Navigation admin', () => {
   });
 
   test('logout fonctionne', async ({ page }) => {
-    // Bouton logout dans la sidebar
-    await page.locator('button[title*="onnexion"], button[title*="ogout"]').first().click();
+    // Ouvrir le dropdown avatar (dernier bouton dans le header)
+    await page.locator('header').getByRole('button').last().click();
+    // Cliquer sur "Se déconnecter" dans le menu déroulant
+    await page.getByRole('button', { name: /se déconnecter/i }).click();
     await expect(page).toHaveURL(/\/login/, { timeout: 5_000 });
-    // Vérifier que le token a été effacé
     const token = await page.evaluate(() => localStorage.getItem('token'));
     expect(token).toBeNull();
   });

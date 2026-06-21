@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { computeSlug } from '@/utils/slugify';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 
 interface Props {
   data: Step1Data;
