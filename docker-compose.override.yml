@@ -12,3 +12,11 @@ services:
         condition: service_healthy
     networks:
       - cnp_net
+
+  backend:
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - VAULT_ADDR=${VAULT_ADDR:-http://130.61.112.206:8201}
+      - VAULT_TOKEN=${VAULT_TOKEN:-cnp-dev-shared-token}

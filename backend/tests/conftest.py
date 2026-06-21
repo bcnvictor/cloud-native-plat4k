@@ -7,6 +7,12 @@ os.environ.setdefault("POSTGRES_USER", "test")
 os.environ.setdefault("POSTGRES_PASSWORD", "test")
 os.environ.setdefault("POSTGRES_DB", "test")
 os.environ.setdefault("ENCRYPTION_KEY", "")
+# Vault : adresse invalide intentionnelle — bootstrap_from_vault est mocké
+# ci-dessous pour que les tests soient hermétiques (pas besoin d'un Vault réel).
+os.environ.setdefault("VAULT_ADDR", "http://127.0.0.1:19999")
+os.environ.setdefault("VAULT_TOKEN", "test-vault-token")
+
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -24,6 +30,16 @@ TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 @pytest.fixture(scope="session")
 def anyio_backend():
     return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def mock_vault_bootstrap():
+    """No-op pour bootstrap_from_vault : rend tous les tests hermétiques
+    vis-à-vis de Vault. Sans ce patch, le lifespan FastAPI tenterait de se
+    connecter à Vault au premier appel client, ce qui échouerait en CI.
+    """
+    with patch("backend.core.config.bootstrap_from_vault", return_value=None):
+        yield
 
 
 @pytest.fixture
