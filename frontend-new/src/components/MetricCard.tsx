@@ -1,6 +1,6 @@
 import React from 'react';
 import { ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { IconExternalLink } from '@tabler/icons-react';
+import { IconExternalLink, IconClock } from '@tabler/icons-react';
 import { cn } from '@/utils/cn';
 
 export interface SparkPoint { t: number; v: number }
@@ -16,8 +16,12 @@ interface MetricCardProps {
   className?: string;
 }
 
+const isEmpty = (v: React.ReactNode) =>
+  v === null || v === undefined || v === 0 || v === '—';
+
 export function MetricCard({ label, value, unit, icon, sublabel, sparkline, externalUrl, className }: MetricCardProps) {
   const isPrimitive = typeof value === 'string' || typeof value === 'number';
+  const empty = isEmpty(value);
 
   return (
     <div className={cn('bg-background border border-border rounded-lg overflow-hidden', className)}>
@@ -40,7 +44,12 @@ export function MetricCard({ label, value, unit, icon, sublabel, sparkline, exte
           </div>
         </div>
 
-        {isPrimitive ? (
+        {empty ? (
+          <div className="flex flex-col items-center justify-center gap-1 py-2">
+            <IconClock size={18} className="text-zinc-300" />
+            <span className="text-xs text-zinc-400">En attente de métriques</span>
+          </div>
+        ) : isPrimitive ? (
           <p className="text-2xl font-semibold text-zinc-900">
             {value}
             {unit && <span className="text-xs text-muted-foreground ml-1">{unit}</span>}
@@ -49,10 +58,10 @@ export function MetricCard({ label, value, unit, icon, sublabel, sparkline, exte
           <div className="mt-1">{value}</div>
         )}
 
-        {sublabel && <div className="text-xs mt-1">{sublabel}</div>}
+        {!empty && sublabel && <div className="text-xs mt-1">{sublabel}</div>}
       </div>
 
-      {sparkline && sparkline.length > 0 && (
+      {!empty && sparkline && sparkline.length > 0 && (
         <div className="border-t border-border/40">
           <ResponsiveContainer width="100%" height={40}>
             <AreaChart data={sparkline} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
