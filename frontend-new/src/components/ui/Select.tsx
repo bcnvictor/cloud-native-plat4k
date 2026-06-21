@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { IconChevronDown, IconCheck } from '@tabler/icons-react';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 

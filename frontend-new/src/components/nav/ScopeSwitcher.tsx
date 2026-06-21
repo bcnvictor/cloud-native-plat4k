@@ -10,7 +10,7 @@ import { useAuthStore } from '@/store/auth';
 import { useScopeStore } from '@/store/scope';
 import { Dropdown, DropdownItem } from '@/components/ui/Dropdown';
 import { Badge } from '@/components/ui/Badge';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 
 export function ScopeSwitcher() {
   const navigate = useNavigate();

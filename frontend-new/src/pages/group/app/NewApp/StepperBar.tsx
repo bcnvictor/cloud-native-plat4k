@@ -1,5 +1,5 @@
 import { IconCheck } from '@tabler/icons-react';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 
 type StepState = 'active' | 'done' | 'todo';
 

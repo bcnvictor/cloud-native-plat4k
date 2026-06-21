@@ -1,7 +1,7 @@
 import React from 'react';
 import { ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { IconExternalLink } from '@tabler/icons-react';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 
 export interface SparkPoint { t: number; v: number }
 

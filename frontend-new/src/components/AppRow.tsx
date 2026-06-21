@@ -3,7 +3,7 @@ import { Application } from '@/types';
 import { AppHealthStatus } from '@/types';
 import { AppStatusBadge } from './AppStatusBadge';
 import { timeAgo } from '@/utils/timeAgo';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 
 interface AppRowProps {
   app: Application;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 import { IconLoader2 } from '@tabler/icons-react';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {

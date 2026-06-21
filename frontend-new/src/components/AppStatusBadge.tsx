@@ -1,4 +1,4 @@
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 import { AppHealthStatus } from '@/types';
 import { STATUS_LABEL, STATUS_COLOR, STATUS_DOT } from '@/utils/appHealth';
 import { IconLoader2 } from '@tabler/icons-react';

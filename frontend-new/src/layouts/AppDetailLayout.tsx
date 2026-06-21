@@ -10,7 +10,7 @@ import { Breadcrumb } from '@/components/Breadcrumb';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { getAppHealth } from '@/utils/appHealth';
-import { cn } from '@/lib/cn';
+import { cn } from '@/utils/cn';
 
 interface AppDetailContext {
   app: Application | null;
