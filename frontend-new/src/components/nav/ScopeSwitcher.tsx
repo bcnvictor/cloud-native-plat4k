@@ -34,7 +34,7 @@ export function ScopeSwitcher() {
         key: `group-${g.gitlab_group_id}`,
         label: g.name,
         active: activeScope === 'group' && slug === activeGroupSlug,
-        onClick: () => navigate(`/groups/${slug}/apps`),
+        onClick: () => navigate(`/groups/${slug}`),
       };
     }),
     ...(user?.is_admin

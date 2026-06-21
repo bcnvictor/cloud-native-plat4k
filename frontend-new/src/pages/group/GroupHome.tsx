@@ -18,7 +18,6 @@ import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useGroupApps } from '@/hooks/useGroupApps';
 import { useGroupMetrics } from '@/hooks/useAppMetrics';
 import { useScopeStore } from '@/store/scope';
-import { useAuthStore } from '@/store/auth';
 import { groupsApi } from '@/api/groups';
 import { getAppHealth } from '@/utils/appHealth';
 import { MetricCard } from '@/components/MetricCard';
@@ -56,31 +55,12 @@ function activityLabel(ev: ActivityEvent): string {
   }
 }
 
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
-function firstNameFromEmail(email: string): string {
-  const local = email.split('@')[0];
-  const part = local.split(/[._-]/)[0];
-  return part.charAt(0).toUpperCase() + part.slice(1);
-}
-
-const HEALTH_BADGE = {
-  healthy: { wrap: 'bg-success-subtle text-success-text border-success-border', dot: 'bg-success',  label: 'Healthy' },
-  warning: { wrap: 'bg-warning-subtle text-warning-text border-warning-border', dot: 'bg-warning',  label: 'Warning' },
-  danger:  { wrap: 'bg-danger-subtle text-danger-text border-danger-border',    dot: 'bg-danger',   label: 'Unhealthy' },
-} as const;
 
 export function GroupHome() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const group = useCurrentGroup();
   const { setScope } = useScopeStore();
-  const { user } = useAuthStore();
 
   useEffect(() => {
     if (slug) setScope('group', slug);
@@ -101,13 +81,6 @@ export function GroupHome() {
     acc[s] = (acc[s] ?? 0) + 1;
     return acc;
   }, {});
-
-  const groupHealth: 'healthy' | 'warning' | 'danger' =
-    statusCounts['unhealthy']
-      ? 'danger'
-      : statusCounts['deploying'] || statusCounts['updating'] || statusCounts['provisioning']
-      ? 'warning'
-      : 'healthy';
 
   const STATUS_COLORS: Record<string, { dot: string; label: string }> = {
     healthy:      { dot: 'bg-success',  label: 'text-success-text' },
@@ -140,19 +113,13 @@ export function GroupHome() {
 
   return (
     <div className="max-w-[1440px] mx-auto px-8 pt-8 pb-6">
-      <div className="mb-6 flex flex-col gap-1.5">
-        <h1 className="text-xl font-semibold text-foreground">{group?.name ?? '…'}</h1>
-        {user && (
-          <p className="text-sm text-muted-foreground">
-            {greeting()}, {firstNameFromEmail(user.email)}
-          </p>
-        )}
-        <span className={`inline-flex items-center gap-1.5 text-xs border rounded-full px-2.5 py-0.5 w-fit ${HEALTH_BADGE[groupHealth].wrap}`}>
-          <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${HEALTH_BADGE[groupHealth].dot}`} />
-          {HEALTH_BADGE[groupHealth].label}
-        </span>
-        <p className="text-xs text-muted-foreground">
-          {apps.length} app · {members.length} membres · {deployments7d} déploiements cette semaine
+      <div className="text-center pt-8 pb-6">
+        <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-2">Overview</p>
+        <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-[#0C1236] via-[#007BA7] to-[#4CA5C8] bg-clip-text text-transparent">
+          {group?.name ?? '…'}
+        </h1>
+        <p className="text-xs text-zinc-400 mt-2">
+          {apps.length} app{apps.length !== 1 ? 's' : ''} · {members.length} membres
         </p>
       </div>
 
