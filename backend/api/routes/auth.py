@@ -178,12 +178,12 @@ async def gitlab_callback(request: Request, response: Response, db: AsyncSession
     if not email:
         raise UnauthorizedException("GitLab account has no email")
 
-    if settings.GITLAB_TEAMS_GROUP and gitlab_user_id:
-        allowed = await oauth.is_group_member(access_token, settings.GITLAB_TEAMS_GROUP, gitlab_user_id)
+    if settings.GITLAB_OAUTH_ALLOWED_GROUP and gitlab_user_id:
+        allowed = await oauth.is_group_member(access_token, settings.GITLAB_OAUTH_ALLOWED_GROUP, gitlab_user_id)
         if not allowed:
             raise HTTPException(
                 status_code=403,
-                detail=f"Access denied: you must be a member of the '{settings.GITLAB_TEAMS_GROUP}' GitLab group.",
+                detail=f"Access denied: you must be a member of the '{settings.GITLAB_OAUTH_ALLOWED_GROUP}' GitLab group.",
             )
 
     # find or create user
