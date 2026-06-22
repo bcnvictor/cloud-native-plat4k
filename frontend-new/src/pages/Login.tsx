@@ -32,7 +32,7 @@ export function Login() {
   }
 
   return (
-    <div className="h-screen-corrected overflow-hidden flex items-center justify-center bg-dotted">
+    <div className="force-light h-screen-corrected overflow-hidden flex items-center justify-center bg-dotted">
       <div className="flex flex-col items-center gap-6 w-full max-w-sm mx-auto">
         {/* Logo */}
         <div className="w-20 h-20 rounded-2xl bg-[#0C1236] flex items-center justify-center shrink-0 overflow-hidden">

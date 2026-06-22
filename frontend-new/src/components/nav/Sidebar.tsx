@@ -53,7 +53,7 @@ export function Sidebar({ expanded, onToggle }: SidebarProps) {
 
   return (
     <aside
-      className="flex flex-col bg-white border-r border-border shrink-0 transition-[width] duration-200 ease-in-out"
+      className="flex flex-col bg-sidebar border-r border-sidebar-border shrink-0 transition-[width] duration-200 ease-in-out"
       style={{ width: expanded ? '216px' : '52px', height: '100%' }}
     >
       {/* Zone logo + collapse toggle */}

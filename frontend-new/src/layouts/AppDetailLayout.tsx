@@ -66,7 +66,7 @@ export function AppDetailLayout() {
   return (
     <Ctx.Provider value={{ app: app ?? null, isLoading }}>
       {/* ── Header zone — full-bleed ── */}
-      <div className="bg-white border-b border-zinc-200 sticky top-0 z-30 w-full">
+      <div className="bg-background border-b border-border sticky top-0 z-30 w-full">
         <div className="max-w-[1440px] mx-auto px-8">
           {/* App identity row */}
           <div className="flex items-center gap-3 py-3">
