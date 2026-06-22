@@ -101,7 +101,7 @@ export function SelectValue({ placeholder }: { placeholder?: string }) {
   const { value } = useContext(SelectContext);
   return (
     <span className={cn(!value && 'text-muted-foreground')}>
-      {value || placeholder || 'Sélectionner…'}
+      {value || placeholder || 'Select…'}
     </span>
   );
 }
@@ -209,7 +209,7 @@ export function Select({
       <SelectRoot value={value} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger className={className}>
           <span className={cn('truncate', !displayLabel && 'text-muted-foreground')}>
-            {displayLabel ?? placeholder ?? 'Sélectionner…'}
+            {displayLabel ?? placeholder ?? 'Select…'}
           </span>
         </SelectTrigger>
         <SelectContent>

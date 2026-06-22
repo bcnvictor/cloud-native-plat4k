@@ -70,7 +70,7 @@ export function DeploymentsTab() {
     <div className="bg-card border border-border rounded-md divide-y divide-border">
       {enriched.length === 0 && (
         <p className="px-4 py-8 text-sm text-muted-foreground text-center">
-          Aucun déploiement.
+          No deployments.
         </p>
       )}
       {enriched.map((d) => {
@@ -105,7 +105,7 @@ export function DeploymentsTab() {
               </div>
 
               <div className="flex items-center gap-2">
-                {d.isCurrent && <Badge variant="primary">courant</Badge>}
+                {d.isCurrent && <Badge variant="primary">current</Badge>}
                 {isExpanded ? (
                   <IconChevronUp size={14} className="text-muted-foreground" />
                 ) : (
@@ -118,7 +118,7 @@ export function DeploymentsTab() {
               <div className="bg-background-subtle px-4 py-3 pl-11 border-t border-border">
                 <dl className="flex flex-col gap-1.5 mb-3">
                   {[
-                    { label: 'Auteur', value: d.author },
+                    { label: 'Author', value: d.author },
                     { label: 'Trigger', value: 'commit' },
                     { label: 'Image', value: d.imageTag, mono: true },
                   ].map(({ label, value, mono }) => (
@@ -138,7 +138,7 @@ export function DeploymentsTab() {
                       icon={<IconBrandGitlab size={13} />}
                       onClick={() => window.open(d.gitlabPipelineUrl!, '_blank')}
                     >
-                      Voir le pipeline
+                      View pipeline
                       <IconExternalLink size={11} className="ml-1 opacity-60" />
                     </Button>
                   </div>

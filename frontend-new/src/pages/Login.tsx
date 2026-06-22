@@ -25,14 +25,14 @@ export function Login() {
       setAuth(access_token, user);
       navigate('/');
     } catch {
-      setError('Email ou mot de passe incorrect.');
+      setError('Incorrect email or password.');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-dotted">
+    <div className="h-screen-corrected overflow-hidden flex items-center justify-center bg-dotted">
       <div className="flex flex-col items-center gap-6 w-full max-w-sm mx-auto">
         {/* Logo */}
         <div className="w-20 h-20 rounded-2xl bg-[#0C1236] flex items-center justify-center shrink-0 overflow-hidden">
@@ -44,7 +44,7 @@ export function Login() {
             Cloud Native Platform
           </h1>
           <p className="text-sm text-muted-foreground mb-6">
-            Connectez-vous à votre espace
+            Sign in to your workspace
           </p>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -58,7 +58,7 @@ export function Login() {
               autoFocus
             />
             <Input
-              label="Mot de passe"
+              label="Password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -69,13 +69,13 @@ export function Login() {
             {error && <p className="text-xs text-danger-text">{error}</p>}
 
             <Button variant="primary" type="submit" loading={loading} className="w-full justify-center mt-1">
-              Se connecter
+              Sign in
             </Button>
           </form>
 
           <div className="flex items-center gap-3 my-4">
             <div className="flex-1 border-t border-border" />
-            <span className="text-xs text-muted-foreground">ou</span>
+            <span className="text-xs text-muted-foreground">or</span>
             <div className="flex-1 border-t border-border" />
           </div>
 
@@ -85,7 +85,7 @@ export function Login() {
             icon={<IconBrandGitlab size={16} />}
             onClick={() => authApi.initiateGitLab()}
           >
-            Continuer avec GitLab
+            Continue with GitLab
           </Button>
         </div>
       </div>

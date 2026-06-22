@@ -48,7 +48,7 @@ test.describe('Navigation admin', () => {
 
   test('naviguer vers /admin/users depuis /admin/clusters', async ({ page }) => {
     // Clic sur le lien Utilisateurs dans la sidebar
-    await page.locator('a[href*="/admin/users"], button:has-text("Utilisateurs")').first().click();
+    await page.locator('a[href*="/admin/users"], button:has-text("Users")').first().click();
     await expect(page).toHaveURL(/\/admin\/users/, { timeout: 5_000 });
   });
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react';
 import { useScopeStore } from '@/store/scope';
-import { Breadcrumb } from '@/components/Breadcrumb';
+import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { finopsApi } from '@/api/finops';
 import { MetricCard } from '@/components/MetricCard';
 import { Card } from '@/components/ui/Card';
@@ -20,7 +20,13 @@ function ProgressBar({ value, max, className }: { value: number; max: number; cl
 
 export function FinOps() {
   const { setScope } = useScopeStore();
+  const { setBreadcrumb } = useBreadcrumb();
   useEffect(() => { setScope('admin'); }, [setScope]);
+
+  useEffect(() => {
+    setBreadcrumb([{ label: 'Platform', to: '/admin/clusters' }, { label: 'FinOps' }]);
+    return () => setBreadcrumb([]);
+  }, [setBreadcrumb]);
 
   const [month, setMonth] = useState('2026-06');
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
@@ -38,13 +44,12 @@ export function FinOps() {
     <div className="max-w-[1440px] mx-auto px-8 py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <Breadcrumb items={[{ label: 'Plateforme', to: '/admin/clusters' }, { label: 'FinOps' }]} />
           <h1 className="text-xl font-semibold text-foreground">FinOps</h1>
         </div>
         <Select
           options={[
-            { value: '2026-06', label: 'Juin 2026' },
-            { value: '2026-05', label: 'Mai 2026' },
+            { value: '2026-06', label: 'June 2026' },
+            { value: '2026-05', label: 'May 2026' },
           ]}
           value={month}
           onChange={setMonth}
@@ -54,20 +59,20 @@ export function FinOps() {
 
       {/* KPIs */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <MetricCard label="Coût total" value={`$${data.totalCostUsd.toFixed(2)}`} />
+        <MetricCard label="Total cost" value={`$${data.totalCostUsd.toFixed(2)}`} />
         <MetricCard
-          label="Coût AKS"
+          label="AKS cost"
           value={`$${data.clusters.find((c) => c.name === 'cnp-aks')?.costUsd.toFixed(2) ?? '—'}`}
         />
         <MetricCard
-          label="Coût k3s"
+          label="k3s cost"
           value="$0.00"
           sublabel="Oracle Free Tier"
         />
         <MetricCard
-          label="Crédits restants"
+          label="Remaining credits"
           value={`$${(data.azureCreditsTotal - data.azureCreditsUsed).toFixed(0)}`}
-          sublabel={`≈ ${data.azureCreditsRemainingDays}j`}
+          sublabel={`≈ ${data.azureCreditsRemainingDays}d`}
         />
       </div>
 
@@ -75,10 +80,10 @@ export function FinOps() {
       <div className="grid grid-cols-2 gap-4">
         {/* Azure credits breakdown */}
         <Card>
-          <h2 className="text-sm font-medium text-foreground mb-4">Crédits Azure</h2>
+          <h2 className="text-sm font-medium text-foreground mb-4">Azure credits</h2>
           <div className="mb-4">
             <div className="flex justify-between text-xs text-muted-foreground mb-1">
-              <span>Utilisés</span>
+              <span>Used</span>
               <span>{creditPct}%</span>
             </div>
             <ProgressBar value={data.azureCreditsUsed} max={data.azureCreditsTotal} />
@@ -89,7 +94,7 @@ export function FinOps() {
           </div>
 
           <h3 className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-            Par cluster
+            By cluster
           </h3>
           {data.clusters.map((c) => (
             <div key={c.name} className="mb-3">
@@ -110,7 +115,7 @@ export function FinOps() {
         {/* Per-group breakdown */}
         <Card padding="none">
           <div className="px-4 py-3 border-b border-border">
-            <h2 className="text-sm font-medium text-foreground">Par groupe</h2>
+            <h2 className="text-sm font-medium text-foreground">By group</h2>
           </div>
           <ul className="divide-y divide-border">
             {data.groups.map((g) => {

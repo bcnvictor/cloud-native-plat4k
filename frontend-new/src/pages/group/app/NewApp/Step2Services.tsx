@@ -21,22 +21,22 @@ const SERVICES = [
   {
     key: 'database' as const,
     icon: <IconDatabase size={18} />,
-    label: 'Base de données',
-    desc: 'PostgreSQL managé dans le cluster',
+    label: 'Database',
+    desc: 'PostgreSQL managed in-cluster',
     soon: false,
   },
   {
     key: 'auth' as const,
     icon: <IconLock size={18} />,
-    label: 'Authentification',
-    desc: 'Keycloak — SSO et gestion des utilisateurs',
+    label: 'Authentication',
+    desc: 'Keycloak — SSO & account management',
     soon: true,
   },
   {
     key: 'cache' as const,
     icon: <IconBolt size={18} />,
     label: 'Cache',
-    desc: 'Redis — cache en mémoire',
+    desc: 'Redis — memory cache',
     soon: true,
   },
 ];
@@ -45,7 +45,7 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
-        Sélectionnez les services à injecter dans votre application.
+        Select the services to inject into your application.
       </p>
 
       {SERVICES.map((svc) => {
@@ -93,7 +93,7 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
               </div>
               {svc.soon ? (
                 <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                  Bientôt
+                  Soon
                 </span>
               ) : enabled ? (
                 <IconCircleCheckFilled size={18} className="text-info" />
@@ -112,7 +112,7 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
                   className="w-36"
                 />
                 <Input
-                  label="Nom de la base"
+                  label="DB name"
                   value={data.database.dbName}
                   onChange={(e) =>
                     onChange({
@@ -123,7 +123,7 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
                   className="flex-1"
                 />
                 <Select
-                  label="Taille"
+                  label="Size"
                   options={[
                     { value: '1Gi', label: '1 Gi' },
                     { value: '5Gi', label: '5 Gi' },
@@ -148,10 +148,10 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
 
       <div className="flex justify-between mt-2">
         <Button variant="ghost" size="sm" onClick={onBack}>
-          Précédent
+          Back
         </Button>
         <Button variant="primary" size="sm" onClick={onNext}>
-          Suivant
+          Next
         </Button>
       </div>
     </div>

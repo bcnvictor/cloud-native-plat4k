@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { IconFilter } from '@tabler/icons-react';
 import { useScopeStore } from '@/store/scope';
-import { Breadcrumb } from '@/components/Breadcrumb';
+import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { appsApi } from '@/api/apps';
 import { groupsApi } from '@/api/groups';
 import { AppStatusBadge } from '@/components/AppStatusBadge';
@@ -12,7 +12,13 @@ import { getAppHealth } from '@/utils/appHealth';
 
 export function AdminApps() {
   const { setScope } = useScopeStore();
+  const { setBreadcrumb } = useBreadcrumb();
   useEffect(() => { setScope('admin'); }, [setScope]);
+
+  useEffect(() => {
+    setBreadcrumb([{ label: 'Platform', to: '/admin/clusters' }, { label: 'Apps' }]);
+    return () => setBreadcrumb([]);
+  }, [setBreadcrumb]);
 
   const { data: apps = [], isLoading } = useQuery({
     queryKey: ['apps'],
@@ -35,21 +41,20 @@ export function AdminApps() {
     <div className="max-w-[1440px] mx-auto px-8 py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <Breadcrumb items={[{ label: 'Plateforme', to: '/admin/clusters' }, { label: 'Apps' }]} />
           <h1 className="text-xl font-semibold text-foreground">Apps</h1>
           <p className="text-sm text-muted-foreground">
-            {apps.length} application{apps.length !== 1 ? 's' : ''} · toutes équipes
+            {apps.length} application{apps.length !== 1 ? 's' : ''} · all teams
           </p>
         </div>
         <Button variant="secondary" size="sm" icon={<IconFilter size={13} />}>
-          Filtrer
+          Filter
         </Button>
       </div>
 
       <div className="bg-card border border-border rounded-md overflow-hidden">
         {/* Header */}
         <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-4 px-4 py-2 border-b border-border bg-background-subtle">
-          {['Nom', 'Groupe', 'Cluster', 'Origine'].map((h) => (
+          {['Name', 'Group', 'Cluster', 'Origin'].map((h) => (
             <p key={h} className="text-xs font-medium text-muted-foreground">{h}</p>
           ))}
         </div>
@@ -83,7 +88,7 @@ export function AdminApps() {
             })}
             {apps.length === 0 && (
               <p className="px-4 py-8 text-sm text-muted-foreground text-center">
-                Aucune application.
+                No applications.
               </p>
             )}
           </>

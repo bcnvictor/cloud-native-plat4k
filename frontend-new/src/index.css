@@ -32,6 +32,11 @@
   .pt-topnav {
     padding-top: var(--topnav-height);
   }
+  /* zoom: 1.25 sur body fait que h-screen (100vh) apparaît à 125vh visuel.
+     Cette classe compense : 100vh / 1.25 = 80vh CSS → 100vh visuel. */
+  .h-screen-corrected {
+    height: calc(100vh / 1.25);
+  }
 }
 
 /* Non-layered overrides win over @layer utilities — fixes oklch(var()) double-wrap */

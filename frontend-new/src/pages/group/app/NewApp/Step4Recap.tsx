@@ -40,23 +40,23 @@ function RecapSection({
 
 export function Step4Recap({ identity, services, ciDeploy, onSubmit, onBack, isPending, error }: Props) {
   const enabledServices = [
-    services.database.enabled && 'Base de données (PostgreSQL)',
-    services.auth.enabled && 'Authentification (Keycloak)',
+    services.database.enabled && 'Database (PostgreSQL)',
+    services.auth.enabled && 'Authentication (Keycloak)',
     services.cache.enabled && 'Cache (Redis)',
   ].filter(Boolean) as string[];
 
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
-        Vérifiez les informations avant de créer l'application.
+        Verify your input before creating this app.
       </p>
 
       <RecapSection
-        title="Identité"
+        title="Identity"
         rows={[
-          { label: 'Nom', value: identity.name },
+          { label: 'Name', value: identity.name },
           { label: 'Slug', value: computeSlug(identity.name), mono: true },
-          { label: 'Origine', value: identity.origin },
+          { label: 'Origin', value: identity.origin },
           { label: 'Framework', value: identity.framework || '—' },
         ]}
       />
@@ -66,19 +66,19 @@ export function Step4Recap({ identity, services, ciDeploy, onSubmit, onBack, isP
         rows={
           enabledServices.length > 0
             ? enabledServices.map((s, i) => ({ label: i === 0 ? 'Services' : '', value: s }))
-            : [{ label: 'Services', value: 'Aucun' }]
+            : [{ label: 'Services', value: 'None' }]
         }
       />
 
       <RecapSection
-        title="CI & Déploiement"
+        title="CI & Deploy"
         rows={[
           {
             label: 'Trigger',
-            value: ciDeploy.trigger === 'on_commit' ? 'Sur chaque commit' : 'Sur tag',
+            value: ciDeploy.trigger === 'on_commit' ? 'On every commit' : 'On tag',
           },
           { label: 'Replicas', value: String(ciDeploy.replicas) },
-          { label: 'Cluster cible', value: ciDeploy.targetClusterId ? `cluster-${ciDeploy.targetClusterId}` : 'Auto' },
+          { label: 'Target cluster', value: ciDeploy.targetClusterId ? `cluster-${ciDeploy.targetClusterId}` : 'Auto' },
         ]}
       />
 
@@ -86,10 +86,10 @@ export function Step4Recap({ identity, services, ciDeploy, onSubmit, onBack, isP
 
       <div className="flex justify-between mt-2">
         <Button variant="ghost" size="sm" onClick={onBack} disabled={isPending}>
-          Précédent
+          Back
         </Button>
         <Button variant="primary" size="sm" loading={isPending} onClick={onSubmit}>
-          Créer l'application
+          Create app
         </Button>
       </div>
     </div>

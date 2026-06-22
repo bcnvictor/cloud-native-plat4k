@@ -46,11 +46,11 @@ const ACTIVITY_ICON: Record<ActivityEvent['type'], React.ReactNode> = {
 
 function activityLabel(ev: ActivityEvent): string {
   switch (ev.type) {
-    case 'deploy_success': return `${ev.appName} — déploiement réussi`;
-    case 'deploy_failed': return `${ev.appName} — déploiement échoué`;
-    case 'provisioning': return `${ev.appName} — provisioning en cours`;
-    case 'replica_error': return `${ev.appName} — replica en erreur`;
-    case 'member_added': return `${ev.memberName} a rejoint le groupe`;
+    case 'deploy_success': return `${ev.appName} — deployment successful`;
+    case 'deploy_failed': return `${ev.appName} — deployment failed`;
+    case 'provisioning': return `${ev.appName} — provisioning in progress`;
+    case 'replica_error': return `${ev.appName} — replica error`;
+    case 'member_added': return `${ev.memberName} joined the group`;
     default: return '';
   }
 }
@@ -112,45 +112,45 @@ export function GroupHome() {
   const deployments7d = 12;
 
   return (
-    <div className="max-w-[1440px] mx-auto px-8 pt-8 pb-6">
-      <div className="text-center pt-8 pb-6">
+    <div className="max-w-[1440px] mx-auto px-8 pt-4 pb-6">
+      <div className="text-center pt-3 pb-6">
         <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-2">Overview</p>
         <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-[#007BA7] via-[#4CA5C8] to-[#007BA7] bg-clip-text text-transparent animate-gradient-shift">
           {group?.name ?? '…'}
         </h1>
         <p className="text-xs text-zinc-400 mt-2">
-          {apps.length} app{apps.length !== 1 ? 's' : ''} · {members.length} membres
+          {apps.length} app{apps.length !== 1 ? 's' : ''} · {members.length} members
         </p>
       </div>
 
       {/* Metrics row */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         <MetricCard
-          label="CPU moyen"
+          label="Average CPU"
           value={groupMetrics.available ? groupMetrics.cpu.current.toFixed(1) : '—'}
           unit={groupMetrics.available ? '%' : undefined}
           icon={<IconCpu size={14} />}
           sublabel={!groupMetrics.available ? (
             <span className="flex items-center gap-1 text-muted-foreground">
-              <IconWifiOff size={11} /> Prometheus indisponible
+              <IconWifiOff size={11} /> Prometheus unavailable
             </span>
           ) : undefined}
         />
         <MetricCard
-          label="RAM totale"
+          label="Total RAM"
           value={groupMetrics.available ? groupMetrics.ram.current.toFixed(0) : '—'}
           unit={groupMetrics.available ? 'MB' : undefined}
           icon={<IconDatabase size={14} />}
         />
         <MetricCard
-          label="Apps par statut"
+          label="Apps by status"
           value={statusBadges}
           icon={<IconApps size={14} />}
         />
         <MetricCard
-          label="Deployments 7j"
+          label="Deployments 7d"
           value={deployments7d}
-          sublabel={<span className="text-success-text">+2 vs semaine dernière</span>}
+          sublabel={<span className="text-success-text">+2 vs last week</span>}
           icon={<IconActivity size={14} />}
         />
       </div>
@@ -160,7 +160,7 @@ export function GroupHome() {
         {/* Activity */}
         <Card padding="none">
           <div className="px-4 py-3 border-b border-border">
-            <h2 className="text-sm font-medium text-foreground">Activité récente</h2>
+            <h2 className="text-sm font-medium text-foreground">Recent activity</h2>
           </div>
           <ul className="divide-y divide-zinc-100">
             {MOCK_ACTIVITY.map((ev) => (
@@ -178,25 +178,25 @@ export function GroupHome() {
         {/* Members */}
         <Card padding="none">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <h2 className="text-sm font-medium text-foreground">Membres</h2>
+            <h2 className="text-sm font-medium text-foreground">Members</h2>
             <button
               onClick={() => navigate(`/groups/${slug}/settings`)}
               className="text-xs font-medium text-[#007BA7] bg-[#D9F0F7] px-2.5 py-1 rounded-md hover:bg-[#B3DAEB] transition-colors"
             >
-              Gérer
+              Manage
             </button>
           </div>
           <ul className="divide-y divide-zinc-100">
             {members.length === 0 ? (
               <li className="flex flex-col items-center justify-center gap-3 px-4 py-8">
                 <IconUsers size={24} className="text-zinc-300" />
-                <span className="text-sm text-zinc-400">Aucun membre pour l'instant</span>
+                <span className="text-sm text-zinc-400">No members yet</span>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => navigate(`/groups/${slug}/settings`)}
                 >
-                  Inviter un membre
+                  Invite member
                 </Button>
               </li>
             ) : (

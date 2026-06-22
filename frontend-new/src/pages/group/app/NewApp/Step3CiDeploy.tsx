@@ -12,8 +12,8 @@ interface Props {
 }
 
 const TRIGGERS: Array<{ value: 'on_commit' | 'on_tag'; label: string; desc: string }> = [
-  { value: 'on_commit', label: 'Sur chaque commit', desc: 'Déploie automatiquement sur main.' },
-  { value: 'on_tag', label: 'Sur tag', desc: 'Déploie uniquement sur les tags Git.' },
+  { value: 'on_commit', label: 'On every commit', desc: 'Deploys automatically on main.' },
+  { value: 'on_tag', label: 'On tag', desc: 'Deploys only on Git tags.' },
 ];
 
 export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
@@ -21,7 +21,7 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
     <div className="flex flex-col gap-5">
       {/* Trigger selection */}
       <div className="flex flex-col gap-3">
-        <p className="text-sm font-medium text-foreground">Déclencheur de déploiement</p>
+        <p className="text-sm font-medium text-foreground">Deploy trigger</p>
         {TRIGGERS.map((t) => {
           const selected = data.trigger === t.value;
           return (
@@ -58,7 +58,7 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
           className="w-full flex items-center justify-between px-4 py-3 hover:bg-accent transition-colors text-sm"
           onClick={() => onChange({ advancedOpen: !data.advancedOpen })}
         >
-          <span className="font-medium text-foreground">Options avancées</span>
+          <span className="font-medium text-foreground">Advanced options</span>
           {data.advancedOpen ? (
             <IconChevronUp size={14} className="text-muted-foreground" />
           ) : (
@@ -71,7 +71,7 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
             {/* Env vars */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-medium text-foreground">Variables d'environnement</p>
+                <p className="text-xs font-medium text-foreground">Environment variables</p>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -82,13 +82,13 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
                     })
                   }
                 >
-                  Ajouter
+                  Add
                 </Button>
               </div>
               {data.envVars.map((ev, i) => (
                 <div key={i} className="flex gap-2 mb-2">
                   <Input
-                    placeholder="CLE"
+                    placeholder="KEY"
                     value={ev.key}
                     mono
                     onChange={(e) => {
@@ -99,7 +99,7 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
                     className="flex-1"
                   />
                   <Input
-                    placeholder="valeur"
+                    placeholder="value"
                     value={ev.value}
                     mono
                     onChange={(e) => {
@@ -123,7 +123,7 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
 
             {/* Replicas */}
             <Input
-              label="Nombre de replicas"
+              label="Replica count"
               type="number"
               value={data.replicas}
               onChange={(e) => onChange({ replicas: parseInt(e.target.value) || 1 })}
@@ -131,7 +131,7 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
             />
 
             <p className="text-xs text-muted-foreground">
-              Tout est configurable après création depuis les settings de l'application.
+              Everything can be reconfigured after creation from the app settings.
             </p>
           </div>
         )}
@@ -139,10 +139,10 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
 
       <div className="flex justify-between mt-2">
         <Button variant="ghost" size="sm" onClick={onBack}>
-          Précédent
+          Back
         </Button>
         <Button variant="primary" size="sm" onClick={onNext}>
-          Suivant
+          Next
         </Button>
       </div>
     </div>

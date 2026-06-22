@@ -77,19 +77,19 @@ export function Profile() {
 
   return (
     <div className="max-w-[1440px] mx-auto px-8 py-6">
-      <h1 className="text-xl font-semibold text-foreground mb-6">Mon profil</h1>
+      <h1 className="text-xl font-semibold text-foreground mb-6">My profile</h1>
       <div className="max-w-2xl flex flex-col gap-6">
 
         {/* Identity */}
         <Card>
-          <h2 className="text-sm font-medium text-foreground mb-4">Identité</h2>
+          <h2 className="text-sm font-medium text-foreground mb-4">Identity</h2>
           <dl className="flex flex-col gap-2">
             {[
               { label: 'Email', value: user.email },
-              { label: 'Rôle', value: user.role },
-              { label: 'Admin', value: user.is_admin ? 'Oui' : 'Non' },
+              { label: 'Role', value: user.role },
+              { label: 'Admin', value: user.is_admin ? 'Yes' : 'No' },
               { label: 'GitLab ID', value: user.gitlab_user_id ? String(user.gitlab_user_id) : '—' },
-              { label: 'Membre depuis', value: timeAgo(user.created_at) },
+              { label: 'Member since', value: timeAgo(user.created_at) },
             ].map(({ label, value }) => (
               <div key={label} className="flex items-baseline gap-2">
                 <dt className="text-xs text-muted-foreground w-28 shrink-0">{label}</dt>
@@ -102,7 +102,7 @@ export function Profile() {
         {/* Groups */}
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-medium text-foreground">Mes groupes GitLab</h2>
+            <h2 className="text-sm font-medium text-foreground">My GitLab groups</h2>
             <Button
               variant="secondary"
               size="sm"
@@ -116,7 +116,7 @@ export function Profile() {
           {groupsLoading ? (
             <Spinner size="sm" />
           ) : groups.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Aucun groupe.</p>
+            <p className="text-xs text-muted-foreground">No groups.</p>
           ) : (
             <ul className="divide-y divide-border">
               {groups.map((g) => (
@@ -132,12 +132,12 @@ export function Profile() {
 
         {/* API Keys */}
         <Card>
-          <h2 className="text-sm font-medium text-foreground mb-4">Clés API</h2>
+          <h2 className="text-sm font-medium text-foreground mb-4">API keys</h2>
 
           {revealedKey && (
             <div className="mb-4 p-3 bg-background-subtle border border-border rounded-md">
               <p className="text-xs text-muted-foreground mb-2">
-                Copiez cette clé maintenant — elle ne sera plus affichée.
+                Copy this key now — it won't be shown again.
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 text-xs font-mono text-foreground break-all">{revealedKey}</code>
@@ -166,14 +166,14 @@ export function Profile() {
               disabled={!newKeyLabel.trim()}
               onClick={() => createKeyMutation.mutate()}
             >
-              Générer
+              Generate
             </Button>
           </div>
 
           {keysLoading ? (
             <Spinner size="sm" />
           ) : apiKeys.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Aucune clé active.</p>
+            <p className="text-xs text-muted-foreground">No active keys.</p>
           ) : (
             <ul className="divide-y divide-border">
               {apiKeys.map((k) => (
@@ -183,7 +183,7 @@ export function Profile() {
                     <p className="text-xs font-medium text-foreground">{k.label}</p>
                     <p className="text-xs text-muted-foreground font-mono">
                       {k.key_prefix}••••••••
-                      {k.last_used_at && ` · utilisée ${timeAgo(k.last_used_at)}`}
+                      {k.last_used_at && ` · used ${timeAgo(k.last_used_at)}`}
                     </p>
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0">{timeAgo(k.created_at)}</span>
