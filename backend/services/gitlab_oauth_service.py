@@ -63,3 +63,15 @@ class GitLabOAuthService:
                     detail=f"GitLab user profile fetch failed ({resp.status_code}).",
                 )
             return resp.json()
+
+    async def is_group_member(self, access_token: str, group_path: str, gitlab_user_id: int) -> bool:
+        from urllib.parse import quote
+        encoded = quote(group_path, safe="")
+        headers = {"Authorization": f"Bearer {access_token}"}
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{self.base}/api/v4/groups/{encoded}/members/all/{gitlab_user_id}",
+                headers=headers,
+                timeout=10,
+            )
+            return resp.status_code == 200
