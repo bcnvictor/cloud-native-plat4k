@@ -132,24 +132,24 @@ describe('timeAgo', () => {
     vi.useRealTimers();
   });
 
-  it('< 60s → "il y a Xs"', () => {
+  it('< 60s → "Xs ago"', () => {
     const d = new Date(NOW.getTime() - 30_000).toISOString();
-    expect(timeAgo(d)).toBe('il y a 30s');
+    expect(timeAgo(d)).toBe('30s ago');
   });
 
-  it('< 1h → "il y a Xmin"', () => {
+  it('< 1h → "Xmin ago"', () => {
     const d = new Date(NOW.getTime() - 5 * 60_000).toISOString();
-    expect(timeAgo(d)).toBe('il y a 5min');
+    expect(timeAgo(d)).toBe('5min ago');
   });
 
-  it('< 24h → "il y a Xh"', () => {
+  it('< 24h → "Xh ago"', () => {
     const d = new Date(NOW.getTime() - 3 * 3_600_000).toISOString();
-    expect(timeAgo(d)).toBe('il y a 3h');
+    expect(timeAgo(d)).toBe('3h ago');
   });
 
-  it('< 7j → "il y a Xj"', () => {
+  it('< 7d → "Xd ago"', () => {
     const d = new Date(NOW.getTime() - 2 * 86_400_000).toISOString();
-    expect(timeAgo(d)).toBe('il y a 2j');
+    expect(timeAgo(d)).toBe('2d ago');
   });
 
   it('>= 7j → date formatée en fr-FR', () => {
