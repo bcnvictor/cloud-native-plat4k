@@ -32,7 +32,7 @@ export function Input({
         <input
           id={inputId}
           className={cn(
-            'w-full h-8 px-3 text-sm rounded-md border border-input bg-background',
+            'w-full h-8 px-3 text-sm text-foreground rounded-md border border-input bg-background',
             'placeholder:text-muted-foreground',
             'focus:outline-none focus:ring-2 focus:ring-ring',
             'disabled:opacity-50 disabled:cursor-not-allowed',
