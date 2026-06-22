@@ -12,6 +12,7 @@ name: CI — Frontend
 
 on:
   push:
+    branches: [main]
     paths:
       - 'frontend-new/**'
       - 'backend/**'
