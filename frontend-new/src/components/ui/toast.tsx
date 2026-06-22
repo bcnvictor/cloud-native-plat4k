@@ -37,7 +37,7 @@ export function useToast() {
 }
 
 export function Toaster() {
-  const [entries, setEntries] = useState<ToastEntry[]>([]);
+  const [entries, setEntries] = useState<ToastEntry[]>(() => [..._toasts]);
 
   useEffect(() => {
     const listener: Listener = (t) => setEntries(t);
