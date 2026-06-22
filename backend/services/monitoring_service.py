@@ -5,61 +5,77 @@ import httpx
 
 from backend.core.config import settings
 
-COST_PER_HOUR_USD = 0.016  # Standard_B2ls_v2 x2 nodes
-
 _LEVEL_RE = re.compile(r'\b(ERROR|WARN(?:ING)?|INFO|DEBUG|CRITICAL|FATAL)\b', re.IGNORECASE)
 
-QUERIES = {
-    "cpu": (
-        "sort_desc(sum by (label_app_kubernetes_io_name, label_cnp_io_owner) ("
-        "  rate(container_cpu_usage_seconds_total{container!=''}[5m])"
-        "  * on(namespace, pod) group_left(label_app_kubernetes_io_name, label_cnp_io_owner)"
-        "  kube_pod_labels{label_app_kubernetes_io_managed_by='cnp'}"
-        "))"
-    ),
-    "ram": (
-        "sort_desc(sum by (label_app_kubernetes_io_name, label_cnp_io_owner) ("
-        "  container_memory_working_set_bytes{container!=''}"
-        "  * on(namespace, pod) group_left(label_app_kubernetes_io_name, label_cnp_io_owner)"
-        "  kube_pod_labels{label_app_kubernetes_io_managed_by='cnp'}"
-        ") / 1024 / 1024)"
-    ),
-}
+# sort_desc n'est pas supporté sur les range queries — on groupe par app seulement
+_CPU_QUERY = (
+    "sum by (label_app_kubernetes_io_name) ("
+    "  rate(container_cpu_usage_seconds_total{container!=''}[5m])"
+    "  * on(namespace, pod) group_left(label_app_kubernetes_io_name)"
+    "  kube_pod_labels{label_app_kubernetes_io_managed_by='cnp'}"
+    ")"
+)
+_RAM_QUERY = (
+    "sum by (label_app_kubernetes_io_name) ("
+    "  container_memory_working_set_bytes{container!=''}"
+    "  * on(namespace, pod) group_left(label_app_kubernetes_io_name)"
+    "  kube_pod_labels{label_app_kubernetes_io_managed_by='cnp'}"
+    ") / 1024 / 1024"
+)
+
+RANGE_SECONDS = 1800  # fenêtre affichée : 30 min
+STEP_SECONDS  = 60    # 1 point/min → 30 points max
 
 
-async def _query(client: httpx.AsyncClient, promql: str) -> list[dict]:
-    resp = await client.get("/api/v1/query", params={"query": promql}, timeout=10)
+async def _query_range(client: httpx.AsyncClient, promql: str, start: int, end: int) -> list[dict]:
+    resp = await client.get(
+        "/api/v1/query_range",
+        params={"query": promql, "start": start, "end": end, "step": STEP_SECONDS},
+        timeout=15,
+    )
     resp.raise_for_status()
     return resp.json()["data"]["result"]
 
 
 async def get_metrics() -> dict:
+    now   = int(time.time())
+    start = now - RANGE_SECONDS
+
     async with httpx.AsyncClient(base_url=settings.PROMETHEUS_URL) as client:
-        cpu_result, ram_result = await _query(client, QUERIES["cpu"]), await _query(client, QUERIES["ram"])
+        cpu_result = await _query_range(client, _CPU_QUERY, start, now)
+        ram_result = await _query_range(client, _RAM_QUERY, start, now)
 
-    cpu = [
-        {
-            "app": r["metric"].get("label_app_kubernetes_io_name", "unknown"),
-            "owner": r["metric"].get("label_cnp_io_owner", "unknown"),
-            "value": round(float(r["value"][1]), 6),
-        }
-        for r in cpu_result
-    ]
-    ram = [
-        {
-            "app": r["metric"].get("label_app_kubernetes_io_name", "unknown"),
-            "owner": r["metric"].get("label_cnp_io_owner", "unknown"),
-            "value": round(float(r["value"][1]), 1),
-        }
-        for r in ram_result
-    ]
+    # { app_name -> [{"t": unix_s, "v": value}, ...] }
+    cpu_map: dict[str, list[dict]] = {}
+    for r in cpu_result:
+        name = r["metric"].get("label_app_kubernetes_io_name", "unknown")
+        cpu_map[name] = [
+            {"t": int(float(ts)), "v": round(float(val) * 100, 1)}  # cores/s → %
+            for ts, val in r["values"]
+        ]
 
-    return {
-        "cpu_by_app": cpu,
-        "ram_by_app": ram,
-        "estimated_hourly_cost_usd": COST_PER_HOUR_USD,
-        "estimated_daily_cost_usd": round(COST_PER_HOUR_USD * 24, 3),
-    }
+    ram_map: dict[str, list[dict]] = {}
+    for r in ram_result:
+        name = r["metric"].get("label_app_kubernetes_io_name", "unknown")
+        ram_map[name] = [
+            {"t": int(float(ts)), "v": round(float(val), 1)}  # déjà en MB
+            for ts, val in r["values"]
+        ]
+
+    all_apps = sorted(set(cpu_map) | set(ram_map))
+    apps = []
+    for name in all_apps:
+        cpu_series = cpu_map.get(name, [])
+        ram_series = ram_map.get(name, [])
+        apps.append({
+            "app_name":      name,
+            "cpu_series":    cpu_series,
+            "cpu_current":   cpu_series[-1]["v"] if cpu_series else 0,
+            "ram_series":    ram_series,
+            "ram_current_mb": ram_series[-1]["v"] if ram_series else 0,
+        })
+
+    return {"apps": apps}
 
 
 def _detect_level(line: str, stream_labels: dict) -> str:

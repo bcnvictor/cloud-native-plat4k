@@ -128,6 +128,7 @@ class Application(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     slug = Column(String, nullable=False, unique=True)
+    description = Column(String, nullable=True)
     repo_url = Column(String, nullable=True, unique=True)
     owner = Column(String, nullable=False)
     gitlab_project_id = Column(BigInteger, nullable=True)
@@ -206,6 +207,7 @@ class GitLabGroupMember(Base):
     id = Column(Integer, primary_key=True, index=True)
     gitlab_group_id = Column(BigInteger, ForeignKey("gitlab_groups.gitlab_group_id", ondelete="CASCADE"), nullable=False, index=True)
     gitlab_user_id = Column(BigInteger, nullable=True)
+    username = Column(String, nullable=True)
     access_level = Column(Integer, nullable=False)
     cnp_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(

@@ -11,6 +11,7 @@ name: CI — Backend
 
 on:
   push:
+    branches: [main]
     paths:
       - 'backend/**'
       - 'shared/**'
