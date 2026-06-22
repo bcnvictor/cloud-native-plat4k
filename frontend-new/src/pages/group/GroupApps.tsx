@@ -47,11 +47,11 @@ export function GroupApps() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 px-3 h-8 bg-white border border-zinc-200 rounded-lg">
-            <IconSearch size={14} className="text-zinc-400 shrink-0" />
+          <div className="flex items-center gap-2 px-3 h-8 bg-background border border-border rounded-lg">
+            <IconSearch size={14} className="text-muted-foreground shrink-0" />
             <input
               placeholder="Search…"
-              className="border-none outline-none text-sm bg-transparent w-40"
+              className="border-none outline-none text-sm bg-transparent text-foreground placeholder:text-muted-foreground w-40"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />

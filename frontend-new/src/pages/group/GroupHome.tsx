@@ -162,7 +162,7 @@ export function GroupHome() {
           <div className="px-4 py-3 border-b border-border">
             <h2 className="text-sm font-medium text-foreground">Recent activity</h2>
           </div>
-          <ul className="divide-y divide-zinc-100">
+          <ul className="divide-y divide-border">
             {MOCK_ACTIVITY.map((ev) => (
               <li key={ev.id} className="flex items-center gap-3 px-4 py-2.5">
                 <span className="shrink-0">{ACTIVITY_ICON[ev.type]}</span>
@@ -181,12 +181,12 @@ export function GroupHome() {
             <h2 className="text-sm font-medium text-foreground">Members</h2>
             <button
               onClick={() => navigate(`/groups/${slug}/settings`)}
-              className="text-xs font-medium text-[#007BA7] bg-[#D9F0F7] px-2.5 py-1 rounded-md hover:bg-[#B3DAEB] transition-colors"
+              className="text-xs font-medium text-primary bg-background/60 border border-primary/20 hover:bg-primary/10 backdrop-blur-sm px-2.5 py-1 rounded-md transition-colors"
             >
               Manage
             </button>
           </div>
-          <ul className="divide-y divide-zinc-100">
+          <ul className="divide-y divide-border">
             {members.length === 0 ? (
               <li className="flex flex-col items-center justify-center gap-3 px-4 py-8">
                 <IconUsers size={24} className="text-zinc-300" />
@@ -205,7 +205,7 @@ export function GroupHome() {
                   <Avatar name={m.display_name ?? '?'} size="sm" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-foreground truncate">
-                      {m.display_name ?? <span className="italic text-muted-foreground">sync en attente</span>}
+                      {m.display_name ?? <span className="italic text-muted-foreground">Waiting for sync</span>}
                     </p>
                     <p className="text-xs text-muted-foreground">{m.tier_cnp}</p>
                   </div>

@@ -195,6 +195,49 @@
 }
 
 /* =============================================================
+   FORCE LIGHT — isole un sous-arbre du dark mode
+   Usage : <div class="force-light"> sur la page Login
+   Re-déclare tous les tokens :root pour écraser l'héritage .dark
+   ============================================================= */
+.force-light {
+  color-scheme: light;
+  --background:          oklch(1 0 0);
+  --background-subtle:   oklch(0.968 0 0);
+  --card:                oklch(1 0 0);
+  --card-foreground:     oklch(0.141 0.005 285.823);
+  --popover:             oklch(1 0 0);
+  --popover-foreground:  oklch(0.141 0.005 285.823);
+  --foreground:          oklch(0.141 0.005 285.823);
+  --muted-foreground:    oklch(0.552 0.016 285.938);
+  --primary:             oklch(0.495 0.105 222);
+  --primary-foreground:  oklch(0.98  0     0  );
+  --primary-subtle:      oklch(0.960 0.025 222);
+  --primary-border:      oklch(0.820 0.068 222);
+  --primary-hover:       oklch(0.415 0.100 222);
+  --primary-active:      oklch(0.330 0.090 222);
+  --secondary:           oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted:               oklch(0.967 0.001 286.375);
+  --accent:              oklch(0.940 0.035 222);
+  --accent-foreground:   oklch(0.495 0.105 222);
+  --border:              oklch(0.92  0.004 286.32);
+  --input:               oklch(0.92  0.004 286.32);
+  --ring:                oklch(0.495 0.105 222);
+  --destructive:         oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.98 0 0);
+  --danger:              oklch(0.577 0.245 27.325);
+  --danger-foreground:   oklch(0.98  0     0  );
+  --danger-subtle:       oklch(0.960 0.050 20);
+  --danger-border:       oklch(0.820 0.120 25);
+  --danger-text:         oklch(0.400 0.200 25);
+  --success:             oklch(0.527 0.154 150);
+  --success-foreground:  oklch(0.98  0     0  );
+  --success-subtle:      oklch(0.955 0.042 150);
+  --success-border:      oklch(0.820 0.095 150);
+  --success-text:        oklch(0.400 0.140 150);
+}
+
+/* =============================================================
    DARK MODE
    Activé par la classe .dark sur <html>
    ============================================================= */

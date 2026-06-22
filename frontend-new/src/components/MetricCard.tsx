@@ -47,10 +47,10 @@ export function MetricCard({ label, value, unit, icon, sublabel, sparkline, exte
         {empty ? (
           <div className="flex flex-col items-center justify-center gap-1 py-2">
             <IconClock size={18} className="text-zinc-300" />
-            <span className="text-xs text-zinc-400">En attente de métriques</span>
+            <span className="text-xs text-zinc-400">Waiting for stats...</span>
           </div>
         ) : isPrimitive ? (
-          <p className="text-2xl font-semibold text-zinc-900">
+          <p className="text-2xl font-semibold text-foreground">
             {value}
             {unit && <span className="text-xs text-muted-foreground ml-1">{unit}</span>}
           </p>
