@@ -6,8 +6,8 @@ const DEV   = { email: 'dev-e2e@cnp.test',   password: 'DevE2E123!' };
 async function loginAs(page: Page, user: { email: string; password: string }) {
   await page.goto('/login');
   await page.getByLabel(/email/i).fill(user.email);
-  await page.getByLabel(/mot de passe|password/i).fill(user.password);
-  await page.getByRole('button', { name: /connexion|login|se connecter/i }).click();
+  await page.getByLabel(/password/i).fill(user.password);
+  await page.getByRole('button', { name: /connexion|login|se connecter|sign in/i }).click();
   await page.waitForURL(url => !url.pathname.includes('/login'), { timeout: 10_000 });
 }
 
@@ -53,10 +53,10 @@ test.describe('Navigation admin', () => {
   });
 
   test('logout fonctionne', async ({ page }) => {
-    // Ouvrir le dropdown avatar (dernier bouton dans le header)
-    await page.locator('header').getByRole('button').last().click();
-    // Cliquer sur "Se déconnecter" dans le menu déroulant
-    await page.getByRole('button', { name: /se déconnecter/i }).click();
+    // Ouvrir le dropdown avatar (bouton avec title=email dans la sidebar)
+    await page.locator('aside button[title]').click();
+    // Cliquer sur "Sign out" dans le menu déroulant
+    await page.getByRole('button', { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login/, { timeout: 5_000 });
     const token = await page.evaluate(() => localStorage.getItem('token'));
     expect(token).toBeNull();
