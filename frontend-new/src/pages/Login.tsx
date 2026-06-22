@@ -4,6 +4,7 @@ import { authApi } from '@/api/auth';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Toaster } from '@/components/ui/toast';
 import { IconBrandGitlab } from '@tabler/icons-react';
 
 export function Login() {
@@ -38,6 +39,7 @@ export function Login() {
 
   return (
     <div className="force-light h-screen flex items-center justify-center bg-dotted">
+      <Toaster />
       <div className="flex flex-col items-center gap-6 w-full max-w-sm mx-auto">
         {/* Logo */}
         <div className="w-20 h-20 rounded-2xl bg-[#0C1236] flex items-center justify-center shrink-0 overflow-hidden">
