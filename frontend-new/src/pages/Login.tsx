@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '@/api/auth';
 import { useAuthStore } from '@/store/auth';
@@ -13,6 +13,11 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    document.body.style.zoom = '1';
+    return () => { document.body.style.zoom = ''; };
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,7 +37,7 @@ export function Login() {
   }
 
   return (
-    <div className="force-light h-screen-corrected overflow-hidden flex items-center justify-center bg-dotted">
+    <div className="force-light h-screen flex items-center justify-center bg-dotted">
       <div className="flex flex-col items-center gap-6 w-full max-w-sm mx-auto">
         {/* Logo */}
         <div className="w-20 h-20 rounded-2xl bg-[#0C1236] flex items-center justify-center shrink-0 overflow-hidden">
