@@ -5,7 +5,7 @@ import { useToast } from '@/components/ui/toast';
 import { IconTrash, IconClock } from '@tabler/icons-react';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useScopeStore } from '@/store/scope';
-import { Breadcrumb } from '@/components/Breadcrumb';
+import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { appsApi } from '@/api/apps';
 import { groupsApi } from '@/api/groups';
 import { useGroupApps } from '@/hooks/useGroupApps';
@@ -28,11 +28,20 @@ export function GroupSettings() {
   const { slug } = useParams<{ slug: string }>();
   const group = useCurrentGroup();
   const { setScope } = useScopeStore();
+  const { setBreadcrumb } = useBreadcrumb();
   const qc = useQueryClient();
 
   useEffect(() => {
     if (slug) setScope('group', slug);
   }, [slug, setScope]);
+
+  useEffect(() => {
+    setBreadcrumb([
+      { label: group?.name ?? '…', to: `/groups/${slug}` },
+      { label: 'Settings' },
+    ]);
+    return () => setBreadcrumb([]);
+  }, [group?.name, slug, setBreadcrumb]);
 
   const { data: apps = [] } = useGroupApps(group?.gitlab_group_id);
   const firstAppId = apps[0]?.id;
@@ -61,10 +70,10 @@ export function GroupSettings() {
     onSuccess: () => {
       setInviteEmail('');
       qc.invalidateQueries({ queryKey: ['group-members', group?.gitlab_group_id] });
-      toast({ title: 'Membre invité', description: 'Un email a été envoyé.', variant: 'default' });
+      toast({ title: 'Member invited', description: 'An email has been sent.', variant: 'default' });
     },
     onError: () => {
-      toast({ title: 'Erreur', variant: 'destructive' });
+      toast({ title: 'Error', variant: 'destructive' });
     },
   });
 
@@ -73,9 +82,9 @@ export function GroupSettings() {
     setIsSaving(true);
     try {
       await new Promise((r) => setTimeout(r, 400));
-      toast({ title: 'Groupe sauvegardé', description: 'Les modifications ont été enregistrées.' });
+      toast({ title: 'Group saved', description: 'Changes have been saved.' });
     } catch {
-      toast({ title: 'Erreur', variant: 'destructive' });
+      toast({ title: 'Error', variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
@@ -83,23 +92,22 @@ export function GroupSettings() {
 
   return (
     <div className="max-w-[1440px] mx-auto px-8 py-6">
-      <Breadcrumb items={[{ label: group?.name ?? '…', to: `/groups/${slug}` }, { label: 'Settings' }]} />
       <h1 className="text-xl font-semibold text-foreground mb-6">Settings</h1>
       <div className="max-w-2xl flex flex-col gap-6">
 
       {/* Identity */}
       <Card>
-        <h2 className="text-sm font-medium text-foreground mb-4">Identité</h2>
+        <h2 className="text-sm font-medium text-foreground mb-4">Identity</h2>
         <div className="flex gap-3">
           <Input
-            label="Nom du groupe"
+            label="Group name"
             value={groupName}
             onChange={(e) => setGroupName(e.target.value)}
             className="flex-1"
           />
           <div className="flex items-end">
             <Button variant="secondary" size="sm" loading={isSaving} onClick={handleSave}>
-              Sauvegarder
+              Save
             </Button>
           </div>
         </div>
@@ -107,12 +115,12 @@ export function GroupSettings() {
 
       {/* Members */}
       <Card>
-        <h2 className="text-sm font-medium text-foreground mb-4">Membres</h2>
+        <h2 className="text-sm font-medium text-foreground mb-4">Members</h2>
 
         {/* Invite form */}
         <div className="flex gap-2 mb-5">
           <Input
-            placeholder="email ou username GitLab"
+            placeholder="GitLab email or username"
             value={inviteEmail}
             onChange={(e) => setInviteEmail(e.target.value)}
             className="flex-1"
@@ -130,7 +138,7 @@ export function GroupSettings() {
             disabled={!inviteEmail}
             onClick={() => inviteMutation.mutate()}
           >
-            Inviter
+            Invite
           </Button>
         </div>
 
@@ -173,7 +181,7 @@ export function GroupSettings() {
         {members.some((m) => m.status === 'pending_invite') && (
           <div className="mt-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
-              Invitations en attente
+              Pending invitations
             </p>
             <ul className="divide-y divide-border">
               {members

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { IconEye, IconEyeOff, IconRefresh } from '@tabler/icons-react';
 import { useScopeStore } from '@/store/scope';
-import { Breadcrumb } from '@/components/Breadcrumb';
+import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { gitlabApi } from '@/api/gitlab';
 import { clustersApi } from '@/api/clusters';
 import { Card } from '@/components/ui/Card';
@@ -12,7 +12,13 @@ import { Badge } from '@/components/ui/Badge';
 
 export function AdminSettings() {
   const { setScope } = useScopeStore();
+  const { setBreadcrumb } = useBreadcrumb();
   useEffect(() => { setScope('admin'); }, [setScope]);
+
+  useEffect(() => {
+    setBreadcrumb([{ label: 'Platform', to: '/admin/clusters' }, { label: 'Settings' }]);
+    return () => setBreadcrumb([]);
+  }, [setBreadcrumb]);
 
   const [platformName, setPlatformName] = useState('Cloud Native Platform');
   const [publicUrl, setPublicUrl] = useState('');
@@ -55,27 +61,26 @@ export function AdminSettings() {
 
   return (
     <div className="max-w-[1440px] mx-auto px-8 py-6">
-      <Breadcrumb items={[{ label: 'Plateforme', to: '/admin/clusters' }, { label: 'Settings' }]} />
-      <h1 className="text-xl font-semibold text-foreground mb-6">Settings plateforme</h1>
+      <h1 className="text-xl font-semibold text-foreground mb-6">Platform settings</h1>
       <div className="max-w-2xl flex flex-col gap-6">
 
       {/* Global params */}
       <Card>
-        <h2 className="text-sm font-medium text-foreground mb-4">Paramètres globaux</h2>
+        <h2 className="text-sm font-medium text-foreground mb-4">Global settings</h2>
         <div className="flex flex-col gap-3">
           <Input
-            label="Nom de la plateforme"
+            label="Platform name"
             value={platformName}
             onChange={(e) => setPlatformName(e.target.value)}
           />
           <Input
-            label="URL publique"
+            label="Public URL"
             value={publicUrl}
             onChange={(e) => setPublicUrl(e.target.value)}
             placeholder="https://cnp.example.com"
           />
           <div className="flex justify-end">
-            <Button variant="primary" size="sm">Sauvegarder</Button>
+            <Button variant="primary" size="sm">Save</Button>
           </div>
         </div>
       </Card>
@@ -83,20 +88,20 @@ export function AdminSettings() {
       {/* GitLab connection */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-medium text-foreground">Connexion GitLab</h2>
-          {gitlabConnected === true && <Badge variant="success">Connecté</Badge>}
-          {gitlabConnected === false && <Badge variant="danger">Déconnecté</Badge>}
-          {gitlabConnected === null && <Badge variant="muted">Non vérifié</Badge>}
+          <h2 className="text-sm font-medium text-foreground">GitLab connection</h2>
+          {gitlabConnected === true && <Badge variant="success">Connected</Badge>}
+          {gitlabConnected === false && <Badge variant="danger">Disconnected</Badge>}
+          {gitlabConnected === null && <Badge variant="muted">Not verified</Badge>}
         </div>
         <div className="flex flex-col gap-3">
           <Input
-            label="URL instance GitLab"
+            label="GitLab instance URL"
             value={gitlabUrl}
             onChange={(e) => setGitlabUrl(e.target.value)}
             placeholder="https://gitlab.example.com"
           />
           <Input
-            label="Groupe racine"
+            label="Root group"
             value={gitlabGroup}
             onChange={(e) => setGitlabGroup(e.target.value)}
             placeholder="cnp-apps"
@@ -125,7 +130,7 @@ export function AdminSettings() {
               loading={healthMutation.isPending}
               onClick={() => healthMutation.mutate()}
             >
-              Tester la connexion
+              Test connection
             </Button>
             <Button
               variant="primary"
@@ -134,7 +139,7 @@ export function AdminSettings() {
               disabled={!gitlabToken || !gitlabGroup}
               onClick={() => saveGitlabMutation.mutate()}
             >
-              Sauvegarder
+              Save
             </Button>
           </div>
         </div>
@@ -142,10 +147,10 @@ export function AdminSettings() {
 
       {/* Register cluster */}
       <Card>
-        <h2 className="text-sm font-medium text-foreground mb-4">Enregistrer un cluster</h2>
+        <h2 className="text-sm font-medium text-foreground mb-4">Register cluster</h2>
         <div className="flex flex-col gap-3">
           <Input
-            label="Nom"
+            label="Name"
             value={clusterName}
             onChange={(e) => setClusterName(e.target.value)}
             placeholder="cnp-prod"
@@ -167,11 +172,11 @@ export function AdminSettings() {
               onFocus={() => setKubeconfigVisible(true)}
               onBlur={() => setKubeconfigVisible(false)}
               rows={5}
-              placeholder="Coller le contenu du kubeconfig…"
+              placeholder="Paste kubeconfig content…"
               className="w-full px-3 py-2 text-xs font-mono rounded-md border border-input bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              Le kubeconfig est stocké chiffré. Seul le contexte actif est utilisé.
+              Kubeconfig is stored encrypted. Only the active context is used.
             </p>
           </div>
           <div className="flex justify-end">
@@ -182,7 +187,7 @@ export function AdminSettings() {
               disabled={!clusterName || !clusterEndpoint || !kubeconfig}
               onClick={() => registerClusterMutation.mutate()}
             >
-              Enregistrer le cluster
+              Register cluster
             </Button>
           </div>
         </div>

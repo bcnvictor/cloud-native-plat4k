@@ -74,10 +74,10 @@ export function SettingsTab() {
     <div className="flex flex-col gap-5 max-w-2xl">
       {/* Identity */}
       <Card>
-        <h2 className="text-sm font-medium text-foreground mb-4">Identité</h2>
+        <h2 className="text-sm font-medium text-foreground mb-4">Identity</h2>
         <div className="flex flex-col gap-3">
           <Input
-            label="Nom d'affichage"
+            label="Display name"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
@@ -86,7 +86,7 @@ export function SettingsTab() {
             value={appSlugComputed}
             readOnly
             mono
-            hint="Le slug est immuable."
+            hint="The slug is immutable."
             className="text-muted-foreground"
           />
           <div className="flex flex-col gap-1">
@@ -95,7 +95,7 @@ export function SettingsTab() {
               ref={descRef}
               value={description}
               onChange={(e) => { setDescription(e.target.value); autoResize(); }}
-              placeholder="Description optionnelle"
+              placeholder="Optional description"
               rows={2}
               className="w-full resize-none overflow-hidden rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             />
@@ -108,7 +108,7 @@ export function SettingsTab() {
               onClick={() => updateMutation.mutate()}
               disabled={name === app.name && description === (app.description ?? '')}
             >
-              Sauvegarder
+              Save
             </Button>
           </div>
         </div>
@@ -118,19 +118,19 @@ export function SettingsTab() {
       {/* MOCK: getEnvVars/updateEnvVars sont des stubs côté api/apps.ts — décommissionner quand le backend expose GET/PUT /apps/:id/envvars */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-medium text-foreground">Variables d'environnement</h2>
+          <h2 className="text-sm font-medium text-foreground">Environment variables</h2>
           <Button
             variant="ghost"
             size="sm"
             icon={<IconPlus size={13} />}
             onClick={addEnvVar}
           >
-            Ajouter
+            Add
           </Button>
         </div>
 
         {envVars.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Aucune variable.</p>
+          <p className="text-xs text-muted-foreground">No variables.</p>
         ) : (
           <div className="flex flex-col gap-2">
             {envVars.map((ev, i) => {
@@ -138,7 +138,7 @@ export function SettingsTab() {
               return (
                 <div key={i} className="flex items-center gap-2">
                   <Input
-                    placeholder="CLE"
+                    placeholder="KEY"
                     value={ev.key}
                     onChange={(e) => {
                       const next = [...envVars];
@@ -149,7 +149,7 @@ export function SettingsTab() {
                     className="flex-1"
                   />
                   <Input
-                    placeholder="valeur"
+                    placeholder="value"
                     value={ev.value}
                     type={isMasked ? 'password' : 'text'}
                     onChange={(e) => {
@@ -184,11 +184,11 @@ export function SettingsTab() {
         {envVars.length > 0 && (
           <>
             <p className="text-xs text-muted-foreground mt-3">
-              Les modifications déclenchent un redeploy.
+              Changes trigger a redeploy.
             </p>
             <div className="flex justify-end mt-3">
               <Button variant="primary" size="sm">
-                Sauvegarder
+                Save
               </Button>
             </div>
           </>
@@ -196,13 +196,13 @@ export function SettingsTab() {
       </Card>
       {/* Danger Zone */}
       <Card className="border-danger/30">
-        <h2 className="text-sm font-medium text-danger mb-1">Zone de danger</h2>
+        <h2 className="text-sm font-medium text-danger mb-1">Danger zone</h2>
         <p className="text-xs text-muted-foreground mb-4">
-          La suppression est irréversible.
-          {app.origin === 'scaffold' && ' Le dépôt GitLab associé sera également supprimé.'}
+          Deletion is irreversible.
+          {app.origin === 'scaffold' && ' The associated GitLab repository will also be deleted.'}
         </p>
         <Button variant="danger" size="sm" onClick={() => setDeleteOpen(true)}>
-          Supprimer cette application
+          Delete this app
         </Button>
       </Card>
 
@@ -210,9 +210,9 @@ export function SettingsTab() {
         open={deleteOpen}
         onCancel={() => setDeleteOpen(false)}
         onConfirm={() => deleteMutation.mutate()}
-        title="Supprimer l'application"
-        description={`Confirmez la suppression de « ${app.name} ». Cette action est irréversible.`}
-        confirmLabel="Supprimer"
+        title="Delete app"
+        description={`Confirm deletion of "${app.name}". This action is irreversible.`}
+        confirmLabel="Delete"
         variant="danger"
         loading={deleteMutation.isPending}
       />

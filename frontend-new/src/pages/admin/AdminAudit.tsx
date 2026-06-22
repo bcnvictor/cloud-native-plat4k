@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useScopeStore } from '@/store/scope';
-import { Breadcrumb } from '@/components/Breadcrumb';
+import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { auditApi } from '@/api/audit';
 import { Skeleton } from '@/components/ui/skeleton';
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('fr-FR', {
+  return new Date(iso).toLocaleString('en-US', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -18,7 +18,13 @@ function formatDate(iso: string): string {
 
 export function AdminAudit() {
   const { setScope } = useScopeStore();
+  const { setBreadcrumb } = useBreadcrumb();
   useEffect(() => { setScope('admin'); }, [setScope]);
+
+  useEffect(() => {
+    setBreadcrumb([{ label: 'Platform', to: '/admin/clusters' }, { label: 'Audit' }]);
+    return () => setBreadcrumb([]);
+  }, [setBreadcrumb]);
 
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ['audit-logs'],
@@ -28,14 +34,13 @@ export function AdminAudit() {
   return (
     <div className="max-w-[1440px] mx-auto px-8 py-6">
       <div className="mb-6">
-        <Breadcrumb items={[{ label: 'Plateforme', to: '/admin/clusters' }, { label: 'Audit' }]} />
-        <h1 className="text-xl font-semibold text-foreground">Journal d'audit</h1>
-        <p className="text-sm text-muted-foreground">{logs.length} entrées (100 dernières)</p>
+        <h1 className="text-xl font-semibold text-foreground">Audit log</h1>
+        <p className="text-sm text-muted-foreground">{logs.length} entries (last 100)</p>
       </div>
 
       <div className="bg-card border border-border rounded-md overflow-hidden">
         <div className="grid grid-cols-[1fr_1fr_2fr_1fr_1fr] gap-4 px-4 py-2 border-b border-border bg-background-subtle">
-          {['Horodatage', 'Utilisateur', 'Action', 'Ressource', 'IP'].map((h) => (
+          {['Timestamp', 'User', 'Action', 'Resource', 'IP'].map((h) => (
             <p key={h} className="text-xs font-medium text-muted-foreground">{h}</p>
           ))}
         </div>
@@ -63,7 +68,7 @@ export function AdminAudit() {
 
         {!isLoading && logs.length === 0 && (
           <p className="px-4 py-8 text-sm text-muted-foreground text-center">
-            Aucune entrée d'audit.
+            No audit entries.
           </p>
         )}
       </div>

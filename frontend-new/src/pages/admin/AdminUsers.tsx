@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { IconRefresh } from '@tabler/icons-react';
 import { useScopeStore } from '@/store/scope';
-import { Breadcrumb } from '@/components/Breadcrumb';
+import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { usersApi } from '@/api/users';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -19,7 +19,13 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
 
 export function AdminUsers() {
   const { setScope } = useScopeStore();
+  const { setBreadcrumb } = useBreadcrumb();
   useEffect(() => { setScope('admin'); }, [setScope]);
+
+  useEffect(() => {
+    setBreadcrumb([{ label: 'Plateforme', to: '/admin/clusters' }, { label: 'Users' }]);
+    return () => setBreadcrumb([]);
+  }, [setBreadcrumb]);
 
   const qc = useQueryClient();
   const [syncDone, setSyncDone] = useState(false);
@@ -49,19 +55,18 @@ export function AdminUsers() {
     <div className="max-w-[1440px] mx-auto px-8 py-6">
       <div className="mb-6 flex items-start justify-between">
         <div>
-          <Breadcrumb items={[{ label: 'Plateforme', to: '/admin/clusters' }, { label: 'Utilisateurs' }]} />
-          <h1 className="text-xl font-semibold text-foreground">Utilisateurs</h1>
+          <h1 className="text-xl font-semibold text-foreground">Users</h1>
           <p className="text-sm text-muted-foreground">
-            {users.length} utilisateur{users.length !== 1 ? 's' : ''}
+            {users.length} user{users.length !== 1 ? 's' : ''}
           </p>
         </div>
 
         <div className="flex items-center gap-2 mt-1">
           {syncDone && (
-            <span className="text-xs text-success-text">Sync terminé</span>
+            <span className="text-xs text-success-text">Sync completed</span>
           )}
           {syncMutation.isError && (
-            <span className="text-xs text-danger-text">Erreur lors du sync</span>
+            <span className="text-xs text-danger-text">Sync error</span>
           )}
           <Button
             variant="outline"
@@ -70,14 +75,14 @@ export function AdminUsers() {
             disabled={syncMutation.isPending}
           >
             <IconRefresh size={14} className={syncMutation.isPending ? 'animate-spin' : ''} />
-            {syncMutation.isPending ? 'Sync en cours…' : 'Sync équipes & utilisateurs'}
+            {syncMutation.isPending ? 'Sync en cours…' : 'Sync teams & users'}
           </Button>
         </div>
       </div>
 
       <div className="bg-card border border-border rounded-md overflow-hidden">
         <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2 border-b border-border bg-background-subtle">
-          {['Email', 'Rôle', 'Statut', 'Membre depuis', ''].map((h) => (
+          {['Email', 'Role', 'Status', 'Member since', ''].map((h) => (
             <p key={h} className="text-xs font-medium text-muted-foreground">{h}</p>
           ))}
         </div>
@@ -114,7 +119,7 @@ export function AdminUsers() {
                   className="justify-self-start"
                 >
                   <Badge variant={u.is_active ? 'success' : 'muted'}>
-                    {u.is_active ? 'actif' : 'inactif'}
+                    {u.is_active ? 'active' : 'inactive'}
                   </Badge>
                 </button>
 
@@ -126,7 +131,7 @@ export function AdminUsers() {
 
         {!isLoading && users.length === 0 && (
           <p className="px-4 py-8 text-sm text-muted-foreground text-center">
-            Aucun utilisateur.
+            No users.
           </p>
         )}
       </div>

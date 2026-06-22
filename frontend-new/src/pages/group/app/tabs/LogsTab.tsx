@@ -80,7 +80,7 @@ export function LogsTab() {
         />
         <div className="flex-1 min-w-40">
           <Input
-            placeholder="Rechercher dans les logs…"
+            placeholder="Search logs…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             suffix={<IconSearch size={13} />}
@@ -116,11 +116,11 @@ export function LogsTab() {
         ) : isError ? (
           <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
             <IconWifiOff size={20} />
-            <p className="text-xs font-mono">Loki indisponible — vérifier la connexion cluster</p>
+            <p className="text-xs font-mono">Loki unavailable — check cluster connection</p>
           </div>
         ) : logs.length === 0 ? (
           <p className="px-4 py-8 text-xs text-muted-foreground text-center font-mono">
-            Aucun log disponible.
+            No logs available.
           </p>
         ) : (
           <div className="overflow-auto max-h-[600px] text-xs font-mono">
@@ -136,7 +136,7 @@ export function LogsTab() {
                     )}
                   >
                     <td className="px-4 py-1 text-muted-foreground whitespace-nowrap align-top w-48">
-                      {new Date(log.timestamp).toLocaleTimeString('fr-FR')}
+                      {new Date(log.timestamp).toLocaleTimeString('en-US')}
                     </td>
                     <td className={cn('px-2 py-1 whitespace-nowrap align-top w-16', LEVEL_COLORS[log.level])}>
                       {log.level}
@@ -155,9 +155,9 @@ export function LogsTab() {
       {/* Footer */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
-          {level !== 'ALL' ? `Filtre : ${level}` : 'Tous les niveaux'}
+          {level !== 'ALL' ? `Filter: ${level}` : 'All levels'}
           {search && ` · "${search}"`}
-          {' '}· {logs.length} entrée{logs.length !== 1 ? 's' : ''}
+          {' '}· {logs.length} entry{logs.length !== 1 ? 'ies' : ''}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />

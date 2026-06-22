@@ -6,11 +6,11 @@ import { appsApi } from '@/api/apps';
 import { useScopeStore } from '@/store/scope';
 import { Application } from '@/types';
 import { AppStatusBadge } from '@/components/AppStatusBadge';
-import { Breadcrumb } from '@/components/Breadcrumb';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { getAppHealth } from '@/utils/appHealth';
 import { cn } from '@/utils/cn';
+import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 
 interface AppDetailContext {
   app: Application | null;
@@ -32,6 +32,7 @@ export function AppDetailLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { setScope } = useScopeStore();
+  const { setBreadcrumb } = useBreadcrumb();
 
   useEffect(() => {
     if (slug) setScope('group', slug);
@@ -42,6 +43,14 @@ export function AppDetailLayout() {
     queryFn: () => appsApi.getBySlug(appSlug!),
     enabled: !!appSlug,
   });
+
+  useEffect(() => {
+    setBreadcrumb([
+      { label: 'Apps', to: `/groups/${slug}/apps` },
+      { label: app?.name ?? appSlug ?? '' },
+    ]);
+    return () => setBreadcrumb([]);
+  }, [app?.name, appSlug, slug, setBreadcrumb]);
 
   const health = app ? getAppHealth(app) : 'stopped';
   const basePath = `/groups/${slug}/apps/${appSlug}`;
@@ -57,20 +66,10 @@ export function AppDetailLayout() {
   return (
     <Ctx.Provider value={{ app: app ?? null, isLoading }}>
       {/* ── Header zone — full-bleed ── */}
-      <div className="bg-white border-b border-zinc-200 sticky top-[var(--topnav-height)] z-30 w-full">
+      <div className="bg-white border-b border-zinc-200 sticky top-0 z-30 w-full">
         <div className="max-w-[1440px] mx-auto px-8">
-          {/* Breadcrumb */}
-          <div className="pt-3">
-            <Breadcrumb
-              items={[
-                { label: 'Apps', to: `/groups/${slug}/apps` },
-                { label: app?.name ?? appSlug ?? '' },
-              ]}
-            />
-          </div>
-
           {/* App identity row */}
-          <div className="flex items-center gap-3 pb-3">
+          <div className="flex items-center gap-3 py-3">
             {isLoading ? (
               <Spinner size="md" />
             ) : (

@@ -6,7 +6,7 @@ import { useGroupApps } from '@/hooks/useGroupApps';
 import { useScopeStore } from '@/store/scope';
 import { getAppHealth } from '@/utils/appHealth';
 import { AppRow } from '@/components/AppRow';
-import { Breadcrumb } from '@/components/Breadcrumb';
+import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { computeSlug } from '@/utils/slugify';
@@ -16,11 +16,20 @@ export function GroupApps() {
   const navigate = useNavigate();
   const group = useCurrentGroup();
   const { setScope } = useScopeStore();
+  const { setBreadcrumb } = useBreadcrumb();
   const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (slug) setScope('group', slug);
   }, [slug, setScope]);
+
+  useEffect(() => {
+    setBreadcrumb([
+      { label: group?.name ?? '…', to: `/groups/${slug}` },
+      { label: 'Apps' },
+    ]);
+    return () => setBreadcrumb([]);
+  }, [group?.name, slug, setBreadcrumb]);
 
   const { data: apps = [], isLoading } = useGroupApps(group?.gitlab_group_id);
   const filteredApps = apps.filter((a) =>
@@ -32,17 +41,16 @@ export function GroupApps() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <Breadcrumb items={[{ label: group?.name ?? '…', to: `/groups/${slug}` }, { label: 'Apps' }]} />
           <h1 className="text-xl font-semibold text-foreground">Apps</h1>
           <p className="text-sm text-muted-foreground">
-            {apps.length} application{apps.length !== 1 ? 's' : ''} dans {group?.name ?? '…'}
+            {apps.length} application{apps.length !== 1 ? 's' : ''} in {group?.name ?? '…'}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 h-8 bg-white border border-zinc-200 rounded-lg">
             <IconSearch size={14} className="text-zinc-400 shrink-0" />
             <input
-              placeholder="Rechercher..."
+              placeholder="Search…"
               className="border-none outline-none text-sm bg-transparent w-40"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -53,7 +61,7 @@ export function GroupApps() {
             size="sm"
             icon={<IconFilter size={14} />}
           >
-            Filtrer
+            Filter
           </Button>
           <Button
             variant="primary"
@@ -77,8 +85,8 @@ export function GroupApps() {
         <div className="flex flex-col items-center justify-center py-24 gap-4">
           <IconRocket size={40} className="text-zinc-300" />
           <div className="flex flex-col items-center gap-1">
-            <p className="text-sm font-medium text-zinc-500">Aucune application</p>
-            <p className="text-xs text-zinc-400">Créez votre première application pour démarrer</p>
+            <p className="text-sm font-medium text-zinc-500">No applications</p>
+            <p className="text-xs text-zinc-400">Create your first app to get started</p>
           </div>
           <Button
             variant="primary"
@@ -86,7 +94,7 @@ export function GroupApps() {
             icon={<IconPlus size={14} />}
             onClick={() => navigate(`/groups/${slug}/apps/new`)}
           >
-            Nouvelle application
+            New app
           </Button>
         </div>
       ) : (

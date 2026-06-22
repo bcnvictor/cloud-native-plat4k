@@ -31,7 +31,7 @@ export function AppRow({ app, healthStatus, onClick }: AppRowProps) {
         <p className="text-sm font-medium text-foreground truncate">{app.name}</p>
         <div className="flex items-center gap-1.5 flex-wrap">
           <p className="text-xs text-muted-foreground">
-            {app.origin ?? 'scaffold'} · déployé{' '}
+            {app.origin ?? 'scaffold'} · deployed{' '}
             {timeAgo(app.updated_at ?? app.created_at)}
           </p>
           {app.framework && (

@@ -40,7 +40,7 @@ export function OverviewTab() {
         {!metrics.available && (
           <div className="col-span-4 flex items-center gap-2 px-3 py-2 rounded-md bg-muted/40 border border-border text-xs text-muted-foreground">
             <IconAlertTriangle size={13} className="shrink-0" />
-            Métriques indisponibles — vérifier la connexion Prometheus
+            Metrics unavailable — check Prometheus connection
           </div>
         )}
         <MetricCard
@@ -75,14 +75,14 @@ export function OverviewTab() {
       <div className="grid grid-cols-2 gap-4">
         {/* Current deployment */}
         <Card>
-          <h2 className="text-sm font-medium text-foreground mb-3">Déploiement courant</h2>
+          <h2 className="text-sm font-medium text-foreground mb-3">Current deployment</h2>
           {currentDeploy ? (
             <dl className="flex flex-col gap-2">
               {[
                 { label: 'Commit', value: currentDeploy.version, mono: true },
                 // MOCK: branch et trigger hardcodés — décommissionner quand stockés en DB
-                { label: 'Branche', value: 'main', mono: true },
-                { label: 'Déployé', value: timeAgo(currentDeploy.deployed_at) },
+                { label: 'Branch', value: 'main', mono: true },
+                { label: 'Deployed', value: timeAgo(currentDeploy.deployed_at) },
                 { label: 'Cluster', value: `cluster-${currentDeploy.cluster_id}`, mono: true },
                 { label: 'Trigger', value: 'commit' },
               ].map(({ label, value, mono }) => (
@@ -95,14 +95,14 @@ export function OverviewTab() {
               ))}
             </dl>
           ) : (
-            <p className="text-xs text-muted-foreground">Aucun déploiement réussi.</p>
+            <p className="text-xs text-muted-foreground">No successful deployment.</p>
           )}
         </Card>
 
         {/* Injected services */}
         {/* MOCK: liste hardcodée PostgreSQL+Redis toujours "healthy" — décommissionner quand GET /apps/:id/services existe */}
         <Card>
-          <h2 className="text-sm font-medium text-foreground mb-3">Services injectés</h2>
+          <h2 className="text-sm font-medium text-foreground mb-3">Injected services</h2>
           <ul className="flex flex-col gap-2">
             {[
               { name: 'PostgreSQL', id: 'postgres', status: 'healthy' as const },
@@ -117,7 +117,7 @@ export function OverviewTab() {
             ))}
             <li className="pt-2 mt-1 border-t border-border">
               <span className="text-xs text-muted-foreground">
-                Port exposé : <span className="font-mono">8080</span>
+                Exposed port: <span className="font-mono">8080</span>
               </span>
             </li>
           </ul>
@@ -126,7 +126,7 @@ export function OverviewTab() {
 
       {/* Quick access */}
       <Card>
-        <h2 className="text-sm font-medium text-foreground mb-3">Accès rapide</h2>
+        <h2 className="text-sm font-medium text-foreground mb-3">Quick access</h2>
         {(app?.repo_url ?? app?.source_url) ? (
           <a
             href={(app!.repo_url ?? app!.source_url)!}
@@ -140,7 +140,7 @@ export function OverviewTab() {
         ) : (
           <span className="flex items-center gap-2 text-sm text-muted-foreground">
             <IconBrandGitlab size={16} />
-            GitLab non configuré
+            GitLab not configured
           </span>
         )}
       </Card>

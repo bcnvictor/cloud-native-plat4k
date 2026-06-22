@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   IconChevronDown,
-  IconBuilding,
+  IconLayoutGrid,
   IconServer,
 } from '@tabler/icons-react';
 import { groupsApi } from '@/api/groups';
@@ -12,7 +12,11 @@ import { Dropdown, DropdownItem } from '@/components/ui/Dropdown';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/utils/cn';
 
-export function ScopeSwitcher() {
+interface ScopeSwitcherProps {
+  collapsed?: boolean;
+}
+
+export function ScopeSwitcher({ collapsed = false }: ScopeSwitcherProps) {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const { activeScope, activeGroupSlug } = useScopeStore();
@@ -26,6 +30,14 @@ export function ScopeSwitcher() {
   const activeGroup = groups.find(
     (g) => groupsApi.getSlug(g) === activeGroupSlug
   );
+
+  if (collapsed) {
+    return (
+      <div className="flex justify-center py-2">
+        <IconLayoutGrid size={18} className="text-muted-foreground" />
+      </div>
+    );
+  }
 
   const items: DropdownItem[] = [
     ...groups.map((g) => {
@@ -53,7 +65,7 @@ export function ScopeSwitcher() {
             key: 'platform',
             label: (
               <span className="flex items-center gap-2">
-                Plateforme
+                Platform
                 <Badge variant="primary">admin</Badge>
               </span>
             ),
@@ -67,28 +79,32 @@ export function ScopeSwitcher() {
 
   const isSingleGroup = groups.length <= 1 && !user?.is_admin;
 
-  const triggerLabel =
+  const triggerContent =
     activeScope === 'admin' ? (
-      <span className="flex items-center gap-2">
-        <IconServer size={16} className="text-primary shrink-0" />
-        <span className="text-sm font-medium">Plateforme</span>
-        <Badge variant="primary">admin</Badge>
-      </span>
+      <div className="flex flex-col min-w-0">
+        <div className="flex items-center gap-2">
+          <IconServer size={15} className="text-primary shrink-0" />
+          <span className="text-sm font-semibold text-foreground">Platform</span>
+          <Badge variant="primary">admin</Badge>
+        </div>
+      </div>
     ) : activeGroup ? (
-      <span className="flex items-center gap-2">
-        <IconBuilding size={16} className="text-primary shrink-0" />
-        <span className="text-sm font-medium max-w-[120px] truncate">
+      <div className="flex flex-col min-w-0">
+        <span className="text-sm font-semibold text-foreground truncate">
           {activeGroup.name}
         </span>
-      </span>
+        <span className="text-xs text-muted-foreground">
+          {groups.length} group{groups.length > 1 ? 's' : ''}
+        </span>
+      </div>
     ) : (
       <span className="text-sm text-muted-foreground">Sélectionner un groupe</span>
     );
 
   if (isSingleGroup) {
     return (
-      <div className="flex items-center gap-2 px-2 py-1">
-        {triggerLabel}
+      <div className="px-3 py-2.5">
+        {triggerContent}
       </div>
     );
   }
@@ -98,11 +114,13 @@ export function ScopeSwitcher() {
       trigger={
         <button
           className={cn(
-            'flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors',
-            'hover:bg-accent text-foreground'
+            'w-full flex items-center gap-2 px-3 py-2.5 rounded-md transition-colors',
+            'hover:bg-accent text-foreground text-left'
           )}
         >
-          {triggerLabel}
+          <div className="flex-1 min-w-0">
+            {triggerContent}
+          </div>
           <IconChevronDown size={14} className="text-muted-foreground shrink-0" />
         </button>
       }

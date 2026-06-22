@@ -21,12 +21,12 @@ const ORIGINS: Array<{ value: 'scaffold' | 'onboard'; label: string; desc: strin
   {
     value: 'scaffold',
     label: 'Scaffold',
-    desc: 'Crée un nouveau projet GitLab depuis un template.',
+    desc: 'Creates a new GitLab project from a template.',
   },
   {
     value: 'onboard',
     label: 'Onboard',
-    desc: 'Référence un repo GitLab existant.',
+    desc: 'References an existing GitLab repo.',
   },
 ];
 
@@ -79,14 +79,14 @@ export function Step1Identity({ data, onChange, onNext, onCancel }: Props) {
       {/* Name + slug preview */}
       <div>
         <Input
-          label="Nom de l'application"
+          label="App name"
           value={data.name}
           onChange={(e) => onChange({ name: e.target.value })}
           placeholder="my-awesome-app"
           autoFocus
         />
         {data.name && (
-          <p className="text-xs text-zinc-400 mt-1 font-mono">Slug : {slug}</p>
+          <p className="text-xs text-zinc-400 mt-1 font-mono">Slug: {slug}</p>
         )}
       </div>
 
@@ -97,7 +97,7 @@ export function Step1Identity({ data, onChange, onNext, onCancel }: Props) {
           options={templates.map((t) => ({ value: t.path, label: t.name }))}
           value={data.framework}
           onChange={(v) => onChange({ framework: v })}
-          placeholder="Choisir un framework…"
+          placeholder="Choose a framework…"
         />
       )}
 
@@ -112,31 +112,31 @@ export function Step1Identity({ data, onChange, onNext, onCancel }: Props) {
           ]}
           value={data.framework}
           onChange={(v) => onChange({ framework: v })}
-          placeholder="Choisir un framework…"
+          placeholder="Choose a framework…"
         />
       )}
 
       {data.origin === 'onboard' && (
         <Select
-          label="Repo GitLab"
+          label="GitLab repo"
           options={
             projects.length > 0
               ? projects.map((p) => ({ value: p.web_url, label: p.full_path }))
-              : [{ value: '', label: 'Aucun projet disponible', disabled: true }]
+              : [{ value: '', label: 'No projects available', disabled: true }]
           }
           value={data.repoUrl}
           onChange={(v) => onChange({ repoUrl: v })}
-          placeholder="Sélectionner un repo…"
+          placeholder="Select a repo…"
         />
       )}
 
       {/* Buttons */}
       <div className="flex justify-between mt-2">
         <Button variant="ghost" size="sm" onClick={onCancel}>
-          Annuler
+          Cancel
         </Button>
         <Button variant="primary" size="sm" disabled={!isValid} onClick={onNext}>
-          Suivant
+          Next
         </Button>
       </div>
     </div>

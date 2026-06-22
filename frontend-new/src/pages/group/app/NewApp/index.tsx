@@ -3,6 +3,7 @@ import { useNavigate, useParams, useBlocker } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useScopeStore } from '@/store/scope';
+import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { appsApi } from '@/api/apps';
 import { useToast } from '@/components/ui/toast';
 import { Step1Data, ServiceConfig, CiDeployConfig } from '@/types';
@@ -13,18 +14,27 @@ import { Step2Services } from './Step2Services';
 import { Step3CiDeploy } from './Step3CiDeploy';
 import { Step4Recap } from './Step4Recap';
 
-const STEP_LABELS = ['Identité', 'Services', 'CI & Déploiement', 'Récap'];
+const STEP_LABELS = ['Identity', 'Services', 'CI & Deploy', 'Recap'];
 
 export function NewApp() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const group = useCurrentGroup();
   const { setScope } = useScopeStore();
+  const { setBreadcrumb } = useBreadcrumb();
   const qc = useQueryClient();
 
   useEffect(() => {
     if (slug) setScope('group', slug);
   }, [slug, setScope]);
+
+  useEffect(() => {
+    setBreadcrumb([
+      { label: 'Apps', to: `/groups/${slug}/apps` },
+      { label: 'New app' },
+    ]);
+    return () => setBreadcrumb([]);
+  }, [slug, setBreadcrumb]);
 
   const [step, setStep] = useState(1);
   const [step1, setStep1] = useState<Step1Data>({
@@ -68,12 +78,12 @@ export function NewApp() {
     },
     onSuccess: (app) => {
       qc.invalidateQueries({ queryKey: ['apps'] });
-      toast({ title: 'Application créée', description: `${app.name} est en cours de provisioning.` });
+      toast({ title: 'App created', description: `${app.name} is being provisioned.` });
       const appSlug = computeSlug(app.name);
       navigate(`/groups/${slug}/apps/${appSlug}`);
     },
     onError: () => {
-      setSubmitError('Erreur lors de la création. Réessayez.');
+      setSubmitError('Creation failed. Please try again.');
       toast({ title: 'Erreur', variant: 'destructive' });
     },
   });

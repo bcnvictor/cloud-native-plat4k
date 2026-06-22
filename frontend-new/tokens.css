@@ -165,8 +165,9 @@
   /* -----------------------------------------------------------
      LAYOUT CONSTANTS
      ----------------------------------------------------------- */
-  --topnav-height:  44px;
-  --sidebar-width:  220px;
+  --topnav-height:          48px;
+  --sidebar-width:          216px;
+  --sidebar-width-collapsed: 52px;
 
   /* -----------------------------------------------------------
      CHART PALETTE — 6 couleurs distinctes, multi-hue

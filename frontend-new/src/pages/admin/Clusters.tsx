@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { IconCloud, IconServer2 } from '@tabler/icons-react';
 import { useScopeStore } from '@/store/scope';
-import { Breadcrumb } from '@/components/Breadcrumb';
+import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { clustersApi } from '@/api/clusters';
 import { CLUSTER_METRICS } from '@/mocks/clusterMetrics';
 import { Card } from '@/components/ui/Card';
@@ -12,8 +12,14 @@ import { Spinner } from '@/components/ui/Spinner';
 
 export function Clusters() {
   const { setScope } = useScopeStore();
+  const { setBreadcrumb } = useBreadcrumb();
   const navigate = useNavigate();
   useEffect(() => { setScope('admin'); }, [setScope]);
+
+  useEffect(() => {
+    setBreadcrumb([{ label: 'Platform' }, { label: 'Clusters' }]);
+    return () => setBreadcrumb([]);
+  }, [setBreadcrumb]);
 
   const { data: clusters = [], isLoading } = useQuery({
     queryKey: ['clusters'],
@@ -27,7 +33,6 @@ export function Clusters() {
   return (
     <div className="max-w-[1440px] mx-auto px-8 py-6">
       <div className="mb-6">
-        <Breadcrumb items={[{ label: 'Plateforme' }, { label: 'Clusters' }]} />
         <h1 className="text-xl font-semibold text-foreground">Clusters</h1>
         <p className="text-sm text-muted-foreground">{clusterNames.length} cluster{clusterNames.length !== 1 ? 's' : ''}</p>
       </div>
@@ -83,7 +88,7 @@ export function Clusters() {
                 <div className="px-4 py-2.5 border-b border-border flex items-center gap-4 text-xs text-muted-foreground">
                   <span>K8s <span className="font-mono text-foreground">{m.k8sVersion}</span></span>
                   <span>{m.type}</span>
-                  <span>{m.podsActive} pods actifs</span>
+                  <span>{m.podsActive} active pods</span>
                 </div>
 
                 {/* Namespaces */}
