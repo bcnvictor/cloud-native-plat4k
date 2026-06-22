@@ -11,21 +11,21 @@ test.describe('Login', () => {
   test('affiche le formulaire de login', async ({ page }) => {
     await expect(page.getByRole('heading', { name: /cloud native platform/i })).toBeVisible();
     await expect(page.getByLabel(/email/i)).toBeVisible();
-    await expect(page.getByLabel(/mot de passe|password/i)).toBeVisible();
+    await expect(page.getByLabel(/password/i)).toBeVisible();
   });
 
   test('admin sans groupe → redirigé vers /admin/clusters', async ({ page }) => {
     await page.getByLabel(/email/i).fill(ADMIN.email);
-    await page.getByLabel(/mot de passe|password/i).fill(ADMIN.password);
-    await page.getByRole('button', { name: /connexion|login|se connecter/i }).click();
+    await page.getByLabel(/password/i).fill(ADMIN.password);
+    await page.getByRole('button', { name: /connexion|login|se connecter|sign in/i }).click();
 
     await expect(page).toHaveURL(/\/admin\/clusters/, { timeout: 10_000 });
   });
 
   test('mauvais mot de passe → message d\'erreur', async ({ page }) => {
     await page.getByLabel(/email/i).fill(ADMIN.email);
-    await page.getByLabel(/mot de passe|password/i).fill('wrong-password');
-    await page.getByRole('button', { name: /connexion|login|se connecter/i }).click();
+    await page.getByLabel(/password/i).fill('wrong-password');
+    await page.getByRole('button', { name: /connexion|login|se connecter|sign in/i }).click();
 
     await expect(page.locator('p.text-danger-text')).toBeVisible({ timeout: 5_000 });
     await expect(page).toHaveURL(/\/login/);
@@ -33,8 +33,8 @@ test.describe('Login', () => {
 
   test('utilisateur dev sans groupe → reste sur /login', async ({ page }) => {
     await page.getByLabel(/email/i).fill(DEV.email);
-    await page.getByLabel(/mot de passe|password/i).fill(DEV.password);
-    await page.getByRole('button', { name: /connexion|login|se connecter/i }).click();
+    await page.getByLabel(/password/i).fill(DEV.password);
+    await page.getByRole('button', { name: /connexion|login|se connecter|sign in/i }).click();
 
     // DEV sans groupe → RootRedirect renvoie sur /login
     await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
