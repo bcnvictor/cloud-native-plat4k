@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CNP Wireframes — Session 19 juin 2026</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --color-background-primary: #ffffff;
+    --color-background-secondary: #f4f4f5;
+    --color-background-tertiary: #e4e4e7;
+    --color-background-info: #dbeafe;
+    --color-background-danger: #fee2e2;
+    --color-border-primary: #52525b;
+    --color-border-secondary: #a1a1aa;
+    --color-border-tertiary: #d4d4d8;
+    --color-text-primary: #18181b;
+    --color-text-secondary: #3f3f46;
+    --color-text-tertiary: #71717a;
+    --color-text-info: #1d4ed8;
+    --color-text-success: #16a34a;
+    --color-text-warning: #d97706;
+    --color-text-danger: #dc2626;
+    --border-radius-sm: 4px;
+    --border-radius-md: 6px;
+    --border-radius-lg: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: #fafafa;
+    color: var(--color-text-primary);
+    padding: 32px;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+  .meta { font-size: 13px; color: var(--color-text-tertiary); margin-bottom: 40px; }
+  .section { margin-bottom: 48px; }
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-tertiary);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--color-border-tertiary);
+  }
+  .wireframe-label {
+    font-size: 12px;
+    color: var(--color-text-tertiary);
+    margin: 0 0 8px;
+  }
+  .wireframe-wrap { margin-bottom: 28px; }
+</style>
+</head>
+<body>
+<h1>CNP Wireframes</h1>
+<p class="meta">Session wireflows — 19 juin 2026 · Low-fidelity · Variables CSS neutres</p>
+
+<!-- ==================== SHELL ==================== -->
+<div class="section">
+<div class="section-label">Shell topnav</div>
+
+<div class="wireframe-wrap">
+<p class="wireframe-label">Scope groupe (dropdown ouvert)</p>
+<div style="border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;position:relative;">
+  <header style="display:flex;align-items:center;gap:18px;padding:0 14px;height:52px;background:var(--color-background-secondary);border-bottom:0.5px solid var(--color-border-tertiary);">
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--color-background-primary);border:0.5px solid var(--color-border-primary);border-radius:var(--border-radius-md);">
+      <span style="width:22px;height:22px;border-radius:var(--border-radius-md);background:var(--color-background-info);color:var(--color-text-info);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;">TA</span>
+      <span style="font-size:14px;font-weight:500;">Team Alpha</span>
+      <i class="ti ti-chevron-up" style="font-size:15px;color:var(--color-text-tertiary);"></i>
+    </div>
+    <nav style="display:flex;gap:4px;flex:1;">
+      <span style="padding:6px 12px;border-radius:var(--border-radius-md);font-size:14px;color:var(--color-text-secondary);">Home</span>
+      <span style="padding:6px 12px;border-radius:var(--border-radius-md);font-size:14px;font-weight:500;background:var(--color-background-primary);">Apps</span>
+      <span style="padding:6px 12px;border-radius:var(--border-radius-md);font-size:14px;color:var(--color-text-secondary);">Settings</span>
+    </nav>
+    <div style="display:flex;align-items:center;gap:13px;color:var(--color-text-tertiary);">
+      <i class="ti ti-search" style="font-size:18px;"></i>
+      <i class="ti ti-bell" style="font-size:18px;"></i>
+      <span style="width:26px;height:26px;border-radius:50%;background:var(--color-background-info);color:var(--color-text-info);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;">VC</span>
+    </div>
+  </header>
+  <div style="position:absolute;top:48px;left:14px;width:220px;background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);box-shadow:0 4px 16px rgba(0,0,0,0.08);z-index:10;padding:6px;">
+    <p style="font-size:11px;color:var(--color-text-tertiary);margin:4px 8px 4px;">Groupes</p>
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--border-radius-md);background:var(--color-background-tertiary);">
+      <span style="width:20px;height:20px;border-radius:var(--border-radius-md);background:var(--color-background-info);color:var(--color-text-info);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;">TA</span>
+      <span style="font-size:13px;font-weight:500;">Team Alpha</span>
+      <i class="ti ti-check" style="font-size:14px;margin-left:auto;color:var(--color-text-tertiary);"></i>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--border-radius-md);">
+      <span style="width:20px;height:20px;border-radius:var(--border-radius-md);background:var(--color-background-tertiary);color:var(--color-text-secondary);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;">TB</span>
+      <span style="font-size:13px;color:var(--color-text-secondary);">Team Beta</span>
+    </div>
+    <div style="height:0.5px;background:var(--color-border-tertiary);margin:6px 4px;"></div>
+    <p style="font-size:11px;color:var(--color-text-tertiary);margin:4px 8px 4px;">Administration</p>
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--border-radius-md);">
+      <span style="width:20px;height:20px;border-radius:var(--border-radius-md);background:var(--color-background-tertiary);color:var(--color-text-secondary);display:flex;align-items:center;justify-content:center;"><i class="ti ti-server-2" style="font-size:12px;"></i></span>
+      <span style="font-size:13px;color:var(--color-text-secondary);">Plateforme</span>
+      <span style="font-size:10px;color:var(--color-text-tertiary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:1px 5px;margin-left:auto;">admin</span>
+    </div>
+  </div>
+  <div style="padding:16px;background:var(--color-background-tertiary);height:80px;margin-top:0;"></div>
+</div>
+</div>
+
+<div class="wireframe-wrap">
+<p class="wireframe-label">Scope plateforme (nav 4 items)</p>
+<div style="border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;">
+  <header style="display:flex;align-items:center;gap:18px;padding:0 14px;height:52px;background:var(--color-background-secondary);border-bottom:0.5px solid var(--color-border-tertiary);">
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);">
+      <span style="width:22px;height:22px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);color:var(--color-text-secondary);display:flex;align-items:center;justify-content:center;"><i class="ti ti-server-2" style="font-size:14px;"></i></span>
+      <span style="font-size:14px;font-weight:500;">Plateforme</span>
+      <span style="font-size:10px;color:var(--color-text-tertiary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:1px 5px;">admin</span>
+      <i class="ti ti-chevron-down" style="font-size:15px;color:var(--color-text-tertiary);"></i>
+    </div>
+    <nav style="display:flex;gap:4px;flex:1;">
+      <span style="padding:6px 12px;border-radius:var(--border-radius-md);font-size:14px;font-weight:500;background:var(--color-background-primary);">Clusters</span>
+      <span style="padding:6px 12px;border-radius:var(--border-radius-md);font-size:14px;color:var(--color-text-secondary);">FinOps</span>
+      <span style="padding:6px 12px;border-radius:var(--border-radius-md);font-size:14px;color:var(--color-text-secondary);">Apps</span>
+      <span style="padding:6px 12px;border-radius:var(--border-radius-md);font-size:14px;color:var(--color-text-secondary);">Settings</span>
+    </nav>
+    <div style="display:flex;align-items:center;gap:13px;color:var(--color-text-tertiary);">
+      <i class="ti ti-search" style="font-size:18px;"></i>
+      <i class="ti ti-bell" style="font-size:18px;"></i>
+      <span style="width:26px;height:26px;border-radius:50%;background:var(--color-background-info);color:var(--color-text-info);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;">VC</span>
+    </div>
+  </header>
+  <div style="padding:16px;background:var(--color-background-tertiary);height:60px;"></div>
+</div>
+</div>
+</div>
+
+<!-- ==================== PAGE APPS ==================== -->
+<div class="section">
+<div class="section-label">Page Apps — scope groupe</div>
+<div class="wireframe-wrap">
+<p class="wireframe-label">Liste avec CTA New app</p>
+<div style="border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;">
+  <header style="display:flex;align-items:center;gap:18px;padding:0 14px;height:52px;background:var(--color-background-secondary);border-bottom:0.5px solid var(--color-border-tertiary);">
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);">
+      <span style="width:22px;height:22px;border-radius:var(--border-radius-md);background:var(--color-background-info);color:var(--color-text-info);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;">TA</span>
+      <span style="font-size:14px;font-weight:500;">Team Alpha</span>
+      <i class="ti ti-chevron-down" style="font-size:15px;color:var(--color-text-tertiary);"></i>
+    </div>
+    <nav style="display:flex;gap:4px;flex:1;">
+      <span style="padding:6px 12px;border-radius:var(--border-radius-md);font-size:14px;color:var(--color-text-secondary);">Home</span>
+      <span style="padding:6px 12px;border-radius:var(--border-radius-md);font-size:14px;font-weight:500;background:var(--color-background-primary);">Apps</span>
+      <span style="padding:6px 12px;border-radius:var(--border-radius-md);font-size:14px;color:var(--color-text-secondary);">Settings</span>
+    </nav>
+    <div style="display:flex;align-items:center;gap:13px;color:var(--color-text-tertiary);">
+      <i class="ti ti-search" style="font-size:18px;"></i>
+      <i class="ti ti-bell" style="font-size:18px;"></i>
+      <span style="width:26px;height:26px;border-radius:50%;background:var(--color-background-info);color:var(--color-text-info);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;">VC</span>
+    </div>
+  </header>
+  <div style="padding:20px;background:var(--color-background-tertiary);display:flex;flex-direction:column;gap:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <p style="font-size:16px;font-weight:500;">Apps</p>
+        <p style="font-size:12px;color:var(--color-text-tertiary);margin-top:2px;">4 applications dans Team Alpha</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-tertiary);font-size:13px;"><i class="ti ti-filter" style="font-size:14px;"></i>Filtrer</div>
+        <button style="display:flex;align-items:center;gap:6px;padding:6px 12px;font-size:13px;font-weight:500;background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);cursor:pointer;"><i class="ti ti-plus" style="font-size:15px;"></i>New app</button>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);">
+        <span style="width:36px;height:36px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-brand-docker" style="font-size:18px;"></i></span>
+        <div style="flex:1;"><p style="font-size:14px;font-weight:500;">api-commandes</p><p style="font-size:12px;color:var(--color-text-tertiary);margin-top:2px;">scaffold · deploye il y a 2h</p></div>
+        <span style="font-size:12px;color:var(--color-text-success);display:flex;align-items:center;gap:5px;"><i class="ti ti-circle-filled" style="font-size:8px;"></i>Healthy</span>
+        <i class="ti ti-chevron-right" style="font-size:16px;color:var(--color-text-tertiary);"></i>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);">
+        <span style="width:36px;height:36px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);"><i class="ti ti-brand-docker" style="font-size:18px;"></i></span>
+        <div style="flex:1;"><p style="font-size:14px;font-weight:500;">notif-worker</p><p style="font-size:12px;color:var(--color-text-tertiary);margin-top:2px;">onboard · deploye il y a 1j</p></div>
+        <span style="font-size:12px;color:var(--color-text-warning);display:flex;align-items:center;gap:5px;"><i class="ti ti-circle-filled" style="font-size:8px;"></i>Unhealthy</span>
+        <i class="ti ti-chevron-right" style="font-size:16px;color:var(--color-text-tertiary);"></i>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);opacity:0.7;">
+        <span style="width:36px;height:36px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);"><i class="ti ti-loader-2" style="font-size:16px;"></i></span>
+        <div style="flex:1;"><p style="font-size:14px;font-weight:500;">cache-gateway</p><p style="font-size:12px;color:var(--color-text-tertiary);margin-top:2px;">scaffold · créé il y a 3min</p></div>
+        <span style="font-size:12px;color:var(--color-text-tertiary);display:flex;align-items:center;gap:5px;"><i class="ti ti-circle-filled" style="font-size:8px;"></i>Provisioning</span>
+        <i class="ti ti-chevron-right" style="font-size:16px;color:var(--color-text-tertiary);"></i>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ==================== NOTE ==================== -->
+<div style="margin-top:48px;padding:16px;background:var(--color-background-secondary);border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary);">
+  <p style="font-size:13px;font-weight:500;margin-bottom:6px;">Écrans non inclus dans ce fichier (générés inline dans la conversation)</p>
+  <p style="font-size:12px;color:var(--color-text-tertiary);line-height:1.6;">
+    Stepper /apps/new (4 étapes) · Page détail app Overview · Page détail app Deployments (v2 avec expand) · Page détail app Logs · Page détail app Settings · Home dashboard groupe · Settings groupe · Admin Clusters · Admin FinOps · Admin Apps cross-team · Admin Settings plateforme.<br><br>
+    Consulter le fichier <code>wireframes_spec.md</code> pour la spec complète de chaque écran.
+  </p>
+</div>
+
+</body>
+</html>

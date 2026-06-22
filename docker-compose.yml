@@ -91,7 +91,7 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: ./frontend-new
       dockerfile: Dockerfile
       args:
         VITE_API_URL: /api/v1
