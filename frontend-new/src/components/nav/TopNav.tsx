@@ -23,7 +23,7 @@ export function TopNav() {
         </button>
 
         <a
-          href="https://docs.cloud-native-plat4k.io"
+          href="https://cnp-docs.pages.dev"
           target="_blank"
           rel="noreferrer"
           className="h-7 px-2.5 flex items-center text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"

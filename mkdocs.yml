@@ -1,0 +1,61 @@
+site_name: CNP — Cloud Native Platform
+site_description: Documentation de la plateforme CNP (Internal Developer Platform)
+site_url: https://cnp-docs.pages.dev
+docs_dir: docs
+
+theme:
+  name: material
+  language: fr
+  palette:
+    # Light mode (les tokens dark sont conservés pour S2, cf. 4K-93)
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Passer en mode sombre
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Passer en mode clair
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search:
+      lang: fr
+  - swagger-ui-tag
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Accueil: index.md
+  - Quickstart: quickstart.md
+  - Référence CLI: cli.md
+  - API:
+      - Vue d'ensemble: api/overview.md
