@@ -190,6 +190,13 @@ class DeploymentStatus(str, Enum):
     FAILED = "failed"
 
 
+class ArgoAppStatus(BaseModel):
+    sync_status: str
+    health_status: str
+    deployment_status: DeploymentStatus
+    message: Optional[str] = None
+
+
 class ApplicationBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -296,6 +303,7 @@ class ClusterConnectionBase(BaseModel):
 
 class ClusterConnectionCreate(ClusterConnectionBase):
     kubeconfig: str
+    argocd_token: Optional[str] = None
 
 
 class ClusterConnectionUpdate(BaseModel):
@@ -305,6 +313,7 @@ class ClusterConnectionUpdate(BaseModel):
     prometheus_url: Optional[str] = None
     loki_url: Optional[str] = None
     argocd_url: Optional[str] = None
+    argocd_token: Optional[str] = None
 
 
 class ClusterConnectionResponse(ClusterConnectionBase):

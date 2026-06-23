@@ -5,7 +5,13 @@ from backend.db.models import User
 from backend.db.session import get_db
 from backend.services.deployment_service import DeploymentService
 from fastapi import APIRouter, Depends
-from shared.models import DeploymentCreate, DeploymentResponse, DeploymentStatus, UserRole
+from shared.models import (
+    ArgoAppStatus,
+    DeploymentCreate,
+    DeploymentResponse,
+    DeploymentStatus,
+    UserRole,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
@@ -39,3 +45,13 @@ async def create_deployment(
 ):
     """Enregistre l'intention de déploiement en base. L'orchestration Kubernetes sera branchée dans une tâche ultérieure."""
     return await DeploymentService(db).create_deployment(payload)
+
+
+@router.get("/{deployment_id}/argocd-status", response_model=ArgoAppStatus)
+async def get_argocd_status(
+    deployment_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lit le statut ArgoCD en temps réel pour un déploiement."""
+    return await DeploymentService(db).get_argocd_status(deployment_id)

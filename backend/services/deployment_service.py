@@ -5,7 +5,13 @@ from typing import Optional
 import anyio
 from fastapi import HTTPException, status
 from kubernetes.client.exceptions import ApiException
-from shared.models import ApplicationStatus, ClusterStatus, DeploymentCreate, DeploymentStatus
+from shared.models import (
+    ApplicationStatus,
+    ArgoAppStatus,
+    ClusterStatus,
+    DeploymentCreate,
+    DeploymentStatus,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -129,3 +135,77 @@ class DeploymentService:
         await self.db.commit()
         await self.db.refresh(deployment)
         return deployment
+
+    async def get_argocd_status(self, deployment_id: int) -> ArgoAppStatus:
+        from backend.argocd.client import get_argocd_client_for_cluster, normalize_argocd_payload
+
+        deployment = await self.get_deployment(deployment_id)
+
+        app_result = await self.db.execute(
+            select(Application).where(Application.id == deployment.application_id)
+        )
+        app = app_result.scalar_one_or_none()
+        if app is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+        cluster_result = await self.db.execute(
+            select(ClusterConnection).where(ClusterConnection.id == deployment.cluster_id)
+        )
+        cluster = cluster_result.scalar_one_or_none()
+        if cluster is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster not found")
+
+        argocd_client = get_argocd_client_for_cluster(cluster)
+        try:
+            argocd_app = await argocd_client.get_app_status(app.slug)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"ArgoCD unreachable: {e}",
+            )
+
+        sync_status, health_status, deployment_status = normalize_argocd_payload(argocd_app)
+
+        if deployment.status != deployment_status:
+            deployment.status = deployment_status
+            await self.db.commit()
+
+        return ArgoAppStatus(
+            sync_status=sync_status,
+            health_status=health_status,
+            deployment_status=deployment_status,
+        )
+
+    async def handle_argocd_sync_event(self, payload: dict) -> None:
+        from backend.argocd.client import normalize_argocd_payload
+
+        app_name = payload.get("app", {}).get("metadata", {}).get("name")
+        if not app_name:
+            logger.warning("ArgoCD webhook: missing app.metadata.name")
+            return
+
+        _, _, deployment_status = normalize_argocd_payload(payload.get("app", {}))
+
+        app_result = await self.db.execute(
+            select(Application).where(Application.slug == app_name)
+        )
+        app = app_result.scalar_one_or_none()
+        if app is None:
+            logger.debug("ArgoCD webhook for unknown app '%s' — ignored", app_name)
+            return
+
+        dep_result = await self.db.execute(
+            select(Deployment)
+            .where(Deployment.application_id == app.id)
+            .order_by(Deployment.deployed_at.desc())
+        )
+        deployment = dep_result.scalars().first()
+        if deployment is None:
+            return
+
+        if deployment.status != deployment_status:
+            deployment.status = deployment_status
+            await self.db.commit()
+            logger.info("ArgoCD sync event: app=%s status→%s", app_name, deployment_status)
