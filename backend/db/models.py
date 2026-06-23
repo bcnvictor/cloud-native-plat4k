@@ -157,6 +157,9 @@ class ClusterConnection(Base):
     name = Column(String, nullable=False, unique=True)
     endpoint = Column(String, nullable=False)
     kubeconfig_secret_ref = Column(String, nullable=False)
+    prometheus_url = Column(String, nullable=True)
+    loki_url = Column(String, nullable=True)
+    argocd_url = Column(String, nullable=True)
     status = Column(
         SQLEnum(ClusterStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,

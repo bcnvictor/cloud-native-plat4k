@@ -10,6 +10,7 @@ from shared.models import (
     ApplicationScaffoldRequest,
     ApplicationStatus,
     ApplicationUpdate,
+    CiStatusUpdate,
     ClusterStatus,
     MemberStatus,
     compute_slug,
@@ -371,6 +372,18 @@ class AppService:
 
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(app, field, value)
+        await self.db.commit()
+        await self.db.refresh(app)
+        return app
+
+    async def update_ci_status(self, app_id: int, payload: CiStatusUpdate) -> Application:
+        app = await self.get_app(app_id)
+        app.last_pipeline_status = payload.pipeline_status
+        if payload.app_status is not None:
+            app.status = payload.app_status
+        elif payload.pipeline_status == "success" and app.status == ApplicationStatus.ONBOARDING:
+            app.status = ApplicationStatus.READY
+            logger.info("App %s promoted to READY after successful CI run", app.id)
         await self.db.commit()
         await self.db.refresh(app)
         return app

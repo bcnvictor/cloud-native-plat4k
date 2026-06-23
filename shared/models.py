@@ -266,6 +266,11 @@ class ApplicationUpdate(BaseModel):
     target_cluster_id: Optional[int] = None
 
 
+class CiStatusUpdate(BaseModel):
+    pipeline_status: str
+    app_status: Optional[ApplicationStatus] = None
+
+
 class ApplicationResponse(ApplicationBase):
     id: int
     slug: str
@@ -284,6 +289,9 @@ class ApplicationResponse(ApplicationBase):
 class ClusterConnectionBase(BaseModel):
     name: str
     endpoint: str
+    prometheus_url: Optional[str] = None
+    loki_url: Optional[str] = None
+    argocd_url: Optional[str] = None
 
 
 class ClusterConnectionCreate(ClusterConnectionBase):
@@ -294,6 +302,9 @@ class ClusterConnectionUpdate(BaseModel):
     name: Optional[str] = None
     endpoint: Optional[str] = None
     kubeconfig: Optional[str] = None
+    prometheus_url: Optional[str] = None
+    loki_url: Optional[str] = None
+    argocd_url: Optional[str] = None
 
 
 class ClusterConnectionResponse(ClusterConnectionBase):

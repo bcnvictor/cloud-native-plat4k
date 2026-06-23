@@ -25,6 +25,7 @@ from shared.models import (
     ApplicationResponse,
     ApplicationScaffoldRequest,
     ApplicationUpdate,
+    CiStatusUpdate,
     CnpTier,
     PostgreSQLCredentials,
     UserRole,
@@ -204,6 +205,17 @@ async def update_app(
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     return await AppService(db).update_app(app_id, payload)
+
+
+@router.post("/{app_id}/ci-status", response_model=ApplicationResponse)
+async def update_app_ci_status(
+    app_id: int,
+    payload: CiStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """CI runner callback: update pipeline status on an application."""
+    return await AppService(db).update_ci_status(app_id, payload)
 
 
 @router.delete("/{app_id}")
