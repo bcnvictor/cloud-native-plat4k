@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     CNP_API_BASE_URL: str = "http://localhost:8000"
     # GitLab webhook secret (sent as X-Gitlab-Token to verify incoming webhook calls)
     GITLAB_WEBHOOK_SECRET: Optional[str] = None
+    ARGOCD_WEBHOOK_SECRET: Optional[str] = None
 
     # Kubernetes
     KUBECONFIG_PATH: Optional[str] = None
