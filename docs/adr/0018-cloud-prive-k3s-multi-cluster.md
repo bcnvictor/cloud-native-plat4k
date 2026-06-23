@@ -1,4 +1,4 @@
-# ADR-0017 : Cloud privé k3s auto-géré et routage multi-cluster du déploiement
+# ADR-0018 : Cloud privé k3s auto-géré et routage multi-cluster du déploiement
 
 ## Statut
 
@@ -16,9 +16,10 @@ consolidation sur Oracle.
 
 Par ailleurs, l'[ADR-0008](0008-k8s-orchestration.md) documentait une dette : le
 `cluster_id` passé à `POST /deployments` **n'était pas utilisé** pour choisir la cible.
-Le `KubernetesClient` est un singleton global chargé au démarrage via `KUBECONFIG_PATH`
-(AKS), donc tout déploiement atterrissait sur AKS quel que soit le cluster ciblé. Sans
-résolution, le critère « déploiement de test ciblant le cluster privé » serait factice.
+Cette dette a été levée sur `main` par le routage **basé Vault** (`get_k8s_client_for_cluster`,
+cf. travaux Vault / connexions multi-cluster) : le client K8s par cluster est instancié
+à partir du kubeconfig stocké dans Vault (`clusters/{id}`). Le présent ADR **consomme**
+ce mécanisme plutôt que d'en introduire un second.
 
 ## Décision
 
@@ -33,44 +34,37 @@ artefacts reproductibles vivent dans
 [`infra/oracle/k3s/`](../../infra/oracle/k3s/README.md) : install, récupération de
 kubeconfig, manifest nginx de test, runbook (port 6443 OCI + enregistrement CNP).
 
-### 2. Enregistrer le cluster comme `ClusterConnection` via l'auto-découverte existante
+### 2. Enregistrer le cluster comme `ClusterConnection`, kubeconfig dans Vault
 
-Le kubeconfig de `cnp-k3s` est déposé dans `KUBECONFIG_DIR` ; `discovery.py` l'upsert
-en `ClusterConnection` (nom = contexte = `cnp-k3s`, `kubeconfig_secret_ref` = chemin du
-fichier). Aucun nouveau schéma : le modèle, l'API CRUD et le health-worker multi-cluster
-(ADR-0015) couvrent déjà ce cas.
+Le cluster est enregistré via l'API CRUD (`POST /api/v1/clusters/`) en passant le
+kubeconfig dans le payload : le service **valide** le YAML puis **pousse le kubeconfig
+dans Vault** (`clusters/{id}`), `kubeconfig_secret_ref` ne portant plus qu'une référence
+logique. Le health-worker multi-cluster (ADR-0015) sonde ensuite le cluster
+(ONLINE/OFFLINE). Aucun nouveau schéma DB.
 
-### 3. Résoudre la dette ADR-0008 : router le déploiement par `cluster_id`
+### 3. Router le déploiement par `cluster_id` via le mécanisme Vault existant
 
-`backend/k8s/client.py` expose :
-
-- `KubernetesClient.from_kubeconfig(path, context)` : construit un client **isolé** sur
-  une `Configuration` dédiée (même pattern que `health_worker.probe_cluster`), sans
-  toucher la config kubernetes globale du process ;
-- `client_for_cluster(cluster)` : si `kubeconfig_secret_ref` est un fichier lisible,
-  retourne un client dédié sur le contexte `cluster.name` ; sinon repli sur le client
-  global (in-cluster / `KUBECONFIG_PATH`, c.-à-d. AKS).
-
-`DeploymentService.create_deployment` utilise désormais `client_for_cluster(cluster)`
-au lieu du singleton. Le déploiement atterrit donc réellement sur le cluster ciblé.
+`DeploymentService.create_deployment` appelle `get_k8s_client_for_cluster(cluster)`
+(déjà sur `main`), qui lit le kubeconfig du cluster ciblé **depuis Vault** et instancie
+un client isolé ; à défaut, repli sur le client global. Le déploiement atterrit donc
+réellement sur le cluster désigné par `cluster_id` — AKS **ou** le cloud privé `cnp-k3s`.
 
 ## Conséquences
 
 Positif :
 - Architecture multi-cloud réelle : un déploiement peut viser AKS **ou** le cloud privé
   `cnp-k3s` selon `cluster_id`.
-- La dette centrale de l'ADR-0008 est levée ; les clients par-cluster sont isolés (pas
-  d'effet de bord sur la config globale).
-- Réutilise l'infra existante (discovery, health-worker, API CRUD) sans migration DB.
+- Le kubeconfig (creds admin du cluster) est stocké **chiffré dans Vault**, pas sur disque
+  ni versionné — cohérent avec la stratégie secrets-manager de la plateforme.
+- Réutilise l'infra existante (enregistrement, health-worker, routage Vault) sans
+  migration DB ni second mécanisme de routage.
 
 Négatif / Dette :
 - `cnp-k3s` est single-node : pas de HA, le cloud privé est un SPOF de démo.
 - Le port 6443 exposé sur IP publique est sensible ; à restreindre par CIDR côté OCI
-  (le kubeconfig porte des creds admin — jamais versionné, cf. `.gitignore` du dossier).
-- `client_for_cluster` reconstruit un client à chaque déploiement (pas de cache) ;
-  acceptable au volume actuel, à mémoïser si la fréquence augmente.
-- `kubeconfig_secret_ref` reste un **chemin de fichier**, pas un vrai Secret K8s ; un
-  stockage chiffré (Vault / Secret monté) reste une amélioration future.
+  (security list ouverte sur l'IP du backend uniquement).
+- Le client par-cluster est reconstruit à chaque déploiement (pas de cache) ; acceptable
+  au volume actuel, à mémoïser si la fréquence augmente.
 
 Neutre :
 - Le namespace cible global (`K8S_TARGET_NAMESPACE`) de l'ADR-0008 est inchangé.

@@ -6,7 +6,7 @@ le **cluster « privé »** de l'architecture multi-cloud CNP : k3s installé ma
 `ClusterConnection` aux côtés d'AKS.
 
 > « Privé » = Kubernetes **auto-géré** (confirmé jury), pas OpenStack.
-> Voir [ADR-0017](../../../docs/adr/0017-cloud-prive-k3s-multi-cluster.md).
+> Voir [ADR-0018](../../../docs/adr/0018-cloud-prive-k3s-multi-cluster.md).
 
 ## Pré-requis
 
@@ -59,35 +59,24 @@ sous lequel le cluster apparaîtra dans CNP.
 
 ## 4. Enregistrer le cluster dans CNP comme `ClusterConnection`  *(critère #3)*
 
-Deux options.
-
-### Option A — Auto-découverte via `KUBECONFIG_DIR` (recommandé)
-
-CNP scanne les kubeconfigs d'un répertoire et upsert chaque contexte en
-`ClusterConnection` ([`backend/k8s/discovery.py`](../../../backend/k8s/discovery.py)).
-Déposer `cnp-k3s.yaml` dans ce répertoire et pointer la conf dessus :
+CNP stocke le kubeconfig de routage **dans Vault** (`clusters/{id}`), pas sur disque.
+L'enregistrement se fait via l'API CRUD en passant le **contenu** du kubeconfig dans le
+payload : le service le valide puis le pousse dans Vault.
 
 ```bash
-# .env du backend
-KUBECONFIG_DIR=/etc/cnp/kubeconfigs   # contient cnp-k3s.yaml (+ éventuellement l'AKS)
-```
-
-Au démarrage / au prochain cycle de discovery, le cluster `cnp-k3s` est inséré avec son
-endpoint et `kubeconfig_secret_ref = <chemin du fichier>`. Le health-worker le sondera
-ensuite (ONLINE/OFFLINE).
-
-### Option B — Via l'API (admin)
-
-```bash
+# Injecter le YAML du kubeconfig (récupéré à l'étape 3) dans le payload :
 curl -X POST https://<cnp>/api/v1/clusters/ \
   -H "Authorization: Bearer <ADMIN_TOKEN>" -H 'Content-Type: application/json' \
-  -d '{"name":"cnp-k3s","endpoint":"https://<PUBLIC_IP>:6443","kubeconfig_secret_ref":"/etc/cnp/kubeconfigs/cnp-k3s.yaml"}'
+  -d "$(jq -n --arg kc "$(cat cnp-k3s.yaml)" \
+        '{name:"cnp-k3s", endpoint:"https://<PUBLIC_IP>:6443", kubeconfig:$kc}')"
 ```
 
-> `kubeconfig_secret_ref` doit être un **chemin de fichier kubeconfig lisible par le
-> backend** : c'est lui que `client_for_cluster()` charge pour router le déploiement
-> (cf. étape 5). Un nom de Secret K8s non monté laisserait le cluster en `UNKNOWN` et
-> le déploiement retomberait sur le cluster global.
+CNP valide le kubeconfig, le stocke dans Vault (`clusters/{id}`) et insère la
+`ClusterConnection`. Le health-worker la sonde ensuite (ONLINE/OFFLINE).
+
+> Le kubeconfig porte des **creds admin** : il n'est jamais versionné ni posé sur disque
+> côté backend — Vault est la seule source. C'est `get_k8s_client_for_cluster()` qui le
+> relit depuis Vault pour router le déploiement (cf. étape 5).
 
 ## 5. Déploiement de test ciblant le cluster privé  *(critère #4)*
 
@@ -100,9 +89,10 @@ KUBECONFIG=./cnp-k3s.yaml kubectl --context cnp-k3s -n cnp-demo rollout status d
 
 ### b) Déploiement routé par CNP
 
-Depuis l'ADR-0017, `POST /api/v1/deployments` route réellement vers le cluster désigné
-par `cluster_id` (le client K8s est construit depuis le `kubeconfig_secret_ref` de la
-`ClusterConnection`). Cibler `cnp-k3s` :
+`POST /api/v1/deployments` route réellement vers le cluster désigné par `cluster_id` :
+`get_k8s_client_for_cluster()` lit le kubeconfig de la `ClusterConnection` **depuis Vault**
+et instancie un client isolé (cf. [ADR-0018](../../../docs/adr/0018-cloud-prive-k3s-multi-cluster.md)).
+Cibler `cnp-k3s` :
 
 ```bash
 curl -X POST https://<cnp>/api/v1/deployments \
