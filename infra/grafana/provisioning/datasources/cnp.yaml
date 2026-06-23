@@ -1,0 +1,19 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus-cnp
+    url: ${PROMETHEUS_URL}
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 30s
+      httpMethod: POST
+
+  - name: Loki
+    type: loki
+    uid: loki-cnp
+    url: ${LOKI_URL}
+    editable: false
+    jsonData:
+      maxLines: 1000
