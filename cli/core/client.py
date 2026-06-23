@@ -32,6 +32,10 @@ class APIClient:
         res = self.session.post(f"{self.base_url}{endpoint}", json=json, data=data)
         return self._handle_response(res)
 
+    def put(self, endpoint: str, json=None, data=None):
+        res = self.session.put(f"{self.base_url}{endpoint}", json=json, data=data)
+        return self._handle_response(res)
+
     def delete(self, endpoint: str):
         res = self.session.delete(f"{self.base_url}{endpoint}")
         return self._handle_response(res)

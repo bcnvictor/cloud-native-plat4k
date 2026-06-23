@@ -13,6 +13,7 @@ app.add_typer(clusters.app, name="cluster")
 app.add_typer(resources.app, name="resources")
 app.add_typer(credentials.app, name="credentials")
 app.add_typer(gitlab.app, name="gitlab")
+app.add_typer(clusters.app, name="clusters")
 
 if __name__ == "__main__":
     app()

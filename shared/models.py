@@ -11,6 +11,18 @@ from datetime import datetime
 from enum import Enum
 
 
+def sanitize_k8s_label_value(value: str) -> str:
+    """Sanitize an arbitrary string into a valid Kubernetes label value (max 63 chars).
+
+    Mirrors the transformations applied in the Helm _helpers.tpl cnp.io/owner label.
+    """
+    s = value.replace("@", "-at-").replace("/", "-")
+    s = re.sub(r"[^A-Za-z0-9\-_.]", "-", s)
+    s = re.sub(r"-+", "-", s)
+    s = s.strip("-").strip(".")
+    return s[:63]
+
+
 def compute_slug(name: str) -> str:
     """Return a DNS-1035-compliant slug derived from name, capped at 50 chars.
 
@@ -180,6 +192,7 @@ class DeploymentStatus(str, Enum):
 
 class ApplicationBase(BaseModel):
     name: str
+    description: Optional[str] = None
     repo_url: Optional[str] = None
     owner: str
     origin: Optional[str] = None
@@ -244,6 +257,7 @@ class ApplicationExternalImportRequest(BaseModel):
 
 class ApplicationUpdate(BaseModel):
     name: Optional[str] = None
+    description: Optional[str] = None
     repo_url: Optional[str] = None
     owner: Optional[str] = None
     origin: Optional[str] = None
@@ -270,21 +284,21 @@ class ApplicationResponse(ApplicationBase):
 class ClusterConnectionBase(BaseModel):
     name: str
     endpoint: str
-    kubeconfig_secret_ref: str
 
 
 class ClusterConnectionCreate(ClusterConnectionBase):
-    pass
+    kubeconfig: str
 
 
 class ClusterConnectionUpdate(BaseModel):
     name: Optional[str] = None
     endpoint: Optional[str] = None
-    kubeconfig_secret_ref: Optional[str] = None
+    kubeconfig: Optional[str] = None
 
 
 class ClusterConnectionResponse(ClusterConnectionBase):
     id: int
+    kubeconfig_secret_ref: str
     status: ClusterStatus = ClusterStatus.UNKNOWN
     last_seen_at: Optional[datetime] = None
     created_at: datetime

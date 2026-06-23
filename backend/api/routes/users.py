@@ -12,6 +12,8 @@ from shared.models import MemberStatus, UserResponse, UserRole
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+_SYSTEM_GROUP_NAMES = {'cnp-templates', '4k-cnp-2027'}
+
 router = APIRouter()
 
 
@@ -31,6 +33,7 @@ async def get_my_groups(
         .where(
             GitLabGroupMember.cnp_user_id == current_user.id,
             GitLabGroupMember.status == MemberStatus.ACTIVE,
+            GitLabGroup.name.not_in(_SYSTEM_GROUP_NAMES),
         )
     )
     return [
@@ -123,6 +126,7 @@ async def get_user_groups(
         .where(
             GitLabGroupMember.cnp_user_id == user_id,
             GitLabGroupMember.status == MemberStatus.ACTIVE,
+            GitLabGroup.name.not_in(_SYSTEM_GROUP_NAMES),
         )
     )
     return [

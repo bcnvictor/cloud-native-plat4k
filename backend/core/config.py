@@ -12,8 +12,12 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Cloud Native Platform"
     API_V1_STR: str = "/api/v1"
 
+    # Vault Configuration
+    VAULT_ADDR: str = "http://vault:8200"
+    VAULT_TOKEN: str = "cnp-dev-token"
+
     # SECURITY
-    SECRET_KEY: str  # Must be set in .env
+    SECRET_KEY: str = "__VAULT__"
     ENCRYPTION_KEY: Optional[str] = None  # Fernet key for creds encryption; falls back to SECRET_KEY derivation
     SECURE_COOKIES: bool = False
     ALGORITHM: str = "HS256"
@@ -24,10 +28,10 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
 
     # DATABASE
-    POSTGRES_SERVER: str
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
-    POSTGRES_DB: str
+    POSTGRES_SERVER: str = "__VAULT__"
+    POSTGRES_USER: str = "__VAULT__"
+    POSTGRES_PASSWORD: str = "__VAULT__"
+    POSTGRES_DB: str = "__VAULT__"
     POSTGRES_PORT: str = "5432"
 
     # GitLab
@@ -43,6 +47,9 @@ class Settings(BaseSettings):
     GITLAB_OAUTH_CLIENT_SECRET: Optional[str] = None
     GITLAB_OAUTH_REDIRECT_URI: Optional[str] = None
     GITLAB_OAUTH_SCOPES: str = "api read_user offline_access"
+    # full_path du groupe GitLab dont l'appartenance est requise pour se connecter via SSO
+    # ex: "4k-cnp-2027/cnp-apps". Si absent, aucune restriction.
+    GITLAB_OAUTH_ALLOWED_GROUP: Optional[str] = None
     # GitLab bot (CI injection)
     GITLAB_BOT_TOKEN: Optional[str] = None
     GITLAB_BOT_NAMESPACE: Optional[str] = None  # namespace owning cnp-ci-templates
@@ -89,3 +96,90 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(case_sensitive=True, env_file=".env", extra="ignore")
 
 settings = Settings()
+
+
+def bootstrap_from_vault(settings_obj: Settings) -> None:
+    import logging
+
+    import hvac.exceptions
+
+    from backend.vault.client import vault_client
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        secrets = vault_client.get_secret("cnp/platform")
+        # Les valeurs lues depuis Vault sont des str (sérialisées en JSON KV).
+        # On recrée un objet Settings en fusionnant les données Vault avec les
+        # valeurs actuelles pour laisser pydantic gérer la coercition de types
+        # (ex: ACCESS_TOKEN_EXPIRE_MINUTES stocké comme str "15" → int 15).
+        current_dump = settings_obj.model_dump(mode="json")
+        merged = {**current_dump, **{k: v for k, v in secrets.items() if k in current_dump}}
+        merged_settings = Settings(**merged)
+        # Copie en place les champs mis à jour depuis Vault
+        for key, value in merged_settings.model_dump().items():
+            object.__setattr__(settings_obj, key, value)
+        logger.info("Successfully loaded platform configuration from Vault")
+    except hvac.exceptions.Forbidden as e:
+        # Le token applicatif n'a pas les droits nécessaires.
+        # Cela indique une mauvaise configuration de la policy Vault — on doit
+        # aborter plutôt que de tenter un bootstrapping qui échouera aussi.
+        logger.error(
+            "Vault access denied on secret/cnp/platform. "
+            "Check that the VAULT_TOKEN has the 'cnp-backend' policy with read access. "
+            "For first-time bootstrapping, use the Root Token. Error: %s",
+            e,
+        )
+        raise RuntimeError(
+            "Vault Forbidden: token does not have read access to secret/data/cnp/platform. "
+            "See docs/guides/vault-runbook.md §2.4 for policy setup."
+        ) from e
+    except hvac.exceptions.InvalidPath:
+        # Le chemin n'existe pas encore → premier démarrage, on bootstrap.
+        # Vérification préalable : les credentials minimaux doivent être présents
+        # en local pour que le backend puisse démarrer et bootstrapper Vault.
+        if any(
+            getattr(settings_obj, field) == "__VAULT__"
+            for field in ("SECRET_KEY", "POSTGRES_PASSWORD", "POSTGRES_SERVER", "POSTGRES_USER", "POSTGRES_DB")
+        ):
+            raise RuntimeError(
+                "Vault path secret/cnp/platform not found and required fallback credentials are missing in env/.env. "
+                "Set POSTGRES_SERVER, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB and SECRET_KEY to bootstrap."
+            )
+
+        logger.info("Platform configuration not found in Vault. Bootstrapping Vault with all local settings...")
+
+        # Dump current configuration as JSON-compatible dict
+        dump = settings_obj.model_dump(mode="json")
+        # Exclude internal vault connection details from vault storage
+        dump.pop("VAULT_ADDR", None)
+        dump.pop("VAULT_TOKEN", None)
+
+        # Only store set/valid keys (filter out sentinels)
+        bootstrap_data = {k: v for k, v in dump.items() if v != "__VAULT__"}
+
+        try:
+            vault_client.put_secret(
+                path="cnp/platform",
+                secret=bootstrap_data,
+            )
+            logger.info("Vault bootstrapped successfully with all platform settings.")
+        except hvac.exceptions.Forbidden as e:
+            # Le token n'a pas le droit d'écrire dans cnp/* — la policy de production
+            # doit accorder create/update sur secret/data/cnp/* pour le premier boot.
+            logger.error(
+                "Vault bootstrapping failed: token cannot write to secret/cnp/platform. "
+                "Grant 'create' and 'update' on secret/data/cnp/* in the Vault policy, "
+                "or run the first bootstrap manually with the Root Token. Error: %s",
+                e,
+            )
+            raise RuntimeError(
+                "Vault Forbidden on write: cannot bootstrap secret/cnp/platform. "
+                "See docs/guides/vault-runbook.md §2.4 for policy setup."
+            ) from e
+        except Exception as e:
+            logger.error("Failed to write settings to Vault: %s", e)
+            raise RuntimeError("Vault bootstrapping failed. Aborting startup.") from e
+    except Exception as e:
+        logger.error("Failed to connect to Vault or fetch platform settings: %s", e)
+        raise RuntimeError("Vault integration failed. Aborting startup.") from e

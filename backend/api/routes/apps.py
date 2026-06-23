@@ -210,7 +210,7 @@ async def update_app(
 async def delete_app(
     app_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN)),
+    current_user: User = Depends(require_role(UserRole.DEV)),
 ):
     await AppService(db).delete_app(app_id)
     return {"msg": "Application deleted"}

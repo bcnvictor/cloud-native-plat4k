@@ -15,6 +15,7 @@ from typing import Any
 
 from shared.models import MemberStatus
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
@@ -120,6 +121,7 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
         if m.id in existing:
             row = existing[m.id]
             row.access_level = m.access_level
+            row.username = getattr(m, 'username', None)
             row.status = MemberStatus.ACTIVE
             if cnp_user_id:
                 row.cnp_user_id = cnp_user_id
@@ -129,6 +131,7 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
             db.add(GitLabGroupMember(
                 gitlab_group_id=group.gitlab_group_id,
                 gitlab_user_id=m.id,
+                username=getattr(m, 'username', None),
                 access_level=m.access_level,
                 cnp_user_id=cnp_user_id,
                 status=MemberStatus.ACTIVE,
@@ -299,23 +302,16 @@ async def run_gitlab_sync_for_user(db: AsyncSession, user_id: int) -> dict:
         logger.exception("GitLab sync — cannot fetch groups for user gitlab_id=%d", user.gitlab_user_id)
         gl_groups = []
 
-    # Upsert newly discovered groups into gitlab_groups
-    for gl_group in gl_groups:
-        res = await db.execute(
-            select(GitLabGroup).where(GitLabGroup.gitlab_group_id == gl_group.id)
-        )
-        existing = res.scalar_one_or_none()
-        if existing:
-            existing.name = gl_group.name
-            existing.full_path = gl_group.full_path
-        else:
-            db.add(GitLabGroup(
-                gitlab_group_id=gl_group.id,
-                name=gl_group.name,
-                full_path=gl_group.full_path,
-            ))
+    # Upsert newly discovered groups into gitlab_groups (atomic — avoids race on concurrent syncs)
     if gl_groups:
-        await db.flush()
+        stmt = pg_insert(GitLabGroup).values([
+            {"gitlab_group_id": g.id, "name": g.name, "full_path": g.full_path}
+            for g in gl_groups
+        ]).on_conflict_do_update(
+            index_elements=["gitlab_group_id"],
+            set_={"name": pg_insert(GitLabGroup).excluded.name, "full_path": pg_insert(GitLabGroup).excluded.full_path},
+        )
+        await db.execute(stmt)
 
     # Sync each group's member list
     group_ids = {g.id for g in gl_groups}
