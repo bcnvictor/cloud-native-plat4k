@@ -23,6 +23,13 @@ from backend.gitlab.client import GitLabClient
 logger = logging.getLogger(__name__)
 
 SKIP_FILES = {"chart/values.yaml", "chart/Chart.yaml"}
+GENERATED_CHART_FILES = {
+    "chart/templates/_helpers.tpl",
+    "chart/templates/deployment.yaml",
+    "chart/templates/service.yaml",
+    "chart/templates/ingress.yaml",
+}
+DEFAULT_REACT_PORT = 80
 
 
 def _get_bot_client() -> GitLabClient:
@@ -115,9 +122,11 @@ class ScaffoldingService:
             )
 
         batch: list[dict] = []
+        template_paths: set[str] = set()
         for f in template_files:
             if f["type"] != "blob":
                 continue
+            template_paths.add(f["path"])
             if f["path"] in SKIP_FILES:
                 continue
             try:
@@ -133,10 +142,17 @@ class ScaffoldingService:
                     detail=f"Failed to read template file '{f['path']}': {e}",
                 )
 
-        params = scaffolding_params or ScaffoldingParams()
-        batch.append({"file_path": "chart/values.yaml", "content": self._build_values_yaml(app_slug, apps_namespace, params)})
-        batch.append({"file_path": "chart/Chart.yaml", "content": self._build_chart_yaml(app_slug, params)})
-        if "postgresql" in params.services:
+        params = self._resolve_scaffolding_params(template, scaffolding_params or ScaffoldingParams())
+        batch.append({
+            "file_path": "chart/values.yaml",
+            "content": self._build_values_yaml(app_slug, apps_namespace, params),
+        })
+        batch.append({
+            "file_path": "chart/Chart.yaml",
+            "content": self._build_chart_yaml(app_slug, params),
+        })
+        batch.extend(self._missing_chart_templates(template_paths))
+        if "postgresql" in params.services and "chart/templates/postgresql.yaml" not in template_paths:
             batch.append({"file_path": "chart/templates/postgresql.yaml", "content": self._build_postgresql_yaml()})
 
         try:
@@ -215,10 +231,29 @@ class ScaffoldingService:
                 "requests": {"cpu": "100m", "memory": "128Mi"},
                 "limits": {"cpu": "500m", "memory": "256Mi"},
             },
+            "service": {
+                "type": "ClusterIP",
+                "port": params.port,
+            },
             "ingress": {
                 "enabled": False,
                 "host": "",
+                "path": "/",
+                "pathType": "Prefix",
                 "tls": False,
+                "annotations": {},
+            },
+            "probes": {
+                "readiness": {
+                    "path": "/",
+                    "initialDelaySeconds": 5,
+                    "periodSeconds": 10,
+                },
+                "liveness": {
+                    "path": "/",
+                    "initialDelaySeconds": 15,
+                    "periodSeconds": 20,
+                },
             },
         }
 
@@ -255,6 +290,161 @@ class ScaffoldingService:
             "appVersion": "0.1.0",
         }
         return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+
+    def _resolve_scaffolding_params(self, template: str, params: ScaffoldingParams) -> ScaffoldingParams:
+        default_port = ScaffoldingParams.model_fields["port"].default
+        if self._is_react_template(template) and params.port == default_port:
+            return params.model_copy(update={"port": DEFAULT_REACT_PORT})
+        return params
+
+    @staticmethod
+    def _is_react_template(template: str) -> bool:
+        template_name = template.strip("/").rsplit("/", 1)[-1].lower().replace("_", "-")
+        return (
+            template_name == "react"
+            or template_name.startswith("react-")
+            or template_name.endswith("-react")
+            or "-react-" in template_name
+        )
+
+    def _missing_chart_templates(self, template_paths: set[str]) -> list[dict]:
+        generated = {
+            "chart/templates/_helpers.tpl": self._build_helpers_tpl(),
+            "chart/templates/deployment.yaml": self._build_deployment_yaml(),
+            "chart/templates/service.yaml": self._build_service_yaml(),
+            "chart/templates/ingress.yaml": self._build_ingress_yaml(),
+        }
+        return [
+            {"file_path": file_path, "content": content}
+            for file_path, content in generated.items()
+            if file_path in GENERATED_CHART_FILES and file_path not in template_paths
+        ]
+
+    def _build_helpers_tpl(self) -> str:
+        return """\
+{{- define "app.name" -}}
+{{- default .Chart.Name .Values.app.name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "app.fullname" -}}
+{{- include "app.name" . -}}
+{{- end -}}
+
+{{- define "app.labels" -}}
+app.kubernetes.io/name: {{ include "app.name" . }}
+helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: cnp
+{{- end -}}
+
+{{- define "app.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "app.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+"""
+
+    def _build_deployment_yaml(self) -> str:
+        return """\
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "app.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "app.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ include "app.name" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.app.port }}
+              protocol: TCP
+          {{- if .Values.env }}
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key | quote }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+"""
+
+    def _build_service_yaml(self) -> str:
+        return """\
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "app.selectorLabels" . | nindent 4 }}
+"""
+
+    def _build_ingress_yaml(self) -> str:
+        return """\
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ include "app.fullname" . }}-tls
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path }}
+            pathType: {{ .Values.ingress.pathType }}
+            backend:
+              service:
+                name: {{ include "app.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}
+"""
 
     def _build_postgresql_yaml(self) -> str:
         return """\
