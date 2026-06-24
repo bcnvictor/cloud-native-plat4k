@@ -12,7 +12,11 @@ router = APIRouter()
 
 @router.get("/config")
 async def config():
-    return {"grafana_url": settings.GRAFANA_URL}
+    return {
+        "grafana_url": settings.GRAFANA_URL or None,
+        "prometheus_url": settings.PROMETHEUS_URL or None,
+        "loki_url": settings.LOKI_URL or None,
+    }
 
 
 @router.get("/metrics")

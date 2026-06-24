@@ -8,14 +8,13 @@ import { AppStatusBadge } from '@/components/AppStatusBadge';
 import { Spinner } from '@/components/ui/Spinner';
 import { timeAgo } from '@/utils/timeAgo';
 import { useAppMetrics } from '@/hooks/useAppMetrics';
-import { useMonitoringConfig, useGrafanaMetricUrl } from '@/hooks/useMonitoringConfig';
+import { useMetricUrl } from '@/hooks/useMonitoringConfig';
 
 export function OverviewTab() {
   const { app, isLoading } = useAppDetail();
   const metrics = useAppMetrics(app?.slug ?? '');
-  const grafanaUrl = useMonitoringConfig();
-  const cpuGrafanaUrl = useGrafanaMetricUrl(grafanaUrl, app?.name ?? '', 'cpu');
-  const ramGrafanaUrl = useGrafanaMetricUrl(grafanaUrl, app?.name ?? '', 'ram');
+  const cpuUrl = useMetricUrl(app?.slug ?? '', 'cpu');
+  const ramUrl = useMetricUrl(app?.slug ?? '', 'ram');
 
   const { data: deployments = [] } = useQuery({
     queryKey: ['deployments', app?.id],
@@ -49,7 +48,7 @@ export function OverviewTab() {
           unit={metrics.available ? 'm' : undefined}
           icon={<IconCpu size={14} />}
           sparkline={metrics.cpu.series}
-          externalUrl={cpuGrafanaUrl ?? undefined}
+          externalUrl={cpuUrl ?? undefined}
         />
         <MetricCard
           label="RAM"
@@ -57,7 +56,7 @@ export function OverviewTab() {
           unit={metrics.available ? metrics.ramUnit : undefined}
           icon={<IconDatabase size={14} />}
           sparkline={metrics.ram.series}
-          externalUrl={ramGrafanaUrl ?? undefined}
+          externalUrl={ramUrl ?? undefined}
         />
         <MetricCard
           label="Replicas"

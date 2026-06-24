@@ -25,9 +25,11 @@ const UNAVAILABLE: AppMetrics = {
 const SHARED_OPTS = {
   queryKey: ['monitoring-metrics'] as const,
   queryFn:  monitoringApi.getMetrics,
-  retry:    false,
+  retry:    2,
+  retryDelay: 2_000,
   refetchInterval: 30_000,
   staleTime:       25_000,
+  placeholderData: (prev: unknown) => prev,
 };
 
 export function useAppMetrics(appName: string): AppMetrics {
