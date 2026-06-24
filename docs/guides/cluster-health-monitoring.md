@@ -2,7 +2,7 @@
 
 Ce guide décrit le fonctionnement opérationnel de la découverte de clusters et du
 health-check, et comment les configurer. Pour la justification des choix de conception,
-voir [ADR-0011](../adr/0011-service-discovery-cluster-health.md).
+voir [ADR-0015](../adr/0015-service-discovery-cluster-health.md).
 
 ## Vue d'ensemble
 
