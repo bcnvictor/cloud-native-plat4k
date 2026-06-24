@@ -19,6 +19,7 @@ _MAIN_BRANCHES = frozenset({"refs/heads/main", "refs/heads/master"})
 async def _validate_gitlab_signature(request: Request, webhook_signature: str | None, x_gitlab_token: str | None) -> None:
     """Valide soit le signing token (webhook-signature, HMAC-SHA256) soit le secret token (X-Gitlab-Token)."""
     if not settings.GITLAB_WEBHOOK_SECRET:
+        logger.warning("GITLAB_WEBHOOK_SECRET not configured — webhook signature validation disabled")
         return
     secret = settings.GITLAB_WEBHOOK_SECRET
     if webhook_signature:
@@ -91,6 +92,8 @@ async def argocd_sync_webhook(
     if settings.ARGOCD_WEBHOOK_SECRET:
         if not x_argocd_token or not hmac.compare_digest(x_argocd_token, settings.ARGOCD_WEBHOOK_SECRET):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook token")
+    else:
+        logger.warning("ARGOCD_WEBHOOK_SECRET not configured — webhook token validation disabled")
 
     payload = await request.json()
     from backend.services.deployment_service import DeploymentService
