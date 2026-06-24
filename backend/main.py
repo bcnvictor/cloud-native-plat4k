@@ -16,7 +16,6 @@ from backend.api.routes import (
     auth,
     clusters,
     credentials,
-    deployments,
     gitlab,
     groups,
     health,
@@ -115,7 +114,6 @@ app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["aut
 app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["users"])
 app.include_router(apps.router, prefix=f"{settings.API_V1_STR}/apps", tags=["apps"])
 app.include_router(clusters.router, prefix=f"{settings.API_V1_STR}/clusters", tags=["clusters"])
-app.include_router(deployments.router, prefix=f"{settings.API_V1_STR}/deployments", tags=["deployments"])
 app.include_router(resources.router, prefix=f"{settings.API_V1_STR}/resources", tags=["resources"])
 app.include_router(credentials.router, prefix=f"{settings.API_V1_STR}/credentials", tags=["credentials"])
 app.include_router(audit.router, prefix=f"{settings.API_V1_STR}/audit", tags=["audit"])

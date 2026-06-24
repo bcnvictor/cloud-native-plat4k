@@ -96,5 +96,5 @@ async def argocd_sync_webhook(
         logger.warning("ARGOCD_WEBHOOK_SECRET not configured — webhook token validation disabled")
 
     payload = await request.json()
-    from backend.services.deployment_service import DeploymentService
-    await DeploymentService(db).handle_argocd_sync_event(payload)
+    app_name = payload.get("app", {}).get("metadata", {}).get("name", "<unknown>")
+    logger.info("ArgoCD sync event received for app '%s' — last_known_status update not yet implemented", app_name)

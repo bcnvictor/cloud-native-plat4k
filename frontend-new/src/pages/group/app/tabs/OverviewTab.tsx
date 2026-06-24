@@ -1,26 +1,42 @@
-import { useQuery } from '@tanstack/react-query';
-import { IconAlertTriangle, IconBrandGitlab, IconCircleCheck, IconClock, IconCpu, IconDatabase, IconServer } from '@tabler/icons-react';
+import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCpu, IconDatabase, IconRefresh, IconServer } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
-import { appsApi } from '@/api/apps';
 import { MetricCard } from '@/components/MetricCard';
 import { Card } from '@/components/ui/Card';
-import { AppStatusBadge } from '@/components/AppStatusBadge';
 import { Spinner } from '@/components/ui/Spinner';
 import { timeAgo } from '@/utils/timeAgo';
 import { useAppMetrics } from '@/hooks/useAppMetrics';
+import { useAppStatus } from '@/hooks/useAppStatus';
 import { useMetricUrl } from '@/hooks/useMonitoringConfig';
+
+function SyncBadge({ status }: { status: string | null | undefined }) {
+  if (!status) return <span className="text-xs text-muted-foreground">—</span>;
+  const synced = status === 'Synced';
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${synced ? 'bg-success/15 text-success-text' : 'bg-warning/15 text-warning-text'}`}>
+      {status}
+    </span>
+  );
+}
+
+function HealthBadge({ status }: { status: string | null | undefined }) {
+  if (!status) return <span className="text-xs text-muted-foreground">—</span>;
+  const color =
+    status === 'Healthy' ? 'bg-success/15 text-success-text' :
+    status === 'Degraded' ? 'bg-destructive/15 text-destructive' :
+    'bg-warning/15 text-warning-text';
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
+      {status}
+    </span>
+  );
+}
 
 export function OverviewTab() {
   const { app, isLoading } = useAppDetail();
   const metrics = useAppMetrics(app?.slug ?? '');
   const cpuUrl = useMetricUrl(app?.slug ?? '', 'cpu');
   const ramUrl = useMetricUrl(app?.slug ?? '', 'ram');
-
-  const { data: deployments = [] } = useQuery({
-    queryKey: ['deployments', app?.id],
-    queryFn: () => appsApi.listDeployments(app!.id),
-    enabled: !!app,
-  });
+  const { data: runtimeStatus } = useAppStatus(app?.id);
 
   if (isLoading) {
     return (
@@ -29,8 +45,6 @@ export function OverviewTab() {
       </div>
     );
   }
-
-  const currentDeploy = deployments.find((d) => d.status === 'succeeded');
 
   return (
     <div className="flex flex-col gap-5">
@@ -60,67 +74,75 @@ export function OverviewTab() {
         />
         <MetricCard
           label="Replicas"
-          value={metrics.replicas.current}
+          value={
+            runtimeStatus?.replicas_ready != null && runtimeStatus?.replicas_desired != null
+              ? `${runtimeStatus.replicas_ready}/${runtimeStatus.replicas_desired}`
+              : '—'
+          }
           icon={<IconServer size={14} />}
         />
         <MetricCard
-          label="Uptime"
-          value={currentDeploy ? timeAgo(currentDeploy.deployed_at) : '—'}
+          label="Last sync"
+          value={runtimeStatus?.last_sync_at ? timeAgo(runtimeStatus.last_sync_at) : '—'}
           icon={<IconClock size={14} />}
         />
       </div>
 
-      {/* 2-col */}
-      <div className="grid grid-cols-2 gap-4">
-        {/* Current deployment */}
+      {/* Status cards */}
+      <div className="grid grid-cols-1 gap-4">
+        {/* ArgoCD / cluster status */}
         <Card>
-          <h2 className="text-sm font-medium text-foreground mb-3">Current deployment</h2>
-          {currentDeploy ? (
+          <h2 className="text-sm font-medium text-foreground mb-3">
+            <span className="flex items-center gap-1.5">
+              <IconRefresh size={14} />
+              ArgoCD / cluster
+            </span>
+          </h2>
+          {runtimeStatus?.argocd_error && !runtimeStatus.sync_status ? (
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <IconAlertTriangle size={12} className="shrink-0" />
+              ArgoCD unavailable
+            </p>
+          ) : (
             <dl className="flex flex-col gap-2">
               {[
-                { label: 'Commit', value: currentDeploy.version, mono: true },
-                // MOCK: branch et trigger hardcodés — décommissionner quand stockés en DB
-                { label: 'Branch', value: 'main', mono: true },
-                { label: 'Deployed', value: timeAgo(currentDeploy.deployed_at) },
-                { label: 'Cluster', value: `cluster-${currentDeploy.cluster_id}`, mono: true },
-                { label: 'Trigger', value: 'commit' },
+                {
+                  label: 'Sync',
+                  value: <SyncBadge status={runtimeStatus?.sync_status} />,
+                },
+                {
+                  label: 'Health',
+                  value: <HealthBadge status={runtimeStatus?.health_status} />,
+                },
+                {
+                  label: 'Pods',
+                  value: runtimeStatus?.pods_running != null
+                    ? `${runtimeStatus.pods_running}/${runtimeStatus.pods_total} running`
+                    : '—',
+                  mono: true,
+                },
+                {
+                  label: 'Image',
+                  value: runtimeStatus?.image
+                    ? runtimeStatus.image.split('/').pop() ?? runtimeStatus.image
+                    : '—',
+                  mono: true,
+                },
+                {
+                  label: 'Last sync',
+                  value: runtimeStatus?.last_sync_at ? timeAgo(runtimeStatus.last_sync_at) : '—',
+                },
               ].map(({ label, value, mono }) => (
                 <div key={label} className="flex items-baseline gap-2">
                   <dt className="text-xs text-muted-foreground w-20 shrink-0">{label}</dt>
-                  <dd className={`text-xs text-foreground ${mono ? 'font-mono' : ''}`}>
-                    {value}
-                  </dd>
+                  <dd className={`text-xs text-foreground ${mono ? 'font-mono' : ''}`}>{value}</dd>
                 </div>
               ))}
             </dl>
-          ) : (
-            <p className="text-xs text-muted-foreground">No successful deployment.</p>
           )}
         </Card>
 
-        {/* Injected services */}
-        {/* MOCK: liste hardcodée PostgreSQL+Redis toujours "healthy" — décommissionner quand GET /apps/:id/services existe */}
-        <Card>
-          <h2 className="text-sm font-medium text-foreground mb-3">Injected services</h2>
-          <ul className="flex flex-col gap-2">
-            {[
-              { name: 'PostgreSQL', id: 'postgres', status: 'healthy' as const },
-              { name: 'Redis', id: 'redis', status: 'healthy' as const },
-            ].map((svc) => (
-              <li key={svc.id} className="flex items-center gap-2">
-                <IconCircleCheck size={14} className="text-success-text shrink-0" />
-                <span className="text-xs font-mono text-foreground flex-1">{svc.id}</span>
-                <span className="text-xs text-foreground">{svc.name}</span>
-                <AppStatusBadge status={svc.status} size="sm" />
-              </li>
-            ))}
-            <li className="pt-2 mt-1 border-t border-border">
-              <span className="text-xs text-muted-foreground">
-                Exposed port: <span className="font-mono">8080</span>
-              </span>
-            </li>
-          </ul>
-        </Card>
+
       </div>
 
       {/* Quick access */}

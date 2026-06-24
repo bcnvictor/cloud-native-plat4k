@@ -183,19 +183,6 @@ class ApplicationStatus(str, Enum):
     DEGRADED = "degraded"
 
 
-class DeploymentStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-
-
-class ArgoAppStatus(BaseModel):
-    sync_status: str
-    health_status: str
-    deployment_status: DeploymentStatus
-    message: Optional[str] = None
-
 
 class ApplicationBase(BaseModel):
     name: str
@@ -328,21 +315,3 @@ class ClusterConnectionResponse(ClusterConnectionBase):
         from_attributes = True
 
 
-class DeploymentBase(BaseModel):
-    application_id: int
-    cluster_id: int
-    version: str
-
-
-class DeploymentCreate(DeploymentBase):
-    pass
-
-
-class DeploymentResponse(DeploymentBase):
-    id: int
-    status: DeploymentStatus
-    deployed_at: datetime
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
