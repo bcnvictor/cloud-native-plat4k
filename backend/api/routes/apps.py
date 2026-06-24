@@ -1,5 +1,6 @@
 from typing import List
 
+import httpx
 from backend.api.deps import (
     _access_level_to_tier,
     get_current_user,
@@ -7,17 +8,22 @@ from backend.api.deps import (
     require_role,
     require_tier,
 )
+from backend.api.schemas.app_status import AppRuntimeStatus
 from backend.api.schemas.members import (
     AddMemberRequest,
     InviteMemberRequest,
     MemberRead,
     MyAccessResponse,
 )
-from backend.db.models import Application, AppMember, User
+from backend.argocd.client import get_argocd_client_for_cluster
+from backend.core.config import settings
+from backend.db.models import Application, AppMember, ClusterConnection, User
 from backend.db.session import get_db
+from backend.k8s.client import get_k8s_client_for_cluster
+from backend.k8s.manifests import sanitize_k8s_name
 from backend.services.app_service import AppService
 from backend.services.scaffolding_service import ScaffoldingService
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from shared.models import (
     ApplicationCreate,
     ApplicationExternalImportRequest,
@@ -60,6 +66,57 @@ async def get_app(
     current_user: User = Depends(get_current_user),
 ):
     return await AppService(db).get_app(app_id)
+
+
+@router.get("/{app_id}/status", response_model=AppRuntimeStatus)
+async def get_app_runtime_status(
+    app_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Live K8s pods/replicas + ArgoCD sync/health for an application."""
+    app_result = await db.execute(select(Application).where(Application.id == app_id))
+    app = app_result.scalar_one_or_none()
+    if app is None:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    if not app.target_cluster_id:
+        raise HTTPException(status_code=409, detail="Application has no target cluster configured")
+
+    cluster_result = await db.execute(
+        select(ClusterConnection).where(ClusterConnection.id == app.target_cluster_id)
+    )
+    cluster = cluster_result.scalar_one_or_none()
+    if cluster is None:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    payload: dict = {}
+
+    # K8s pods & replicas
+    try:
+        k8s = get_k8s_client_for_cluster(cluster)
+        if k8s.is_configured():
+            resource_name = sanitize_k8s_name(app.name)
+            payload.update(k8s.get_pods_status(settings.K8S_TARGET_NAMESPACE, resource_name))
+    except Exception as e:
+        payload["k8s_error"] = str(e)
+
+    # ArgoCD sync / health / image / last sync
+    try:
+        argocd = get_argocd_client_for_cluster(cluster)
+        argocd_app = await argocd.get_app_status(app.slug)
+        argocd_status = argocd_app.get("status", {})
+        payload["sync_status"] = argocd_status.get("sync", {}).get("status")
+        payload["health_status"] = argocd_status.get("health", {}).get("status")
+        images = argocd_status.get("summary", {}).get("images", [])
+        payload["image"] = images[0] if images else None
+        payload["last_sync_at"] = argocd_status.get("operationState", {}).get("finishedAt")
+    except (HTTPException, httpx.HTTPError) as e:
+        payload["argocd_error"] = str(e)
+    except Exception as e:
+        payload["argocd_error"] = str(e)
+
+    return AppRuntimeStatus(**payload)
 
 
 @router.get("/{app_id}/members", response_model=List[MemberRead])

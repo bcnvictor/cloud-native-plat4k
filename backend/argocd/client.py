@@ -2,25 +2,12 @@ import logging
 
 import httpx
 from fastapi import HTTPException, status
-from shared.models import DeploymentStatus
 
 from backend.vault.client import vault_client
 
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 10  # secondes
-
-
-def _normalize_status(sync_status: str, health_status: str) -> DeploymentStatus:
-    if health_status in ("Degraded", "Missing"):
-        return DeploymentStatus.FAILED
-    if sync_status == "Synced" and health_status == "Healthy":
-        return DeploymentStatus.SUCCEEDED
-    if sync_status == "Synced" and health_status == "Progressing":
-        return DeploymentStatus.RUNNING
-    if sync_status == "OutOfSync":
-        return DeploymentStatus.PENDING
-    return DeploymentStatus.PENDING
 
 
 class ArgoCDClient:
@@ -57,9 +44,3 @@ def get_argocd_client_for_cluster(cluster) -> ArgoCDClient:
     return ArgoCDClient(base_url=cluster.argocd_url, token=token)
 
 
-def normalize_argocd_payload(argocd_app: dict) -> tuple[str, str, DeploymentStatus]:
-    """Extract sync_status, health_status and normalized DeploymentStatus from an ArgoCD app dict."""
-    sync_status = argocd_app.get("status", {}).get("sync", {}).get("status", "Unknown")
-    health_status = argocd_app.get("status", {}).get("health", {}).get("status", "Unknown")
-    deployment_status = _normalize_status(sync_status, health_status)
-    return sync_status, health_status, deployment_status
