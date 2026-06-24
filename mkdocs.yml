@@ -55,7 +55,43 @@ markdown_extensions:
 
 nav:
   - Accueil: index.md
-  - Quickstart: quickstart.md
+  - Démarrer:
+      - Quickstart: quickstart.md
+      - Premiers pas: frontend-export/premiers-pas.md
+  - Utiliser CNP:
+      - Scaffolder une application: frontend-export/scaffolder.md
+      - Déployer sur AKS: frontend-export/deployer.md
+      - Importer un repo existant: frontend-export/importer.md
+      - FAQ: frontend-export/faq.md
   - Référence CLI: cli.md
   - API:
-      - Vue d'ensemble: api/overview.md
+      - Vue d'ensemble (Swagger UI): api/overview.md
+      - Guide API REST: frontend-export/api-rest.md
+  - Architecture:
+      - Vue d'ensemble: architecture/overview.md
+  - Guides opérationnels:
+      - Setup ArgoCD & GitOps: guides/argocd-setup.md
+      - Service discovery & health: guides/cluster-health-monitoring.md
+      - Déploiement sur cnp-control: guides/cnp-control-deployment.md
+      - Opérations cluster AKS: guides/operations.md
+      - Runbook Vault: guides/vault-runbook.md
+      - Test CI Injector: guides/test-ci-injector.md
+  - Décisions d'architecture (ADR):
+      - ADR-0001 — Architecture initiale: adr/0001-architecture-initiale.md
+      - ADR-0002 — Pivot vers une IDP: adr/0002-pivot-idp.md
+      - ADR-0003 — Git hosting des apps: adr/0003-git-hosting.md
+      - ADR-0004 — Helm vs manifests bruts: adr/0004-helm.md
+      - ADR-0005 — Responsabilités CI vs GitOps: adr/0005-responsabilite-ci-vs-gitops.md
+      - ADR-0006 — Authentification OIDC: adr/0006-oicd.md
+      - ADR-0007 — Couche données IDP: adr/0007-idp-data-layer.md
+      - ADR-0008 — Orchestration Kubernetes: adr/0008-k8s-orchestration.md
+      - ADR-0009 — Rôle dans le payload JWT: adr/0009-role-jwt-payload.md
+      - ADR-0010 — CI plateforme (GitHub Actions): adr/0010-ci-plateforme-github-actions.md
+      - ADR-0011 — Injection de CI: adr/0011-ci-injection.md
+      - ADR-0012 — GitOps ArgoCD (App of Apps): adr/0012-argocd-app-of-apps.md
+      - ADR-0013 — Migration GitLab.com SaaS: adr/0013-migration-gitlab-saas.md
+      - ADR-0013 — Intégration Vault: adr/0013-vault-secrets-manager.md
+      - ADR-0014 — Cycle de vie des apps (v2): adr/0014-app-lifecycle-v2.md
+      - ADR-0015 — Service discovery & health: adr/0015-service-discovery-cluster-health.md
+      - ADR-0016 — Autorisation via groupes GitLab: adr/0016-gitlab-appartenance-autorisation.md
+      - ADR-0017 — Refonte du frontend: adr/0017-refonte-frontend-new.md
