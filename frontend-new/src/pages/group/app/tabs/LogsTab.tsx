@@ -7,7 +7,7 @@ import {
   IconWifiOff,
 } from '@tabler/icons-react';
 import { useAppLogs } from '@/hooks/useAppLogs';
-import { useMonitoringConfig, useLokiUrl } from '@/hooks/useMonitoringConfig';
+import { useLokiUrl } from '@/hooks/useMonitoringConfig';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
@@ -39,8 +39,7 @@ export function LogsTab() {
   const [level, setLevel] = useState('ALL');
   const [search, setSearch] = useState('');
   const topRef = useRef<HTMLDivElement>(null);
-  const grafanaUrl = useMonitoringConfig();
-  const lokiUrl = useLokiUrl(grafanaUrl, appSlug!);
+  const lokiUrl = useLokiUrl(appSlug!);
 
   const { data: logs = [], isLoading, isError } = useAppLogs({
     appSlug: appSlug!,
