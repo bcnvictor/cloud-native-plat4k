@@ -93,6 +93,7 @@ function makeApp(status: Application['status']): Application {
   return {
     id: 1,
     name: 'test-app',
+    slug: 'test-app',
     description: null,
     repo_url: null,
     owner: 'dev@test.com',
