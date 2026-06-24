@@ -75,6 +75,9 @@ resource "azurerm_kubernetes_cluster" "cnp" {
     os_disk_size_gb = 50
   }
 
+  # OIDC issuer : ne peut pas être désactivé une fois activé sur Azure
+  oidc_issuer_enabled = true
+
   # Identité managée : Azure gère les credentials pour AKS automatiquement
   # Pas de service principal a rotation manuelle
   identity {
