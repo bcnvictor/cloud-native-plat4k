@@ -128,7 +128,7 @@ export function GroupHome() {
         <MetricCard
           label="Average CPU"
           value={groupMetrics.available ? groupMetrics.cpu.current.toFixed(1) : '—'}
-          unit={groupMetrics.available ? '%' : undefined}
+          unit={groupMetrics.available ? 'm' : undefined}
           icon={<IconCpu size={14} />}
           sublabel={!groupMetrics.available ? (
             <span className="flex items-center gap-1 text-muted-foreground">
