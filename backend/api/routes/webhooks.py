@@ -1,3 +1,4 @@
+import hashlib
 import hmac
 import logging
 
@@ -5,7 +6,6 @@ from backend.api.deps import get_db
 from backend.core.config import settings
 from backend.db.models import Application, ClusterConnection
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from shared.models import ApplicationStatus
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,90 +16,69 @@ router = APIRouter()
 _MAIN_BRANCHES = frozenset({"refs/heads/main", "refs/heads/master"})
 
 
-async def _lookup_app_by_repo_url(db: AsyncSession, project_web_url: str) -> Application | None:
-    result = await db.execute(
-        select(Application).where(
-            Application.repo_url.in_([project_web_url, project_web_url + ".git"])
-        )
-    )
-    return result.scalars().first()
+async def _validate_gitlab_signature(request: Request, webhook_signature: str | None, x_gitlab_token: str | None) -> None:
+    """Valide soit le signing token (webhook-signature, HMAC-SHA256) soit le secret token (X-Gitlab-Token)."""
+    if not settings.GITLAB_WEBHOOK_SECRET:
+        return
+    secret = settings.GITLAB_WEBHOOK_SECRET
+    if webhook_signature:
+        # Signing token : GitLab envoie "sha256=<hex>"
+        body = await request.body()
+        expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, webhook_signature):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook signature")
+    elif x_gitlab_token:
+        if not hmac.compare_digest(x_gitlab_token, secret):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook token")
+    else:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing webhook token")
 
 
-@router.post("/gitlab", status_code=status.HTTP_200_OK)
-async def gitlab_webhook(
+@router.post("/gitops", status_code=status.HTTP_200_OK)
+async def gitops_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    webhook_signature: str | None = Header(default=None),
     x_gitlab_token: str | None = Header(default=None),
 ):
-    """Receive GitLab pipeline and push events."""
-    if settings.GITLAB_WEBHOOK_SECRET:
-        if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, settings.GITLAB_WEBHOOK_SECRET):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook token")
+    """Push sur le repo GitOps → force ArgoCD sync sur toutes les apps des clusters configurés."""
+    await _validate_gitlab_signature(request, webhook_signature, x_gitlab_token)
 
     payload = await request.json()
-    object_kind = payload.get("object_kind")
 
-    # ── Pipeline events ──────────────────────────────────────────────────────
-    if object_kind == "pipeline":
-        pipeline_status = payload.get("object_attributes", {}).get("status")
-        project_web_url = payload.get("project", {}).get("web_url", "").rstrip("/")
+    if payload.get("object_kind") != "push":
+        return {"ignored": True, "reason": "not a push event"}
 
-        if not project_web_url or not pipeline_status:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing project.web_url or object_attributes.status",
-            )
+    if payload.get("ref") not in _MAIN_BRANCHES:
+        return {"ignored": True, "reason": "non-default branch"}
 
-        app = await _lookup_app_by_repo_url(db, project_web_url)
-        if app is None:
-            logger.debug("Pipeline webhook for unknown repo %s — ignored", project_web_url)
-            return {"ignored": True}
+    clusters_result = await db.execute(
+        select(ClusterConnection).where(ClusterConnection.argocd_url.is_not(None))
+    )
+    clusters = list(clusters_result.scalars().all())
 
-        app.last_pipeline_status = pipeline_status
-        if pipeline_status == "success" and app.status == ApplicationStatus.ONBOARDING:
-            app.status = ApplicationStatus.READY
-            logger.info("App %s promoted to READY after first successful pipeline", app.id)
-        await db.commit()
-        logger.info("Pipeline status updated: app=%s status=%s", app.id, pipeline_status)
-        return {"app_id": app.id, "last_pipeline_status": pipeline_status}
+    if not clusters:
+        return {"synced": [], "reason": "no clusters with ArgoCD configured"}
 
-    # ── Push events → trigger ArgoCD sync immédiat ──────────────────────────
-    if object_kind == "push":
-        ref = payload.get("ref", "")
-        if ref not in _MAIN_BRANCHES:
-            return {"ignored": True, "reason": "non-default branch"}
+    from backend.argocd.client import get_argocd_client_for_cluster
 
-        project_web_url = payload.get("project", {}).get("web_url", "").rstrip("/")
-        if not project_web_url:
-            return {"ignored": True}
-
-        app = await _lookup_app_by_repo_url(db, project_web_url)
-        if app is None:
-            logger.debug("Push webhook for unknown repo %s — ignored", project_web_url)
-            return {"ignored": True}
-
-        if app.target_cluster_id is None:
-            return {"app_id": app.id, "sync_triggered": False, "reason": "no cluster configured"}
-
-        cluster_result = await db.execute(
-            select(ClusterConnection).where(ClusterConnection.id == app.target_cluster_id)
+    synced = []
+    for cluster in clusters:
+        apps_result = await db.execute(
+            select(Application).where(Application.target_cluster_id == cluster.id)
         )
-        cluster = cluster_result.scalar_one_or_none()
+        apps = list(apps_result.scalars().all())
 
-        sync_triggered = False
-        if cluster and cluster.argocd_url:
-            from backend.argocd.client import get_argocd_client_for_cluster
+        for app in apps:
             try:
-                argocd_client = get_argocd_client_for_cluster(cluster)
-                await argocd_client.sync_app(app.slug)
-                sync_triggered = True
-                logger.info("ArgoCD sync triggered for app %s on push to %s", app.slug, ref)
+                client = get_argocd_client_for_cluster(cluster)
+                await client.sync_app(app.slug)
+                synced.append(app.slug)
+                logger.info("ArgoCD sync triggered for app %s on gitops push", app.slug)
             except Exception as e:
                 logger.warning("ArgoCD sync failed for app %s: %s", app.slug, e)
 
-        return {"app_id": app.id, "sync_triggered": sync_triggered}
-
-    return {"ignored": True}
+    return {"synced": synced}
 
 
 @router.post("/argocd", status_code=status.HTTP_204_NO_CONTENT)
