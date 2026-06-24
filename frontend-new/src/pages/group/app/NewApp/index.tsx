@@ -93,7 +93,6 @@ export function NewApp() {
       const appSlug = computeSlug(createMutation.data.name);
       navigate(`/groups/${slug}/apps/${appSlug}`);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createMutation.isSuccess]);
 
   // Bloquer toute navigation accidentelle (TopNav, breadcrumb, back browser) pendant la création
