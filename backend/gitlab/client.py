@@ -74,7 +74,7 @@ class GitLabClient:
             {
                 "id": p.id,
                 "name": p.name,
-                "path_with_namespace": p.path_with_namespace,
+                "full_path": p.path_with_namespace,
                 "web_url": p.web_url,
                 "last_activity_at": p.last_activity_at,
             }

@@ -79,8 +79,6 @@ export function NewApp() {
     onSuccess: (app) => {
       qc.invalidateQueries({ queryKey: ['apps'] });
       toast({ title: 'App created', description: `${app.name} is being provisioned.` });
-      const appSlug = computeSlug(app.name);
-      navigate(`/groups/${slug}/apps/${appSlug}`);
     },
     onError: () => {
       setSubmitError('Creation failed. Please try again.');
@@ -88,7 +86,17 @@ export function NewApp() {
     },
   });
 
-  // Bloquer toute navigation (TopNav, breadcrumb, back browser) pendant la création
+  // Navigate after success — done in useEffect so isPending has already settled to false
+  // before navigate() is called, avoiding the useBlocker catching a programmatic navigation.
+  useEffect(() => {
+    if (createMutation.isSuccess && createMutation.data) {
+      const appSlug = computeSlug(createMutation.data.name);
+      navigate(`/groups/${slug}/apps/${appSlug}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createMutation.isSuccess]);
+
+  // Bloquer toute navigation accidentelle (TopNav, breadcrumb, back browser) pendant la création
   const blocker = useBlocker(createMutation.isPending);
   useEffect(() => {
     if (blocker.state === 'blocked') blocker.reset();
