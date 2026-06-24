@@ -42,7 +42,6 @@ export function useMetricUrl(appSlug: string, metric: 'cpu' | 'ram'): string | n
 
 export function useLokiUrl(appSlug: string): string | null {
   const config = useMonitoringConfig();
-  if (config?.grafana_url) return grafanaExploreUrl(config.grafana_url, 'Loki', `{container="${appSlug}"}`);
-  if (config?.loki_url) return `${config.loki_url}/loki/api/v1/query_range?query=${encodeURIComponent('{container="' + appSlug + '"}')}` + '&limit=100';
-  return null;
+  if (!config?.grafana_url) return null;
+  return grafanaExploreUrl(config.grafana_url, 'Loki', `{container="${appSlug}"}`);
 }
