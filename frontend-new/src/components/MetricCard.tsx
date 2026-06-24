@@ -1,5 +1,5 @@
 import React from 'react';
-import { ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, Tooltip } from 'recharts';
 import { IconExternalLink, IconClock } from '@tabler/icons-react';
 import { cn } from '@/utils/cn';
 
@@ -65,6 +65,19 @@ export function MetricCard({ label, value, unit, icon, sublabel, sparkline, exte
         <div className="border-t border-border/40">
           <ResponsiveContainer width="100%" height={40}>
             <AreaChart data={sparkline} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+              <Tooltip
+                isAnimationActive={false}
+                cursor={{ stroke: '#007BA7', strokeWidth: 1, strokeDasharray: '3 3' }}
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const v = payload[0].value as number;
+                  return (
+                    <div className="bg-popover border border-border rounded px-1.5 py-0.5 text-xs text-foreground shadow-sm whitespace-nowrap">
+                      {v.toFixed(1)}{unit ? ` ${unit}` : ''}
+                    </div>
+                  );
+                }}
+              />
               <Area
                 type="monotone"
                 dataKey="v"
@@ -73,6 +86,7 @@ export function MetricCard({ label, value, unit, icon, sublabel, sparkline, exte
                 fill="#007BA7"
                 fillOpacity={0.08}
                 dot={false}
+                activeDot={{ r: 3, fill: '#007BA7', strokeWidth: 0 }}
                 isAnimationActive={false}
                 strokeLinecap="round"
                 strokeLinejoin="round"

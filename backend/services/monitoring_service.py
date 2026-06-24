@@ -48,7 +48,7 @@ async def get_metrics(prometheus_url: str) -> dict:
     for r in cpu_result:
         name = r["metric"].get("label_app_kubernetes_io_name", "unknown")
         cpu_map[name] = [
-            {"t": int(float(ts)), "v": round(float(val) * 100, 1)}  # cores/s → %
+            {"t": int(float(ts)), "v": round(float(val) * 1000, 1)}  # cores/s → millicores
             for ts, val in r["values"]
         ]
 
