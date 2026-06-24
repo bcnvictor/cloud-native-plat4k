@@ -232,6 +232,7 @@ class ApplicationScaffoldRequest(BaseModel):
     scaffolding: Optional[ScaffoldingParams] = None
     skip_first_deploy: bool = False  # si True, ne provisionne pas ArgoCD au scaffold (utile quand la 1ère image n'est pas encore buildée)
     owning_gitlab_group_id: Optional[int] = None
+    expose: bool = False
 
 
 class ApplicationOnboardRequest(BaseModel):
@@ -242,6 +243,7 @@ class ApplicationOnboardRequest(BaseModel):
     framework: Optional[str] = None
     target_cluster_id: Optional[int] = None
     owning_gitlab_group_id: Optional[int] = None
+    expose: bool = False
 
 
 class ApplicationExternalImportRequest(BaseModel):
@@ -253,6 +255,7 @@ class ApplicationExternalImportRequest(BaseModel):
     target_cluster_id: Optional[int] = None
     raw: bool = False
     owning_gitlab_group_id: Optional[int] = None
+    expose: bool = False
 
 
 class ApplicationUpdate(BaseModel):
@@ -266,12 +269,28 @@ class ApplicationUpdate(BaseModel):
     target_cluster_id: Optional[int] = None
 
 
+CNP_BASE_DOMAIN = "cloud-native-plat4k.me"
+
+
+def app_hostname(slug: str, env: str) -> str:
+    """Return the bare hostname for Ingress host field (no protocol)."""
+    if env == "prod":
+        return f"{slug}.{CNP_BASE_DOMAIN}"
+    return f"dev.{slug}.{CNP_BASE_DOMAIN}"
+
+
+def app_internet_url(slug: str, env: str) -> str:
+    """Return the public HTTPS URL for display."""
+    return f"https://{app_hostname(slug, env)}"
+
+
 class ApplicationResponse(ApplicationBase):
     id: int
     slug: str
     status: ApplicationStatus
     target_cluster_id: Optional[int] = None
     ci_injected: Optional[bool] = None
+    expose: Optional[bool] = None
     last_pipeline_status: Optional[str] = None
     owning_gitlab_group_id: Optional[int] = None
     created_at: datetime

@@ -138,6 +138,7 @@ class Application(Base):
     source_url = Column(String, nullable=True)
     framework = Column(String, nullable=True)
     ci_injected = Column(Boolean, nullable=True)
+    expose = Column(Boolean, nullable=True, default=False)
     last_pipeline_status = Column(String, nullable=True)
     status = Column(
         SQLEnum(ApplicationStatus, values_callable=lambda x: [e.value for e in x]),

@@ -50,6 +50,7 @@ class ScaffoldingService:
         template: str,
         scaffolding_params: Optional[ScaffoldingParams] = None,
         target_namespace: Optional[str] = None,
+        expose: bool = False,
     ) -> tuple[str, str]:
         """
         Runs the full scaffolding workflow.
@@ -134,10 +135,21 @@ class ScaffoldingService:
                 )
 
         params = scaffolding_params or ScaffoldingParams()
-        batch.append({"file_path": "chart/values.yaml", "content": self._build_values_yaml(app_slug, apps_namespace, params)})
-        batch.append({"file_path": "chart/Chart.yaml", "content": self._build_chart_yaml(app_slug, params)})
+        overrides: dict[str, str] = {
+            "chart/values.yaml": self._build_values_yaml(app_slug, apps_namespace, params),
+            "chart/Chart.yaml": self._build_chart_yaml(app_slug, params),
+        }
         if "postgresql" in params.services:
-            batch.append({"file_path": "chart/templates/postgresql.yaml", "content": self._build_postgresql_yaml()})
+            overrides["chart/templates/postgresql.yaml"] = self._build_postgresql_yaml()
+        if expose:
+            from shared.models import app_hostname
+            overrides["chart/values-dev.yaml"] = self._build_ingress_values(True, app_hostname(app_slug, "dev"))
+            overrides["chart/values-prod.yaml"] = self._build_ingress_values(True, app_hostname(app_slug, "prod"))
+
+        # Remove template files that are overridden to avoid duplicate paths in the batch
+        batch = [f for f in batch if f["file_path"] not in overrides]
+        for file_path, content in overrides.items():
+            batch.append({"file_path": file_path, "content": content})
 
         try:
             await anyio.to_thread.run_sync(
@@ -243,6 +255,17 @@ class ScaffoldingService:
             env_vars["DATABASE_URL"] = (
                 f"postgresql://{db_username}:{db_password}@{app_name}-postgresql:5432/{db_name}"
             )
+        return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+
+    def _build_ingress_values(self, enabled: bool, host: str) -> str:
+        data = {
+            "ingress": {
+                "enabled": enabled,
+                "className": "nginx",
+                "host": host if enabled else "",
+                "tls": False,
+            }
+        }
         return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
 
     def _build_chart_yaml(self, app_name: str, params: ScaffoldingParams) -> str:

@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { timeAgo, formatDuration } from '@/utils/timeAgo';
 import { cn } from '@/utils/cn';
+import { appUrl } from '@/utils/appUrls';
 
 function StatusIcon({ status }: { status: DeploymentStatus }) {
   if (status === 'succeeded') return <IconCircleCheck size={16} className="text-success-text" />;
@@ -114,37 +115,58 @@ export function DeploymentsTab() {
               </div>
             </button>
 
-            {isExpanded && (
-              <div className="bg-background-subtle px-4 py-3 pl-11 border-t border-border">
-                <dl className="flex flex-col gap-1.5 mb-3">
-                  {[
-                    { label: 'Author', value: d.author },
-                    { label: 'Trigger', value: 'commit' },
-                    { label: 'Image', value: d.imageTag, mono: true },
-                  ].map(({ label, value, mono }) => (
-                    <div key={label} className="flex items-baseline gap-2">
-                      <dt className="text-xs text-muted-foreground w-16 shrink-0">{label}</dt>
-                      <dd className={cn('text-xs text-foreground', mono && 'font-mono')}>
-                        {value}
-                      </dd>
+            {isExpanded && (() => {
+              const isProd = d.branch === 'main';
+              const env = isProd ? 'prod' : 'dev' as const;
+              const isExposed = isProd ? app?.expose : app?.expose;
+              return (
+                <div className="bg-background-subtle px-4 py-3 pl-11 border-t border-border">
+                  <dl className="flex flex-col gap-1.5 mb-3">
+                    {[
+                      { label: 'Author', value: d.author },
+                      { label: 'Trigger', value: 'commit' },
+                      { label: 'Image', value: d.imageTag, mono: true },
+                    ].map(({ label, value, mono }) => (
+                      <div key={label} className="flex items-baseline gap-2">
+                        <dt className="text-xs text-muted-foreground w-16 shrink-0">{label}</dt>
+                        <dd className={cn('text-xs text-foreground', mono && 'font-mono')}>
+                          {value}
+                        </dd>
+                      </div>
+                    ))}
+                    {isExposed && app?.slug && (
+                      <div className="flex items-baseline gap-2">
+                        <dt className="text-xs text-muted-foreground w-16 shrink-0">URL</dt>
+                        <dd className="text-xs">
+                          <a
+                            href={appUrl(app.slug, env)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#007BA7] hover:underline font-mono flex items-center gap-1"
+                          >
+                            {appUrl(app.slug, env)}
+                            <IconExternalLink size={10} />
+                          </a>
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                  {d.gitlabPipelineUrl && (
+                    <div className="flex justify-end">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<IconBrandGitlab size={13} />}
+                        onClick={() => window.open(d.gitlabPipelineUrl!, '_blank')}
+                      >
+                        View pipeline
+                        <IconExternalLink size={11} className="ml-1 opacity-60" />
+                      </Button>
                     </div>
-                  ))}
-                </dl>
-                {d.gitlabPipelineUrl && (
-                  <div className="flex justify-end">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon={<IconBrandGitlab size={13} />}
-                      onClick={() => window.open(d.gitlabPipelineUrl!, '_blank')}
-                    >
-                      View pipeline
-                      <IconExternalLink size={11} className="ml-1 opacity-60" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              );
+            })()}
           </div>
         );
       })}

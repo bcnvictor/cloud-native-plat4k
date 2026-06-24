@@ -4,12 +4,36 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.100"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.13"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.30"
+    }
   }
   required_version = ">= 1.6"
 }
 
 provider "azurerm" {
   features {}
+}
+
+provider "kubernetes" {
+  host                   = azurerm_kubernetes_cluster.cnp.kube_config[0].host
+  client_certificate     = base64decode(azurerm_kubernetes_cluster.cnp.kube_config[0].client_certificate)
+  client_key             = base64decode(azurerm_kubernetes_cluster.cnp.kube_config[0].client_key)
+  cluster_ca_certificate = base64decode(azurerm_kubernetes_cluster.cnp.kube_config[0].cluster_ca_certificate)
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = azurerm_kubernetes_cluster.cnp.kube_config[0].host
+    client_certificate     = base64decode(azurerm_kubernetes_cluster.cnp.kube_config[0].client_certificate)
+    client_key             = base64decode(azurerm_kubernetes_cluster.cnp.kube_config[0].client_key)
+    cluster_ca_certificate = base64decode(azurerm_kubernetes_cluster.cnp.kube_config[0].cluster_ca_certificate)
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -69,4 +93,65 @@ resource "azurerm_kubernetes_cluster" "cnp" {
     environment = "shared"
     managed_by  = "terraform"
   }
+}
+
+# ---------------------------------------------------------------------------
+# nginx-ingress-controller
+# ---------------------------------------------------------------------------
+
+resource "helm_release" "ingress_nginx" {
+  name             = "ingress-nginx"
+  repository       = "https://kubernetes.github.io/ingress-nginx"
+  chart            = "ingress-nginx"
+  version          = "4.10.1"
+  namespace        = "ingress-nginx"
+  create_namespace = true
+
+  set {
+    name  = "controller.service.type"
+    value = "LoadBalancer"
+  }
+
+  set {
+    name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/azure-load-balancer-health-probe-request-path"
+    value = "/healthz"
+  }
+
+  depends_on = [azurerm_kubernetes_cluster.cnp]
+}
+
+# Lire l'IP publique assignée par Azure au LoadBalancer nginx
+data "kubernetes_service" "ingress_nginx" {
+  metadata {
+    name      = "ingress-nginx-controller"
+    namespace = "ingress-nginx"
+  }
+  depends_on = [helm_release.ingress_nginx]
+}
+
+# ---------------------------------------------------------------------------
+# Azure DNS zone — cloud-native-plat4k.me
+# ---------------------------------------------------------------------------
+
+resource "azurerm_dns_zone" "cnp" {
+  name                = "cloud-native-plat4k.me"
+  resource_group_name = azurerm_resource_group.cnp.name
+}
+
+# Wildcard A record : *.cloud-native-plat4k.me → IP nginx LB
+resource "azurerm_dns_a_record" "wildcard" {
+  name                = "*"
+  zone_name           = azurerm_dns_zone.cnp.name
+  resource_group_name = azurerm_resource_group.cnp.name
+  ttl                 = 300
+  records             = [data.kubernetes_service.ingress_nginx.status[0].load_balancer[0].ingress[0].ip]
+}
+
+# Apex A record (cloud-native-plat4k.me direct)
+resource "azurerm_dns_a_record" "apex" {
+  name                = "@"
+  zone_name           = azurerm_dns_zone.cnp.name
+  resource_group_name = azurerm_resource_group.cnp.name
+  ttl                 = 300
+  records             = [data.kubernetes_service.ingress_nginx.status[0].load_balancer[0].ingress[0].ip]
 }

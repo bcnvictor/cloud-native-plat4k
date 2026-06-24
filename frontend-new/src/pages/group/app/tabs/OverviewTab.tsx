@@ -1,14 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
-import { IconAlertTriangle, IconBrandGitlab, IconCircleCheck, IconClock, IconCpu, IconDatabase, IconServer } from '@tabler/icons-react';
+import { IconAlertTriangle, IconBrandGitlab, IconCircleCheck, IconClock, IconCpu, IconDatabase, IconExternalLink, IconServer, IconTerminal2 } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { appsApi } from '@/api/apps';
 import { MetricCard } from '@/components/MetricCard';
 import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 import { AppStatusBadge } from '@/components/AppStatusBadge';
 import { Spinner } from '@/components/ui/Spinner';
 import { timeAgo } from '@/utils/timeAgo';
 import { useAppMetrics } from '@/hooks/useAppMetrics';
 import { useMonitoringConfig, useGrafanaMetricUrl } from '@/hooks/useMonitoringConfig';
+import { appUrl } from '@/utils/appUrls';
 
 export function OverviewTab() {
   const { app, isLoading } = useAppDetail();
@@ -127,22 +129,53 @@ export function OverviewTab() {
       {/* Quick access */}
       <Card>
         <h2 className="text-sm font-medium text-foreground mb-3">Quick access</h2>
-        {(app?.repo_url ?? app?.source_url) ? (
-          <a
-            href={(app!.repo_url ?? app!.source_url)!}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm text-[#007BA7] hover:underline"
-          >
-            <IconBrandGitlab size={16} />
-            {app!.repo_url ?? app!.source_url}
-          </a>
-        ) : (
-          <span className="flex items-center gap-2 text-sm text-muted-foreground">
-            <IconBrandGitlab size={16} />
-            GitLab not configured
-          </span>
-        )}
+        <div className="flex flex-col gap-2">
+          {app?.expose && app?.slug ? (
+            <>
+              <a
+                href={appUrl(app.slug, 'prod')}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-[#007BA7] hover:underline"
+              >
+                <IconExternalLink size={15} />
+                <span className="font-mono">{appUrl(app.slug, 'prod')}</span>
+                <Badge variant="primary">prod</Badge>
+              </a>
+              <a
+                href={appUrl(app.slug, 'dev')}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-[#007BA7] hover:underline"
+              >
+                <IconExternalLink size={15} />
+                <span className="font-mono">{appUrl(app.slug, 'dev')}</span>
+                <Badge variant="muted">dev</Badge>
+              </a>
+            </>
+          ) : (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
+                <IconTerminal2 size={13} />
+                Local access via port-forward:
+              </p>
+              <code className="text-xs font-mono bg-background-subtle border border-border px-2.5 py-1.5 rounded block text-foreground select-all">
+                kubectl port-forward svc/{app?.slug ?? '<slug>'} 8080:80
+              </code>
+            </div>
+          )}
+          {(app?.repo_url ?? app?.source_url) ? (
+            <a
+              href={(app!.repo_url ?? app!.source_url)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground mt-1"
+            >
+              <IconBrandGitlab size={14} />
+              GitLab repository
+            </a>
+          ) : null}
+        </div>
       </Card>
     </div>
   );

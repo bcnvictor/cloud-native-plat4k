@@ -30,6 +30,7 @@ export const appsApi = {
     owner: string;
     template: string;
     owning_gitlab_group_id?: number;
+    expose?: boolean;
   }): Promise<Application> {
     const res = await api.post<Application>('/apps/scaffold', payload);
     return res.data;
@@ -40,8 +41,14 @@ export const appsApi = {
     owner: string;
     repo_url: string;
     owning_gitlab_group_id?: number;
+    expose?: boolean;
   }): Promise<Application> {
     const res = await api.post<Application>('/apps/onboard', payload);
+    return res.data;
+  },
+
+  async toggleExpose(id: number, expose: boolean): Promise<Application> {
+    const res = await api.patch<Application>(`/apps/${id}/expose`, { expose });
     return res.data;
   },
 
