@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     # Monitoring
     PROMETHEUS_URL: str = "http://prometheus-operated.monitoring.svc.cluster.local:9090"
     LOKI_URL: str = "http://loki.monitoring.svc.cluster.local:3100"
-    GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: http://localhost:3000
+    GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: http://grafana.example.com
 
     # Logging
     LOG_LEVEL: str = "INFO"
