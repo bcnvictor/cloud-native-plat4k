@@ -51,6 +51,7 @@ export interface AppMember {
 export interface Application {
   id: number;
   name: string;
+  slug: string;
   description: string | null;
   repo_url: string | null;
   owner: string;
