@@ -46,7 +46,7 @@ export function OverviewTab() {
         <MetricCard
           label="CPU"
           value={metrics.available ? metrics.cpu.current.toFixed(1) : '—'}
-          unit={metrics.available ? '%' : undefined}
+          unit={metrics.available ? 'm' : undefined}
           icon={<IconCpu size={14} />}
           sparkline={metrics.cpu.series}
           externalUrl={cpuGrafanaUrl ?? undefined}
