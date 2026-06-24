@@ -10,7 +10,7 @@ set -euo pipefail
 
 NAMESPACE="monitoring"
 
-PROM_IP=$(kubectl get svc -n "$NAMESPACE" prometheus-operated \
+PROM_IP=$(kubectl get svc -n "$NAMESPACE" kube-prometheus-stack-prometheus \
   -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "NOT_FOUND")
 
 LOKI_IP=$(kubectl get svc -n "$NAMESPACE" loki \
