@@ -7,7 +7,6 @@ import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { appsApi } from '@/api/apps';
 import { useToast } from '@/components/ui/toast';
 import { Step1Data, ServiceConfig, CiDeployConfig } from '@/types';
-import { computeSlug } from '@/utils/slugify';
 import { StepperBar } from './StepperBar';
 import { Step1Identity } from './Step1Identity';
 import { Step2Services } from './Step2Services';
@@ -90,8 +89,7 @@ export function NewApp() {
   // before navigate() is called, avoiding the useBlocker catching a programmatic navigation.
   useEffect(() => {
     if (createMutation.isSuccess && createMutation.data) {
-      const appSlug = computeSlug(createMutation.data.name);
-      navigate(`/groups/${slug}/apps/${appSlug}`);
+      navigate(`/groups/${slug}/apps/${createMutation.data.slug}`);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createMutation.isSuccess]);

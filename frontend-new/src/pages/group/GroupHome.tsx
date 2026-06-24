@@ -74,7 +74,7 @@ export function GroupHome() {
     enabled: !!group?.gitlab_group_id,
   });
 
-  const groupMetrics = useGroupMetrics(apps.map((a) => a.name));
+  const groupMetrics = useGroupMetrics(apps.map((a) => a.slug));
 
   const statusCounts = apps.reduce<Record<string, number>>((acc, a) => {
     const s = getAppHealth(a);

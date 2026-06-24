@@ -12,7 +12,7 @@ import { useMonitoringConfig, useGrafanaMetricUrl } from '@/hooks/useMonitoringC
 
 export function OverviewTab() {
   const { app, isLoading } = useAppDetail();
-  const metrics = useAppMetrics(app?.name ?? '');
+  const metrics = useAppMetrics(app?.slug ?? '');
   const grafanaUrl = useMonitoringConfig();
   const cpuGrafanaUrl = useGrafanaMetricUrl(grafanaUrl, app?.name ?? '', 'cpu');
   const ramGrafanaUrl = useGrafanaMetricUrl(grafanaUrl, app?.name ?? '', 'ram');
