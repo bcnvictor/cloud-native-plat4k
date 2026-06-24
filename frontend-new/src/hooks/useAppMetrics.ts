@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { monitoringApi } from '@/api/monitoring';
-import { MetricPoint } from '@/types';
+import { MetricPoint, MonitoringMetrics } from '@/types';
 
 export type SparkPoint = MetricPoint;
 
@@ -29,7 +29,7 @@ const SHARED_OPTS = {
   retryDelay: 2_000,
   refetchInterval: 30_000,
   staleTime:       25_000,
-  placeholderData: (prev: unknown) => prev,
+  placeholderData: (prev: MonitoringMetrics | undefined) => prev,
 };
 
 export function useAppMetrics(appName: string): AppMetrics {
