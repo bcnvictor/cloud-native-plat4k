@@ -30,24 +30,33 @@ resource "tailscale_acl" "cnp" {
     }
 
     autoApprovers = {
-      # Les devices tag:k8s peuvent auto-approuver leurs propres routes subnet.
       routes = {
-        "0.0.0.0/0" = ["tag:k8s"]
-        "::/0"      = ["tag:k8s"]
+        "10.0.0.0/16" = ["tag:k8s"]
       }
     }
 
     acls = [
-      # cnp-control → AKS : ports monitoring + ArgoCD + API server uniquement.
-      # Pas d'allow-all : moindre privilège.
+      # cnp-control → AKS ClusterIPs via subnet router (10.0.0.0/16)
+      # Sans cette règle CIDR, Tailscale ne distribue pas la route subnet à cnp-control.
       {
         action = "accept"
         src    = ["tag:cnp-control"]
         dst = [
-          "tag:k8s:9090",  # Prometheus
-          "tag:k8s:3100",  # Loki
-          "tag:k8s:443",   # ArgoCD HTTPS
-          "tag:k8s:6443",  # Kubernetes API server
+          "10.0.0.0/16:9090",  # Prometheus ClusterIP
+          "10.0.0.0/16:3100",  # Loki ClusterIP
+          "10.0.0.0/16:443",   # ArgoCD HTTPS
+          "10.0.0.0/16:6443",  # Kubernetes API server
+        ]
+      },
+      # cnp-control → nodes Tailscale AKS directement (subnet router + operator)
+      {
+        action = "accept"
+        src    = ["tag:cnp-control"]
+        dst = [
+          "tag:k8s:9090",
+          "tag:k8s:3100",
+          "tag:k8s:443",
+          "tag:k8s:6443",
         ]
       },
       # AKS → cnp-control : webhook entrant ArgoCD → CNP backend
