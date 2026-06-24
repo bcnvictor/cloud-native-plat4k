@@ -79,6 +79,7 @@ export function Step4Recap({ identity, services, ciDeploy, onSubmit, onBack, isP
           },
           { label: 'Replicas', value: String(ciDeploy.replicas) },
           { label: 'Target cluster', value: ciDeploy.targetClusterId ? `cluster-${ciDeploy.targetClusterId}` : 'Auto' },
+          { label: 'Internet', value: ciDeploy.expose ? 'Exposed (prod + dev)' : 'Port-forward only' },
         ]}
       />
 

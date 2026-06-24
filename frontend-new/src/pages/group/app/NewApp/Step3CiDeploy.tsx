@@ -52,6 +52,38 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
         })}
       </div>
 
+      {/* Internet exposure */}
+      <div className="flex flex-col gap-3">
+        <p className="text-sm font-medium text-foreground">Internet exposure</p>
+        <button
+          onClick={() => onChange({ expose: !data.expose })}
+          className={cn(
+            'flex items-start gap-3 p-4 rounded-md border-2 text-left transition-colors bg-card',
+            data.expose ? 'border-foreground' : 'border-border hover:border-muted-foreground'
+          )}
+        >
+          <span
+            className={cn(
+              'h-4 w-4 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center',
+              data.expose ? 'border-info' : 'border-muted-foreground'
+            )}
+          >
+            {data.expose && <span className="h-2 w-2 rounded-full bg-info block" />}
+          </span>
+          <div>
+            <p className="text-sm font-medium text-foreground">Expose on internet</p>
+            {data.expose ? (
+              <div className="flex flex-col gap-0.5 mt-1">
+                <p className="text-xs text-muted-foreground font-mono">{'{slug}'}.cloud-native-plat4k.me <span className="font-sans text-muted-foreground/60">prod</span></p>
+                <p className="text-xs text-muted-foreground font-mono">dev.{'{slug}'}.cloud-native-plat4k.me <span className="font-sans text-muted-foreground/60">dev</span></p>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-0.5">App accessible via kubectl port-forward only.</p>
+            )}
+          </div>
+        </button>
+      </div>
+
       {/* Advanced options */}
       <div className="border border-border rounded-md overflow-hidden">
         <button

@@ -51,6 +51,7 @@ export interface AppMember {
 export interface Application {
   id: number;
   name: string;
+  slug: string;
   description: string | null;
   repo_url: string | null;
   owner: string;
@@ -60,6 +61,7 @@ export interface Application {
   framework?: string | null;
   gitlab_project_id?: number | null;
   owning_gitlab_group_id?: number | null;
+  expose?: boolean | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -192,6 +194,7 @@ export interface CiDeployConfig {
   replicas: number;
   targetClusterId: number | null;
   advancedOpen: boolean;
+  expose: boolean;
 }
 
 export interface ApiKey {

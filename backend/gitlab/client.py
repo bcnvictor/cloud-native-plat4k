@@ -1,5 +1,6 @@
 import logging
 
+import yaml
 from gitlab.exceptions import GitlabAuthenticationError, GitlabCreateError, GitlabGetError
 
 import gitlab
@@ -291,6 +292,40 @@ class GitLabClient:
         """Send a GitLab project invitation to an email address."""
         project = self._gl.projects.get(project_id)
         project.invitations.create({"email": email, "access_level": access_level})
+
+    def upsert_gitops_ingress(
+        self,
+        project_path: str,
+        app_slug: str,
+        env_name: str,
+        enabled: bool,
+        host: str,
+        branch: str = "main",
+    ) -> None:
+        """Patch ingress.{enabled,host,tls} in apps/{app_slug}/values-{env_name}.yaml in the gitops repo."""
+        file_path = f"apps/{app_slug}/values-{env_name}.yaml"
+        project = self.get_project(project_path)
+        action = "update"
+        try:
+            raw = self.read_file(project_path, file_path, ref=branch)
+            data = yaml.safe_load(raw) or {}
+        except GitlabGetError:
+            data = {}
+            action = "create"
+        data.setdefault("ingress", {})
+        data["ingress"]["enabled"] = enabled
+        data["ingress"]["className"] = "nginx"
+        data["ingress"]["host"] = host if enabled else ""
+        data["ingress"]["tls"] = False
+        project.commits.create({
+            "branch": branch,
+            "commit_message": f"chore(gitops): {'enable' if enabled else 'disable'} ingress for {app_slug} ({env_name})",
+            "actions": [{
+                "action": action,
+                "file_path": file_path,
+                "content": yaml.safe_dump(data, default_flow_style=False, sort_keys=False),
+            }],
+        })
 
     def delete_directory_contents(self, project_path: str, directory_path: str, commit_message: str, branch: str = "main") -> None:
         """Deletes all files within a directory using the Commits API."""

@@ -18,6 +18,7 @@ from backend.db.session import get_db
 from backend.services.app_service import AppService
 from backend.services.scaffolding_service import ScaffoldingService
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from shared.models import (
     ApplicationCreate,
     ApplicationExternalImportRequest,
@@ -214,3 +215,18 @@ async def delete_app(
 ):
     await AppService(db).delete_app(app_id)
     return {"msg": "Application deleted"}
+
+
+class ExposeToggleRequest(BaseModel):
+    expose: bool
+
+
+@router.patch("/{app_id}/expose", response_model=ApplicationResponse)
+async def toggle_expose(
+    app_id: int,
+    payload: ExposeToggleRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.DEV)),
+):
+    """Enable or disable public internet exposure (nginx ingress) for all environments."""
+    return await AppService(db).update_expose(app_id, payload.expose)
