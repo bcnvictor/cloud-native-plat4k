@@ -9,7 +9,6 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { EnvVar } from '@/types';
-import { computeSlug } from '@/utils/slugify';
 
 export function SettingsTab() {
   const { app, isLoading } = useAppDetail();
@@ -68,7 +67,7 @@ export function SettingsTab() {
 
   if (isLoading || !app) return null;
 
-  const appSlugComputed = computeSlug(app.name);
+  const appSlugComputed = app.slug;
 
   return (
     <div className="flex flex-col gap-5 max-w-2xl">
