@@ -160,8 +160,8 @@ def test_recovery_restores_only_outage_degraded_apps(monkeypatch, tmp_path):
             await db.refresh(app_a)
             await db.refresh(app_b)
             assert cluster.status == ClusterStatus.OFFLINE
-            assert app_a.status == ApplicationStatus.DEGRADED
-            assert app_b.status == ApplicationStatus.DEGRADED
+            assert app_a.last_known_status == ApplicationStatus.DEGRADED
+            assert app_b.last_known_status == ApplicationStatus.DEGRADED
 
             # Reprise du cluster.
             holder["reachable"] = True
@@ -170,8 +170,8 @@ def test_recovery_restores_only_outage_degraded_apps(monkeypatch, tmp_path):
             await db.refresh(app_a)
             await db.refresh(app_b)
             assert cluster.status == ClusterStatus.ONLINE
-            assert app_a.status == ApplicationStatus.DEPLOYED   # restaurée
-            assert app_b.status == ApplicationStatus.DEGRADED   # intacte <- le fix
+            assert app_a.last_known_status == ApplicationStatus.DEPLOYED   # restaurée
+            assert app_b.last_known_status == ApplicationStatus.DEGRADED   # intacte <- le fix
         await engine.dispose()
 
     asyncio.run(scenario())
