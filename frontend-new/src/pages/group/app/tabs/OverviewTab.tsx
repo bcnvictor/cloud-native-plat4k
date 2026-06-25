@@ -7,6 +7,7 @@ import { timeAgo } from '@/utils/timeAgo';
 import { useAppMetrics } from '@/hooks/useAppMetrics';
 import { useAppStatus } from '@/hooks/useAppStatus';
 import { useMetricUrl } from '@/hooks/useMonitoringConfig';
+import type { ArgoEnvStatus } from '@/types';
 
 function SyncBadge({ status }: { status: string | null | undefined }) {
   if (!status) return <span className="text-xs text-muted-foreground">—</span>;
@@ -31,12 +32,57 @@ function HealthBadge({ status }: { status: string | null | undefined }) {
   );
 }
 
+function ArgoCard({ title, env }: { title: string; env: ArgoEnvStatus | null | undefined }) {
+  return (
+    <Card>
+      <h2 className="text-sm font-medium text-foreground mb-3">
+        <span className="flex items-center gap-1.5">
+          <IconRefresh size={14} />
+          {title}
+        </span>
+      </h2>
+      {!env || (env.error && !env.sync_status) ? (
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+          <IconAlertTriangle size={12} className="shrink-0" />
+          {env?.error ?? 'Unavailable'}
+        </p>
+      ) : (
+        <dl className="flex flex-col gap-2">
+          {[
+            { label: 'Sync', value: <SyncBadge status={env.sync_status} /> },
+            { label: 'Health', value: <HealthBadge status={env.health_status} /> },
+            {
+              label: 'Image',
+              value: env.image ? env.image.split('/').pop() ?? env.image : '—',
+              mono: true,
+            },
+            {
+              label: 'Last sync',
+              value: env.last_sync_at ? timeAgo(env.last_sync_at) : '—',
+            },
+          ].map(({ label, value, mono }) => (
+            <div key={label} className="flex items-baseline gap-2">
+              <dt className="text-xs text-muted-foreground w-20 shrink-0">{label}</dt>
+              <dd className={`text-xs text-foreground ${mono ? 'font-mono' : ''}`}>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </Card>
+  );
+}
+
 export function OverviewTab() {
   const { app, isLoading } = useAppDetail();
   const metrics = useAppMetrics(app?.slug ?? '');
   const cpuUrl = useMetricUrl(app?.slug ?? '', 'cpu');
   const ramUrl = useMetricUrl(app?.slug ?? '', 'ram');
   const { data: runtimeStatus } = useAppStatus(app?.id);
+
+  const lastSync =
+    runtimeStatus?.argocd_prod?.last_sync_at ??
+    runtimeStatus?.argocd_dev?.last_sync_at ??
+    null;
 
   if (isLoading) {
     return (
@@ -83,67 +129,25 @@ export function OverviewTab() {
         />
         <MetricCard
           label="Last sync"
-          value={runtimeStatus?.last_sync_at ? timeAgo(runtimeStatus.last_sync_at) : '—'}
+          value={lastSync ? timeAgo(lastSync) : '—'}
           icon={<IconClock size={14} />}
         />
       </div>
 
-      {/* Status cards */}
-      <div className="grid grid-cols-1 gap-4">
-        {/* ArgoCD / cluster status */}
+      {/* ArgoCD env cards */}
+      {runtimeStatus?.argocd_error && !runtimeStatus.argocd_prod && !runtimeStatus.argocd_dev ? (
         <Card>
-          <h2 className="text-sm font-medium text-foreground mb-3">
-            <span className="flex items-center gap-1.5">
-              <IconRefresh size={14} />
-              ArgoCD / cluster
-            </span>
-          </h2>
-          {runtimeStatus?.argocd_error && !runtimeStatus.sync_status ? (
-            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <IconAlertTriangle size={12} className="shrink-0" />
-              ArgoCD unavailable
-            </p>
-          ) : (
-            <dl className="flex flex-col gap-2">
-              {[
-                {
-                  label: 'Sync',
-                  value: <SyncBadge status={runtimeStatus?.sync_status} />,
-                },
-                {
-                  label: 'Health',
-                  value: <HealthBadge status={runtimeStatus?.health_status} />,
-                },
-                {
-                  label: 'Pods',
-                  value: runtimeStatus?.pods_running != null
-                    ? `${runtimeStatus.pods_running}/${runtimeStatus.pods_total} running`
-                    : '—',
-                  mono: true,
-                },
-                {
-                  label: 'Image',
-                  value: runtimeStatus?.image
-                    ? runtimeStatus.image.split('/').pop() ?? runtimeStatus.image
-                    : '—',
-                  mono: true,
-                },
-                {
-                  label: 'Last sync',
-                  value: runtimeStatus?.last_sync_at ? timeAgo(runtimeStatus.last_sync_at) : '—',
-                },
-              ].map(({ label, value, mono }) => (
-                <div key={label} className="flex items-baseline gap-2">
-                  <dt className="text-xs text-muted-foreground w-20 shrink-0">{label}</dt>
-                  <dd className={`text-xs text-foreground ${mono ? 'font-mono' : ''}`}>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
+          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <IconAlertTriangle size={12} className="shrink-0" />
+            ArgoCD unavailable — {runtimeStatus.argocd_error}
+          </p>
         </Card>
-
-
-      </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
+          <ArgoCard title="Production environment" env={runtimeStatus?.argocd_prod} />
+          <ArgoCard title="Dev environment" env={runtimeStatus?.argocd_dev} />
+        </div>
+      )}
 
       {/* Quick access */}
       <Card>
