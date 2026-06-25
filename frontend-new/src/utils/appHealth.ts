@@ -1,7 +1,7 @@
 import { Application, AppHealthStatus } from '@/types';
 
 export function getAppHealth(app: Application): AppHealthStatus {
-  switch (app.status) {
+  switch (app.last_known_status) {
     case 'onboarding': return 'provisioning';
     case 'ready': return 'stopped';
     case 'deployed': return 'healthy';

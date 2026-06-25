@@ -55,7 +55,7 @@ export interface Application {
   owner: string;
   origin: AppOrigin | null;
   source_url: string | null;
-  status: ApplicationStatus;
+  last_known_status: ApplicationStatus;
   framework?: string | null;
   gitlab_project_id?: number | null;
   owning_gitlab_group_id?: number | null;

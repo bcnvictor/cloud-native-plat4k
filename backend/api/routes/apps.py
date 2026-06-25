@@ -111,6 +111,16 @@ async def get_app_runtime_status(
         images = argocd_status.get("summary", {}).get("images", [])
         payload["image"] = images[0] if images else None
         payload["last_sync_at"] = argocd_status.get("operationState", {}).get("finishedAt")
+
+        # Persist last known status derived from ArgoCD response
+        from shared.models import ApplicationStatus
+        health = payload["health_status"]
+        sync = payload["sync_status"]
+        if health in ("Degraded", "Missing"):
+            app.last_known_status = ApplicationStatus.DEGRADED
+        elif sync == "Synced" and health == "Healthy":
+            app.last_known_status = ApplicationStatus.DEPLOYED
+        await db.commit()
     except (HTTPException, httpx.HTTPError) as e:
         payload["argocd_error"] = str(e)
     except Exception as e:

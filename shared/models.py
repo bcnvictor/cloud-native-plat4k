@@ -256,7 +256,7 @@ class ApplicationUpdate(BaseModel):
     owner: Optional[str] = None
     origin: Optional[str] = None
     framework: Optional[str] = None
-    status: Optional[ApplicationStatus] = None
+    last_known_status: Optional[ApplicationStatus] = None
     target_cluster_id: Optional[int] = None
 
 
@@ -268,7 +268,7 @@ class CiStatusUpdate(BaseModel):
 class ApplicationResponse(ApplicationBase):
     id: int
     slug: str
-    status: ApplicationStatus
+    last_known_status: ApplicationStatus
     target_cluster_id: Optional[int] = None
     ci_injected: Optional[bool] = None
     last_pipeline_status: Optional[str] = None

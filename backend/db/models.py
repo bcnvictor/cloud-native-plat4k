@@ -138,7 +138,7 @@ class Application(Base):
     framework = Column(String, nullable=True)
     ci_injected = Column(Boolean, nullable=True)
     last_pipeline_status = Column(String, nullable=True)
-    status = Column(
+    last_known_status = Column(
         SQLEnum(ApplicationStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=ApplicationStatus.ONBOARDING,
