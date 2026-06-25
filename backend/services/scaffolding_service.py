@@ -115,9 +115,11 @@ class ScaffoldingService:
             )
 
         batch: list[dict] = []
+        template_paths: set[str] = set()
         for f in template_files:
             if f["type"] != "blob":
                 continue
+            template_paths.add(f["path"])
             if f["path"] in SKIP_FILES:
                 continue
             try:
@@ -134,9 +136,15 @@ class ScaffoldingService:
                 )
 
         params = scaffolding_params or ScaffoldingParams()
-        batch.append({"file_path": "chart/values.yaml", "content": self._build_values_yaml(app_slug, apps_namespace, params)})
-        batch.append({"file_path": "chart/Chart.yaml", "content": self._build_chart_yaml(app_slug, params)})
-        if "postgresql" in params.services:
+        batch.append({
+            "file_path": "chart/values.yaml",
+            "content": self._build_values_yaml(app_slug, apps_namespace, params),
+        })
+        batch.append({
+            "file_path": "chart/Chart.yaml",
+            "content": self._build_chart_yaml(app_slug, params),
+        })
+        if "postgresql" in params.services and "chart/templates/postgresql.yaml" not in template_paths:
             batch.append({"file_path": "chart/templates/postgresql.yaml", "content": self._build_postgresql_yaml()})
 
         try:
@@ -217,6 +225,7 @@ class ScaffoldingService:
             },
             "ingress": {
                 "enabled": False,
+                "className": "",
                 "host": "",
                 "tls": False,
             },
