@@ -92,12 +92,17 @@ async def get_app_runtime_status(
 
     payload: dict = {}
 
-    # K8s pods & replicas
+    # K8s pods & replicas — try prod then dev namespace (platform convention)
     try:
         k8s = get_k8s_client_for_cluster(cluster)
         if k8s.is_configured():
             resource_name = sanitize_k8s_name(app.name)
-            payload.update(k8s.get_pods_status(settings.K8S_TARGET_NAMESPACE, resource_name))
+            for ns in ("prod", "dev", settings.K8S_TARGET_NAMESPACE):
+                try:
+                    payload.update(k8s.get_pods_status(ns, resource_name))
+                    break
+                except Exception:
+                    continue
     except Exception as e:
         payload["k8s_error"] = str(e)
 
