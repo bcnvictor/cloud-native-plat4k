@@ -23,7 +23,6 @@ from backend.gitlab.client import GitLabClient
 logger = logging.getLogger(__name__)
 
 SKIP_FILES = {"chart/values.yaml", "chart/Chart.yaml"}
-DEFAULT_REACT_PORT = 80
 
 
 def _get_bot_client() -> GitLabClient:
@@ -136,7 +135,7 @@ class ScaffoldingService:
                     detail=f"Failed to read template file '{f['path']}': {e}",
                 )
 
-        params = self._resolve_scaffolding_params(template, scaffolding_params or ScaffoldingParams())
+        params = scaffolding_params or ScaffoldingParams()
         batch.append({
             "file_path": "chart/values.yaml",
             "content": self._build_values_yaml(app_slug, apps_namespace, params),
@@ -265,22 +264,6 @@ class ScaffoldingService:
             "appVersion": "0.1.0",
         }
         return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
-
-    def _resolve_scaffolding_params(self, template: str, params: ScaffoldingParams) -> ScaffoldingParams:
-        default_port = ScaffoldingParams.model_fields["port"].default
-        if self._is_react_template(template) and params.port == default_port:
-            return params.model_copy(update={"port": DEFAULT_REACT_PORT})
-        return params
-
-    @staticmethod
-    def _is_react_template(template: str) -> bool:
-        template_name = template.strip("/").rsplit("/", 1)[-1].lower().replace("_", "-")
-        return (
-            template_name == "react"
-            or template_name.startswith("react-")
-            or template_name.endswith("-react")
-            or "-react-" in template_name
-        )
 
     def _build_postgresql_yaml(self) -> str:
         return """\
