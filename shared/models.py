@@ -225,6 +225,7 @@ class ApplicationScaffoldRequest(BaseModel):
     template: str  # name of the template repo in GITLAB_TEMPLATES_NAMESPACE (ex: "python-fastapi")
     scaffolding: Optional[ScaffoldingParams] = None
     skip_first_deploy: bool = False  # si True, ne provisionne pas ArgoCD au scaffold (utile quand la 1ère image n'est pas encore buildée)
+    target_cluster_id: Optional[int] = None
     owning_gitlab_group_id: Optional[int] = None
 
 

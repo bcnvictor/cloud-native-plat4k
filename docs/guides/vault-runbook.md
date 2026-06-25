@@ -212,7 +212,7 @@ docker compose -f docker-compose.yml up -d backend db frontend
 
 ## Etat actuel sur `cnp-control` (référence)
 
-> Mis à jour le 2026-06-21. Ce qui a été fait en production sur la VM Oracle.
+> Mis à jour le 2026-06-25. Ce qui a été fait en production sur la VM Oracle.
 
 | Étape | Statut | Notes |
 |---|---|---|
