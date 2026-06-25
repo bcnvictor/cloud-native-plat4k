@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams, useBlocker } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useScopeStore } from '@/store/scope';
@@ -78,26 +78,13 @@ export function NewApp() {
     onSuccess: (app) => {
       qc.invalidateQueries({ queryKey: ['apps'] });
       toast({ title: 'App created', description: `${app.name} is being provisioned.` });
+      navigate(`/groups/${slug}/apps/${app.slug}`);
     },
     onError: () => {
       setSubmitError('Creation failed. Please try again.');
       toast({ title: 'Erreur', variant: 'destructive' });
     },
   });
-
-  // Navigate after success — done in useEffect so isPending has already settled to false
-  // before navigate() is called, avoiding the useBlocker catching a programmatic navigation.
-  useEffect(() => {
-    if (createMutation.isSuccess && createMutation.data) {
-      navigate(`/groups/${slug}/apps/${createMutation.data.slug}`);
-    }
-  }, [createMutation.isSuccess]);
-
-  // Bloquer toute navigation accidentelle (TopNav, breadcrumb, back browser) pendant la création
-  const blocker = useBlocker(createMutation.isPending);
-  useEffect(() => {
-    if (blocker.state === 'blocked') blocker.reset();
-  }, [blocker]);
 
   const steps = STEP_LABELS.map((label, i) => ({
     label,

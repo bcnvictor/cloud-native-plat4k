@@ -41,6 +41,8 @@ export function AppDetailLayout() {
     queryKey: ['app', appSlug],
     queryFn: () => appsApi.getBySlug(appSlug!),
     enabled: !!appSlug,
+    refetchInterval: 30_000,
+    staleTime: 25_000,
   });
 
   useEffect(() => {
