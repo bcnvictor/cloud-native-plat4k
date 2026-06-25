@@ -63,16 +63,22 @@ export interface Application {
   updated_at: string | null;
 }
 
+export interface ArgoEnvStatus {
+  sync_status: string | null;
+  health_status: string | null;
+  image: string | null;
+  last_sync_at: string | null;
+  error: string | null;
+}
+
 export interface AppRuntimeStatus {
   pods_running: number | null;
   pods_total: number | null;
   replicas_desired: number | null;
   replicas_ready: number | null;
   replicas_available: number | null;
-  sync_status: string | null;
-  health_status: string | null;
-  image: string | null;
-  last_sync_at: string | null;
+  argocd_dev: ArgoEnvStatus | null;
+  argocd_prod: ArgoEnvStatus | null;
   k8s_error: string | null;
   argocd_error: string | null;
 }
