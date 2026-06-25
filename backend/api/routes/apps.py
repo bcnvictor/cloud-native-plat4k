@@ -101,21 +101,34 @@ async def get_app_runtime_status(
     except Exception as e:
         payload["k8s_error"] = str(e)
 
-    # ArgoCD sync / health / image / last sync
+    # ArgoCD sync / health / image / last sync (dev + prod)
     try:
         argocd = get_argocd_client_for_cluster(cluster)
-        argocd_app = await argocd.get_app_status(app.slug)
-        argocd_status = argocd_app.get("status", {})
-        payload["sync_status"] = argocd_status.get("sync", {}).get("status")
-        payload["health_status"] = argocd_status.get("health", {}).get("status")
-        images = argocd_status.get("summary", {}).get("images", [])
-        payload["image"] = images[0] if images else None
-        payload["last_sync_at"] = argocd_status.get("operationState", {}).get("finishedAt")
 
-        # Persist last known status derived from ArgoCD response
+        async def _fetch_env(name: str) -> dict:
+            try:
+                data = await argocd.get_app_status(name)
+                s = data.get("status", {})
+                images = s.get("summary", {}).get("images", [])
+                return {
+                    "sync_status": s.get("sync", {}).get("status"),
+                    "health_status": s.get("health", {}).get("status"),
+                    "image": images[0] if images else None,
+                    "last_sync_at": s.get("operationState", {}).get("finishedAt"),
+                }
+            except Exception as exc:
+                return {"error": str(exc)}
+
+        dev_data = await _fetch_env(f"{app.slug}-dev")
+        prod_data = await _fetch_env(f"{app.slug}-prod")
+        payload["argocd_dev"] = dev_data
+        payload["argocd_prod"] = prod_data
+
+        # Persist last_known_status: prefer prod health, fallback to dev
         from shared.models import ApplicationStatus
-        health = payload["health_status"]
-        sync = payload["sync_status"]
+        ref = prod_data if prod_data.get("health_status") else dev_data
+        health = ref.get("health_status")
+        sync = ref.get("sync_status")
         if health in ("Degraded", "Missing"):
             app.last_known_status = ApplicationStatus.DEGRADED
         elif sync == "Synced" and health == "Healthy":
