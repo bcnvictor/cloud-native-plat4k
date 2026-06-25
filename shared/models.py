@@ -11,6 +11,18 @@ from datetime import datetime
 from enum import Enum
 
 
+def sanitize_k8s_label_value(value: str) -> str:
+    """Sanitize an arbitrary string into a valid Kubernetes label value (max 63 chars).
+
+    Mirrors the transformations applied in the Helm _helpers.tpl cnp.io/owner label.
+    """
+    s = value.replace("@", "-at-").replace("/", "-")
+    s = re.sub(r"[^A-Za-z0-9\-_.]", "-", s)
+    s = re.sub(r"-+", "-", s)
+    s = s.strip("-").strip(".")
+    return s[:63]
+
+
 def compute_slug(name: str) -> str:
     """Return a DNS-1035-compliant slug derived from name, capped at 50 chars.
 
@@ -171,15 +183,10 @@ class ApplicationStatus(str, Enum):
     DEGRADED = "degraded"
 
 
-class DeploymentStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-
 
 class ApplicationBase(BaseModel):
     name: str
+    description: Optional[str] = None
     repo_url: Optional[str] = None
     owner: str
     origin: Optional[str] = None
@@ -218,6 +225,7 @@ class ApplicationScaffoldRequest(BaseModel):
     template: str  # name of the template repo in GITLAB_TEMPLATES_NAMESPACE (ex: "python-fastapi")
     scaffolding: Optional[ScaffoldingParams] = None
     skip_first_deploy: bool = False  # si True, ne provisionne pas ArgoCD au scaffold (utile quand la 1ère image n'est pas encore buildée)
+    target_cluster_id: Optional[int] = None
     owning_gitlab_group_id: Optional[int] = None
 
 
@@ -244,18 +252,24 @@ class ApplicationExternalImportRequest(BaseModel):
 
 class ApplicationUpdate(BaseModel):
     name: Optional[str] = None
+    description: Optional[str] = None
     repo_url: Optional[str] = None
     owner: Optional[str] = None
     origin: Optional[str] = None
     framework: Optional[str] = None
-    status: Optional[ApplicationStatus] = None
+    last_known_status: Optional[ApplicationStatus] = None
     target_cluster_id: Optional[int] = None
+
+
+class CiStatusUpdate(BaseModel):
+    pipeline_status: str
+    app_status: Optional[ApplicationStatus] = None
 
 
 class ApplicationResponse(ApplicationBase):
     id: int
     slug: str
-    status: ApplicationStatus
+    last_known_status: ApplicationStatus
     target_cluster_id: Optional[int] = None
     ci_injected: Optional[bool] = None
     last_pipeline_status: Optional[str] = None
@@ -270,16 +284,24 @@ class ApplicationResponse(ApplicationBase):
 class ClusterConnectionBase(BaseModel):
     name: str
     endpoint: str
+    prometheus_url: Optional[str] = None
+    loki_url: Optional[str] = None
+    argocd_url: Optional[str] = None
 
 
 class ClusterConnectionCreate(ClusterConnectionBase):
     kubeconfig: str
+    argocd_token: Optional[str] = None
 
 
 class ClusterConnectionUpdate(BaseModel):
     name: Optional[str] = None
     endpoint: Optional[str] = None
     kubeconfig: Optional[str] = None
+    prometheus_url: Optional[str] = None
+    loki_url: Optional[str] = None
+    argocd_url: Optional[str] = None
+    argocd_token: Optional[str] = None
 
 
 class ClusterConnectionResponse(ClusterConnectionBase):
@@ -294,21 +316,3 @@ class ClusterConnectionResponse(ClusterConnectionBase):
         from_attributes = True
 
 
-class DeploymentBase(BaseModel):
-    application_id: int
-    cluster_id: int
-    version: str
-
-
-class DeploymentCreate(DeploymentBase):
-    pass
-
-
-class DeploymentResponse(DeploymentBase):
-    id: int
-    status: DeploymentStatus
-    deployed_at: datetime
-    created_at: datetime
-
-    class Config:
-        from_attributes = True

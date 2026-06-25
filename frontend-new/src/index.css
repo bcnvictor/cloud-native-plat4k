@@ -1,0 +1,57 @@
+@import "../tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply text-foreground font-sans text-base;
+    background-color: var(--background-subtle);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    zoom: 1.25;
+  }
+
+  * {
+    transition-property: color, background-color, border-color, box-shadow, transform;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-1;
+  }
+}
+
+@layer utilities {
+  .pt-topnav {
+    padding-top: var(--topnav-height);
+  }
+  /* zoom: 1.25 sur body fait que h-screen (100vh) apparaît à 125vh visuel.
+     Cette classe compense : 100vh / 1.25 = 80vh CSS → 100vh visuel. */
+  .h-screen-corrected {
+    height: calc(100vh / 1.25);
+  }
+}
+
+
+@keyframes gradient-shift {
+  0%   { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
+.animate-gradient-shift {
+  background-size: 200% auto;
+  animation: gradient-shift 4s linear infinite;
+}
+
+.bg-dotted {
+  background-color: var(--background-subtle);
+  background-image: radial-gradient(circle, #C8C8CC 1px, transparent 1px);
+  background-size: 20px 20px;
+}

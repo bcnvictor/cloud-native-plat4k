@@ -6,7 +6,6 @@ from shared.models import (
     ApplicationStatus,
     CloudType,
     ClusterStatus,
-    DeploymentStatus,
     MemberStatus,
     ResourceStatus,
     ResourceType,
@@ -128,6 +127,7 @@ class Application(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     slug = Column(String, nullable=False, unique=True)
+    description = Column(String, nullable=True)
     repo_url = Column(String, nullable=True, unique=True)
     owner = Column(String, nullable=False)
     gitlab_project_id = Column(BigInteger, nullable=True)
@@ -138,7 +138,7 @@ class Application(Base):
     framework = Column(String, nullable=True)
     ci_injected = Column(Boolean, nullable=True)
     last_pipeline_status = Column(String, nullable=True)
-    status = Column(
+    last_known_status = Column(
         SQLEnum(ApplicationStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=ApplicationStatus.ONBOARDING,
@@ -146,7 +146,6 @@ class Application(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
 
-    deployments = relationship("Deployment", back_populates="application", cascade="all, delete-orphan")
 
 
 class ClusterConnection(Base):
@@ -156,6 +155,9 @@ class ClusterConnection(Base):
     name = Column(String, nullable=False, unique=True)
     endpoint = Column(String, nullable=False)
     kubeconfig_secret_ref = Column(String, nullable=False)
+    prometheus_url = Column(String, nullable=True)
+    loki_url = Column(String, nullable=True)
+    argocd_url = Column(String, nullable=True)
     status = Column(
         SQLEnum(ClusterStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
@@ -164,27 +166,6 @@ class ClusterConnection(Base):
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
-
-    deployments = relationship("Deployment", back_populates="cluster")
-
-
-class Deployment(Base):
-    __tablename__ = "deployments"
-
-    id = Column(Integer, primary_key=True, index=True)
-    application_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True)
-    cluster_id = Column(Integer, ForeignKey("cluster_connections.id", ondelete="RESTRICT"), nullable=False, index=True)
-    version = Column(String, nullable=False)
-    status = Column(
-        SQLEnum(DeploymentStatus, values_callable=lambda x: [e.value for e in x]),
-        nullable=False,
-        default=DeploymentStatus.PENDING,
-    )
-    deployed_at = Column(DateTime(timezone=True), server_default=func.now())
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    application = relationship("Application", back_populates="deployments")
-    cluster = relationship("ClusterConnection", back_populates="deployments")
 
 
 # ── GitLab membership mirror (ADR-0013) ───────────────────────────────────────
@@ -206,6 +187,7 @@ class GitLabGroupMember(Base):
     id = Column(Integer, primary_key=True, index=True)
     gitlab_group_id = Column(BigInteger, ForeignKey("gitlab_groups.gitlab_group_id", ondelete="CASCADE"), nullable=False, index=True)
     gitlab_user_id = Column(BigInteger, nullable=True)
+    username = Column(String, nullable=True)
     access_level = Column(Integer, nullable=False)
     cnp_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(

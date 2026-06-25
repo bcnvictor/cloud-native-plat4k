@@ -38,6 +38,7 @@ async def _fake_to_thread(fn, *args, **kwargs):
 def _make_gl_member(gl_id: int, access_level: int):
     m = MagicMock()
     m.id = gl_id
+    m.username = f"user{gl_id}"
     m.access_level = access_level
     return m
 
@@ -88,7 +89,7 @@ async def app_with_project(db_session) -> Application:
         slug="test-app",
         owner="team-x",
         gitlab_project_id=42,
-        status=ApplicationStatus.READY,
+        last_known_status=ApplicationStatus.READY,
     )
     db_session.add(application)
     await db_session.commit()
@@ -102,7 +103,7 @@ async def app_without_project(db_session) -> Application:
         name="app-no-gl",
         slug="app-no-gl",
         owner="team-y",
-        status=ApplicationStatus.READY,
+        last_known_status=ApplicationStatus.READY,
     )
     db_session.add(application)
     await db_session.commit()

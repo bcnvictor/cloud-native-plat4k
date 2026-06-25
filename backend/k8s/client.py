@@ -109,6 +109,26 @@ class KubernetesClient:
         secret = self.core_v1.read_namespaced_secret(name=name, namespace=namespace)
         return {k: base64.b64decode(v).decode() for k, v in (secret.data or {}).items()}
 
+    def get_pods_status(self, namespace: str, deployment_name: str) -> dict:
+        dep = self.apps_v1.read_namespaced_deployment(name=deployment_name, namespace=namespace)
+        desired = dep.spec.replicas or 0
+        ready = dep.status.ready_replicas or 0
+        available = dep.status.available_replicas or 0
+
+        selector = dep.spec.selector.match_labels or {}
+        label_selector = ",".join(f"{k}={v}" for k, v in selector.items())
+        pods = self.core_v1.list_namespaced_pod(namespace=namespace, label_selector=label_selector)
+        total_pods = len(pods.items)
+        running_pods = sum(1 for p in pods.items if p.status.phase == "Running")
+
+        return {
+            "pods_running": running_pods,
+            "pods_total": total_pods,
+            "replicas_desired": desired,
+            "replicas_ready": ready,
+            "replicas_available": available,
+        }
+
     def list_namespace_deployments(self, namespace: str) -> list[client.V1Deployment]:
         return self.apps_v1.list_namespaced_deployment(namespace=namespace).items
 

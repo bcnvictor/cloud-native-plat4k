@@ -52,6 +52,7 @@ services:
       - GITLAB_CI_PROJECT=${GITLAB_CI_PROJECT:-}
       - CNP_API_BASE_URL=${CNP_API_BASE_URL:-http://localhost:8000}
       - GITLAB_WEBHOOK_SECRET=${GITLAB_WEBHOOK_SECRET:-}
+      - ARGOCD_WEBHOOK_SECRET=${ARGOCD_WEBHOOK_SECRET:-}
       - GITOPS_REPO_URL=${GITOPS_REPO_URL:-}
       - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus-operated.monitoring.svc.cluster.local:9090}
       - LOKI_URL=${LOKI_URL:-http://loki.monitoring.svc.cluster.local:3100}
@@ -63,6 +64,27 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - cnp_net
+
+  grafana:
+    profiles:
+      - production
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus-operated.monitoring.svc.cluster.local:9090}
+      - LOKI_URL=${LOKI_URL:-http://loki.monitoring.svc.cluster.local:3100}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - cnp_net
 
@@ -91,7 +113,7 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: ./frontend-new
       dockerfile: Dockerfile
       args:
         VITE_API_URL: /api/v1
@@ -110,3 +132,4 @@ networks:
 volumes:
   postgres_data:
   vault_data:
+  grafana_data:
