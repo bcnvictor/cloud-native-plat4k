@@ -57,6 +57,13 @@ class AppService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def _resolve_target_cluster_id(self, explicit: int | None) -> int | None:
+        if explicit is not None:
+            return explicit
+        result = await self.db.execute(select(ClusterConnection).order_by(ClusterConnection.id).limit(1))
+        cluster = result.scalar_one_or_none()
+        return cluster.id if cluster else None
+
     async def list_apps(self) -> list[Application]:
         result = await self.db.execute(select(Application).order_by(Application.created_at.desc()))
         return list(result.scalars().all())
@@ -88,6 +95,7 @@ class AppService:
             "origin": "scaffolded",
             "framework": payload.template,
             "owning_gitlab_group_id": payload.owning_gitlab_group_id,
+            "target_cluster_id": await self._resolve_target_cluster_id(payload.target_cluster_id),
         }
         return await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
 
@@ -138,7 +146,7 @@ class AppService:
             "repo_url": normalized_url,
             "origin": "onboarded",
             "framework": framework or "generic",
-            "target_cluster_id": payload.target_cluster_id,
+            "target_cluster_id": await self._resolve_target_cluster_id(payload.target_cluster_id),
             "owning_gitlab_group_id": payload.owning_gitlab_group_id,
         }
         return await self._save_app(data)
@@ -380,9 +388,9 @@ class AppService:
         app = await self.get_app(app_id)
         app.last_pipeline_status = payload.pipeline_status
         if payload.app_status is not None:
-            app.status = payload.app_status
-        elif payload.pipeline_status == "success" and app.status == ApplicationStatus.ONBOARDING:
-            app.status = ApplicationStatus.READY
+            app.last_known_status = payload.app_status
+        elif payload.pipeline_status == "success" and app.last_known_status == ApplicationStatus.ONBOARDING:
+            app.last_known_status = ApplicationStatus.READY
             logger.info("App %s promoted to READY after successful CI run", app.id)
         await self.db.commit()
         await self.db.refresh(app)
@@ -533,15 +541,15 @@ class AppService:
                     owner='k8s-sync',
                     origin='kubernetes',
                     repo_url=image,
-                    status=app_status,
+                    last_known_status=app_status,
                 )
                 self.db.add(app)
                 logger.info("Synced new app from K8s: %s", name)
                 synced.append(app)
             else:
                 # Point 2 : ne pas écraser un statut READY avec ONBOARDING
-                if app_status == ApplicationStatus.DEPLOYED or existing.status != ApplicationStatus.READY:
-                    existing.status = app_status
+                if app_status == ApplicationStatus.DEPLOYED or existing.last_known_status != ApplicationStatus.READY:
+                    existing.last_known_status = app_status
                 logger.info("Updated app status from K8s: %s → %s", name, app_status.value)
                 synced.append(existing)
 
