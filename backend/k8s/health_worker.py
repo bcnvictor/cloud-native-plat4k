@@ -52,7 +52,7 @@ async def _cascade_offline(db: AsyncSession, cluster_id: int) -> set[int]:
     result = await db.execute(
         select(Application.id).where(
             Application.target_cluster_id == cluster_id,
-            Application.status == ApplicationStatus.DEPLOYED,
+            Application.last_known_status == ApplicationStatus.DEPLOYED,
         )
     )
     app_ids = {row[0] for row in result.all()}
@@ -60,7 +60,7 @@ async def _cascade_offline(db: AsyncSession, cluster_id: int) -> set[int]:
         await db.execute(
             update(Application)
             .where(Application.id.in_(app_ids))
-            .values(status=ApplicationStatus.DEGRADED)
+            .values(last_known_status=ApplicationStatus.DEGRADED)
         )
         logger.info("Cluster %d offline — %d app(s) set to DEGRADED", cluster_id, len(app_ids))
     return app_ids
@@ -78,9 +78,9 @@ async def _cascade_recovery(db: AsyncSession, cluster_id: int, app_ids: set[int]
         .where(
             Application.id.in_(app_ids),
             Application.target_cluster_id == cluster_id,
-            Application.status == ApplicationStatus.DEGRADED,
+            Application.last_known_status == ApplicationStatus.DEGRADED,
         )
-        .values(status=ApplicationStatus.DEPLOYED)
+        .values(last_known_status=ApplicationStatus.DEPLOYED)
     )
     logger.info("Cluster %d back online — %d app(s) restored to DEPLOYED", cluster_id, len(app_ids))
 

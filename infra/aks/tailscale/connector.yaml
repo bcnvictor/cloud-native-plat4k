@@ -1,0 +1,20 @@
+# Tailscale Connector — advertise the AKS Service CIDR to cnp-control.
+#
+# Before applying, fill in the Service CIDR:
+#   az aks show -g cnp-rg -n cnp-aks --query networkProfile.serviceCidr -o tsv
+#
+# kubectl apply -f infra/aks/tailscale/connector.yaml
+apiVersion: tailscale.com/v1alpha1
+kind: Connector
+metadata:
+  name: aks-subnet-router
+spec:
+  hostname: aks-subnet-router
+  tags:
+    - tag:k8s
+  subnetRouter:
+    advertiseRoutes:
+      - "10.0.0.0/16"
+      # Do NOT advertise the node subnet (10.224.0.0/16) — only the Service CIDR.
+      # Azure CNI / kube-proxy: ClusterIPs are reachable via Service CIDR advertise.
+      # Cilium kube-proxy-replacement: use tailscale.com/expose on each Service instead.

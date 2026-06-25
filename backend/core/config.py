@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     GITLAB_OAUTH_CLIENT_SECRET: Optional[str] = None
     GITLAB_OAUTH_REDIRECT_URI: Optional[str] = None
     GITLAB_OAUTH_SCOPES: str = "api read_user offline_access"
+    # full_path du groupe GitLab dont l'appartenance est requise pour se connecter via SSO
+    # ex: "4k-cnp-2027/cnp-apps". Si absent, aucune restriction.
+    GITLAB_OAUTH_ALLOWED_GROUP: Optional[str] = None
     # GitLab bot (CI injection)
     GITLAB_BOT_TOKEN: Optional[str] = None
     GITLAB_BOT_NAMESPACE: Optional[str] = None  # namespace owning cnp-ci-templates
@@ -59,6 +62,7 @@ class Settings(BaseSettings):
     CNP_API_BASE_URL: str = "http://localhost:8000"
     # GitLab webhook secret (sent as X-Gitlab-Token to verify incoming webhook calls)
     GITLAB_WEBHOOK_SECRET: Optional[str] = None
+    ARGOCD_WEBHOOK_SECRET: Optional[str] = None
 
     # Kubernetes
     KUBECONFIG_PATH: Optional[str] = None
@@ -73,7 +77,7 @@ class Settings(BaseSettings):
     # Monitoring
     PROMETHEUS_URL: str = "http://prometheus-operated.monitoring.svc.cluster.local:9090"
     LOKI_URL: str = "http://loki.monitoring.svc.cluster.local:3100"
-    GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: http://localhost:3000
+    GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: http://grafana.example.com
 
     # Logging
     LOG_LEVEL: str = "INFO"

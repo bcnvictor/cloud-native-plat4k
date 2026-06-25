@@ -212,7 +212,7 @@ docker compose -f docker-compose.yml up -d backend db frontend
 
 ## Etat actuel sur `cnp-control` (référence)
 
-> Mis à jour le 2026-06-21. Ce qui a été fait en production sur la VM Oracle.
+> Mis à jour le 2026-06-25. Ce qui a été fait en production sur la VM Oracle.
 
 | Étape | Statut | Notes |
 |---|---|---|
@@ -221,13 +221,181 @@ docker compose -f docker-compose.yml up -d backend db frontend
 | Vault unsealed | OK | À refaire après chaque reboot (voir procédure post-reboot) |
 | KV v2 activé sur `secret/` | OK | `vault secrets enable -path=secret kv-v2` |
 | `secret/cnp/platform` bootstrappé | OK | Bootstrap automatique au premier démarrage backend |
-| Policy `cnp-backend` créée | OK | Accès `read/create/update` sur `cnp/*` et `clusters/*` |
+| Policy `cnp-backend` créée | OK | Accès `read/create/update` sur `cnp/*`, `clusters/*` et `argocd/*` |
 | Token applicatif en place | OK | Root token **non utilisé** par le backend |
 | `.env` nettoyé | OK | Seuls `POSTGRES_*`, `VAULT_ADDR`, `VAULT_TOKEN`, `COMPOSE_FILE` |
 
 ---
 
-## 🛠️ 3. Dépannage et Administration
+## 🔑 3. Enregistrer le token ArgoCD pour un cluster
+
+Cette procédure est à effectuer une fois par cluster, sur `cnp-control`. Elle stocke le Bearer token ArgoCD dans Vault via l'API CNP, ce qui permet au backend de contacter ArgoCD pour les statuts de sync/health.
+
+### Prérequis
+
+- Vault unsealed et le backend en cours d'exécution
+- Tailscale actif sur `cnp-control` avec les routes acceptées (`sudo tailscale up --accept-routes`)
+- `kubectl` configuré sur le cluster cible (kubeconfig disponible)
+
+### Étape 3.1 — Vérifier la connectivité ArgoCD via Tailscale
+
+Le subnet router Tailscale (`aks-subnet-router`) expose le CIDR du cluster (`10.0.0.0/16`). ArgoCD tourne comme service ClusterIP — il n'est pas accessible directement depuis le VNet, mais via Tailscale.
+
+```bash
+# Vérifier que le subnet router est visible
+tailscale status | grep aks-subnet-router
+
+# Vérifier que les routes sont dans la table Tailscale (table 52)
+ip route show table 52 | grep 10.0
+
+# Tester la connectivité ArgoCD
+curl -k -s "https://<ARGOCD_CLUSTER_IP>/api/version" | jq .
+# → doit retourner {"Version": "v3.x.x"}
+```
+
+**Erreurs fréquentes :**
+
+| Erreur | Cause | Fix |
+|--------|-------|-----|
+| Timeout / connexion refusée | Routes subnet non acceptées localement | `sudo tailscale up --accept-routes` |
+| Routes absentes de `ip route show table 52` | Daemon tailscaled redémarré sans le flag | Idem ci-dessus — le flag ne persiste pas automatiquement |
+| `Not Found` sur `/api/v1/version` | Mauvais path — l'endpoint version ArgoCD est `/api/version` (sans `v1`) | Corriger l'URL |
+
+> **Note réseau :** `cnp-control` est sur Oracle Cloud (`10.0.0.0/24`) et le cluster AKS est sur Azure — deux réseaux sans lien direct. Le seul pont est Tailscale. La route `10.0.0.0/16` est installée dans la table de routage 52 par Tailscale et prend priorité sur la table principale pour les adresses hors du `/24` Oracle (ex. `10.0.54.x` pour les ClusterIPs AKS).
+
+### Étape 3.2 — Obtenir le token ArgoCD
+
+**Récupérer le mot de passe admin ArgoCD depuis K8s :**
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d && echo
+```
+
+**Obtenir un session token (valide 24h) :**
+```bash
+curl -k -s -X POST "https://<ARGOCD_IP>/api/v1/session" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"<PASSWORD>"}' | jq -r .token
+# → eyJhbGci...
+```
+
+**Générer un token long-lived (recommandé pour le backend) :**
+```bash
+# Le Bearer ici est le session token eyJhbGci... obtenu ci-dessus, PAS le mot de passe
+curl -k -s -X POST "https://<ARGOCD_IP>/api/v1/account/admin/token" \
+  -H "Authorization: Bearer <SESSION_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"expiresIn": 0, "id": "cnp-backend"}' | jq -r .token
+# → eyJhbGci... (token sans expiration)
+```
+
+**Erreur fréquente :**
+
+| Erreur | Cause |
+|--------|-------|
+| `{"error":"no session information"}` | Le champ `Authorization: Bearer` contient le mot de passe en clair au lieu du JWT session token |
+
+### Étape 3.3 — Vérifier la policy Vault
+
+La policy `cnp-backend` doit inclure les paths `argocd/*`. Vérifier :
+
+```bash
+docker exec -i <VAULT_CONTAINER_ID> \
+  env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=<ROOT_TOKEN> \
+  vault policy read cnp-backend
+```
+
+La policy complète attendue (ajouter les blocs `argocd` si absents) :
+
+```bash
+docker exec -i <VAULT_CONTAINER_ID> \
+  env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=<ROOT_TOKEN> \
+  vault policy write cnp-backend - << 'EOF'
+path "secret/data/cnp/*" {
+  capabilities = ["read", "create", "update"]
+}
+path "secret/data/clusters/*" {
+  capabilities = ["read", "create", "update", "delete"]
+}
+path "secret/delete/clusters/*" {
+  capabilities = ["update"]
+}
+path "secret/metadata/clusters/*" {
+  capabilities = ["delete"]
+}
+path "secret/data/argocd/*" {
+  capabilities = ["read", "create", "update", "delete"]
+}
+path "secret/metadata/argocd/*" {
+  capabilities = ["delete"]
+}
+EOF
+```
+
+> **Pourquoi ce chemin ?** Le backend écrit dans Vault à `secret/data/argocd/{cluster_id}` (KV v2). Sans les paths `argocd/*` dans la policy, le write échoue silencieusement (loggé en ERROR, mais la réponse API est quand même 200).
+
+**Trouver l'ID du container Vault :**
+```bash
+docker ps -f name=vault --format "{{.ID}} {{.Image}}"
+# Prendre l'ID du container hashicorp/vault (pas un autre container dont le nom contient "vault")
+```
+
+**Erreur fréquente :**
+
+| Erreur | Cause | Fix |
+|--------|-------|-----|
+| `cannot attach stdin to TTY-enabled container` | Flag `-it` incompatible avec heredoc | Remplacer `-it` par `-i` |
+| `http: server gave HTTP response to HTTPS client` | `VAULT_ADDR` non passé, le CLI tente HTTPS | Toujours passer `VAULT_ADDR=http://127.0.0.1:8200` |
+| `permission denied` sur `vault policy list` | Token sans droits admin | Utiliser le Root Token |
+
+### Étape 3.4 — Enregistrer via l'API CNP
+
+Le token ArgoCD ne doit **jamais** être écrit directement dans Vault. Passer par l'API CNP qui valide le payload, met à jour la DB (`ClusterConnection.argocd_url`) et écrit dans Vault (`secret/argocd/{cluster_id}`) de manière atomique.
+
+```bash
+# 1. S'authentifier au backend CNP
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
+  -d "username=<EMAIL>&password=<PASSWORD>" | jq -r .access_token)
+
+# 2. Enregistrer l'URL ArgoCD et le token
+curl -s -X PUT http://localhost:8000/api/v1/clusters/<CLUSTER_ID> \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "argocd_url": "https://<ARGOCD_IP>",
+    "argocd_token": "<LONG_LIVED_TOKEN>"
+  }' | jq .
+# → La réponse doit inclure "argocd_url": "https://..."
+```
+
+**Vérifier que le write Vault a bien eu lieu** dans les logs backend :
+```bash
+docker compose logs backend --tail=20
+# Si la policy était incorrecte : "Failed to write secret to secret/argocd/1: permission denied"
+# Si succès : pas d'erreur (le write est silencieux en cas de succès)
+```
+
+**Erreur fréquente :**
+
+| Erreur | Cause | Fix |
+|--------|-------|-----|
+| `"detail": "Could not validate credentials"` | Le Bearer passé à l'API CNP est un JWT ArgoCD au lieu d'un JWT CNP | Se connecter via `/api/v1/auth/login` pour obtenir un token CNP |
+| `401 Unauthorized` dans les logs backend | Même cause — token ArgoCD utilisé à la place du token CNP | Idem |
+| Réponse 200 mais rien dans Vault | Policy manquante sur `argocd/*` — erreur loggée silencieusement | Voir étape 3.3 |
+
+### État ArgoCD — référence cluster 1
+
+| Élément | Valeur |
+|---------|--------|
+| ArgoCD ClusterIP | `10.0.54.71` (accessible via Tailscale subnet router) |
+| URL enregistrée | `https://10.0.54.71` |
+| Token Vault path | `secret/argocd/1` |
+| Token type | API token long-lived (`expiresIn: 0`, id `cnp-backend`) |
+| Policy Vault | `cnp-backend` avec paths `argocd/*` |
+
+---
+
+## 🛠️ 4. Dépannage et Administration Générale
 
 ### Procédure post-reboot (cnp-control)
 
