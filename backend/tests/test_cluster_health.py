@@ -147,7 +147,7 @@ def test_recovery_restores_only_outage_degraded_apps(monkeypatch, tmp_path):
             # app_b est DEGRADED pour une raison sans rapport (déploiement cassé).
             app_b = Application(
                 name="b", slug="b", owner="o",
-                status=ApplicationStatus.DEGRADED, target_cluster_id=cluster.id,
+                last_known_status=ApplicationStatus.DEGRADED, target_cluster_id=cluster.id,
             )
             db.add_all([app_a, app_b])
             await db.commit()
