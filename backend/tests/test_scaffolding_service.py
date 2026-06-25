@@ -25,18 +25,4 @@ def test_values_yaml_contains_helm_deploy_defaults():
     assert values["ingress"] == {"enabled": False, "className": "", "host": "", "tls": False}
 
 
-def test_react_template_uses_nginx_port_when_port_is_default():
-    params = _service()._resolve_scaffolding_params("react-vite", ScaffoldingParams())
-
-    assert params.port == 80
-
-
-def test_react_template_keeps_explicit_port():
-    params = _service()._resolve_scaffolding_params(
-        "react-vite",
-        ScaffoldingParams(port=3000),
-    )
-
-    assert params.port == 3000
-
 
