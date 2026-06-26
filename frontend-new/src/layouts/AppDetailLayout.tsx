@@ -22,7 +22,6 @@ export const useAppDetail = () => useContext(Ctx);
 
 const TABS = [
   { key: '', label: 'Overview' },
-  { key: 'deployments', label: 'Deployments' },
   { key: 'logs', label: 'Logs' },
   { key: 'settings', label: 'Settings' },
 ];
@@ -42,6 +41,8 @@ export function AppDetailLayout() {
     queryKey: ['app', appSlug],
     queryFn: () => appsApi.getBySlug(appSlug!),
     enabled: !!appSlug,
+    refetchInterval: 30_000,
+    staleTime: 25_000,
   });
 
   useEffect(() => {

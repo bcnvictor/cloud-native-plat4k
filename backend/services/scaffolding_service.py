@@ -116,9 +116,11 @@ class ScaffoldingService:
             )
 
         batch: list[dict] = []
+        template_paths: set[str] = set()
         for f in template_files:
             if f["type"] != "blob":
                 continue
+            template_paths.add(f["path"])
             if f["path"] in SKIP_FILES:
                 continue
             try:
@@ -139,7 +141,7 @@ class ScaffoldingService:
             "chart/values.yaml": self._build_values_yaml(app_slug, apps_namespace, params),
             "chart/Chart.yaml": self._build_chart_yaml(app_slug, params),
         }
-        if "postgresql" in params.services:
+        if "postgresql" in params.services and "chart/templates/postgresql.yaml" not in template_paths:
             overrides["chart/templates/postgresql.yaml"] = self._build_postgresql_yaml()
         if expose:
             from shared.models import app_hostname
@@ -229,6 +231,7 @@ class ScaffoldingService:
             },
             "ingress": {
                 "enabled": False,
+                "className": "",
                 "host": "",
                 "tls": False,
             },

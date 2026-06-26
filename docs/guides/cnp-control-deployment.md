@@ -112,6 +112,50 @@ COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.tunne
 
 **Tout le reste** (SECRET_KEY, ENCRYPTION_KEY, GITLAB_*, PROMETHEUS_URL, etc.) est lu depuis Vault au démarrage du backend — ne pas les remettre dans `.env`.
 
+### Variables Vault — webhooks et monitoring
+
+Ces variables doivent être présentes dans Vault (`secret/cnp/platform`) pour que les fonctionnalités de webhooks et de monitoring fonctionnent :
+
+```bash
+# Webhooks
+GITLAB_WEBHOOK_SECRET=<secret-partagé-avec-gitlab>   # Vérifie les push webhooks entrants
+ARGOCD_WEBHOOK_SECRET=<token-partagé-avec-argocd>    # Vérifie les notifications ArgoCD entrantes
+CNP_API_BASE_URL=https://cnp.cloud-native-plat4k.me  # URL publique de l'API (enregistrée dans GitLab)
+GITOPS_REPO_URL=https://gitlab.com/4k-cnp-2027/cnp-gitops.git  # Repo GitOps cible
+
+# Monitoring
+PROMETHEUS_URL=http://<ip-prometheus>:9090  # URL Prometheus (backend → cluster)
+LOKI_URL=http://<ip-loki>:3100             # URL Loki (backend → cluster)
+GRAFANA_URL=                               # URL Grafana public (optionnel, active les liens Explore)
+```
+
+> **Important** : `GITLAB_WEBHOOK_SECRET` et `ARGOCD_WEBHOOK_SECRET` doivent impérativement être configurés en production. Si absents, toute validation des webhooks entrants est désactivée — n'importe qui peut déclencher des syncs ArgoCD ou écrire des statuts de déploiement arbitraires.
+
+Pour mettre à jour ces valeurs dans Vault :
+```bash
+# Depuis la VM de contrôle :
+docker compose exec vault vault kv patch secret/cnp/platform \
+  GITLAB_WEBHOOK_SECRET=<valeur> \
+  ARGOCD_WEBHOOK_SECRET=<valeur> \
+  PROMETHEUS_URL=http://<ip-prometheus>:9090 \
+  LOKI_URL=http://<ip-loki>:3100
+```
+
+Puis redémarrer le backend pour que les nouvelles valeurs soient prises en compte :
+```bash
+docker compose restart backend
+```
+
+### Tokens ArgoCD par cluster
+
+Les tokens ArgoCD sont stockés dans des chemins Vault **séparés** (cycle de vie distinct des kubeconfigs) :
+
+```bash
+vault kv put secret/argocd/<cluster_id> token=<argocd-token>
+```
+
+Voir [architecture réseau](../architecture/network-tailscale.md) pour la topologie complète et [cluster-health-monitoring.md](cluster-health-monitoring.md) pour la procédure d'ajout d'un cluster.
+
 Pour la gestion des secrets Vault (rotation, policy, unseal keys), voir [`vault-runbook.md`](vault-runbook.md).
 
 ## Cloudflare Tunnel

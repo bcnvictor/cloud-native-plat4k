@@ -1,9 +1,12 @@
-import os
 import toml
 from pathlib import Path
 
 CONFIG_DIR = Path.home() / ".cnp"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
+
+# URL publique de la documentation CNP (Cloudflare Pages).
+# Externalisée ici pour découpler l'URL de la commande `cnp docs`.
+DOCS_URL = "https://cnp-docs.pages.dev"
 
 def load_config() -> dict:
     if not CONFIG_FILE.exists():

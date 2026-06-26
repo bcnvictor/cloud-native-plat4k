@@ -1,0 +1,17 @@
+# helm repo add tailscale https://pkgs.tailscale.com/helmcharts
+# helm repo update
+# helm install tailscale-operator tailscale/tailscale-operator \
+#   --namespace tailscale --create-namespace \
+#   --values infra/aks/tailscale/operator-values.yaml \
+#   --set oauth.clientId=$TS_OAUTH_CLIENT_ID \
+#   --set oauth.clientSecret=$TS_OAUTH_CLIENT_SECRET
+
+operatorConfig:
+  hostname: aks-cnp-operator
+  # Tag de l'opérateur lui-même. Doit correspondre au tag autorisé sur l'OAuth client.
+  defaultTags:
+    - tag:k8s
+
+proxyConfig:
+  # Tag appliqué aux proxies/Connectors créés par l'opérateur.
+  defaultTags: "tag:k8s"

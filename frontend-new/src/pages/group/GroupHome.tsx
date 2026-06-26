@@ -74,7 +74,7 @@ export function GroupHome() {
     enabled: !!group?.gitlab_group_id,
   });
 
-  const groupMetrics = useGroupMetrics(apps.map((a) => a.name));
+  const groupMetrics = useGroupMetrics(apps.map((a) => a.slug));
 
   const statusCounts = apps.reduce<Record<string, number>>((acc, a) => {
     const s = getAppHealth(a);
@@ -128,7 +128,7 @@ export function GroupHome() {
         <MetricCard
           label="Average CPU"
           value={groupMetrics.available ? groupMetrics.cpu.current.toFixed(1) : '—'}
-          unit={groupMetrics.available ? '%' : undefined}
+          unit={groupMetrics.available ? 'm' : undefined}
           icon={<IconCpu size={14} />}
           sublabel={!groupMetrics.available ? (
             <span className="flex items-center gap-1 text-muted-foreground">

@@ -2,8 +2,6 @@ export type UserRole = 'admin' | 'dev' | 'viewer';
 export type CnpTier = 'viewer' | 'developer' | 'maintainer' | 'owner';
 
 export type ApplicationStatus = 'onboarding' | 'ready' | 'deployed';
-export type DeploymentStatus = 'pending' | 'running' | 'succeeded' | 'failed';
-
 export type AppHealthStatus =
   | 'healthy'
   | 'deploying'
@@ -57,7 +55,7 @@ export interface Application {
   owner: string;
   origin: AppOrigin | null;
   source_url: string | null;
-  status: ApplicationStatus;
+  last_known_status: ApplicationStatus;
   framework?: string | null;
   gitlab_project_id?: number | null;
   owning_gitlab_group_id?: number | null;
@@ -66,17 +64,27 @@ export interface Application {
   updated_at: string | null;
 }
 
-export interface Deployment {
-  id: number;
-  application_id: number;
-  cluster_id: number;
-  version: string;
-  status: DeploymentStatus;
-  deployed_at: string;
-  created_at: string;
+export interface ArgoEnvStatus {
+  sync_status: string | null;
+  health_status: string | null;
+  image: string | null;
+  last_sync_at: string | null;
+  error: string | null;
 }
 
-export interface DeploymentExtended extends Deployment {
+export interface AppRuntimeStatus {
+  pods_running: number | null;
+  pods_total: number | null;
+  replicas_desired: number | null;
+  replicas_ready: number | null;
+  replicas_available: number | null;
+  argocd_dev: ArgoEnvStatus | null;
+  argocd_prod: ArgoEnvStatus | null;
+  k8s_error: string | null;
+  argocd_error: string | null;
+}
+
+export interface DeploymentExtended {
   commitHash: string;
   commitMessage: string;
   branch: string;

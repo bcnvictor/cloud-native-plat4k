@@ -1,5 +1,5 @@
 import { api } from './client';
-import { Application, Deployment, AppMember, AppTemplate, EnvVar } from '@/types';
+import { Application, AppRuntimeStatus, AppMember, AppTemplate, EnvVar } from '@/types';
 
 export const appsApi = {
   async list(): Promise<Application[]> {
@@ -60,13 +60,6 @@ export const appsApi = {
     return res.data;
   },
 
-  async listDeployments(appId: number): Promise<Deployment[]> {
-    const res = await api.get<Deployment[]>('/deployments/', {
-      params: { application_id: appId },
-    });
-    return res.data;
-  },
-
   async getMembers(appId: number): Promise<AppMember[]> {
     const res = await api.get<AppMember[]>(`/apps/${appId}/members`);
     return res.data;
@@ -85,6 +78,11 @@ export const appsApi = {
 
   async deleteApp(id: number): Promise<void> {
     await api.delete(`/apps/${id}`);
+  },
+
+  async getStatus(appId: number): Promise<AppRuntimeStatus> {
+    const res = await api.get<AppRuntimeStatus>(`/apps/${appId}/status`);
+    return res.data;
   },
 
   async getEnvVars(_appId: number): Promise<EnvVar[]> {
