@@ -28,7 +28,9 @@ if ! docker compose ps frontend 2>/dev/null | grep -q "running\|Up"; then
 fi
 
 echo "==> Obtention du certificat Let's Encrypt pour ${GRAFANA_DOMAIN}..."
-docker compose --profile production run --rm certbot certonly \
+docker compose --profile production run --rm \
+    --entrypoint certbot \
+    certbot certonly \
     --webroot \
     -w /var/www/certbot \
     -d "${GRAFANA_DOMAIN}" \
