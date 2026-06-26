@@ -93,11 +93,26 @@ class ScaffoldingService:
                 cancellable=True,
             )
         except Exception as e:
-            logger.exception("Failed to create the GitLab project")
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Failed to create the GitLab project: {e}",
-            )
+            expected_project_path = f"{apps_namespace}/{app_slug}"
+            if "has already been taken" in str(e):
+                try:
+                    project_info = await anyio.to_thread.run_sync(
+                        partial(client.get_project_info, expected_project_path),
+                        cancellable=True,
+                    )
+                    logger.warning("Reusing existing GitLab project after create conflict: %s", expected_project_path)
+                except Exception:
+                    logger.exception("Failed to reuse existing GitLab project: %s", expected_project_path)
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"Failed to create the GitLab project: {e}",
+                    )
+            else:
+                logger.exception("Failed to create the GitLab project")
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Failed to create the GitLab project: {e}",
+                )
 
         new_project_path = project_info["path_with_namespace"]
         repo_url = project_info["web_url"]
