@@ -50,6 +50,8 @@ class ScaffoldingService:
         template: str,
         scaffolding_params: Optional[ScaffoldingParams] = None,
         target_namespace: Optional[str] = None,
+        gitlab_group_id: Optional[int] = None,
+        gitlab_group_path: Optional[str] = None,
     ) -> tuple[str, str]:
         """
         Runs the full scaffolding workflow.
@@ -138,7 +140,11 @@ class ScaffoldingService:
         params = scaffolding_params or ScaffoldingParams()
         batch.append({
             "file_path": "chart/values.yaml",
-            "content": self._build_values_yaml(app_slug, apps_namespace, params),
+            "content": self._build_values_yaml(
+                app_slug, apps_namespace, params,
+                gitlab_group_id=gitlab_group_id,
+                gitlab_group_path=gitlab_group_path,
+            ),
         })
         batch.append({
             "file_path": "chart/Chart.yaml",
@@ -197,7 +203,14 @@ class ScaffoldingService:
         except Exception:
             logger.exception("Rollback failed for project %s — manual cleanup required", project_path)
 
-    def _build_values_yaml(self, app_name: str, namespace: str, params: ScaffoldingParams) -> str:
+    def _build_values_yaml(
+        self,
+        app_name: str,
+        namespace: str,
+        params: ScaffoldingParams,
+        gitlab_group_id: Optional[int] = None,
+        gitlab_group_path: Optional[str] = None,
+    ) -> str:
         if params.image_repository:
             image_repo = params.image_repository
         else:
@@ -210,7 +223,8 @@ class ScaffoldingService:
             "app": {
                 "name": app_name,
                 "port": params.port,
-                "owner": "unknown",
+                "owner": gitlab_group_path or "unknown",
+                "groupId": str(gitlab_group_id) if gitlab_group_id else "",
             },
             "image": {
                 "repository": image_repo,

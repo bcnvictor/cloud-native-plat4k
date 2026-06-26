@@ -16,6 +16,11 @@ export const groupsApi = {
     await api.post('/users/me/sync-teams');
   },
 
+  async getGrafanaUrl(gitlabGroupId: number): Promise<{ url: string | null }> {
+    const res = await api.get<{ url: string | null }>(`/groups/${gitlabGroupId}/grafana-url`);
+    return res.data;
+  },
+
   findBySlug(groups: GroupMembership[], slug: string): GroupMembership | undefined {
     return groups.find((g) => g.full_path.split('/').pop() === slug);
   },
