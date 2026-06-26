@@ -81,6 +81,9 @@ resource "azurerm_kubernetes_cluster" "cnp" {
     type = "SystemAssigned"
   }
 
+  # OIDC Issuer must remain enabled as it cannot be disabled once enabled on Azure AKS
+  oidc_issuer_enabled = true
+
   # Réseau : kubenet est suffisant pour un cluster de dev/démo
   # Azure CNI serait nécessaire pour des intégrations réseau Azure avancées
   network_profile {
