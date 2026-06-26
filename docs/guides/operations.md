@@ -95,10 +95,36 @@ kubectl top nodes                          # métriques CPU/RAM (après déploie
 
 ## 8. Prochaines étapes après provisioning
 
-1. Déployer nginx-ingress-controller (une IP publique pour toutes les apps)
-2. Déployer kube-prometheus-stack (monitoring)
-3. Déployer la CNP elle-même (backend + frontend) dans le namespace `cnp`
-4. Créer les namespaces `dev` et `prod` pour les apps utilisateurs
+### 1. Déployer nginx-ingress-controller (une IP publique pour toutes les apps)
+Le contrôleur Ingress nginx est configuré dans le Terraform et utilise une adresse IP publique. 
+
+> [!IMPORTANT]
+> **Limite d'adresses IP publiques :**
+> L'abonnement étudiant Azure limite la création d'adresses IP publiques à **3 par région**.
+> Pour éviter tout conflit de quota (`PublicIPCountLimitReached`), le contrôleur Ingress doit être le seul service exposé directement (Type: `LoadBalancer`). Tous les autres composants (Prometheus, Loki, etc.) doivent utiliser le type `ClusterIP` et passer par l'Ingress.
+
+### 2. Déployer kube-prometheus-stack et Loki (monitoring)
+Installez les services de monitoring en type `ClusterIP` (ou patchez-les après installation) pour ne pas consommer d'IP publique Azure :
+```bash
+kubectl patch svc kube-prometheus-stack-prometheus -n monitoring -p '{"spec": {"type": "ClusterIP"}}'
+kubectl patch svc loki -n monitoring -p '{"spec": {"type": "ClusterIP"}}'
+```
+
+Puis, déployez la ressource Ingress de monitoring en l'ajoutant dans le dossier `argocd/` de votre dépôt `cnp-gitops` (déjà configuré sous `cnp-gitops/argocd/monitoring-ingress.yaml`). ArgoCD appliquera automatiquement la configuration sur le cluster.
+
+**Configuration sur la VM de Production :**
+1. Sur la VM de production, associez les noms de domaine à l'IP de l'Ingress (ex: `4.166.144.120`) dans le fichier `/etc/hosts` pour contourner la propagation DNS :
+   ```text
+   4.166.144.120 prometheus.cloud-native-plat4k.me loki.cloud-native-plat4k.me
+   ```
+2. Mettez à jour les secrets de la plateforme dans le **Vault de production** :
+   * `LOKI_URL` $\rightarrow$ `http://loki.cloud-native-plat4k.me`
+   * `PROMETHEUS_URL` $\rightarrow$ `http://prometheus.cloud-native-plat4k.me`
+   * `PROMETHEUS_PUBLIC_URL` $\rightarrow$ `http://prometheus.cloud-native-plat4k.me`
+3. Redémarrez le backend pour prendre en compte les modifications (`docker restart <backend-container>`).
+
+### 3. Déployer la CNP elle-même (backend + frontend) dans le namespace `cnp`
+### 4. Créer les namespaces `dev` et `prod` pour les apps utilisateurs
 
 ---
 
