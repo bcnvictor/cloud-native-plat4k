@@ -33,10 +33,15 @@ echo ""
 # en ignorant le CMD (qui lance alembic + uvicorn). Le conteneur backend
 # n'a donc pas besoin d'être démarré pour que cette commande fonctionne.
 
-info "Stamp HEAD (branche courante, ignore la révision inconnue)..."
-dc run --rm -T backend alembic -c /app/backend/alembic.ini stamp --purge head
+info "Upgrade head (applique les migrations connues de la branche courante)..."
+if dc run --rm -T backend alembic -c /app/backend/alembic.ini upgrade head; then
+  echo ""
+  info "DB synchronisée. Lance ./start.sh pour démarrer la plateforme."
+  exit 0
+fi
 
-info "Upgrade head (rattrape les nouvelles migrations de la branche)..."
+warn "Upgrade impossible. Stamp HEAD (ignore une révision inconnue), puis nouvel upgrade..."
+dc run --rm -T backend alembic -c /app/backend/alembic.ini stamp --purge head
 dc run --rm -T backend alembic -c /app/backend/alembic.ini upgrade head
 
 echo ""
