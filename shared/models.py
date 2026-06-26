@@ -183,12 +183,6 @@ class ApplicationStatus(str, Enum):
     DEGRADED = "degraded"
 
 
-class DeploymentStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-
 
 class ApplicationBase(BaseModel):
     name: str
@@ -231,6 +225,7 @@ class ApplicationScaffoldRequest(BaseModel):
     template: str  # name of the template repo in GITLAB_TEMPLATES_NAMESPACE (ex: "python-fastapi")
     scaffolding: Optional[ScaffoldingParams] = None
     skip_first_deploy: bool = False  # si True, ne provisionne pas ArgoCD au scaffold (utile quand la 1ère image n'est pas encore buildée)
+    target_cluster_id: Optional[int] = None
     owning_gitlab_group_id: Optional[int] = None
     expose: bool = False
 
@@ -265,7 +260,7 @@ class ApplicationUpdate(BaseModel):
     owner: Optional[str] = None
     origin: Optional[str] = None
     framework: Optional[str] = None
-    status: Optional[ApplicationStatus] = None
+    last_known_status: Optional[ApplicationStatus] = None
     target_cluster_id: Optional[int] = None
 
 
@@ -284,10 +279,15 @@ def app_internet_url(slug: str, env: str) -> str:
     return f"https://{app_hostname(slug, env)}"
 
 
+class CiStatusUpdate(BaseModel):
+    pipeline_status: str
+    app_status: Optional[ApplicationStatus] = None
+
+
 class ApplicationResponse(ApplicationBase):
     id: int
     slug: str
-    status: ApplicationStatus
+    last_known_status: ApplicationStatus
     target_cluster_id: Optional[int] = None
     ci_injected: Optional[bool] = None
     expose: Optional[bool] = None
@@ -303,16 +303,24 @@ class ApplicationResponse(ApplicationBase):
 class ClusterConnectionBase(BaseModel):
     name: str
     endpoint: str
+    prometheus_url: Optional[str] = None
+    loki_url: Optional[str] = None
+    argocd_url: Optional[str] = None
 
 
 class ClusterConnectionCreate(ClusterConnectionBase):
     kubeconfig: str
+    argocd_token: Optional[str] = None
 
 
 class ClusterConnectionUpdate(BaseModel):
     name: Optional[str] = None
     endpoint: Optional[str] = None
     kubeconfig: Optional[str] = None
+    prometheus_url: Optional[str] = None
+    loki_url: Optional[str] = None
+    argocd_url: Optional[str] = None
+    argocd_token: Optional[str] = None
 
 
 class ClusterConnectionResponse(ClusterConnectionBase):
@@ -326,22 +334,3 @@ class ClusterConnectionResponse(ClusterConnectionBase):
     class Config:
         from_attributes = True
 
-
-class DeploymentBase(BaseModel):
-    application_id: int
-    cluster_id: int
-    version: str
-
-
-class DeploymentCreate(DeploymentBase):
-    pass
-
-
-class DeploymentResponse(DeploymentBase):
-    id: int
-    status: DeploymentStatus
-    deployed_at: datetime
-    created_at: datetime
-
-    class Config:
-        from_attributes = True

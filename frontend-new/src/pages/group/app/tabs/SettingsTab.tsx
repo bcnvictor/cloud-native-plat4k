@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { IconEye, IconEyeOff, IconExternalLink, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconExternalLink, IconEye, IconEyeOff, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { appsApi } from '@/api/apps';
 import { Card } from '@/components/ui/Card';
@@ -9,7 +9,6 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { EnvVar } from '@/types';
-import { computeSlug } from '@/utils/slugify';
 import { appUrl } from '@/utils/appUrls';
 import { cn } from '@/utils/cn';
 
@@ -78,7 +77,7 @@ export function SettingsTab() {
 
   if (isLoading || !app) return null;
 
-  const appSlugComputed = computeSlug(app.name);
+  const appSlugComputed = app.slug;
 
   return (
     <div className="flex flex-col gap-5 max-w-2xl">
@@ -204,6 +203,7 @@ export function SettingsTab() {
           </>
         )}
       </Card>
+
       {/* Internet exposure */}
       <Card>
         <h2 className="text-sm font-medium text-foreground mb-4">Internet exposure</h2>

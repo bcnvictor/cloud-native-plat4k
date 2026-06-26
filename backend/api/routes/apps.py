@@ -1,5 +1,6 @@
 from typing import List
 
+import httpx
 from backend.api.deps import (
     _access_level_to_tier,
     get_current_user,
@@ -7,17 +8,22 @@ from backend.api.deps import (
     require_role,
     require_tier,
 )
+from backend.api.schemas.app_status import AppRuntimeStatus
 from backend.api.schemas.members import (
     AddMemberRequest,
     InviteMemberRequest,
     MemberRead,
     MyAccessResponse,
 )
-from backend.db.models import Application, AppMember, User
+from backend.argocd.client import get_argocd_client_for_cluster
+from backend.core.config import settings
+from backend.db.models import Application, AppMember, ClusterConnection, User
 from backend.db.session import get_db
+from backend.k8s.client import get_k8s_client_for_cluster
+from backend.k8s.manifests import sanitize_k8s_name
 from backend.services.app_service import AppService
 from backend.services.scaffolding_service import ScaffoldingService
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from shared.models import (
     ApplicationCreate,
@@ -26,6 +32,7 @@ from shared.models import (
     ApplicationResponse,
     ApplicationScaffoldRequest,
     ApplicationUpdate,
+    CiStatusUpdate,
     CnpTier,
     PostgreSQLCredentials,
     UserRole,
@@ -60,6 +67,85 @@ async def get_app(
     current_user: User = Depends(get_current_user),
 ):
     return await AppService(db).get_app(app_id)
+
+
+@router.get("/{app_id}/status", response_model=AppRuntimeStatus)
+async def get_app_runtime_status(
+    app_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Live K8s pods/replicas + ArgoCD sync/health for an application."""
+    app_result = await db.execute(select(Application).where(Application.id == app_id))
+    app = app_result.scalar_one_or_none()
+    if app is None:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    if not app.target_cluster_id:
+        raise HTTPException(status_code=409, detail="Application has no target cluster configured")
+
+    cluster_result = await db.execute(
+        select(ClusterConnection).where(ClusterConnection.id == app.target_cluster_id)
+    )
+    cluster = cluster_result.scalar_one_or_none()
+    if cluster is None:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    payload: dict = {}
+
+    # K8s pods & replicas — try prod then dev namespace (platform convention)
+    try:
+        k8s = get_k8s_client_for_cluster(cluster)
+        if k8s.is_configured():
+            resource_name = sanitize_k8s_name(app.name)
+            for ns in ("prod", "dev", settings.K8S_TARGET_NAMESPACE):
+                try:
+                    payload.update(k8s.get_pods_status(ns, resource_name))
+                    break
+                except Exception:
+                    continue
+    except Exception as e:
+        payload["k8s_error"] = str(e)
+
+    # ArgoCD sync / health / image / last sync (dev + prod)
+    try:
+        argocd = get_argocd_client_for_cluster(cluster)
+
+        async def _fetch_env(name: str) -> dict:
+            try:
+                data = await argocd.get_app_status(name)
+                s = data.get("status", {})
+                images = s.get("summary", {}).get("images", [])
+                return {
+                    "sync_status": s.get("sync", {}).get("status"),
+                    "health_status": s.get("health", {}).get("status"),
+                    "image": images[0] if images else None,
+                    "last_sync_at": s.get("operationState", {}).get("finishedAt"),
+                }
+            except Exception as exc:
+                return {"error": str(exc)}
+
+        dev_data = await _fetch_env(f"{app.slug}-dev")
+        prod_data = await _fetch_env(f"{app.slug}-prod")
+        payload["argocd_dev"] = dev_data
+        payload["argocd_prod"] = prod_data
+
+        # Persist last_known_status: prefer prod health, fallback to dev
+        from shared.models import ApplicationStatus
+        ref = prod_data if prod_data.get("health_status") else dev_data
+        health = ref.get("health_status")
+        sync = ref.get("sync_status")
+        if health in ("Degraded", "Missing"):
+            app.last_known_status = ApplicationStatus.DEGRADED
+        elif sync == "Synced" and health == "Healthy":
+            app.last_known_status = ApplicationStatus.DEPLOYED
+        await db.commit()
+    except (HTTPException, httpx.HTTPError) as e:
+        payload["argocd_error"] = str(e)
+    except Exception as e:
+        payload["argocd_error"] = str(e)
+
+    return AppRuntimeStatus(**payload)
 
 
 @router.get("/{app_id}/members", response_model=List[MemberRead])
@@ -205,6 +291,17 @@ async def update_app(
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     return await AppService(db).update_app(app_id, payload)
+
+
+@router.post("/{app_id}/ci-status", response_model=ApplicationResponse)
+async def update_app_ci_status(
+    app_id: int,
+    payload: CiStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """CI runner callback: update pipeline status on an application."""
+    return await AppService(db).update_ci_status(app_id, payload)
 
 
 @router.delete("/{app_id}")

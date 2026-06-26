@@ -8,7 +8,7 @@ export function useMonitoringConfig() {
     staleTime: Infinity,
     retry: false,
   });
-  return data?.grafana_url || null;
+  return data ?? null;
 }
 
 function grafanaExploreUrl(grafanaUrl: string, datasource: string, expr: string): string {
@@ -20,15 +20,28 @@ function grafanaExploreUrl(grafanaUrl: string, datasource: string, expr: string)
   return `${grafanaUrl}/explore?left=${encodeURIComponent(left)}`;
 }
 
-export function useGrafanaMetricUrl(grafanaUrl: string | null, appName: string, metric: 'cpu' | 'ram'): string | null {
-  if (!grafanaUrl) return null;
-  const expr = metric === 'cpu'
-    ? `sum by (label_app_kubernetes_io_name) (rate(container_cpu_usage_seconds_total{container!=''}[5m]) * on(namespace, pod) group_left(label_app_kubernetes_io_name) kube_pod_labels{label_app_kubernetes_io_managed_by='cnp', label_app_kubernetes_io_name='${appName}'})`
-    : `sum by (label_app_kubernetes_io_name) (container_memory_working_set_bytes{container!=''} * on(namespace, pod) group_left(label_app_kubernetes_io_name) kube_pod_labels{label_app_kubernetes_io_managed_by='cnp', label_app_kubernetes_io_name='${appName}'}) / 1024 / 1024`;
-  return grafanaExploreUrl(grafanaUrl, 'prometheus', expr);
+function prometheusDirectUrl(prometheusUrl: string, expr: string): string {
+  return `${prometheusUrl}/graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=0&g0.range_input=30m`;
 }
 
-export function useLokiUrl(grafanaUrl: string | null, appSlug: string): string | null {
-  if (!grafanaUrl) return null;
-  return grafanaExploreUrl(grafanaUrl, 'Loki', `{container="${appSlug}"}`);
+function cpuExpr(appSlug: string): string {
+  return `sum by (label_app_kubernetes_io_name) (rate(container_cpu_usage_seconds_total{container!=''}[5m]) * on(namespace, pod) group_left(label_app_kubernetes_io_name) kube_pod_labels{label_app_kubernetes_io_name='${appSlug}'})`;
+}
+
+function ramExpr(appSlug: string): string {
+  return `sum by (label_app_kubernetes_io_name) (container_memory_working_set_bytes{container!=''} * on(namespace, pod) group_left(label_app_kubernetes_io_name) kube_pod_labels{label_app_kubernetes_io_name='${appSlug}'}) / 1024 / 1024`;
+}
+
+export function useMetricUrl(appSlug: string, metric: 'cpu' | 'ram'): string | null {
+  const config = useMonitoringConfig();
+  const expr = metric === 'cpu' ? cpuExpr(appSlug) : ramExpr(appSlug);
+  if (config?.grafana_url) return grafanaExploreUrl(config.grafana_url, 'prometheus', expr);
+  if (config?.prometheus_url) return prometheusDirectUrl(config.prometheus_url, expr);
+  return null;
+}
+
+export function useLokiUrl(appSlug: string): string | null {
+  const config = useMonitoringConfig();
+  if (!config?.grafana_url) return null;
+  return grafanaExploreUrl(config.grafana_url, 'Loki', `{container="${appSlug}"}`);
 }

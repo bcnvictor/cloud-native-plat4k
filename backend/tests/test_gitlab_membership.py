@@ -89,7 +89,7 @@ async def app_with_project(db_session) -> Application:
         slug="test-app",
         owner="team-x",
         gitlab_project_id=42,
-        status=ApplicationStatus.READY,
+        last_known_status=ApplicationStatus.READY,
     )
     db_session.add(application)
     await db_session.commit()
@@ -103,7 +103,7 @@ async def app_without_project(db_session) -> Application:
         name="app-no-gl",
         slug="app-no-gl",
         owner="team-y",
-        status=ApplicationStatus.READY,
+        last_known_status=ApplicationStatus.READY,
     )
     db_session.add(application)
     await db_session.commit()

@@ -9,7 +9,6 @@ import { AppRow } from '@/components/AppRow';
 import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { computeSlug } from '@/utils/slugify';
 
 export function GroupApps() {
   const { slug } = useParams<{ slug: string }>();
@@ -100,13 +99,12 @@ export function GroupApps() {
       ) : (
         <div className="flex flex-col gap-2">
           {filteredApps.map((app) => {
-            const appSlug = computeSlug(app.name);
             return (
               <AppRow
                 key={app.id}
                 app={app}
                 healthStatus={getAppHealth(app)}
-                onClick={() => navigate(`/groups/${slug}/apps/${appSlug}`)}
+                onClick={() => navigate(`/groups/${slug}/apps/${app.slug}`)}
               />
             );
           })}

@@ -325,6 +325,8 @@ terraform.rc
 .githooks/
 CLAUDE.md
 graphify-out/
+.env.infra
+secret-tailscale.txt
 
 ### Playwright ###
 frontend/playwright-report/

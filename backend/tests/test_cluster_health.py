@@ -56,7 +56,7 @@ def test_unknown_cluster_offline_does_not_degrade_apps(monkeypatch, tmp_path):
             await db.flush()
             app = Application(
                 name="a1", slug="a1", owner="o",
-                status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
+                last_known_status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
             )
             db.add(app)
             await db.commit()
@@ -67,14 +67,14 @@ def test_unknown_cluster_offline_does_not_degrade_apps(monkeypatch, tmp_path):
             await db.refresh(cluster)
             await db.refresh(app)
             assert cluster.status == ClusterStatus.UNKNOWN
-            assert app.status == ApplicationStatus.DEPLOYED
+            assert app.last_known_status == ApplicationStatus.DEPLOYED
 
             # Cycle 2 : seuil atteint -> OFFLINE, mais transition depuis UNKNOWN => pas de cascade.
             await health_worker._process_cluster(db, cluster, failures, degraded, 2)
             await db.refresh(cluster)
             await db.refresh(app)
             assert cluster.status == ClusterStatus.OFFLINE
-            assert app.status == ApplicationStatus.DEPLOYED  # <- le fix
+            assert app.last_known_status == ApplicationStatus.DEPLOYED  # <- le fix
         await engine.dispose()
 
     asyncio.run(scenario())
@@ -99,7 +99,7 @@ def test_online_degrades_only_after_threshold(monkeypatch, tmp_path):
             await db.flush()
             app = Application(
                 name="a1", slug="a1", owner="o",
-                status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
+                last_known_status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
             )
             db.add(app)
             await db.commit()
@@ -110,14 +110,14 @@ def test_online_degrades_only_after_threshold(monkeypatch, tmp_path):
             await db.refresh(cluster)
             await db.refresh(app)
             assert cluster.status == ClusterStatus.ONLINE
-            assert app.status == ApplicationStatus.DEPLOYED
+            assert app.last_known_status == ApplicationStatus.DEPLOYED
 
             # Cycle 2 : seuil atteint -> OFFLINE, transition ONLINE->OFFLINE -> cascade.
             await health_worker._process_cluster(db, cluster, failures, degraded, 2)
             await db.refresh(cluster)
             await db.refresh(app)
             assert cluster.status == ClusterStatus.OFFLINE
-            assert app.status == ApplicationStatus.DEGRADED
+            assert app.last_known_status == ApplicationStatus.DEGRADED
         await engine.dispose()
 
     asyncio.run(scenario())
@@ -142,12 +142,12 @@ def test_recovery_restores_only_outage_degraded_apps(monkeypatch, tmp_path):
             await db.flush()
             app_a = Application(
                 name="a", slug="a", owner="o",
-                status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
+                last_known_status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
             )
             # app_b est DEGRADED pour une raison sans rapport (déploiement cassé).
             app_b = Application(
                 name="b", slug="b", owner="o",
-                status=ApplicationStatus.DEGRADED, target_cluster_id=cluster.id,
+                last_known_status=ApplicationStatus.DEGRADED, target_cluster_id=cluster.id,
             )
             db.add_all([app_a, app_b])
             await db.commit()
@@ -160,8 +160,8 @@ def test_recovery_restores_only_outage_degraded_apps(monkeypatch, tmp_path):
             await db.refresh(app_a)
             await db.refresh(app_b)
             assert cluster.status == ClusterStatus.OFFLINE
-            assert app_a.status == ApplicationStatus.DEGRADED
-            assert app_b.status == ApplicationStatus.DEGRADED
+            assert app_a.last_known_status == ApplicationStatus.DEGRADED
+            assert app_b.last_known_status == ApplicationStatus.DEGRADED
 
             # Reprise du cluster.
             holder["reachable"] = True
@@ -170,8 +170,8 @@ def test_recovery_restores_only_outage_degraded_apps(monkeypatch, tmp_path):
             await db.refresh(app_a)
             await db.refresh(app_b)
             assert cluster.status == ClusterStatus.ONLINE
-            assert app_a.status == ApplicationStatus.DEPLOYED   # restaurée
-            assert app_b.status == ApplicationStatus.DEGRADED   # intacte <- le fix
+            assert app_a.last_known_status == ApplicationStatus.DEPLOYED   # restaurée
+            assert app_b.last_known_status == ApplicationStatus.DEGRADED   # intacte <- le fix
         await engine.dispose()
 
     asyncio.run(scenario())
@@ -199,7 +199,7 @@ def test_non_file_ref_stays_unknown_and_skips_probe(monkeypatch):
             await db.flush()
             app = Application(
                 name="a1", slug="a1", owner="o",
-                status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
+                last_known_status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
             )
             db.add(app)
             await db.commit()
@@ -208,7 +208,7 @@ def test_non_file_ref_stays_unknown_and_skips_probe(monkeypatch):
             await db.refresh(cluster)
             await db.refresh(app)
             assert cluster.status == ClusterStatus.UNKNOWN    # pas OFFLINE
-            assert app.status == ApplicationStatus.DEPLOYED   # apps non dégradées
+            assert app.last_known_status == ApplicationStatus.DEPLOYED   # apps non dégradées
             assert probe_calls == []                          # sonde jamais appelée
         await engine.dispose()
 

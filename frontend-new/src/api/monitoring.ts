@@ -10,8 +10,8 @@ interface BackendLogEntry {
 }
 
 export const monitoringApi = {
-  async getConfig(): Promise<{ grafana_url: string }> {
-    const res = await api.get<{ grafana_url: string }>('/monitoring/config');
+  async getConfig(): Promise<{ grafana_url: string | null; prometheus_url: string | null; loki_url: string | null }> {
+    const res = await api.get<{ grafana_url: string | null; prometheus_url: string | null; loki_url: string | null }>('/monitoring/config');
     return res.data;
   },
 
