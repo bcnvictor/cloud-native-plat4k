@@ -81,6 +81,8 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_SERVER_ROOT_URL=${GRAFANA_URL:-http://localhost:3000}
       - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus-operated.monitoring.svc.cluster.local:9090}
       - LOKI_URL=${LOKI_URL:-http://loki.monitoring.svc.cluster.local:3100}
     extra_hosts:
@@ -119,11 +121,45 @@ services:
         VITE_API_URL: /api/v1
     ports:
       - "80:80"
+    volumes:
+      - certbot_webroot:/var/www/certbot:ro
     depends_on:
       backend:
         condition: service_started
     networks:
       - cnp_net
+
+  nginx-grafana:
+    profiles:
+      - production
+    image: nginx:alpine
+    ports:
+      - "443:443"
+    volumes:
+      - ./infra/grafana/nginx-grafana.conf.template:/etc/nginx/grafana.conf.template:ro
+      - ./infra/grafana/docker-entrypoint-grafana-nginx.sh:/docker-entrypoint-grafana-nginx.sh:ro
+      - letsencrypt:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot:ro
+    environment:
+      - GRAFANA_DOMAIN=${GRAFANA_DOMAIN}
+    entrypoint: ["/bin/sh", "/docker-entrypoint-grafana-nginx.sh"]
+    depends_on:
+      - grafana
+    networks:
+      - cnp_net
+    restart: unless-stopped
+
+  certbot:
+    profiles:
+      - production
+    image: certbot/certbot
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done;'
+    networks:
+      - cnp_net
+    restart: unless-stopped
 
 networks:
   cnp_net:
@@ -133,3 +169,5 @@ volumes:
   postgres_data:
   vault_data:
   grafana_data:
+  letsencrypt:
+  certbot_webroot:
