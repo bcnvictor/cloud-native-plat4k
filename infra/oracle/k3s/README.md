@@ -138,6 +138,18 @@ kubectl --kubeconfig cnp-k3s.yaml -n argocd get applications
 > contenant `CNP_CLUSTER_NAME: "cnp-k3s"`. Son pipeline CI poussera dans `argocd/k3s/{app}/`
 > du repo gitops, que cet ArgoCD synchronisera automatiquement.
 
+## Note : architecture arm64 et images multi-plateforme
+
+Le nœud k3s tourne sur un Ampere A1 (`arm64/aarch64`). Les runners GitLab CI standard
+sont `amd64`. Une image buildée uniquement en `amd64` crashe immédiatement sur ce nœud
+avec `exec format error` (exit code 255).
+
+Le pipeline CNP gère ça automatiquement via `docker buildx` + QEMU dans le job
+`docker-build` de `cnp-ci-modules` (manifest list `linux/amd64,linux/arm64`). **Aucune
+action par app** — relancer le pipeline suffit si une app a été buildée avant l'introduction
+de buildx. Si vous utilisez un pipeline custom en dehors de `cnp-ci-modules`, pensez à
+activer le multi-arch explicitement.
+
 ## Cleanup
 
 ```bash
