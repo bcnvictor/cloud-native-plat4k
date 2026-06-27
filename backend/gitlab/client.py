@@ -319,10 +319,11 @@ class GitLabClient:
         env_name: str,
         enabled: bool,
         host: str,
+        cluster_name: str = "aks",
         branch: str = "main",
     ) -> None:
-        """Patch ingress.{enabled,host,tls} in apps/{app_slug}/values-{env_name}.yaml in the gitops repo."""
-        file_path = f"apps/{app_slug}/values-{env_name}.yaml"
+        """Patch ingress.{enabled,host,tls} in apps/{cluster_name}/{app_slug}/values-{env_name}.yaml in the gitops repo."""
+        file_path = f"apps/{cluster_name}/{app_slug}/values-{env_name}.yaml"
         project = self.get_project(project_path)
         action = "update"
         try:

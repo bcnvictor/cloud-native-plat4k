@@ -1,5 +1,7 @@
-import { IconChevronDown, IconChevronUp, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronUp, IconCloud, IconPlus, IconServer, IconTrash } from '@tabler/icons-react';
+import { useQuery } from '@tanstack/react-query';
 import { CiDeployConfig } from '@/types';
+import { clustersApi } from '@/api/clusters';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { cn } from '@/utils/cn';
@@ -17,9 +19,63 @@ const TRIGGERS: Array<{ value: 'on_commit' | 'on_tag'; label: string; desc: stri
 ];
 
 export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
+  const { data: clusters = [] } = useQuery({
+    queryKey: ['clusters'],
+    queryFn: clustersApi.list,
+  });
+
   return (
     <div className="flex flex-col gap-5">
-      {/* Trigger selection */}
+      {/* Target cloud */}
+      <div className="flex flex-col gap-3">
+        <p className="text-sm font-medium text-foreground">Target cloud</p>
+        {clusters.length === 0 ? (
+          <p className="text-xs text-muted-foreground px-1">No clusters registered — default will be used.</p>
+        ) : (
+          clusters.map((c) => {
+            const selected = data.targetClusterId === c.id;
+            const isPrivate = !c.endpoint.includes('azure') && !c.endpoint.includes('aks');
+            return (
+              <button
+                key={c.id}
+                onClick={() => onChange({ targetClusterId: c.id })}
+                className={cn(
+                  'flex items-center gap-3 p-4 rounded-md border-2 text-left transition-colors bg-card',
+                  selected ? 'border-foreground' : 'border-border hover:border-muted-foreground'
+                )}
+              >
+                <span
+                  className={cn(
+                    'h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center',
+                    selected ? 'border-info' : 'border-muted-foreground'
+                  )}
+                >
+                  {selected && <span className="h-2 w-2 rounded-full bg-info block" />}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground">{c.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{c.endpoint}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {isPrivate ? (
+                    <IconServer size={13} className="text-muted-foreground" />
+                  ) : (
+                    <IconCloud size={13} className="text-muted-foreground" />
+                  )}
+                  <span className={cn(
+                    'text-xs px-2 py-0.5 rounded-full',
+                    c.status === 'online' ? 'bg-success/15 text-success-text' : 'bg-muted text-muted-foreground'
+                  )}>
+                    {c.status}
+                  </span>
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      {/* Deploy trigger */}
       <div className="flex flex-col gap-3">
         <p className="text-sm font-medium text-foreground">Deploy trigger</p>
         {TRIGGERS.map((t) => {

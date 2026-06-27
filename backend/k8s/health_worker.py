@@ -1,11 +1,8 @@
 import asyncio
 import logging
-import os
 from datetime import datetime, timezone
 
 import anyio
-from kubernetes import client, config
-from kubernetes.client import Configuration
 from shared.models import ApplicationStatus, ClusterStatus
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,34 +14,21 @@ from backend.db.session import AsyncSessionLocal
 logger = logging.getLogger(__name__)
 
 
-def probe_cluster(kubeconfig_path: str, context_name: str, timeout: int = 5) -> bool:
-    """Tente de lister les namespaces du cluster. Retourne True si joignable."""
-    api_client = None
+async def _probe(cluster: ClusterConnection) -> bool:
+    """Fetch le kubeconfig depuis Vault et liste les namespaces pour sonder le cluster."""
+    from backend.k8s.client import get_k8s_client_for_cluster
     try:
-        cfg = Configuration()
-        config.load_kube_config(
-            config_file=kubeconfig_path,
-            context=context_name,
-            client_configuration=cfg,
+        k8s = await anyio.to_thread.run_sync(
+            lambda: get_k8s_client_for_cluster(cluster),
+            cancellable=True,
         )
-        api_client = client.ApiClient(configuration=cfg)
-        core_v1 = client.CoreV1Api(api_client=api_client)
-        core_v1.list_namespace(_request_timeout=timeout)
+        if not k8s.is_configured():
+            return False
+        await anyio.to_thread.run_sync(k8s.healthcheck, cancellable=True)
         return True
     except Exception as e:
-        logger.debug("Probe failed for %s: %s", context_name, e)
+        logger.debug("Probe failed for %s: %s", cluster.name, e)
         return False
-    finally:
-        if api_client is not None:
-            api_client.close()
-
-
-async def _probe(cluster: ClusterConnection) -> bool:
-    """Lance la sonde bloquante dans un thread."""
-    return await anyio.to_thread.run_sync(
-        lambda: probe_cluster(cluster.kubeconfig_secret_ref, cluster.name),
-        cancellable=True,
-    )
 
 
 async def _cascade_offline(db: AsyncSession, cluster_id: int) -> set[int]:
@@ -94,19 +78,6 @@ async def _process_cluster(
 ) -> None:
     """Sonde un cluster, applique la transition de statut et la cascade, puis commit."""
     old_status = cluster.status
-    ref = cluster.kubeconfig_secret_ref
-
-    # Un ref qui n'est pas un fichier lisible (ex: nom d'un Secret K8s) reste UNKNOWN
-    # plutôt que faussement OFFLINE — sinon ses apps seraient dégradées à tort.
-    if not os.path.isfile(ref):
-        if old_status != ClusterStatus.UNKNOWN:
-            cluster.status = ClusterStatus.UNKNOWN
-            await db.commit()
-        logger.warning(
-            "Cluster %s: kubeconfig ref '%s' is not a readable file — status left UNKNOWN",
-            cluster.name, ref,
-        )
-        return
 
     reachable = await _probe(cluster)
 

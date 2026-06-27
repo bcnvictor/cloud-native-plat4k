@@ -1,4 +1,5 @@
-import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCpu, IconDatabase, IconExternalLink, IconRefresh, IconServer, IconTerminal2 } from '@tabler/icons-react';
+import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCloud, IconCpu, IconDatabase, IconExternalLink, IconRefresh, IconServer, IconTerminal2 } from '@tabler/icons-react';
+import { useQuery } from '@tanstack/react-query';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { MetricCard } from '@/components/MetricCard';
 import { Card } from '@/components/ui/Card';
@@ -9,6 +10,8 @@ import { useAppMetrics } from '@/hooks/useAppMetrics';
 import { useAppStatus } from '@/hooks/useAppStatus';
 import { useMetricUrl } from '@/hooks/useMonitoringConfig';
 import { appUrl } from '@/utils/appUrls';
+import { clustersApi } from '@/api/clusters';
+import { cn } from '@/utils/cn';
 import type { ArgoEnvStatus } from '@/types';
 
 function SyncBadge({ status }: { status: string | null | undefined }) {
@@ -80,6 +83,10 @@ export function OverviewTab() {
   const cpuUrl = useMetricUrl(app?.slug ?? '', 'cpu');
   const ramUrl = useMetricUrl(app?.slug ?? '', 'ram');
   const { data: runtimeStatus } = useAppStatus(app?.id);
+  const { data: clusters = [] } = useQuery({ queryKey: ['clusters'], queryFn: clustersApi.list });
+  const cluster = app?.target_cluster_id
+    ? clusters.find((c) => c.id === app.target_cluster_id)
+    : undefined;
 
   const lastSync =
     runtimeStatus?.argocd_prod?.last_sync_at ??
@@ -149,6 +156,35 @@ export function OverviewTab() {
           <ArgoCard title="Production environment" env={runtimeStatus?.argocd_prod} />
           <ArgoCard title="Dev environment" env={runtimeStatus?.argocd_dev} />
         </div>
+      )}
+
+      {/* Cloud target */}
+      {cluster && (
+        <Card>
+          <h2 className="text-sm font-medium text-foreground mb-3">Cloud target</h2>
+          <div className="flex items-center gap-2">
+            {cluster.name.toLowerCase().includes('k3s') || cluster.name.toLowerCase().includes('oracle') || cluster.name.toLowerCase().includes('priv') ? (
+              <IconServer size={14} className="text-purple-400 shrink-0" />
+            ) : (
+              <IconCloud size={14} className="text-blue-400 shrink-0" />
+            )}
+            <span className={cn(
+              'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+              cluster.name.toLowerCase().includes('k3s') || cluster.name.toLowerCase().includes('oracle') || cluster.name.toLowerCase().includes('priv')
+                ? 'bg-purple-500/10 text-purple-400'
+                : 'bg-blue-500/10 text-blue-400'
+            )}>
+              {cluster.name}
+            </span>
+            <span className="text-xs text-muted-foreground">{cluster.endpoint}</span>
+            <span className={cn(
+              'ml-auto text-xs px-2 py-0.5 rounded-full',
+              cluster.status === 'online' ? 'bg-success/15 text-success-text' : 'bg-muted text-muted-foreground'
+            )}>
+              {cluster.status}
+            </span>
+          </div>
+        </Card>
       )}
 
       {/* Quick access */}

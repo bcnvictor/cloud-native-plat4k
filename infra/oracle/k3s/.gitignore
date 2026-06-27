@@ -1,0 +1,4 @@
+# Kubeconfigs récupérés (contiennent les credentials d'admin du cluster) — jamais versionnés.
+cnp-k3s.yaml
+*.kubeconfig
+*.yaml.local

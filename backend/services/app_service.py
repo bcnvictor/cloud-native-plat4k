@@ -64,6 +64,13 @@ class AppService:
         cluster = result.scalar_one_or_none()
         return cluster.id if cluster else None
 
+    async def _resolve_cluster_name(self, cluster_id: int | None) -> str:
+        if not cluster_id:
+            return "aks"
+        result = await self.db.execute(select(ClusterConnection).where(ClusterConnection.id == cluster_id))
+        cluster = result.scalar_one_or_none()
+        return cluster.name if cluster else "aks"
+
     async def list_apps(self) -> list[Application]:
         result = await self.db.execute(select(Application).order_by(Application.created_at.desc()))
         return list(result.scalars().all())
@@ -78,6 +85,17 @@ class AppService:
     async def scaffold_app(self, payload: ApplicationScaffoldRequest) -> Application:
         slug = _validated_slug(payload.name)
         target_namespace = await self._resolve_group_namespace(payload.owning_gitlab_group_id)
+
+        group_path: str | None = None
+        if payload.owning_gitlab_group_id:
+            from backend.db.models import GitLabGroup
+            group_result = await self.db.execute(
+                select(GitLabGroup).where(GitLabGroup.gitlab_group_id == payload.owning_gitlab_group_id)
+            )
+            group = group_result.scalar_one_or_none()
+            if group:
+                group_path = group.full_path
+
         from backend.services.scaffolding_service import ScaffoldingService
         svc = ScaffoldingService(self.db)
         repo_url, project_path = await svc.scaffold(
@@ -87,6 +105,8 @@ class AppService:
             scaffolding_params=payload.scaffolding,
             target_namespace=target_namespace,
             expose=payload.expose,
+            gitlab_group_id=payload.owning_gitlab_group_id,
+            gitlab_group_path=group_path,
         )
         data = {
             "name": payload.name,
@@ -154,7 +174,8 @@ class AppService:
         }
         app = await self._save_app(data)
         if payload.expose and bot and settings.GITOPS_REPO_URL:
-            await self._push_ingress_to_gitops(bot, slug)
+            cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
+            await self._push_ingress_to_gitops(bot, slug, cluster_name)
         return app
 
     async def external_import_app(self, payload: ApplicationExternalImportRequest) -> Application:
@@ -217,7 +238,8 @@ class AppService:
         }
         app = await self._save_app(data, skip_ci=payload.raw)
         if payload.expose and bot and settings.GITOPS_REPO_URL:
-            await self._push_ingress_to_gitops(bot, slug)
+            cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
+            await self._push_ingress_to_gitops(bot, slug, cluster_name)
         return app
 
     async def _resolve_group_namespace(self, owning_gitlab_group_id: int | None) -> str | None:
@@ -339,6 +361,7 @@ class AppService:
         bot = _get_bot_client()
         if not skip_ci and bot and app.repo_url and app.origin in ("scaffolded", "onboarded", "imported"):
             try:
+                cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
                 webhook_url = f"{settings.CNP_API_BASE_URL}{settings.API_V1_STR}/webhooks/gitlab"
                 await anyio.to_thread.run_sync(
                     lambda: inject_ci(
@@ -353,6 +376,7 @@ class AppService:
                         webhook_url=webhook_url,
                         webhook_secret=settings.GITLAB_WEBHOOK_SECRET or "",
                         skip_first_run=skip_gitops,
+                        cluster_name=cluster_name,
                     ),
                     cancellable=True,
                 )
@@ -368,7 +392,7 @@ class AppService:
 
         return app
 
-    async def _push_ingress_to_gitops(self, bot: "GitLabClient", app_slug: str, enabled: bool = True) -> None:
+    async def _push_ingress_to_gitops(self, bot: "GitLabClient", app_slug: str, cluster_name: str = "aks", enabled: bool = True) -> None:
         """Best-effort: write ingress settings into gitops values files. Never raises."""
         from shared.models import app_hostname
         try:
@@ -376,7 +400,7 @@ class AppService:
             for env_name in ("dev", "prod"):
                 host = app_hostname(app_slug, env_name) if enabled else ""
                 await anyio.to_thread.run_sync(
-                    lambda en=env_name, h=host: bot.upsert_gitops_ingress(gitops_path, app_slug, en, enabled, h),
+                    lambda en=env_name, h=host: bot.upsert_gitops_ingress(gitops_path, app_slug, en, enabled, h, cluster_name),
                     cancellable=True,
                 )
         except Exception:
@@ -391,12 +415,13 @@ class AppService:
                 detail="GITLAB_BOT_TOKEN or GITOPS_REPO_URL not configured",
             )
         from shared.models import app_hostname
+        cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
         gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
         for env_name in ("dev", "prod"):
             host = app_hostname(app.slug, env_name) if expose else ""
             try:
                 await anyio.to_thread.run_sync(
-                    lambda en=env_name, h=host: bot.upsert_gitops_ingress(gitops_path, app.slug, en, expose, h),
+                    lambda en=env_name, h=host: bot.upsert_gitops_ingress(gitops_path, app.slug, en, expose, h, cluster_name),
                     cancellable=True,
                 )
             except Exception:
@@ -486,7 +511,9 @@ class AppService:
 
     async def delete_app(self, app_id: int) -> None:
         app = await self.get_app(app_id)
-        
+
+        cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
+
         # 1. Clean up GitOps repo (ArgoCD manifests)
         bot = _get_bot_client()
         if bot and settings.GITOPS_REPO_URL:
@@ -495,7 +522,7 @@ class AppService:
                 await anyio.to_thread.run_sync(
                     lambda: bot.delete_directory_contents(
                         project_path=gitops_path,
-                        directory_path=f"apps/{app.slug}",
+                        directory_path=f"apps/{cluster_name}/{app.slug}",
                         commit_message=f"chore: delete app {app.name} from gitops apps"
                     ),
                     cancellable=True
@@ -506,7 +533,7 @@ class AppService:
                 await anyio.to_thread.run_sync(
                     lambda: bot.delete_directory_contents(
                         project_path=gitops_path,
-                        directory_path=f"argocd/{app.slug}",
+                        directory_path=f"argocd/{cluster_name}/{app.slug}",
                         commit_message=f"chore: delete app {app.name} from gitops argocd"
                     ),
                     cancellable=True

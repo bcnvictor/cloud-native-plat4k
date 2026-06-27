@@ -1,0 +1,67 @@
+# nginx-test.yaml — Déploiement de validation du cluster privé k3s `cnp-k3s` (4K-45, critère #4).
+#
+# Test direct (hors CNP) prouvant que le cluster privé accepte des charges :
+#   KUBECONFIG=./cnp-k3s.yaml kubectl --context cnp-k3s apply -f nginx-test.yaml
+#   KUBECONFIG=./cnp-k3s.yaml kubectl --context cnp-k3s -n cnp-demo rollout status deploy/nginx-test
+#   KUBECONFIG=./cnp-k3s.yaml kubectl --context cnp-k3s -n cnp-demo port-forward svc/nginx-test 8080:80
+#
+# Cleanup :
+#   KUBECONFIG=./cnp-k3s.yaml kubectl --context cnp-k3s delete -f nginx-test.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cnp-demo
+  labels:
+    managed-by: cnp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-test
+  namespace: cnp-demo
+  labels:
+    app: nginx-test
+    managed-by: cnp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-test
+  template:
+    metadata:
+      labels:
+        app: nginx-test
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-test
+  namespace: cnp-demo
+  labels:
+    app: nginx-test
+    managed-by: cnp
+spec:
+  selector:
+    app: nginx-test
+  ports:
+    - port: 80
+      targetPort: 80

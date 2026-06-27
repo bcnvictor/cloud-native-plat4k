@@ -51,6 +51,8 @@ class ScaffoldingService:
         scaffolding_params: Optional[ScaffoldingParams] = None,
         target_namespace: Optional[str] = None,
         expose: bool = False,
+        gitlab_group_id: Optional[int] = None,
+        gitlab_group_path: Optional[str] = None,
     ) -> tuple[str, str]:
         """
         Runs the full scaffolding workflow.
@@ -153,7 +155,11 @@ class ScaffoldingService:
 
         params = scaffolding_params or ScaffoldingParams()
         overrides: dict[str, str] = {
-            "chart/values.yaml": self._build_values_yaml(app_slug, apps_namespace, params),
+            "chart/values.yaml": self._build_values_yaml(
+                app_slug, apps_namespace, params,
+                gitlab_group_id=gitlab_group_id,
+                gitlab_group_path=gitlab_group_path,
+            ),
             "chart/Chart.yaml": self._build_chart_yaml(app_slug, params),
         }
         if "postgresql" in params.services and "chart/templates/postgresql.yaml" not in template_paths:
@@ -218,7 +224,14 @@ class ScaffoldingService:
         except Exception:
             logger.exception("Rollback failed for project %s — manual cleanup required", project_path)
 
-    def _build_values_yaml(self, app_name: str, namespace: str, params: ScaffoldingParams) -> str:
+    def _build_values_yaml(
+        self,
+        app_name: str,
+        namespace: str,
+        params: ScaffoldingParams,
+        gitlab_group_id: Optional[int] = None,
+        gitlab_group_path: Optional[str] = None,
+    ) -> str:
         if params.image_repository:
             image_repo = params.image_repository
         else:
@@ -231,7 +244,8 @@ class ScaffoldingService:
             "app": {
                 "name": app_name,
                 "port": params.port,
-                "owner": "unknown",
+                "owner": gitlab_group_path or "unknown",
+                "groupId": str(gitlab_group_id) if gitlab_group_id else "",
             },
             "image": {
                 "repository": image_repo,
