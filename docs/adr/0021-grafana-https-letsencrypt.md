@@ -1,4 +1,4 @@
-# ADR-0020 : Exposition HTTPS de Grafana via Let's Encrypt + nginx sur la VM OCI
+# ADR-0021 : Exposition HTTPS de Grafana via Let's Encrypt + nginx sur la VM OCI
 
 ## Statut
 
@@ -6,7 +6,7 @@ Accepted : 2026-06-27 — Implémentation complète. Grafana accessible sur `htt
 
 ## Contexte
 
-Suite à ADR-0019, le Grafana central est déployé sur la VM OCI (`cnp-control`). Le besoin initial était d'exposer Grafana publiquement pour les opérateurs. Le ticket 4K-97 ajoute une contrainte nouvelle : les dashboards Grafana doivent être **embarqués en iframe** dans le frontend CNP (onglet "Métriques" de chaque groupe).
+Suite à ADR-0020, le Grafana central est déployé sur la VM OCI (`cnp-control`). Le besoin initial était d'exposer Grafana publiquement pour les opérateurs. Le ticket 4K-97 ajoute une contrainte nouvelle : les dashboards Grafana doivent être **embarqués en iframe** dans le frontend CNP (onglet "Métriques" de chaque groupe).
 
 ### Contrainte mixed-content
 
@@ -99,5 +99,5 @@ Négatif / Dette :
 - `nginx-grafana` est un SPOF : si le container plante, Grafana n'est plus accessible. `restart: unless-stopped` en atténue l'impact.
 
 Neutre :
-- Grafana reste sur la VM OCI (pas dans le cluster Kubernetes). Cohérent avec ADR-0019.
+- Grafana reste sur la VM OCI (pas dans le cluster Kubernetes). Cohérent avec ADR-0020.
 - Le port 3000 de Grafana n'est pas exposé directement — uniquement accessible via nginx sur :443.

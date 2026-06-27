@@ -1,6 +1,6 @@
 # Architecture réseau — CNP multi-cluster avec Tailscale
 
-Ce document décrit la topologie réseau de la plateforme CNP, les flux de communication entre ses composants, et le rôle de Tailscale. Pour les décisions de conception, voir [ADR-0018](../adr/0018-tailscale-reseau-overlay.md) et [ADR-0019](../adr/0019-observabilite-centralisee.md).
+Ce document décrit la topologie réseau de la plateforme CNP, les flux de communication entre ses composants, et le rôle de Tailscale. Pour les décisions de conception, voir [ADR-0019](../adr/0019-tailscale-reseau-overlay.md) et [ADR-0020](../adr/0020-observabilite-centralisee.md).
 
 ## Vue d'ensemble
 

@@ -1,4 +1,4 @@
-# ADR-0017 : Refonte UI/UX du frontend (frontend-new/)
+# ADR-0018 : Refonte UI/UX du frontend (frontend-new/)
 
 ## Statut
 

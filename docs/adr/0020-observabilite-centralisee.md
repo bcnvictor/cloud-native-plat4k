@@ -1,4 +1,4 @@
-# ADR-0019 : Observabilité centralisée — Grafana multi-sources
+# ADR-0020 : Observabilité centralisée — Grafana multi-sources
 
 ## Statut
 
@@ -45,7 +45,7 @@ Grafana central (VM contrôle ou cluster dédié)
   └─ Datasource : Loki cnp-aks         → http://10.x.x.x:3100     (via Tailscale)
 ```
 
-La connectivité Grafana → clusters internes est assurée par Tailscale (voir ADR-0018).
+La connectivité Grafana → clusters internes est assurée par Tailscale (voir ADR-0019).
 
 ### Intégration avec l'UI CNP
 
@@ -102,7 +102,7 @@ Positif :
 - Vue unifiée multi-cluster pour tous les opérateurs depuis un seul Grafana.
 - Dashboards déployés et versionnés une seule fois.
 - L'UI CNP obtient ses escape hatches Grafana Explore sans configuration par cluster.
-- Cohérence avec ADR-0018 : Tailscale assure la connectivité Grafana → clusters internes.
+- Cohérence avec ADR-0019 : Tailscale assure la connectivité Grafana → clusters internes.
 
 Négatif / Dette :
 - Le Grafana central est un SPOF de l'observabilité — une panne l'impacte en totalité (vs. une panne par cluster avec l'approche distribuée). Acceptable pour la taille de la flotte actuelle.
