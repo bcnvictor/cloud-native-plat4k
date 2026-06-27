@@ -68,3 +68,9 @@ Négatif / Dette :
 
 Neutre :
 - Le namespace cible global (`K8S_TARGET_NAMESPACE`) de l'ADR-0008 est inchangé.
+- **Architecture d'image** : le nœud `cnp-k3s` est `arm64/aarch64` (Ampere A1). Les runners
+  GitLab CI standard sont `amd64`. Toute image buildée en `amd64` seul échoue sur k3s avec
+  `exec format error`. Le job `docker-build` de `cnp-ci-modules` utilise `docker buildx`
+  avec QEMU (`--platform linux/amd64,linux/arm64`) pour produire un manifest list
+  multi-plateforme — aucune modification par app n'est requise, mais le build CI est
+  légèrement plus long (~+30-60 s selon la taille de l'image).
