@@ -19,6 +19,7 @@ set -euo pipefail
 
 PUBLIC_IP="${PUBLIC_IP:-}"
 SSH_HOST="${SSH_HOST:-}"
+SSH_KEY="${SSH_KEY:-}"
 OUT="${OUT:-cnp-k3s.yaml}"
 CONTEXT_NAME="cnp-k3s"
 
@@ -27,12 +28,17 @@ if [[ -z "${PUBLIC_IP}" ]]; then
   exit 1
 fi
 
+SSH_OPTS=(-o StrictHostKeyChecking=no)
+if [[ -n "${SSH_KEY}" ]]; then
+  SSH_OPTS+=(-i "${SSH_KEY}")
+fi
+
 TMP="$(mktemp)"
 trap 'rm -f "${TMP}"' EXIT
 
 if [[ -n "${SSH_HOST}" ]]; then
   echo ">> Récupération du kubeconfig depuis ${SSH_HOST}…"
-  ssh "${SSH_HOST}" "sudo cat /etc/rancher/k3s/k3s.yaml" > "${TMP}"
+  ssh "${SSH_OPTS[@]}" "${SSH_HOST}" "sudo cat /etc/rancher/k3s/k3s.yaml" > "${TMP}"
 else
   echo ">> Lecture du kubeconfig local /etc/rancher/k3s/k3s.yaml…"
   sudo cat /etc/rancher/k3s/k3s.yaml > "${TMP}"

@@ -115,6 +115,7 @@ ArgoCD permet à k3s de se synchroniser sur `argocd/k3s/` du repo `cnp-gitops`, 
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo update
 helm install argocd argo/argo-cd \
+  --version 7.9.1 \
   --namespace argocd --create-namespace \
   --set configs.params."server.insecure"=true \
   --kubeconfig cnp-k3s.yaml
