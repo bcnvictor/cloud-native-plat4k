@@ -67,6 +67,7 @@ export function NewApp() {
           template: step1.framework,
           owning_gitlab_group_id: group?.gitlab_group_id,
           expose: step3.expose,
+          target_cluster_id: step3.targetClusterId ?? undefined,
         });
       } else {
         return appsApi.onboardApp({
