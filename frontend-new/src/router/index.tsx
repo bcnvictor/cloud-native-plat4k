@@ -9,7 +9,6 @@ import { GroupApps } from '@/pages/group/GroupApps';
 import { GroupSettings } from '@/pages/group/GroupSettings';
 import { AppDetailLayout } from '@/layouts/AppDetailLayout';
 import { OverviewTab } from '@/pages/group/app/tabs/OverviewTab';
-import { DeploymentsTab } from '@/pages/group/app/tabs/DeploymentsTab';
 import { LogsTab } from '@/pages/group/app/tabs/LogsTab';
 import { SettingsTab } from '@/pages/group/app/tabs/SettingsTab';
 import { NewApp } from '@/pages/group/app/NewApp';
@@ -20,6 +19,7 @@ import { AdminSettings } from '@/pages/admin/AdminSettings';
 import { AdminUsers } from '@/pages/admin/AdminUsers';
 import { AdminAudit } from '@/pages/admin/AdminAudit';
 import { Profile } from '@/pages/Profile';
+import { GroupMetrics } from '@/pages/group/GroupMetrics';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -39,11 +39,11 @@ export const router = createBrowserRouter([
             element: <AppDetailLayout />,
             children: [
               { index: true, element: <OverviewTab /> },
-              { path: 'deployments', element: <DeploymentsTab /> },
               { path: 'logs', element: <LogsTab /> },
               { path: 'settings', element: <SettingsTab /> },
             ],
           },
+          { path: '/groups/:slug/metrics', element: <GroupMetrics /> },
           { path: '/groups/:slug/settings', element: <GroupSettings /> },
         ],
       },

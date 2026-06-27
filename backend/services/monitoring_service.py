@@ -3,8 +3,6 @@ import time
 
 import httpx
 
-from backend.core.config import settings
-
 _LEVEL_RE = re.compile(r'\b(ERROR|WARN(?:ING)?|INFO|DEBUG|CRITICAL|FATAL)\b', re.IGNORECASE)
 
 # sort_desc n'est pas supporté sur les range queries — on groupe par app seulement
@@ -37,11 +35,11 @@ async def _query_range(client: httpx.AsyncClient, promql: str, start: int, end: 
     return resp.json()["data"]["result"]
 
 
-async def get_metrics() -> dict:
+async def get_metrics(prometheus_url: str) -> dict:
     now   = int(time.time())
     start = now - RANGE_SECONDS
 
-    async with httpx.AsyncClient(base_url=settings.PROMETHEUS_URL) as client:
+    async with httpx.AsyncClient(base_url=prometheus_url) as client:
         cpu_result = await _query_range(client, _CPU_QUERY, start, now)
         ram_result = await _query_range(client, _RAM_QUERY, start, now)
 
@@ -50,7 +48,7 @@ async def get_metrics() -> dict:
     for r in cpu_result:
         name = r["metric"].get("label_app_kubernetes_io_name", "unknown")
         cpu_map[name] = [
-            {"t": int(float(ts)), "v": round(float(val) * 100, 1)}  # cores/s → %
+            {"t": int(float(ts)), "v": round(float(val) * 1000, 1)}  # cores/s → millicores
             for ts, val in r["values"]
         ]
 
@@ -88,7 +86,7 @@ def _detect_level(line: str, stream_labels: dict) -> str:
     return "INFO"
 
 
-async def get_logs(namespace: str | None = None, app: str | None = None, limit: int = 50) -> list[dict]:
+async def get_logs(loki_url: str, namespace: str | None = None, app: str | None = None, limit: int = 50) -> list[dict]:
     filters = []
     if namespace:
         filters.append(f'namespace="{namespace}"')
@@ -101,7 +99,7 @@ async def get_logs(namespace: str | None = None, app: str | None = None, limit: 
     now_ns = int(time.time() * 1e9)
     start_ns = now_ns - int(3600 * 1e9)
 
-    async with httpx.AsyncClient(base_url=settings.LOKI_URL) as client:
+    async with httpx.AsyncClient(base_url=loki_url) as client:
         resp = await client.get(
             "/loki/api/v1/query_range",
             params={"query": logql, "limit": limit, "start": start_ns, "end": now_ns, "direction": "backward"},

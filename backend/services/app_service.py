@@ -10,6 +10,7 @@ from shared.models import (
     ApplicationScaffoldRequest,
     ApplicationStatus,
     ApplicationUpdate,
+    CiStatusUpdate,
     ClusterStatus,
     MemberStatus,
     compute_slug,
@@ -56,6 +57,13 @@ class AppService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def _resolve_target_cluster_id(self, explicit: int | None) -> int | None:
+        if explicit is not None:
+            return explicit
+        result = await self.db.execute(select(ClusterConnection).order_by(ClusterConnection.id).limit(1))
+        cluster = result.scalar_one_or_none()
+        return cluster.id if cluster else None
+
     async def list_apps(self) -> list[Application]:
         result = await self.db.execute(select(Application).order_by(Application.created_at.desc()))
         return list(result.scalars().all())
@@ -70,6 +78,17 @@ class AppService:
     async def scaffold_app(self, payload: ApplicationScaffoldRequest) -> Application:
         slug = _validated_slug(payload.name)
         target_namespace = await self._resolve_group_namespace(payload.owning_gitlab_group_id)
+
+        group_path: str | None = None
+        if payload.owning_gitlab_group_id:
+            from backend.db.models import GitLabGroup
+            group_result = await self.db.execute(
+                select(GitLabGroup).where(GitLabGroup.gitlab_group_id == payload.owning_gitlab_group_id)
+            )
+            group = group_result.scalar_one_or_none()
+            if group:
+                group_path = group.full_path
+
         from backend.services.scaffolding_service import ScaffoldingService
         svc = ScaffoldingService(self.db)
         repo_url, project_path = await svc.scaffold(
@@ -78,6 +97,8 @@ class AppService:
             template=payload.template,
             scaffolding_params=payload.scaffolding,
             target_namespace=target_namespace,
+            gitlab_group_id=payload.owning_gitlab_group_id,
+            gitlab_group_path=group_path,
         )
         data = {
             "name": payload.name,
@@ -87,7 +108,7 @@ class AppService:
             "origin": "scaffolded",
             "framework": payload.template,
             "owning_gitlab_group_id": payload.owning_gitlab_group_id,
-            "target_cluster_id": payload.target_cluster_id,
+            "target_cluster_id": await self._resolve_target_cluster_id(payload.target_cluster_id),
         }
         return await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
 
@@ -138,7 +159,7 @@ class AppService:
             "repo_url": normalized_url,
             "origin": "onboarded",
             "framework": framework or "generic",
-            "target_cluster_id": payload.target_cluster_id,
+            "target_cluster_id": await self._resolve_target_cluster_id(payload.target_cluster_id),
             "owning_gitlab_group_id": payload.owning_gitlab_group_id,
         }
         return await self._save_app(data)
@@ -386,6 +407,18 @@ class AppService:
         await self.db.refresh(app)
         return app
 
+    async def update_ci_status(self, app_id: int, payload: CiStatusUpdate) -> Application:
+        app = await self.get_app(app_id)
+        app.last_pipeline_status = payload.pipeline_status
+        if payload.app_status is not None:
+            app.last_known_status = payload.app_status
+        elif payload.pipeline_status == "success" and app.last_known_status == ApplicationStatus.ONBOARDING:
+            app.last_known_status = ApplicationStatus.READY
+            logger.info("App %s promoted to READY after successful CI run", app.id)
+        await self.db.commit()
+        await self.db.refresh(app)
+        return app
+
     async def get_postgresql_credentials(self, app_id: int, namespace: str):
         from kubernetes.client.exceptions import ApiException
         from shared.models import PostgreSQLCredentials
@@ -531,15 +564,15 @@ class AppService:
                     owner='k8s-sync',
                     origin='kubernetes',
                     repo_url=image,
-                    status=app_status,
+                    last_known_status=app_status,
                 )
                 self.db.add(app)
                 logger.info("Synced new app from K8s: %s", name)
                 synced.append(app)
             else:
                 # Point 2 : ne pas écraser un statut READY avec ONBOARDING
-                if app_status == ApplicationStatus.DEPLOYED or existing.status != ApplicationStatus.READY:
-                    existing.status = app_status
+                if app_status == ApplicationStatus.DEPLOYED or existing.last_known_status != ApplicationStatus.READY:
+                    existing.last_known_status = app_status
                 logger.info("Updated app status from K8s: %s → %s", name, app_status.value)
                 synced.append(existing)
 

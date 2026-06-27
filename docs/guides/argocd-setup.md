@@ -76,3 +76,70 @@ Ces scénarios ont été conçus pour prouver la résilience de notre architectu
 - **Mécanisme `$ref` dans Multiple Sources** : Quand une source porte `ref: <nom>`, elle devient une source de référence (pas de déploiement direct) et expose son contenu sous la variable `$<nom>`. Les autres sources peuvent alors l'utiliser dans leurs `valueFiles` (ex: `$gitops/apps/my-app/values-dev.yaml`). `$<nom>` pointe toujours sur la **racine** du repo référencé, indépendamment de tout champ `path`. Cette feature requiert ArgoCD v2.6+.
 - L'utilisation des finalizers est vitale pour éviter de laisser des ressources orphelines, surtout sur un cluster AKS aux ressources limitées.
 - **Sécurité** : Aucune clé Kubernetes n'a eu besoin d'être exportée vers GitLab pour le déploiement. L'AKS vient tirer l'état lui-même.
+
+---
+
+## 4. Configuration Post-Installation (Opérations 4K-90)
+
+### 4.1 Conventions de nommage
+
+La plateforme repose sur des conventions strictes entre le slug d'une app et ses ressources ArgoCD/K8s :
+
+| Élément | Convention | Exemple (slug `my-app`) |
+|---------|-----------|------------------------|
+| Application ArgoCD dev | `{slug}-dev` | `my-app-dev` |
+| Application ArgoCD prod | `{slug}-prod` | `my-app-prod` |
+| Namespace K8s dev | `dev` | `dev` |
+| Namespace K8s prod | `prod` | `prod` |
+| Deployment K8s | `{slug}` | `my-app` |
+
+Le backend CNP utilise ces conventions pour interroger ArgoCD et K8s sur l'endpoint `GET /api/v1/apps/{id}/status`. Ne pas dévier de ces nommages sous peine de 404 silencieux.
+
+### 4.2 Intervalle de polling Git
+
+Par défaut ArgoCD poll le repo `cnp-gitops` toutes les **3 minutes**. En pattern App of Apps, un seul repo est surveillé — réduire l'intervalle est sans impact sur les quotas GitLab API.
+
+**Réglage actuel en production :** 15 secondes.
+
+```bash
+# Vérifier l'intervalle actuel
+kubectl get cm argocd-cm -n argocd -o jsonpath='{.data.timeout\.reconciliation}'
+
+# Modifier (remplacer 15s par la valeur souhaitée)
+kubectl patch cm argocd-cm -n argocd --type merge \
+  -p '{"data":{"timeout.reconciliation":"15s"}}'
+
+kubectl rollout restart deployment/argocd-repo-server -n argocd
+kubectl rollout status deployment/argocd-repo-server -n argocd
+```
+
+> Ce changement n'affecte pas les secrets Vault ni les tokens ArgoCD — le restart ne touche que le processus de polling Git.
+
+### 4.3 Pourquoi les webhooks GitLab → ArgoCD ne fonctionnent pas
+
+ArgoCD tourne en ClusterIP (`10.0.54.71`) — non accessible depuis l'internet public. GitLab.com (CI partagé) ne peut pas atteindre cette adresse. Le polling Git reste donc le seul mécanisme de détection des changements.
+
+**Alternative si un runner self-hosted est disponible sur `cnp-control`** (qui a accès à ArgoCD via Tailscale) : déclencher le sync manuellement depuis la CI après le push GitOps :
+
+```yaml
+sync-argocd:
+  stage: deploy
+  script:
+    - |
+      curl -sk -X POST https://10.0.54.71/api/v1/applications/${ARGOCD_APP_NAME}/sync \
+        -H "Authorization: Bearer ${ARGOCD_TOKEN}" \
+        -d '{}'
+```
+
+### 4.4 États transitoires lors d'un déploiement
+
+Lors d'un push sur `main` (avec `automated + selfHeal + prune` activés) :
+
+| Phase | `sync_status` | `health_status` | Visible sur la plateforme ? |
+|-------|--------------|----------------|----------------------------|
+| CI en cours | `Synced` | `Healthy` | Non (pas encore de changement ArgoCD) |
+| GitOps repo mis à jour | `OutOfSync` | `Healthy` | Oui (au prochain poll, ≤15s) |
+| ArgoCD applique les manifests | `Synced` | `Progressing` | Possible (si rolling update > 15s) |
+| Rollout terminé | `Synced` | `Healthy` | Oui |
+
+> Il n'existe pas d'état `Syncing` dans l'API ArgoCD. L'état `Progressing` vient de K8s (rolling update en cours), pas d'ArgoCD.

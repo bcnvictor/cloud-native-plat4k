@@ -95,7 +95,7 @@ class GitLabCredentialResponse(BaseModel):
 class GitLabProject(BaseModel):
     id: int
     name: str
-    path_with_namespace: str
+    full_path: str
     web_url: str
     last_activity_at: str | None = None
 

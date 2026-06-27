@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     CNP_API_BASE_URL: str = "http://localhost:8000"
     # GitLab webhook secret (sent as X-Gitlab-Token to verify incoming webhook calls)
     GITLAB_WEBHOOK_SECRET: Optional[str] = None
+    ARGOCD_WEBHOOK_SECRET: Optional[str] = None
 
     # Kubernetes
     KUBECONFIG_PATH: Optional[str] = None
@@ -76,7 +77,9 @@ class Settings(BaseSettings):
     # Monitoring
     PROMETHEUS_URL: str = "http://prometheus-operated.monitoring.svc.cluster.local:9090"
     LOKI_URL: str = "http://loki.monitoring.svc.cluster.local:3100"
-    GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: http://localhost:3000
+    GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: https://grafana.example.com
+    GRAFANA_DASHBOARD_UID: str = ""  # UID du dashboard team-metrics dans Grafana (visible dans l'URL /d/{UID}/...)
+    GRAFANA_EMBED_TOKEN: str = ""  # Token service account Grafana (rôle Viewer) pour l'embedding sécurisé en iframe
 
     # Logging
     LOG_LEVEL: str = "INFO"

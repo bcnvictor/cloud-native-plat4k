@@ -67,9 +67,10 @@ class ClusterService:
         kubeconfig_data = payload.kubeconfig
         _validate_kubeconfig(kubeconfig_data)
 
-        # Préparer le payload DB (sans kubeconfig — stocké dans Vault)
+        # Préparer le payload DB (sans kubeconfig ni argocd_token — stockés dans Vault)
         db_payload = payload.model_dump()
         db_payload.pop("kubeconfig", None)
+        argocd_token = db_payload.pop("argocd_token", None)
         db_payload["kubeconfig_secret_ref"] = "pending"
 
         cluster = ClusterConnection(**db_payload)
@@ -114,6 +115,20 @@ class ClusterService:
         # Mettre à jour la référence secrète
         cluster.kubeconfig_secret_ref = f"secret/{vault_path}"
         await self.db.commit()
+
+        # ── Stocker le token ArgoCD dans Vault (chemin séparé) ───────────────
+        if argocd_token:
+            try:
+                with anyio.move_on_after(_VAULT_TIMEOUT) as cancel_scope:
+                    await anyio.to_thread.run_sync(
+                        lambda: vault_client.put_secret(path=f"argocd/{cluster.id}", secret={"token": argocd_token}),
+                        cancellable=True,
+                    )
+                if cancel_scope.cancelled_caught:
+                    logger.error("Vault timeout lors du stockage du token ArgoCD pour le cluster %s", cluster.id)
+            except Exception as e:
+                logger.error("Échec du stockage du token ArgoCD pour le cluster %s : %s", cluster.id, e)
+
         await self.db.refresh(cluster)
         return cluster
 
@@ -152,6 +167,7 @@ class ClusterService:
 
         db_payload = payload.model_dump(exclude_unset=True)
         db_payload.pop("kubeconfig", None)
+        argocd_token = db_payload.pop("argocd_token", None)
 
         for field, value in db_payload.items():
             setattr(cluster, field, value)
@@ -163,6 +179,20 @@ class ClusterService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A cluster with that name already exists",
             )
+        # ── Mettre à jour le token ArgoCD dans Vault si fourni ──────────────
+        if argocd_token is not None:
+            from backend.vault.client import vault_client as _vc
+            try:
+                with anyio.move_on_after(_VAULT_TIMEOUT) as cancel_scope:
+                    await anyio.to_thread.run_sync(
+                        lambda: _vc.put_secret(path=f"argocd/{cluster.id}", secret={"token": argocd_token}),
+                        cancellable=True,
+                    )
+                if cancel_scope.cancelled_caught:
+                    logger.error("Vault timeout lors de la mise à jour du token ArgoCD pour le cluster %s", cluster.id)
+            except Exception as e:
+                logger.error("Échec de la mise à jour du token ArgoCD pour le cluster %s : %s", cluster.id, e)
+
         await self.db.refresh(cluster)
         return cluster
 
@@ -206,4 +236,23 @@ class ClusterService:
                 cluster_id,
                 e,
                 cluster_id,
+            )
+
+        # ── Nettoyage du token ArgoCD dans Vault ────────────────────────────
+        try:
+            with anyio.move_on_after(_VAULT_TIMEOUT) as cancel_scope:
+                await anyio.to_thread.run_sync(
+                    lambda: vault_client.delete_secret(path=f"argocd/{cluster_id}"),
+                    cancellable=True,
+                )
+            if cancel_scope.cancelled_caught:
+                logger.error(
+                    "Vault timeout lors de la suppression du token ArgoCD pour le cluster %s. "
+                    "Supprimer manuellement : `vault kv metadata delete secret/argocd/%s`",
+                    cluster_id, cluster_id,
+                )
+        except Exception as e:
+            logger.error(
+                "Échec de la suppression du token ArgoCD dans Vault pour le cluster %s : %s",
+                cluster_id, e,
             )

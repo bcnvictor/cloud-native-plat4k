@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams, useBlocker } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useScopeStore } from '@/store/scope';
@@ -7,7 +7,6 @@ import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { appsApi } from '@/api/apps';
 import { useToast } from '@/components/ui/toast';
 import { Step1Data, ServiceConfig, CiDeployConfig } from '@/types';
-import { computeSlug } from '@/utils/slugify';
 import { StepperBar } from './StepperBar';
 import { Step1Identity } from './Step1Identity';
 import { Step2Services } from './Step2Services';
@@ -79,20 +78,13 @@ export function NewApp() {
     onSuccess: (app) => {
       qc.invalidateQueries({ queryKey: ['apps'] });
       toast({ title: 'App created', description: `${app.name} is being provisioned.` });
-      const appSlug = computeSlug(app.name);
-      navigate(`/groups/${slug}/apps/${appSlug}`);
+      navigate(`/groups/${slug}/apps/${app.slug}`);
     },
     onError: () => {
       setSubmitError('Creation failed. Please try again.');
       toast({ title: 'Erreur', variant: 'destructive' });
     },
   });
-
-  // Bloquer toute navigation (TopNav, breadcrumb, back browser) pendant la création
-  const blocker = useBlocker(createMutation.isPending);
-  useEffect(() => {
-    if (blocker.state === 'blocked') blocker.reset();
-  }, [blocker]);
 
   const steps = STEP_LABELS.map((label, i) => ({
     label,

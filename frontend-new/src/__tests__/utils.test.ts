@@ -89,16 +89,17 @@ describe('computeSlug', () => {
 
 // ─── getAppHealth ─────────────────────────────────────────────────────────────
 
-function makeApp(status: Application['status']): Application {
+function makeApp(last_known_status: Application['last_known_status']): Application {
   return {
     id: 1,
     name: 'test-app',
+    slug: 'test-app',
     description: null,
     repo_url: null,
     owner: 'dev@test.com',
     origin: null,
     source_url: null,
-    status,
+    last_known_status,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: null,
   };
