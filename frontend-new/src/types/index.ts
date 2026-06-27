@@ -59,6 +59,7 @@ export interface Application {
   framework?: string | null;
   gitlab_project_id?: number | null;
   owning_gitlab_group_id?: number | null;
+  expose?: boolean | null;
   target_cluster_id?: number | null;
   created_at: string;
   updated_at: string | null;
@@ -202,6 +203,7 @@ export interface CiDeployConfig {
   replicas: number;
   targetClusterId: number | null;
   advancedOpen: boolean;
+  expose: boolean;
 }
 
 export interface ApiKey {

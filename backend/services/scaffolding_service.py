@@ -50,6 +50,7 @@ class ScaffoldingService:
         template: str,
         scaffolding_params: Optional[ScaffoldingParams] = None,
         target_namespace: Optional[str] = None,
+        expose: bool = False,
         gitlab_group_id: Optional[int] = None,
         gitlab_group_path: Optional[str] = None,
     ) -> tuple[str, str]:
@@ -94,11 +95,26 @@ class ScaffoldingService:
                 cancellable=True,
             )
         except Exception as e:
-            logger.exception("Failed to create the GitLab project")
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Failed to create the GitLab project: {e}",
-            )
+            expected_project_path = f"{apps_namespace}/{app_slug}"
+            if "has already been taken" in str(e):
+                try:
+                    project_info = await anyio.to_thread.run_sync(
+                        partial(client.get_project_info, expected_project_path),
+                        cancellable=True,
+                    )
+                    logger.warning("Reusing existing GitLab project after create conflict: %s", expected_project_path)
+                except Exception:
+                    logger.exception("Failed to reuse existing GitLab project: %s", expected_project_path)
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"Failed to create the GitLab project: {e}",
+                    )
+            else:
+                logger.exception("Failed to create the GitLab project")
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Failed to create the GitLab project: {e}",
+                )
 
         new_project_path = project_info["path_with_namespace"]
         repo_url = project_info["web_url"]
@@ -138,20 +154,25 @@ class ScaffoldingService:
                 )
 
         params = scaffolding_params or ScaffoldingParams()
-        batch.append({
-            "file_path": "chart/values.yaml",
-            "content": self._build_values_yaml(
+        overrides: dict[str, str] = {
+            "chart/values.yaml": self._build_values_yaml(
                 app_slug, apps_namespace, params,
                 gitlab_group_id=gitlab_group_id,
                 gitlab_group_path=gitlab_group_path,
             ),
-        })
-        batch.append({
-            "file_path": "chart/Chart.yaml",
-            "content": self._build_chart_yaml(app_slug, params),
-        })
+            "chart/Chart.yaml": self._build_chart_yaml(app_slug, params),
+        }
         if "postgresql" in params.services and "chart/templates/postgresql.yaml" not in template_paths:
-            batch.append({"file_path": "chart/templates/postgresql.yaml", "content": self._build_postgresql_yaml()})
+            overrides["chart/templates/postgresql.yaml"] = self._build_postgresql_yaml()
+        if expose:
+            from shared.models import app_hostname
+            overrides["chart/values-dev.yaml"] = self._build_ingress_values(True, app_hostname(app_slug, "dev"))
+            overrides["chart/values-prod.yaml"] = self._build_ingress_values(True, app_hostname(app_slug, "prod"))
+
+        # Remove template files that are overridden to avoid duplicate paths in the batch
+        batch = [f for f in batch if f["file_path"] not in overrides]
+        for file_path, content in overrides.items():
+            batch.append({"file_path": file_path, "content": content})
 
         try:
             await anyio.to_thread.run_sync(
@@ -266,6 +287,17 @@ class ScaffoldingService:
             env_vars["DATABASE_URL"] = (
                 f"postgresql://{db_username}:{db_password}@{app_name}-postgresql:5432/{db_name}"
             )
+        return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+
+    def _build_ingress_values(self, enabled: bool, host: str) -> str:
+        data = {
+            "ingress": {
+                "enabled": enabled,
+                "className": "nginx",
+                "host": host if enabled else "",
+                "tls": False,
+            }
+        }
         return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
 
     def _build_chart_yaml(self, app_name: str, params: ScaffoldingParams) -> str:

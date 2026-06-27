@@ -53,6 +53,7 @@ export function NewApp() {
     replicas: 1,
     targetClusterId: null,
     advancedOpen: false,
+    expose: false,
   });
   const { toast } = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -65,6 +66,7 @@ export function NewApp() {
           owner: group?.full_path ?? slug ?? '',
           template: step1.framework,
           owning_gitlab_group_id: group?.gitlab_group_id,
+          expose: step3.expose,
           target_cluster_id: step3.targetClusterId ?? undefined,
         });
       } else {
@@ -73,6 +75,7 @@ export function NewApp() {
           owner: group?.full_path ?? slug ?? '',
           repo_url: step1.repoUrl,
           owning_gitlab_group_id: group?.gitlab_group_id,
+          expose: step3.expose,
         });
       }
     },

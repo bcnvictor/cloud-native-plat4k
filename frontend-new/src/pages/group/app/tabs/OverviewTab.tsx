@@ -1,14 +1,17 @@
-import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCloud, IconCpu, IconDatabase, IconRefresh, IconServer } from '@tabler/icons-react';
+import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCloud, IconCpu, IconDatabase, IconExternalLink, IconRefresh, IconServer, IconTerminal2 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { MetricCard } from '@/components/MetricCard';
 import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { timeAgo } from '@/utils/timeAgo';
 import { useAppMetrics } from '@/hooks/useAppMetrics';
 import { useAppStatus } from '@/hooks/useAppStatus';
 import { useMetricUrl } from '@/hooks/useMonitoringConfig';
+import { appUrl } from '@/utils/appUrls';
 import { clustersApi } from '@/api/clusters';
+import { isPrivateCluster } from '@/utils/clusterUtils';
 import { cn } from '@/utils/cn';
 import type { ArgoEnvStatus } from '@/types';
 
@@ -161,16 +164,14 @@ export function OverviewTab() {
         <Card>
           <h2 className="text-sm font-medium text-foreground mb-3">Cloud target</h2>
           <div className="flex items-center gap-2">
-            {cluster.name.toLowerCase().includes('k3s') || cluster.name.toLowerCase().includes('oracle') || cluster.name.toLowerCase().includes('priv') ? (
+            {isPrivateCluster(cluster) ? (
               <IconServer size={14} className="text-purple-400 shrink-0" />
             ) : (
               <IconCloud size={14} className="text-blue-400 shrink-0" />
             )}
             <span className={cn(
               'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-              cluster.name.toLowerCase().includes('k3s') || cluster.name.toLowerCase().includes('oracle') || cluster.name.toLowerCase().includes('priv')
-                ? 'bg-purple-500/10 text-purple-400'
-                : 'bg-blue-500/10 text-blue-400'
+              isPrivateCluster(cluster) ? 'bg-purple-500/10 text-purple-400' : 'bg-blue-500/10 text-blue-400'
             )}>
               {cluster.name}
             </span>
@@ -188,22 +189,58 @@ export function OverviewTab() {
       {/* Quick access */}
       <Card>
         <h2 className="text-sm font-medium text-foreground mb-3">Quick access</h2>
-        {(app?.repo_url ?? app?.source_url) ? (
-          <a
-            href={(app!.repo_url ?? app!.source_url)!}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm text-[#007BA7] hover:underline"
-          >
-            <IconBrandGitlab size={16} />
-            {app!.repo_url ?? app!.source_url}
-          </a>
-        ) : (
-          <span className="flex items-center gap-2 text-sm text-muted-foreground">
-            <IconBrandGitlab size={16} />
-            GitLab not configured
-          </span>
-        )}
+        <div className="flex flex-col gap-2">
+          {app?.expose && app?.slug ? (
+            <>
+              <a
+                href={appUrl(app.slug, 'prod')}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-[#007BA7] hover:underline"
+              >
+                <IconExternalLink size={15} />
+                <span className="font-mono">{appUrl(app.slug, 'prod')}</span>
+                <Badge variant="primary">prod</Badge>
+              </a>
+              <a
+                href={appUrl(app.slug, 'dev')}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-[#007BA7] hover:underline"
+              >
+                <IconExternalLink size={15} />
+                <span className="font-mono">{appUrl(app.slug, 'dev')}</span>
+                <Badge variant="muted">dev</Badge>
+              </a>
+            </>
+          ) : (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
+                <IconTerminal2 size={13} />
+                Local access via port-forward:
+              </p>
+              <code className="text-xs font-mono bg-background-subtle border border-border px-2.5 py-1.5 rounded block text-foreground select-all">
+                kubectl port-forward svc/{app?.slug ?? '<slug>'} 8080:80
+              </code>
+            </div>
+          )}
+          {(app?.repo_url ?? app?.source_url) ? (
+            <a
+              href={(app!.repo_url ?? app!.source_url)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground mt-1"
+            >
+              <IconBrandGitlab size={14} />
+              GitLab repository
+            </a>
+          ) : (
+            <span className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+              <IconBrandGitlab size={14} />
+              GitLab not configured
+            </span>
+          )}
+        </div>
       </Card>
     </div>
   );
