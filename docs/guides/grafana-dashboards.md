@@ -12,7 +12,7 @@ Frontend CNP (HTTPS)
                                └─ Loki       → http://loki.cloud-native-plat4k.me
 ```
 
-Grafana est sur la VM OCI `cnp-control`. Voir ADR-0020 pour le détail de l'exposition HTTPS.
+Grafana est sur la VM OCI `cnp-control`. Voir ADR-0021 pour le détail de l'exposition HTTPS.
 
 ## Accès
 

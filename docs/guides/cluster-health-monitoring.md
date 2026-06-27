@@ -69,7 +69,7 @@ cycle panne/reprise du cluster. La cascade ne part **jamais** de `UNKNOWN`.
 
 ## Connectivité Tailscale — prérequis pour les nouveaux clusters
 
-Le backend CNP doit pouvoir joindre l'API Kubernetes et ArgoCD de chaque cluster. Ces services sont internes au cluster — la connectivité est assurée par Tailscale (voir [ADR-0018](../adr/0018-tailscale-reseau-overlay.md) et [architecture réseau](../architecture/network-tailscale.md)).
+Le backend CNP doit pouvoir joindre l'API Kubernetes et ArgoCD de chaque cluster. Ces services sont internes au cluster — la connectivité est assurée par Tailscale (voir [ADR-0019](../adr/0019-tailscale-reseau-overlay.md) et [architecture réseau](../architecture/network-tailscale.md)).
 
 ### Ajouter un cluster avec Tailscale
 
