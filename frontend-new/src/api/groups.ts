@@ -16,8 +16,8 @@ export const groupsApi = {
     await api.post('/users/me/sync-teams');
   },
 
-  async getGrafanaUrl(gitlabGroupId: number): Promise<{ url: string | null }> {
-    const res = await api.get<{ url: string | null }>(`/groups/${gitlabGroupId}/grafana-url`);
+  async getGrafanaUrl(gitlabGroupId: number): Promise<{ dashboard_url: string | null; panel_base_url: string | null }> {
+    const res = await api.get<{ dashboard_url: string | null; panel_base_url: string | null }>(`/groups/${gitlabGroupId}/grafana-url`);
     return res.data;
   },
 
