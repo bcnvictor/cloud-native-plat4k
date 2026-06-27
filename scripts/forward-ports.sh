@@ -48,35 +48,45 @@ status_pf() {
   fi
 }
 
+K3S_KUBECONFIG="${K3S_KUBECONFIG:-./infra/oracle/k3s/cnp-k3s.yaml}"
+
 CMD="${1:-start}"
 
 case "$CMD" in
   start)
     info "Démarrage des port-forwards..."
-    start_pf "prometheus"  9090  port-forward -n monitoring svc/prometheus-operated            9090:9090 --address 0.0.0.0
-    start_pf "loki"        3100  port-forward -n monitoring svc/loki                           3100:3100 --address 0.0.0.0
-    start_pf "grafana"     3000  port-forward -n monitoring svc/kube-prometheus-stack-grafana  3000:80
-    start_pf "argocd"      8080  port-forward -n argocd      svc/argocd-server                 8080:443
+    start_pf "prometheus"    9090  port-forward -n monitoring svc/prometheus-operated            9090:9090 --address 0.0.0.0
+    start_pf "loki"          3100  port-forward -n monitoring svc/loki                           3100:3100 --address 0.0.0.0
+    start_pf "grafana"       3000  port-forward -n monitoring svc/kube-prometheus-stack-grafana  3000:80
+    start_pf "argocd-aks"    8080  port-forward -n argocd      svc/argocd-server                 8080:443
+    if [ -f "$K3S_KUBECONFIG" ]; then
+      start_pf "argocd-k3s"  8081  --kubeconfig "$K3S_KUBECONFIG" --context cnp-k3s port-forward -n argocd svc/argocd-server 8081:80
+    else
+      warn "argocd-k3s : kubeconfig introuvable ($K3S_KUBECONFIG) — ignoré"
+    fi
     echo ""
     info "Endpoints :"
-    echo -e "  Prometheus : http://localhost:9090"
-    echo -e "  Loki       : http://localhost:3100"
-    echo -e "  Grafana    : http://localhost:3000"
-    echo -e "  ArgoCD     : https://localhost:8080"
+    echo -e "  Prometheus  : http://localhost:9090"
+    echo -e "  Loki        : http://localhost:3100"
+    echo -e "  Grafana     : http://localhost:3000"
+    echo -e "  ArgoCD AKS  : https://localhost:8080"
+    echo -e "  ArgoCD k3s  : http://localhost:8081"
     ;;
   stop)
     info "Arrêt des port-forwards..."
-    stop_pf "prometheus"  9090
-    stop_pf "loki"        3100
-    stop_pf "grafana"     3000
-    stop_pf "argocd"      8080
+    stop_pf "prometheus"   9090
+    stop_pf "loki"         3100
+    stop_pf "grafana"      3000
+    stop_pf "argocd-aks"   8080
+    stop_pf "argocd-k3s"   8081
     ;;
   status)
     info "État des port-forwards :"
-    status_pf "prometheus"  9090  "http://localhost:9090"
-    status_pf "loki"        3100  "http://localhost:3100"
-    status_pf "grafana"     3000  "http://localhost:3000"
-    status_pf "argocd"      8080  "https://localhost:8080"
+    status_pf "prometheus"   9090  "http://localhost:9090"
+    status_pf "loki"         3100  "http://localhost:3100"
+    status_pf "grafana"      3000  "http://localhost:3000"
+    status_pf "argocd-aks"   8080  "https://localhost:8080"
+    status_pf "argocd-k3s"   8081  "https://localhost:8081"
     ;;
   *)
     echo -e "${RED}Usage :${RESET} $0 [start|stop|status]"

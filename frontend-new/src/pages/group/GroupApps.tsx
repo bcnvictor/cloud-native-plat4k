@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { IconFilter, IconPlus, IconRocket, IconSearch } from '@tabler/icons-react';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useGroupApps } from '@/hooks/useGroupApps';
@@ -9,6 +10,7 @@ import { AppRow } from '@/components/AppRow';
 import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { clustersApi } from '@/api/clusters';
 
 export function GroupApps() {
   const { slug } = useParams<{ slug: string }>();
@@ -31,6 +33,7 @@ export function GroupApps() {
   }, [group?.name, slug, setBreadcrumb]);
 
   const { data: apps = [], isLoading } = useGroupApps(group?.gitlab_group_id);
+  const { data: clusters = [] } = useQuery({ queryKey: ['clusters'], queryFn: clustersApi.list });
   const filteredApps = apps.filter((a) =>
     a.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -99,11 +102,15 @@ export function GroupApps() {
       ) : (
         <div className="flex flex-col gap-2">
           {filteredApps.map((app) => {
+            const clusterName = app.target_cluster_id
+              ? clusters.find((c) => c.id === app.target_cluster_id)?.name
+              : undefined;
             return (
               <AppRow
                 key={app.id}
                 app={app}
                 healthStatus={getAppHealth(app)}
+                clusterName={clusterName}
                 onClick={() => navigate(`/groups/${slug}/apps/${app.slug}`)}
               />
             );
