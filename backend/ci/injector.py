@@ -22,6 +22,7 @@ def inject_ci(
     webhook_url: str | None = None,
     webhook_secret: str = "",
     skip_first_run: bool = False,
+    cluster_name: str = "aks",
 ) -> None:
     """Inject .gitlab-ci.yml into the app repo.
 
@@ -29,7 +30,7 @@ def inject_ci(
     - imported:   open a MR from a dedicated branch
     """
     project_path = extract_project_path(repo_url)
-    content = generate_gitlab_ci(app_slug, app_id, framework, owner)
+    content = generate_gitlab_ci(app_slug, app_id, framework, owner, cluster_name=cluster_name)
 
     if origin == "scaffolded":
         if client.file_exists(project_path, ".gitlab-ci.yml", ref="main"):
