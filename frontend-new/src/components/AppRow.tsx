@@ -1,4 +1,4 @@
-import { IconBrandDocker, IconChevronRight } from '@tabler/icons-react';
+import { IconBrandDocker, IconChevronRight, IconCloud, IconServer } from '@tabler/icons-react';
 import { Application } from '@/types';
 import { AppHealthStatus } from '@/types';
 import { AppStatusBadge } from './AppStatusBadge';
@@ -8,10 +8,11 @@ import { cn } from '@/utils/cn';
 interface AppRowProps {
   app: Application;
   healthStatus: AppHealthStatus;
+  clusterName?: string;
   onClick: () => void;
 }
 
-export function AppRow({ app, healthStatus, onClick }: AppRowProps) {
+export function AppRow({ app, healthStatus, clusterName, onClick }: AppRowProps) {
   const isProvisioning = healthStatus === 'provisioning';
 
   return (
@@ -42,9 +43,28 @@ export function AppRow({ app, healthStatus, onClick }: AppRowProps) {
         </div>
       </div>
 
+      {clusterName && (
+        <ClusterTag name={clusterName} />
+      )}
+
       <AppStatusBadge status={healthStatus} />
 
       <IconChevronRight size={16} className="text-muted-foreground shrink-0" />
     </button>
+  );
+}
+
+function ClusterTag({ name }: { name: string }) {
+  const isPrivate = name.toLowerCase().includes('k3s') || name.toLowerCase().includes('oracle') || name.toLowerCase().includes('priv');
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium shrink-0',
+      isPrivate
+        ? 'bg-purple-500/10 text-purple-400'
+        : 'bg-blue-500/10 text-blue-400'
+    )}>
+      {isPrivate ? <IconServer size={11} /> : <IconCloud size={11} />}
+      {name}
+    </span>
   );
 }
