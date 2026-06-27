@@ -79,9 +79,10 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ENABLED=false
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_EXPLORE_ENABLED=false
       - GF_SERVER_ROOT_URL=${GRAFANA_URL:-http://localhost:3000}
       - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus-operated.monitoring.svc.cluster.local:9090}
       - LOKI_URL=${LOKI_URL:-http://loki.monitoring.svc.cluster.local:3100}

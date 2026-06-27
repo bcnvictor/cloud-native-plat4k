@@ -167,7 +167,7 @@
         },
         "targets": [
           {
-            "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$env\"}[24h] * on(pod, namespace) group_left() kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}))",
+            "expr": "sum(\n  increase(kube_pod_container_status_restarts_total{namespace=~\"$env\"}[24h])\n  * on(pod, namespace) group_left()\n  kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}\n)",
             "legendFormat": "",
             "refId": "A"
           }
