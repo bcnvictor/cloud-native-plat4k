@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     PROMETHEUS_URL: str = "http://prometheus-operated.monitoring.svc.cluster.local:9090"
     LOKI_URL: str = "http://loki.monitoring.svc.cluster.local:3100"
     GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: http://grafana.example.com
+    GRAFANA_DASHBOARD_UID: str = ""  # UID du dashboard team-metrics dans Grafana (visible dans l'URL /d/{UID}/...)
 
     # Logging
     LOG_LEVEL: str = "INFO"
