@@ -11,6 +11,7 @@ import { useAppStatus } from '@/hooks/useAppStatus';
 import { useMetricUrl } from '@/hooks/useMonitoringConfig';
 import { appUrl } from '@/utils/appUrls';
 import { clustersApi } from '@/api/clusters';
+import { isPrivateCluster } from '@/utils/clusterUtils';
 import { cn } from '@/utils/cn';
 import type { ArgoEnvStatus } from '@/types';
 
@@ -163,16 +164,14 @@ export function OverviewTab() {
         <Card>
           <h2 className="text-sm font-medium text-foreground mb-3">Cloud target</h2>
           <div className="flex items-center gap-2">
-            {cluster.name.toLowerCase().includes('k3s') || cluster.name.toLowerCase().includes('oracle') || cluster.name.toLowerCase().includes('priv') ? (
+            {isPrivateCluster(cluster) ? (
               <IconServer size={14} className="text-purple-400 shrink-0" />
             ) : (
               <IconCloud size={14} className="text-blue-400 shrink-0" />
             )}
             <span className={cn(
               'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-              cluster.name.toLowerCase().includes('k3s') || cluster.name.toLowerCase().includes('oracle') || cluster.name.toLowerCase().includes('priv')
-                ? 'bg-purple-500/10 text-purple-400'
-                : 'bg-blue-500/10 text-blue-400'
+              isPrivateCluster(cluster) ? 'bg-purple-500/10 text-purple-400' : 'bg-blue-500/10 text-blue-400'
             )}>
               {cluster.name}
             </span>

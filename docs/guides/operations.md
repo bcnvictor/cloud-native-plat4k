@@ -128,6 +128,44 @@ Puis, déployez la ressource Ingress de monitoring en l'ajoutant dans le dossier
 
 ---
 
+## 9. Exposition internet des apps — périmètre et limites
+
+La feature **"Expose on internet"** (4K-94) permet d'exposer une app via un Ingress nginx sur `cloud-native-plat4k.me`. Elle repose sur deux prérequis d'infrastructure :
+
+1. **nginx-ingress-controller** installé et exposé en `LoadBalancer` sur le cluster cible.
+2. **Un enregistrement DNS wildcard** pointant vers l'IP du LoadBalancer :
+   - `*.cloud-native-plat4k.me` → IP publique nginx AKS (géré par Terraform dans `infra/aks/`)
+
+### Clusters supportés
+
+| Cluster | nginx-ingress | DNS wildcard | Expose disponible |
+|---|---|---|---|
+| `aks` | ✅ (Terraform) | ✅ (`*.cloud-native-plat4k.me`) | ✅ |
+| `cnp-k3s` | ❌ non configuré | ❌ | ❌ |
+
+Le frontend désactive l'option pour les clusters k3s (détection par le nom). Le backend accepte le flag `expose` mais ne génère pas de sous-domaine différent selon le cluster — **ne pas activer manuellement `expose` via l'API pour une app sur k3s**.
+
+### Ajouter le support sur k3s (future)
+
+```bash
+# 1. Installer nginx-ingress (Klipper LB prend l'IP publique de la VM automatiquement)
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx --create-namespace \
+  --set controller.service.type=LoadBalancer \
+  --kubeconfig cnp-k3s.yaml
+
+# 2. Récupérer l'IP assignée
+kubectl --kubeconfig cnp-k3s.yaml -n ingress-nginx \
+  get svc ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+# 3. Ajouter un A record wildcard dans la zone Azure DNS existante
+#    *.k3s.cloud-native-plat4k.me → <IP VM Oracle>
+```
+
+Il faudra aussi mettre à jour `app_hostname()` dans `shared/models.py` et `appUrls.ts` pour tenir compte du cluster cible dans le sous-domaine généré, et mettre à jour le prédicat `clusterSupportsIngress` dans `frontend-new/src/utils/clusterUtils.ts`.
+
+---
+
 ## Démo : déploiement end-to-end via API
 
 Ce scénario déploie l'app de démo (`cnp-test`) sur le cluster AKS via l'API CNP, sans aucun `kubectl apply` manuel.
