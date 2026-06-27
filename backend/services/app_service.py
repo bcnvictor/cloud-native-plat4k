@@ -87,6 +87,7 @@ class AppService:
             "origin": "scaffolded",
             "framework": payload.template,
             "owning_gitlab_group_id": payload.owning_gitlab_group_id,
+            "target_cluster_id": payload.target_cluster_id,
         }
         return await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
 
@@ -320,6 +321,15 @@ class AppService:
         bot = _get_bot_client()
         if not skip_ci and bot and app.repo_url and app.origin in ("scaffolded", "onboarded", "imported"):
             try:
+                cluster_name = "aks"
+                if app.target_cluster_id:
+                    cluster_result = await self.db.execute(
+                        select(ClusterConnection).where(ClusterConnection.id == app.target_cluster_id)
+                    )
+                    cluster = cluster_result.scalar_one_or_none()
+                    if cluster:
+                        cluster_name = cluster.name
+
                 webhook_url = f"{settings.CNP_API_BASE_URL}{settings.API_V1_STR}/webhooks/gitlab"
                 await anyio.to_thread.run_sync(
                     lambda: inject_ci(
@@ -334,6 +344,7 @@ class AppService:
                         webhook_url=webhook_url,
                         webhook_secret=settings.GITLAB_WEBHOOK_SECRET or "",
                         skip_first_run=skip_gitops,
+                        cluster_name=cluster_name,
                     ),
                     cancellable=True,
                 )

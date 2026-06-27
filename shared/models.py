@@ -232,6 +232,7 @@ class ApplicationScaffoldRequest(BaseModel):
     scaffolding: Optional[ScaffoldingParams] = None
     skip_first_deploy: bool = False  # si True, ne provisionne pas ArgoCD au scaffold (utile quand la 1ère image n'est pas encore buildée)
     owning_gitlab_group_id: Optional[int] = None
+    target_cluster_id: Optional[int] = None
 
 
 class ApplicationOnboardRequest(BaseModel):

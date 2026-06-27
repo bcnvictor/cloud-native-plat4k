@@ -106,6 +106,37 @@ Vérifier sur le cluster privé que les ressources ont bien atterri là :
 KUBECONFIG=./cnp-k3s.yaml kubectl --context cnp-k3s -n default get deploy,svc
 ```
 
+## 6. Installer ArgoCD sur k3s et brancher le GitOps
+
+ArgoCD permet à k3s de se synchroniser sur `argocd/k3s/` du repo `cnp-gitops`, indépendamment de l'ArgoCD d'AKS qui lit `argocd/aks/`.
+
+```bash
+# Depuis le poste avec KUBECONFIG=./cnp-k3s.yaml
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
+helm install argocd argo/argo-cd \
+  --namespace argocd --create-namespace \
+  --set configs.params."server.insecure"=true \
+  --kubeconfig cnp-k3s.yaml
+
+# Attendre que les pods soient Ready
+kubectl --kubeconfig cnp-k3s.yaml -n argocd wait --for=condition=Available deployment --all --timeout=120s
+
+# Bootstrap : pointer ArgoCD sur argocd/k3s/ du repo cnp-gitops
+kubectl --kubeconfig cnp-k3s.yaml -n argocd \
+  apply -f ../../../cnp-gitops/bootstrap/root-app-k3s.yaml
+```
+
+Vérifier que l'app root est bien créée :
+
+```bash
+kubectl --kubeconfig cnp-k3s.yaml -n argocd get applications
+```
+
+> Toute app scaffoldée avec `target_cluster_id = <id de cnp-k3s>` recevra un `.gitlab-ci.yml`
+> contenant `CNP_CLUSTER_NAME: "cnp-k3s"`. Son pipeline CI poussera dans `argocd/k3s/{app}/`
+> du repo gitops, que cet ArgoCD synchronisera automatiquement.
+
 ## Cleanup
 
 ```bash
