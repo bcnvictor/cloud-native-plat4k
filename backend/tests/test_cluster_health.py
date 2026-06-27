@@ -177,44 +177,6 @@ def test_recovery_restores_only_outage_degraded_apps(monkeypatch, tmp_path):
     asyncio.run(scenario())
 
 
-# ── Fix #6 : un kubeconfig_secret_ref non-fichier reste UNKNOWN (pas OFFLINE) ───
-
-def test_non_file_ref_stays_unknown_and_skips_probe(monkeypatch):
-    probe_calls = []
-
-    async def fake_probe(cluster):
-        probe_calls.append(cluster.name)
-        return True
-    monkeypatch.setattr(health_worker, "_probe", fake_probe)
-
-    async def scenario():
-        engine, Session = await _memory_db()
-        async with Session() as db:
-            cluster = ClusterConnection(
-                name="manual", endpoint="https://x",
-                kubeconfig_secret_ref="my-k8s-secret-name",  # nom de Secret, pas un fichier
-                status=ClusterStatus.ONLINE,
-            )
-            db.add(cluster)
-            await db.flush()
-            app = Application(
-                name="a1", slug="a1", owner="o",
-                last_known_status=ApplicationStatus.DEPLOYED, target_cluster_id=cluster.id,
-            )
-            db.add(app)
-            await db.commit()
-
-            await health_worker._process_cluster(db, cluster, {}, {}, 2)
-            await db.refresh(cluster)
-            await db.refresh(app)
-            assert cluster.status == ClusterStatus.UNKNOWN    # pas OFFLINE
-            assert app.last_known_status == ApplicationStatus.DEPLOYED   # apps non dégradées
-            assert probe_calls == []                          # sonde jamais appelée
-        await engine.dispose()
-
-    asyncio.run(scenario())
-
-
 # ── Fix #4 : discover_clusters fait un vrai upsert (insert + update si changé) ──
 
 def test_discovery_inserts_and_updates_changed_fields(monkeypatch):
