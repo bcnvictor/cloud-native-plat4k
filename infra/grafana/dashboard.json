@@ -1,0 +1,465 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": null,
+    "title": "CNP — Group Overview",
+    "description": "Observability & FinOps showback par groupe CNP",
+    "tags": ["cnp", "group", "finops"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "30s",
+    "time": { "from": "now-3h", "to": "now" },
+    "templating": {
+      "list": [
+        {
+          "name": "group_id",
+          "label": "Groupe",
+          "type": "custom",
+          "query": "",
+          "current": {},
+          "options": [],
+          "includeAll": false,
+          "multi": false,
+          "hide": 0
+        },
+        {
+          "name": "env",
+          "label": "Environnement",
+          "type": "custom",
+          "query": "dev,prod",
+          "current": { "text": "All", "value": "$__all" },
+          "options": [
+            { "text": "All", "value": "$__all", "selected": true },
+            { "text": "dev", "value": "dev" },
+            { "text": "prod", "value": "prod" }
+          ],
+          "includeAll": true,
+          "multi": false,
+          "hide": 0
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "row",
+        "title": "Overview",
+        "collapsed": false,
+        "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 }
+      },
+      {
+        "id": 2,
+        "title": "Apps actives",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 1, "w": 6, "h": 4 },
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "colorMode": "background",
+          "graphMode": "none",
+          "textMode": "auto",
+          "orientation": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "fixed", "fixedColor": "blue" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "blue", "value": null }
+              ]
+            }
+          }
+        },
+        "targets": [
+          {
+            "expr": "count(count by (label_app_kubernetes_io_name) (kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}))",
+            "legendFormat": "",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Pods Running",
+        "type": "stat",
+        "gridPos": { "x": 6, "y": 1, "w": 6, "h": 4 },
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "colorMode": "background",
+          "graphMode": "none",
+          "textMode": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "green", "value": 2 }
+              ]
+            }
+          }
+        },
+        "targets": [
+          {
+            "expr": "count(kube_pod_status_phase{phase=\"Running\", namespace=~\"$env\"} * on(pod, namespace) group_left() kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"})",
+            "legendFormat": "",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Cout estimé (30j)",
+        "type": "stat",
+        "gridPos": { "x": 12, "y": 1, "w": 6, "h": 4 },
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "colorMode": "background",
+          "graphMode": "none",
+          "textMode": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyEUR",
+            "decimals": 2,
+            "color": { "mode": "fixed", "fixedColor": "purple" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [{ "color": "purple", "value": null }]
+            }
+          }
+        },
+        "targets": [
+          {
+            "expr": "(\n  sum(\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n    * on(pod, namespace) group_left() kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum(\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n    * on(pod, namespace) group_left() kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
+            "legendFormat": "",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Restart count (24h)",
+        "type": "stat",
+        "gridPos": { "x": 18, "y": 1, "w": 6, "h": 4 },
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "colorMode": "background",
+          "graphMode": "none",
+          "textMode": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 3 },
+                { "color": "red", "value": 10 }
+              ]
+            }
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$env\"}[24h] * on(pod, namespace) group_left() kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}))",
+            "legendFormat": "",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "type": "row",
+        "title": "FinOps Showback",
+        "collapsed": false,
+        "gridPos": { "x": 0, "y": 5, "w": 24, "h": 1 }
+      },
+      {
+        "id": 11,
+        "title": "Cout estimé par app",
+        "type": "table",
+        "gridPos": { "x": 0, "y": 6, "w": 14, "h": 8 },
+        "options": {
+          "showHeader": true,
+          "sortBy": [{ "displayName": "Cout EUR/mois", "desc": true }]
+        },
+        "fieldConfig": {
+          "defaults": { "custom": { "align": "auto" } },
+          "overrides": [
+            {
+              "matcher": { "id": "byName", "options": "Cout EUR/mois" },
+              "properties": [
+                { "id": "unit", "value": "currencyEUR" },
+                { "id": "decimals", "value": 2 },
+                {
+                  "id": "custom.displayMode",
+                  "value": "color-background"
+                },
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "mode": "absolute",
+                    "steps": [
+                      { "color": "green", "value": null },
+                      { "color": "yellow", "value": 0.5 },
+                      { "color": "red", "value": 2 }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": { "id": "byName", "options": "CPU cores" },
+              "properties": [
+                { "id": "unit", "value": "short" },
+                { "id": "decimals", "value": 3 }
+              ]
+            },
+            {
+              "matcher": { "id": "byName", "options": "RAM GB" },
+              "properties": [
+                { "id": "unit", "value": "short" },
+                { "id": "decimals", "value": 2 }
+              ]
+            }
+          ]
+        },
+        "transformations": [
+          { "id": "merge", "options": {} },
+          {
+            "id": "organize",
+            "options": {
+              "renameByName": {
+                "label_app_kubernetes_io_name": "App",
+                "Value #CPU": "CPU cores",
+                "Value #RAM": "RAM GB",
+                "Value #COST": "Cout EUR/mois"
+              }
+            }
+          }
+        ],
+        "targets": [
+          {
+            "expr": "sum by (label_app_kubernetes_io_name) (\n  rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}\n)",
+            "legendFormat": "",
+            "refId": "CPU",
+            "instant": true
+          },
+          {
+            "expr": "sum by (label_app_kubernetes_io_name) (\n  container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}\n) / 1073741824",
+            "legendFormat": "",
+            "refId": "RAM",
+            "instant": true
+          },
+          {
+            "expr": "(\n  sum by (label_app_kubernetes_io_name) (\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n    * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum by (label_app_kubernetes_io_name) (\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n    * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
+            "legendFormat": "",
+            "refId": "COST",
+            "instant": true
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Repartition du cout par app",
+        "type": "piechart",
+        "gridPos": { "x": 14, "y": 6, "w": 10, "h": 8 },
+        "options": {
+          "pieType": "donut",
+          "displayLabels": ["name", "percent"],
+          "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyEUR",
+            "decimals": 2,
+            "color": { "mode": "palette-classic" }
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum by (label_app_kubernetes_io_name) (\n  (\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n    * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}\n  ) * 0.048 * 24 * 30\n  +\n  (\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n    * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
+            "legendFormat": "{{label_app_kubernetes_io_name}}",
+            "refId": "A",
+            "instant": true
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "type": "row",
+        "title": "Compute",
+        "collapsed": false,
+        "gridPos": { "x": 0, "y": 14, "w": 24, "h": 1 }
+      },
+      {
+        "id": 21,
+        "title": "CPU par app",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 15, "w": 12, "h": 8 },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 10,
+              "gradientMode": "opacity"
+            },
+            "color": { "mode": "palette-classic" }
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum by (label_app_kubernetes_io_name) (\n  rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}\n)",
+            "legendFormat": "{{label_app_kubernetes_io_name}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 22,
+        "title": "RAM par app",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 15, "w": 12, "h": 8 },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "bytes",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 10,
+              "gradientMode": "opacity"
+            },
+            "color": { "mode": "palette-classic" }
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum by (label_app_kubernetes_io_name) (\n  container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}\n)",
+            "legendFormat": "{{label_app_kubernetes_io_name}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 30,
+        "type": "row",
+        "title": "Sante & Fiabilite",
+        "collapsed": false,
+        "gridPos": { "x": 0, "y": 23, "w": 24, "h": 1 }
+      },
+      {
+        "id": 31,
+        "title": "Restarts par pod",
+        "type": "bargauge",
+        "gridPos": { "x": 0, "y": 24, "w": 12, "h": 6 },
+        "options": {
+          "orientation": "horizontal",
+          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "displayMode": "gradient",
+          "valueMode": "color"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 3 },
+                { "color": "red", "value": 10 }
+              ]
+            }
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum by (pod) (\n  increase(kube_pod_container_status_restarts_total{namespace=~\"$env\"}[24h])\n  * on(pod, namespace) group_left() kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"}\n)",
+            "legendFormat": "{{pod}}",
+            "refId": "A",
+            "instant": true
+          }
+        ]
+      },
+      {
+        "id": 32,
+        "title": "Pod readiness ratio",
+        "type": "gauge",
+        "gridPos": { "x": 12, "y": 24, "w": 12, "h": 6 },
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "max": 1,
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "yellow", "value": 0.5 },
+                { "color": "green", "value": 0.9 }
+              ]
+            }
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum(kube_pod_status_ready{condition=\"true\", namespace=~\"$env\"} * on(pod, namespace) group_left() kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"})\n/\nsum(kube_pod_status_ready{namespace=~\"$env\"} * on(pod, namespace) group_left() kube_pod_labels{label_cnp_io_group_id=\"$group_id\", namespace=~\"$env\"})",
+            "legendFormat": "",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "type": "row",
+        "title": "Logs",
+        "collapsed": false,
+        "gridPos": { "x": 0, "y": 30, "w": 24, "h": 1 }
+      },
+      {
+        "id": 41,
+        "title": "Logs applicatifs",
+        "type": "logs",
+        "gridPos": { "x": 0, "y": 31, "w": 24, "h": 8 },
+        "options": {
+          "dedupStrategy": "none",
+          "enableLogDetails": true,
+          "prettifyLogMessage": false,
+          "showLabels": false,
+          "showTime": true,
+          "sortOrder": "Descending",
+          "wrapLogMessage": true
+        },
+        "targets": [
+          {
+            "expr": "{namespace=~\"$env\"} | json | label_cnp_io_group_id=`$group_id`",
+            "refId": "A",
+            "datasource": { "type": "loki" }
+          }
+        ]
+      }
+    ]
+  },
+  "folderId": 0,
+  "overwrite": true
+}
