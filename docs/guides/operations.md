@@ -95,10 +95,74 @@ kubectl top nodes                          # métriques CPU/RAM (après déploie
 
 ## 8. Prochaines étapes après provisioning
 
-1. Déployer nginx-ingress-controller (une IP publique pour toutes les apps)
-2. Déployer kube-prometheus-stack (monitoring)
-3. Déployer la CNP elle-même (backend + frontend) dans le namespace `cnp`
-4. Créer les namespaces `dev` et `prod` pour les apps utilisateurs
+### 1. Déployer nginx-ingress-controller (une IP publique pour toutes les apps)
+Le contrôleur Ingress nginx est configuré dans le Terraform et utilise une adresse IP publique. 
+
+> [!IMPORTANT]
+> **Limite d'adresses IP publiques :**
+> L'abonnement étudiant Azure limite la création d'adresses IP publiques à **3 par région**.
+> Pour éviter tout conflit de quota (`PublicIPCountLimitReached`), le contrôleur Ingress doit être le seul service exposé directement (Type: `LoadBalancer`). Tous les autres composants (Prometheus, Loki, etc.) doivent utiliser le type `ClusterIP` et passer par l'Ingress.
+
+### 2. Déployer kube-prometheus-stack et Loki (monitoring)
+Installez les services de monitoring en type `ClusterIP` (ou patchez-les après installation) pour ne pas consommer d'IP publique Azure :
+```bash
+kubectl patch svc kube-prometheus-stack-prometheus -n monitoring -p '{"spec": {"type": "ClusterIP"}}'
+kubectl patch svc loki -n monitoring -p '{"spec": {"type": "ClusterIP"}}'
+```
+
+Puis, déployez la ressource Ingress de monitoring en l'ajoutant dans le dossier `argocd/` de votre dépôt `cnp-gitops` (déjà configuré sous `cnp-gitops/argocd/monitoring-ingress.yaml`). ArgoCD appliquera automatiquement la configuration sur le cluster.
+
+**Configuration sur la VM de Production :**
+1. Sur la VM de production, associez les noms de domaine à l'IP de l'Ingress (ex: `4.166.144.120`) dans le fichier `/etc/hosts` pour contourner la propagation DNS :
+   ```text
+   4.166.144.120 prometheus.cloud-native-plat4k.me loki.cloud-native-plat4k.me
+   ```
+2. Mettez à jour les secrets de la plateforme dans le **Vault de production** :
+   * `LOKI_URL` $\rightarrow$ `http://loki.cloud-native-plat4k.me`
+   * `PROMETHEUS_URL` $\rightarrow$ `http://prometheus.cloud-native-plat4k.me`
+   * `PROMETHEUS_PUBLIC_URL` $\rightarrow$ `http://prometheus.cloud-native-plat4k.me`
+3. Redémarrez le backend pour prendre en compte les modifications (`docker restart <backend-container>`).
+
+### 3. Déployer la CNP elle-même (backend + frontend) dans le namespace `cnp`
+### 4. Créer les namespaces `dev` et `prod` pour les apps utilisateurs
+
+---
+
+## 9. Exposition internet des apps — périmètre et limites
+
+La feature **"Expose on internet"** (4K-94) permet d'exposer une app via un Ingress nginx sur `cloud-native-plat4k.me`. Elle repose sur deux prérequis d'infrastructure :
+
+1. **nginx-ingress-controller** installé et exposé en `LoadBalancer` sur le cluster cible.
+2. **Un enregistrement DNS wildcard** pointant vers l'IP du LoadBalancer :
+   - `*.cloud-native-plat4k.me` → IP publique nginx AKS (géré par Terraform dans `infra/aks/`)
+
+### Clusters supportés
+
+| Cluster | nginx-ingress | DNS wildcard | Expose disponible |
+|---|---|---|---|
+| `aks` | ✅ (Terraform) | ✅ (`*.cloud-native-plat4k.me`) | ✅ |
+| `cnp-k3s` | ❌ non configuré | ❌ | ❌ |
+
+Le frontend désactive l'option pour les clusters k3s (détection par le nom). Le backend accepte le flag `expose` mais ne génère pas de sous-domaine différent selon le cluster — **ne pas activer manuellement `expose` via l'API pour une app sur k3s**.
+
+### Ajouter le support sur k3s (future)
+
+```bash
+# 1. Installer nginx-ingress (Klipper LB prend l'IP publique de la VM automatiquement)
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx --create-namespace \
+  --set controller.service.type=LoadBalancer \
+  --kubeconfig cnp-k3s.yaml
+
+# 2. Récupérer l'IP assignée
+kubectl --kubeconfig cnp-k3s.yaml -n ingress-nginx \
+  get svc ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+# 3. Ajouter un A record wildcard dans la zone Azure DNS existante
+#    *.k3s.cloud-native-plat4k.me → <IP VM Oracle>
+```
+
+Il faudra aussi mettre à jour `app_hostname()` dans `shared/models.py` et `appUrls.ts` pour tenir compte du cluster cible dans le sous-domaine généré, et mettre à jour le prédicat `clusterSupportsIngress` dans `frontend-new/src/utils/clusterUtils.ts`.
 
 ---
 

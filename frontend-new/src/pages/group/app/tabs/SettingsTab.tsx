@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { IconEye, IconEyeOff, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconExternalLink, IconEye, IconEyeOff, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { appsApi } from '@/api/apps';
 import { Card } from '@/components/ui/Card';
@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { EnvVar } from '@/types';
+import { appUrl } from '@/utils/appUrls';
+import { cn } from '@/utils/cn';
 
 export function SettingsTab() {
   const { app, isLoading } = useAppDetail();
@@ -18,6 +20,7 @@ export function SettingsTab() {
 
   const [name, setName] = useState(app?.name ?? '');
   const [description, setDescription] = useState(app?.description ?? '');
+  const [expose, setExpose] = useState(app?.expose ?? false);
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   const autoResize = useCallback(() => {
@@ -34,6 +37,7 @@ export function SettingsTab() {
     if (app) {
       setName(app.name);
       setDescription(app.description ?? '');
+      setExpose(app.expose ?? false);
       setTimeout(autoResize, 0);
     }
   }, [app, autoResize]);
@@ -46,6 +50,12 @@ export function SettingsTab() {
   const deleteMutation = useMutation({
     mutationFn: () => appsApi.deleteApp(app!.id),
     onSuccess: () => navigate(`/groups/${slug}/apps`),
+  });
+
+  const exposeMutation = useMutation({
+    mutationFn: (newExpose: boolean) => appsApi.toggleExpose(app!.id, newExpose),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['app', appSlug] }),
+    onError: () => setExpose(app?.expose ?? false),
   });
 
   function addEnvVar() {
@@ -193,6 +203,64 @@ export function SettingsTab() {
           </>
         )}
       </Card>
+
+      {/* Internet exposure */}
+      <Card>
+        <h2 className="text-sm font-medium text-foreground mb-4">Internet exposure</h2>
+        <div className="flex items-start gap-3">
+          <button
+            onClick={() => {
+              const next = !expose;
+              setExpose(next);
+              exposeMutation.mutate(next);
+            }}
+            disabled={exposeMutation.isPending}
+            className={cn(
+              'relative mt-0.5 h-5 w-9 shrink-0 rounded-full border-2 transition-colors',
+              expose ? 'bg-info border-info' : 'bg-border border-border'
+            )}
+          >
+            <span
+              className={cn(
+                'absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform',
+                expose ? 'translate-x-4' : 'translate-x-0.5'
+              )}
+            />
+          </button>
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium text-foreground">
+              {expose ? 'Exposed on internet' : 'Port-forward only'}
+            </p>
+            {expose && app.slug ? (
+              <div className="flex flex-col gap-0.5">
+                <a
+                  href={appUrl(app.slug, 'prod')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-mono text-[#007BA7] hover:underline flex items-center gap-1"
+                >
+                  {appUrl(app.slug, 'prod')}
+                  <IconExternalLink size={10} />
+                </a>
+                <a
+                  href={appUrl(app.slug, 'dev')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-mono text-[#007BA7] hover:underline flex items-center gap-1"
+                >
+                  {appUrl(app.slug, 'dev')}
+                  <IconExternalLink size={10} />
+                </a>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Enable to expose the app on <span className="font-mono">cloud-native-plat4k.me</span> subdomains.
+              </p>
+            )}
+          </div>
+        </div>
+      </Card>
+
       {/* Danger Zone */}
       <Card className="border-danger/30">
         <h2 className="text-sm font-medium text-danger mb-1">Danger zone</h2>

@@ -64,6 +64,13 @@ class AppService:
         cluster = result.scalar_one_or_none()
         return cluster.id if cluster else None
 
+    async def _resolve_cluster_name(self, cluster_id: int | None) -> str:
+        if not cluster_id:
+            return "aks"
+        result = await self.db.execute(select(ClusterConnection).where(ClusterConnection.id == cluster_id))
+        cluster = result.scalar_one_or_none()
+        return cluster.name if cluster else "aks"
+
     async def list_apps(self) -> list[Application]:
         result = await self.db.execute(select(Application).order_by(Application.created_at.desc()))
         return list(result.scalars().all())
@@ -97,6 +104,7 @@ class AppService:
             template=payload.template,
             scaffolding_params=payload.scaffolding,
             target_namespace=target_namespace,
+            expose=payload.expose,
             gitlab_group_id=payload.owning_gitlab_group_id,
             gitlab_group_path=group_path,
         )
@@ -108,6 +116,7 @@ class AppService:
             "origin": "scaffolded",
             "framework": payload.template,
             "owning_gitlab_group_id": payload.owning_gitlab_group_id,
+            "expose": payload.expose,
             "target_cluster_id": await self._resolve_target_cluster_id(payload.target_cluster_id),
         }
         return await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
@@ -161,8 +170,13 @@ class AppService:
             "framework": framework or "generic",
             "target_cluster_id": await self._resolve_target_cluster_id(payload.target_cluster_id),
             "owning_gitlab_group_id": payload.owning_gitlab_group_id,
+            "expose": payload.expose,
         }
-        return await self._save_app(data)
+        app = await self._save_app(data)
+        if payload.expose and bot and settings.GITOPS_REPO_URL:
+            cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
+            await self._push_ingress_to_gitops(bot, slug, cluster_name)
+        return app
 
     async def external_import_app(self, payload: ApplicationExternalImportRequest) -> Application:
         slug = _validated_slug(payload.name)
@@ -220,8 +234,13 @@ class AppService:
             "framework": framework or "generic",
             "target_cluster_id": payload.target_cluster_id,
             "owning_gitlab_group_id": payload.owning_gitlab_group_id,
+            "expose": payload.expose,
         }
-        return await self._save_app(data, skip_ci=payload.raw)
+        app = await self._save_app(data, skip_ci=payload.raw)
+        if payload.expose and bot and settings.GITOPS_REPO_URL:
+            cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
+            await self._push_ingress_to_gitops(bot, slug, cluster_name)
+        return app
 
     async def _resolve_group_namespace(self, owning_gitlab_group_id: int | None) -> str | None:
         """Return the full_path of the GitLab group, or None if not found / not set."""
@@ -342,15 +361,7 @@ class AppService:
         bot = _get_bot_client()
         if not skip_ci and bot and app.repo_url and app.origin in ("scaffolded", "onboarded", "imported"):
             try:
-                cluster_name = "aks"
-                if app.target_cluster_id:
-                    cluster_result = await self.db.execute(
-                        select(ClusterConnection).where(ClusterConnection.id == app.target_cluster_id)
-                    )
-                    cluster = cluster_result.scalar_one_or_none()
-                    if cluster:
-                        cluster_name = cluster.name
-
+                cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
                 webhook_url = f"{settings.CNP_API_BASE_URL}{settings.API_V1_STR}/webhooks/gitlab"
                 await anyio.to_thread.run_sync(
                     lambda: inject_ci(
@@ -379,6 +390,49 @@ class AppService:
             await self.db.commit()
             await self.db.refresh(app)
 
+        return app
+
+    async def _push_ingress_to_gitops(self, bot: "GitLabClient", app_slug: str, cluster_name: str = "aks", enabled: bool = True) -> None:
+        """Best-effort: write ingress settings into gitops values files. Never raises."""
+        from shared.models import app_hostname
+        try:
+            gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
+            for env_name in ("dev", "prod"):
+                host = app_hostname(app_slug, env_name) if enabled else ""
+                await anyio.to_thread.run_sync(
+                    lambda en=env_name, h=host: bot.upsert_gitops_ingress(gitops_path, app_slug, en, enabled, h, cluster_name),
+                    cancellable=True,
+                )
+        except Exception:
+            logger.exception("Failed to push ingress settings to gitops for %s", app_slug)
+
+    async def update_expose(self, app_id: int, expose: bool) -> Application:
+        app = await self.get_app(app_id)
+        bot = _get_bot_client()
+        if not bot or not settings.GITOPS_REPO_URL:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="GITLAB_BOT_TOKEN or GITOPS_REPO_URL not configured",
+            )
+        from shared.models import app_hostname
+        cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
+        gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
+        for env_name in ("dev", "prod"):
+            host = app_hostname(app.slug, env_name) if expose else ""
+            try:
+                await anyio.to_thread.run_sync(
+                    lambda en=env_name, h=host: bot.upsert_gitops_ingress(gitops_path, app.slug, en, expose, h, cluster_name),
+                    cancellable=True,
+                )
+            except Exception:
+                logger.exception("Failed to update gitops ingress for %s (%s)", app.slug, env_name)
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Failed to update gitops for {env_name}",
+                )
+        app.expose = expose
+        await self.db.commit()
+        await self.db.refresh(app)
         return app
 
     async def update_app(self, app_id: int, payload: ApplicationUpdate) -> Application:
@@ -458,14 +512,7 @@ class AppService:
     async def delete_app(self, app_id: int) -> None:
         app = await self.get_app(app_id)
 
-        cluster_name = "aks"
-        if app.target_cluster_id:
-            cluster_result = await self.db.execute(
-                select(ClusterConnection).where(ClusterConnection.id == app.target_cluster_id)
-            )
-            cluster = cluster_result.scalar_one_or_none()
-            if cluster:
-                cluster_name = cluster.name
+        cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
 
         # 1. Clean up GitOps repo (ArgoCD manifests)
         bot = _get_bot_client()

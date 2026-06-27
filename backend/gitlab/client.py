@@ -1,5 +1,6 @@
 import logging
 
+import yaml
 from gitlab.exceptions import GitlabAuthenticationError, GitlabCreateError, GitlabGetError
 
 import gitlab
@@ -223,6 +224,14 @@ class GitLabClient:
         except GitlabGetError:
             pass
 
+    def _project_info(self, project) -> dict:
+        return {
+            "id": project.id,
+            "name": project.name,
+            "path_with_namespace": project.path_with_namespace,
+            "web_url": project.web_url,
+        }
+
     def push_files_batch(
         self,
         project_path: str,
@@ -233,11 +242,23 @@ class GitLabClient:
         """Push multiple files in a single commit using the GitLab Commits API.
 
         Each entry in `files` must have {"file_path": str, "content": str}.
-        Uses "create" action — intended for repos with no prior commits.
+        Existing files are updated so retries after partial scaffolding failures are safe.
         """
         project = self.get_project(project_path)
+        try:
+            existing_paths = {
+                item["path"]
+                for item in project.repository_tree(ref=branch, recursive=True, all=True)
+                if item["type"] == "blob"
+            }
+        except GitlabGetError:
+            existing_paths = set()
         actions = [
-            {"action": "create", "file_path": f["file_path"], "content": f["content"]}
+            {
+                "action": "update" if f["file_path"] in existing_paths else "create",
+                "file_path": f["file_path"],
+                "content": f["content"],
+            }
             for f in files
         ]
         project.commits.create({
@@ -256,12 +277,11 @@ class GitLabClient:
             "default_branch": "main",
             "visibility": "private",
         })
-        return {
-            "id": project.id,
-            "name": project.name,
-            "path_with_namespace": project.path_with_namespace,
-            "web_url": project.web_url,
-        }
+        return self._project_info(project)
+
+    def get_project_info(self, path_with_namespace: str) -> dict:
+        """Return normalized project metadata for an existing project."""
+        return self._project_info(self.get_project(path_with_namespace))
 
     def read_file(self, project_path: str, file_path: str, ref: str = "main") -> str:
         """Reads the contents of a file from the repository (decoded in UTF-8)."""
@@ -291,6 +311,41 @@ class GitLabClient:
         """Send a GitLab project invitation to an email address."""
         project = self._gl.projects.get(project_id)
         project.invitations.create({"email": email, "access_level": access_level})
+
+    def upsert_gitops_ingress(
+        self,
+        project_path: str,
+        app_slug: str,
+        env_name: str,
+        enabled: bool,
+        host: str,
+        cluster_name: str = "aks",
+        branch: str = "main",
+    ) -> None:
+        """Patch ingress.{enabled,host,tls} in apps/{cluster_name}/{app_slug}/values-{env_name}.yaml in the gitops repo."""
+        file_path = f"apps/{cluster_name}/{app_slug}/values-{env_name}.yaml"
+        project = self.get_project(project_path)
+        action = "update"
+        try:
+            raw = self.read_file(project_path, file_path, ref=branch)
+            data = yaml.safe_load(raw) or {}
+        except GitlabGetError:
+            data = {}
+            action = "create"
+        data.setdefault("ingress", {})
+        data["ingress"]["enabled"] = enabled
+        data["ingress"]["className"] = "nginx"
+        data["ingress"]["host"] = host if enabled else ""
+        data["ingress"]["tls"] = False
+        project.commits.create({
+            "branch": branch,
+            "commit_message": f"chore(gitops): {'enable' if enabled else 'disable'} ingress for {app_slug} ({env_name})",
+            "actions": [{
+                "action": action,
+                "file_path": file_path,
+                "content": yaml.safe_dump(data, default_flow_style=False, sort_keys=False),
+            }],
+        })
 
     def delete_directory_contents(self, project_path: str, directory_path: str, commit_message: str, branch: str = "main") -> None:
         """Deletes all files within a directory using the Commits API."""

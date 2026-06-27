@@ -5,6 +5,7 @@ import { clustersApi } from '@/api/clusters';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { cn } from '@/utils/cn';
+import { clusterSupportsIngress, isPrivateCluster } from '@/utils/clusterUtils';
 
 interface Props {
   data: CiDeployConfig;
@@ -24,6 +25,9 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
     queryFn: clustersApi.list,
   });
 
+  const selectedCluster = clusters.find((c) => c.id === data.targetClusterId) ?? null;
+  const exposeSupported = selectedCluster === null || clusterSupportsIngress(selectedCluster);
+
   return (
     <div className="flex flex-col gap-5">
       {/* Target cloud */}
@@ -34,11 +38,13 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
         ) : (
           clusters.map((c) => {
             const selected = data.targetClusterId === c.id;
-            const isPrivate = !c.endpoint.includes('azure') && !c.endpoint.includes('aks');
             return (
               <button
                 key={c.id}
-                onClick={() => onChange({ targetClusterId: c.id })}
+                onClick={() => onChange({
+                  targetClusterId: c.id,
+                  ...(clusterSupportsIngress(c) ? {} : { expose: false }),
+                })}
                 className={cn(
                   'flex items-center gap-3 p-4 rounded-md border-2 text-left transition-colors bg-card',
                   selected ? 'border-foreground' : 'border-border hover:border-muted-foreground'
@@ -57,7 +63,7 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
                   <p className="text-xs text-muted-foreground truncate">{c.endpoint}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {isPrivate ? (
+                  {isPrivateCluster(c) ? (
                     <IconServer size={13} className="text-muted-foreground" />
                   ) : (
                     <IconCloud size={13} className="text-muted-foreground" />
@@ -106,6 +112,45 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
             </button>
           );
         })}
+      </div>
+
+      {/* Internet exposure */}
+      <div className="flex flex-col gap-3">
+        <p className="text-sm font-medium text-foreground">Internet exposure</p>
+        <button
+          onClick={() => exposeSupported && onChange({ expose: !data.expose })}
+          disabled={!exposeSupported}
+          className={cn(
+            'flex items-start gap-3 p-4 rounded-md border-2 text-left transition-colors bg-card',
+            !exposeSupported
+              ? 'border-border opacity-50 cursor-not-allowed'
+              : data.expose ? 'border-foreground' : 'border-border hover:border-muted-foreground'
+          )}
+        >
+          <span
+            className={cn(
+              'h-4 w-4 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center',
+              data.expose && exposeSupported ? 'border-info' : 'border-muted-foreground'
+            )}
+          >
+            {data.expose && exposeSupported && <span className="h-2 w-2 rounded-full bg-info block" />}
+          </span>
+          <div>
+            <p className="text-sm font-medium text-foreground">Expose on internet</p>
+            {!exposeSupported ? (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Not available on this cluster — nginx-ingress is only configured on AKS.
+              </p>
+            ) : data.expose ? (
+              <div className="flex flex-col gap-0.5 mt-1">
+                <p className="text-xs text-muted-foreground font-mono">{'{slug}'}.cloud-native-plat4k.me <span className="font-sans text-muted-foreground/60">prod</span></p>
+                <p className="text-xs text-muted-foreground font-mono">dev.{'{slug}'}.cloud-native-plat4k.me <span className="font-sans text-muted-foreground/60">dev</span></p>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-0.5">App accessible via kubectl port-forward only.</p>
+            )}
+          </div>
+        </button>
       </div>
 
       {/* Advanced options */}
