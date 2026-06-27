@@ -457,7 +457,16 @@ class AppService:
 
     async def delete_app(self, app_id: int) -> None:
         app = await self.get_app(app_id)
-        
+
+        cluster_name = "aks"
+        if app.target_cluster_id:
+            cluster_result = await self.db.execute(
+                select(ClusterConnection).where(ClusterConnection.id == app.target_cluster_id)
+            )
+            cluster = cluster_result.scalar_one_or_none()
+            if cluster:
+                cluster_name = cluster.name
+
         # 1. Clean up GitOps repo (ArgoCD manifests)
         bot = _get_bot_client()
         if bot and settings.GITOPS_REPO_URL:
@@ -466,7 +475,7 @@ class AppService:
                 await anyio.to_thread.run_sync(
                     lambda: bot.delete_directory_contents(
                         project_path=gitops_path,
-                        directory_path=f"apps/{app.slug}",
+                        directory_path=f"apps/{cluster_name}/{app.slug}",
                         commit_message=f"chore: delete app {app.name} from gitops apps"
                     ),
                     cancellable=True
@@ -477,7 +486,7 @@ class AppService:
                 await anyio.to_thread.run_sync(
                     lambda: bot.delete_directory_contents(
                         project_path=gitops_path,
-                        directory_path=f"argocd/{app.slug}",
+                        directory_path=f"argocd/{cluster_name}/{app.slug}",
                         commit_message=f"chore: delete app {app.name} from gitops argocd"
                     ),
                     cancellable=True
