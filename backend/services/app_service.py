@@ -78,6 +78,17 @@ class AppService:
     async def scaffold_app(self, payload: ApplicationScaffoldRequest) -> Application:
         slug = _validated_slug(payload.name)
         target_namespace = await self._resolve_group_namespace(payload.owning_gitlab_group_id)
+
+        group_path: str | None = None
+        if payload.owning_gitlab_group_id:
+            from backend.db.models import GitLabGroup
+            group_result = await self.db.execute(
+                select(GitLabGroup).where(GitLabGroup.gitlab_group_id == payload.owning_gitlab_group_id)
+            )
+            group = group_result.scalar_one_or_none()
+            if group:
+                group_path = group.full_path
+
         from backend.services.scaffolding_service import ScaffoldingService
         svc = ScaffoldingService(self.db)
         repo_url, project_path = await svc.scaffold(
@@ -86,6 +97,8 @@ class AppService:
             template=payload.template,
             scaffolding_params=payload.scaffolding,
             target_namespace=target_namespace,
+            gitlab_group_id=payload.owning_gitlab_group_id,
+            gitlab_group_path=group_path,
         )
         data = {
             "name": payload.name,

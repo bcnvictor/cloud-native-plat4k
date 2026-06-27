@@ -19,6 +19,7 @@ import { AdminSettings } from '@/pages/admin/AdminSettings';
 import { AdminUsers } from '@/pages/admin/AdminUsers';
 import { AdminAudit } from '@/pages/admin/AdminAudit';
 import { Profile } from '@/pages/Profile';
+import { GroupMetrics } from '@/pages/group/GroupMetrics';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
               { path: 'settings', element: <SettingsTab /> },
             ],
           },
+          { path: '/groups/:slug/metrics', element: <GroupMetrics /> },
           { path: '/groups/:slug/settings', element: <GroupSettings /> },
         ],
       },
