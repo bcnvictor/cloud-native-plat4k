@@ -10,8 +10,14 @@ import {
   IconAlertTriangle,
   IconBox,
   IconUserPlus,
+  IconUserMinus,
   IconUsers,
   IconWifiOff,
+  IconWifi,
+  IconHeartbeat,
+  IconPencil,
+  IconTrash,
+  IconHistory,
 } from '@tabler/icons-react';
 import { Button } from '@/components/ui/Button';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
@@ -19,39 +25,49 @@ import { useGroupApps } from '@/hooks/useGroupApps';
 import { useGroupMetrics } from '@/hooks/useAppMetrics';
 import { useScopeStore } from '@/store/scope';
 import { groupsApi } from '@/api/groups';
+import { eventsApi } from '@/api/events';
 import { getAppHealth } from '@/utils/appHealth';
 import { MetricCard } from '@/components/MetricCard';
 import { Card } from '@/components/ui/Card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar } from '@/components/Avatar';
 import { timeAgo } from '@/utils/timeAgo';
-import { ActivityEvent } from '@/types';
+import type { NotificationEvent } from '@/types';
 
-
-// MOCK: pas d'endpoint activity feed — décommissionner quand GET /groups/:id/activity existe
-const MOCK_ACTIVITY: ActivityEvent[] = [
-  { id: '1', type: 'deploy_success', appName: 'auth-service', timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString() },
-  { id: '2', type: 'provisioning', appName: 'api-gateway', timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString() },
-  { id: '3', type: 'deploy_failed', appName: 'worker', timestamp: new Date(Date.now() - 1000 * 60 * 90).toISOString() },
-  { id: '4', type: 'member_added', memberName: 'Alice Martin', timestamp: new Date(Date.now() - 1000 * 60 * 180).toISOString() },
-  { id: '5', type: 'deploy_success', appName: 'frontend-app', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString() },
-];
-
-const ACTIVITY_ICON: Record<ActivityEvent['type'], React.ReactNode> = {
-  deploy_success: <IconRocket size={14} className="text-success-text" />,
-  deploy_failed: <IconAlertTriangle size={14} className="text-danger-text" />,
-  provisioning: <IconBox size={14} className="text-info-text" />,
-  replica_error: <IconAlertTriangle size={14} className="text-warning-text" />,
-  member_added: <IconUserPlus size={14} className="text-muted-foreground" />,
+const EVENT_ICON: Record<string, React.ReactNode> = {
+  'app.created':          <IconBox size={14} className="text-info-text" />,
+  'app.updated':          <IconPencil size={14} className="text-muted-foreground" />,
+  'app.deleted':          <IconTrash size={14} className="text-warning-text" />,
+  'app.deployed':         <IconRocket size={14} className="text-success-text" />,
+  'app.rollback':         <IconHistory size={14} className="text-warning-text" />,
+  'app.health.degraded':  <IconAlertTriangle size={14} className="text-danger-text" />,
+  'app.health.recovered': <IconHeartbeat size={14} className="text-success-text" />,
+  'app.expose.changed':   <IconActivity size={14} className="text-muted-foreground" />,
+  'cluster.offline':      <IconWifiOff size={14} className="text-danger-text" />,
+  'cluster.online':       <IconWifi size={14} className="text-success-text" />,
+  'group.renamed':        <IconPencil size={14} className="text-muted-foreground" />,
+  'group.member.added':   <IconUserPlus size={14} className="text-muted-foreground" />,
+  'group.member.removed': <IconUserMinus size={14} className="text-muted-foreground" />,
 };
 
-function activityLabel(ev: ActivityEvent): string {
+function eventLabel(ev: NotificationEvent): string {
+  const p = ev.payload ?? {};
+  const name = (p.name as string) ?? '';
   switch (ev.type) {
-    case 'deploy_success': return `${ev.appName} — deployment successful`;
-    case 'deploy_failed': return `${ev.appName} — deployment failed`;
-    case 'provisioning': return `${ev.appName} — provisioning in progress`;
-    case 'replica_error': return `${ev.appName} — replica error`;
-    case 'member_added': return `${ev.memberName} joined the group`;
-    default: return '';
+    case 'app.created':          return `${name} was created`;
+    case 'app.updated':          return `${name} was updated`;
+    case 'app.deleted':          return `${name} was deleted`;
+    case 'app.deployed':         return `${name} — deployment successful`;
+    case 'app.rollback':         return `${name} — rollback${p.env ? ` (${p.env})` : ''}`;
+    case 'app.health.degraded':  return `${name} is degraded`;
+    case 'app.health.recovered': return `${name} recovered`;
+    case 'app.expose.changed':   return `${name} exposure changed`;
+    case 'cluster.offline':      return `Cluster ${p.cluster_name ?? ''} went offline`;
+    case 'cluster.online':       return `Cluster ${p.cluster_name ?? ''} is back online`;
+    case 'group.renamed':        return `Group renamed to ${p.new_name ?? ''}`;
+    case 'group.member.added':   return 'New member joined the group';
+    case 'group.member.removed': return 'Member left the group';
+    default: return ev.type;
   }
 }
 
@@ -75,6 +91,13 @@ export function GroupHome() {
   });
 
   const groupMetrics = useGroupMetrics(apps.map((a) => a.slug));
+
+  const { data: activity = [], isLoading: activityLoading } = useQuery({
+    queryKey: ['group-activity', group?.gitlab_group_id],
+    queryFn: () => eventsApi.groupActivity(group!.gitlab_group_id, 10),
+    enabled: !!group?.gitlab_group_id,
+    staleTime: 60_000,
+  });
 
   const statusCounts = apps.reduce<Record<string, number>>((acc, a) => {
     const s = getAppHealth(a);
@@ -162,17 +185,35 @@ export function GroupHome() {
           <div className="px-4 py-3 border-b border-border">
             <h2 className="text-sm font-medium text-foreground">Recent activity</h2>
           </div>
-          <ul className="divide-y divide-border">
-            {MOCK_ACTIVITY.map((ev) => (
-              <li key={ev.id} className="flex items-center gap-3 px-4 py-2.5">
-                <span className="shrink-0">{ACTIVITY_ICON[ev.type]}</span>
-                <span className="flex-1 text-xs text-foreground">{activityLabel(ev)}</span>
-                <span className="text-xs text-zinc-400 shrink-0">
-                  {timeAgo(ev.timestamp)}
-                </span>
-              </li>
-            ))}
-          </ul>
+          {activityLoading ? (
+            <ul className="divide-y divide-border">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <li key={i} className="flex items-center gap-3 px-4 py-2.5">
+                  <Skeleton className="h-3.5 w-3.5 rounded shrink-0" />
+                  <Skeleton className="h-3 flex-1 rounded" />
+                  <Skeleton className="h-3 w-12 rounded shrink-0" />
+                </li>
+              ))}
+            </ul>
+          ) : activity.length === 0 ? (
+            <p className="px-4 py-8 text-sm text-center text-muted-foreground">
+              No recent activity
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {activity.map((ev) => (
+                <li key={ev.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <span className="shrink-0">
+                    {EVENT_ICON[ev.type] ?? <IconActivity size={14} className="text-muted-foreground" />}
+                  </span>
+                  <span className="flex-1 text-xs text-foreground truncate">{eventLabel(ev)}</span>
+                  <span className="text-xs text-zinc-400 shrink-0 ml-2">
+                    {timeAgo(ev.created_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
 
         {/* Members */}
