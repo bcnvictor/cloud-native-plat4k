@@ -216,7 +216,7 @@ async def rollback_app(
     entry = next((e for e in history if e.get("id") == payload.history_id), None)
     if entry is None:
         raise HTTPException(status_code=404, detail="History entry not found")
-    old_tag = (entry.get("revisions") or [None])[0]
+    old_tag = ((entry.get("revisions") or [None])[0] or "")[:8] or None
     if not old_tag:
         raise HTTPException(status_code=409, detail="Cannot determine image tag for this history entry")
 
