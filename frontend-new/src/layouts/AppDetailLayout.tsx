@@ -23,6 +23,7 @@ export const useAppDetail = () => useContext(Ctx);
 const TABS = [
   { key: '', label: 'Overview' },
   { key: 'logs', label: 'Logs' },
+  { key: 'history', label: 'Historique' },
   { key: 'settings', label: 'Settings' },
 ];
 

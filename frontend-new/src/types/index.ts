@@ -73,6 +73,19 @@ export interface ArgoEnvStatus {
   error: string | null;
 }
 
+export interface AppHistoryEntry {
+  id: number;
+  deployedAt: string;
+  deployStartedAt?: string;
+  revisions: string[];
+  initiatedBy: { automated?: boolean; username?: string };
+}
+
+export interface AppHistory {
+  dev: AppHistoryEntry[];
+  prod: AppHistoryEntry[];
+}
+
 export interface AppRuntimeStatus {
   pods_running: number | null;
   pods_total: number | null;
