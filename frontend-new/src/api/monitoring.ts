@@ -1,5 +1,5 @@
 import { api } from './client';
-import { MonitoringMetrics, LogEntry } from '@/types';
+import { AppCostEntry, LogEntry, MonitoringMetrics } from '@/types';
 
 interface BackendLogEntry {
   ts: number;
@@ -12,6 +12,11 @@ interface BackendLogEntry {
 export const monitoringApi = {
   async getConfig(): Promise<{ grafana_url: string | null; prometheus_url: string | null; loki_url: string | null }> {
     const res = await api.get<{ grafana_url: string | null; prometheus_url: string | null; loki_url: string | null }>('/monitoring/config');
+    return res.data;
+  },
+
+  async getCostByGroup(groupId: number): Promise<AppCostEntry[]> {
+    const res = await api.get<AppCostEntry[]>('/monitoring/cost', { params: { group_id: groupId } });
     return res.data;
   },
 

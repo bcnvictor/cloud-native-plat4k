@@ -142,6 +142,13 @@ export interface LogEntry {
   pod?: string;
 }
 
+export interface AppCostEntry {
+  app_name: string;
+  cpu_cost_usd: number;
+  ram_cost_usd: number;
+  total_cost_usd: number;
+}
+
 export interface MetricPoint { t: number; v: number }
 
 export interface MonitoringMetrics {
