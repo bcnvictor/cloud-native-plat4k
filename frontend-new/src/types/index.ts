@@ -241,8 +241,37 @@ export interface AuditLog {
   action: string;
   cloud?: string | null;
   resource_id?: string | null;
+  app_id?: number | null;
   ip_address?: string | null;
+  extra?: Record<string, unknown> | null;
+  timestamp: string;
+}
+
+export type NotificationSeverity = 'info' | 'warning' | 'critical';
+export type NotificationState = 'new' | 'read' | 'acknowledged';
+
+export interface NotificationEvent {
+  id: number;
+  type: string;
+  severity: NotificationSeverity;
+  source: string;
+  app_id: number | null;
+  payload: Record<string, unknown>;
+  dedup_key: string;
   created_at: string;
+}
+
+export interface Notification {
+  id: number;
+  event: NotificationEvent;
+  state: NotificationState;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface NotificationPreference {
+  category: string;
+  enabled: boolean;
 }
 
 export interface AdminUser {

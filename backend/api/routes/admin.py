@@ -5,6 +5,7 @@ from typing import Optional
 from backend.api.deps import require_admin
 from backend.db.models import GitLabGroup, User
 from backend.db.session import get_db
+from backend.services.audit_service import AuditService
 from backend.services.gitlab_sync_service import _build_gitlab_client, run_gitlab_sync
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -32,10 +33,13 @@ class GitLabGroupOut(BaseModel):
 @router.post("/sync-gitlab")
 async def trigger_gitlab_sync(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
     """Déclenche manuellement un cycle complet de réconciliation GitLab (is_admin requis)."""
-    return await run_gitlab_sync(db)
+    result = await run_gitlab_sync(db)
+    await AuditService(db).log_action(current_user.id, "admin.sync_gitlab")
+    await db.commit()
+    return result
 
 
 @router.get("/gitlab-groups", response_model=list[GitLabGroupOut])
@@ -52,7 +56,7 @@ async def list_gitlab_groups(
 async def register_gitlab_group(
     body: GitLabGroupRegister,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
     """Enregistre manuellement un groupe GitLab (par ID ou full_path) pour le membership mirror."""
     if not body.gitlab_group_id and not body.full_path:
@@ -86,6 +90,9 @@ async def register_gitlab_group(
 
     await db.commit()
     await db.refresh(group)
+    await AuditService(db).log_action(current_user.id, "admin.register_gitlab_group",
+                                      extra={"group_id": group.gitlab_group_id, "name": group.name})
+    await db.commit()
     return group
 
 
@@ -93,7 +100,7 @@ async def register_gitlab_group(
 async def deregister_gitlab_group(
     gitlab_group_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
     """Supprime un groupe GitLab du membership mirror (ne supprime pas les membres existants)."""
     result = await db.execute(
@@ -102,5 +109,9 @@ async def deregister_gitlab_group(
     group = result.scalar_one_or_none()
     if not group:
         raise HTTPException(status_code=404, detail="Groupe introuvable")
+    group_name = group.name
     await db.delete(group)
+    await db.commit()
+    await AuditService(db).log_action(current_user.id, "admin.deregister_gitlab_group",
+                                      extra={"group_id": gitlab_group_id, "name": group_name})
     await db.commit()
