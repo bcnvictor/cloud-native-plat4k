@@ -5,6 +5,7 @@ export function getAppHealth(app: Application): AppHealthStatus {
     case 'onboarding': return 'provisioning';
     case 'ready': return 'stopped';
     case 'deployed': return 'healthy';
+    case 'degraded': return 'unhealthy';
     default: return 'stopped';
   }
 }
