@@ -1,6 +1,7 @@
 from typing import List
 
 import httpx
+import yaml
 from backend.api.deps import (
     _access_level_to_tier,
     get_current_user,
@@ -16,9 +17,11 @@ from backend.api.schemas.members import (
     MyAccessResponse,
 )
 from backend.argocd.client import get_argocd_client_for_cluster
+from backend.ci.detector import extract_project_path
 from backend.core.config import settings
 from backend.db.models import Application, AppMember, ClusterConnection, User
 from backend.db.session import get_db
+from backend.gitlab.client import GitLabClient
 from backend.k8s.client import get_k8s_client_for_cluster
 from backend.k8s.manifests import sanitize_k8s_name
 from backend.services.app_service import AppService
@@ -209,7 +212,26 @@ async def rollback_app(
         raise HTTPException(status_code=404, detail="Cluster not found")
 
     argocd = get_argocd_client_for_cluster(cluster)
-    await argocd.rollback_app(f"{app.slug}-{payload.env}", payload.history_id)
+    history = await argocd.get_app_history(f"{app.slug}-{payload.env}")
+    entry = next((e for e in history if e.get("id") == payload.history_id), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="History entry not found")
+    old_tag = (entry.get("revisions") or [None])[0]
+    if not old_tag:
+        raise HTTPException(status_code=409, detail="Cannot determine image tag for this history entry")
+
+    if not settings.GITOPS_REPO_URL or not settings.GITLAB_BOT_TOKEN:
+        raise HTTPException(status_code=503, detail="GitOps not configured (missing GITOPS_REPO_URL or GITLAB_BOT_TOKEN)")
+
+    gitops_project = extract_project_path(settings.GITOPS_REPO_URL)
+    values_path = f"apps/{cluster.name}/{app.slug}/values-{payload.env}.yaml"
+    gl = GitLabClient(token=settings.GITLAB_BOT_TOKEN, namespace="", use_private_token=True)
+
+    raw = gl.read_file(gitops_project, values_path)
+    data = yaml.safe_load(raw)
+    data["image"]["tag"] = old_tag
+    new_content = yaml.dump(data, default_flow_style=False, allow_unicode=True)
+    gl.push_file(gitops_project, values_path, new_content, f"chore: rollback {app.slug}-{payload.env} to {old_tag}")
 
     from backend.services.audit_service import AuditService
     await AuditService(db).log_action(
