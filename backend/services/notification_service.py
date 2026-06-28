@@ -31,6 +31,9 @@ class NotificationService:
         )
         if state:
             query = query.where(Notification.state == state)
+        else:
+            # Par défaut, exclure les notifications acquittées (vidées de l'inbox)
+            query = query.where(Notification.state != "acknowledged")
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
