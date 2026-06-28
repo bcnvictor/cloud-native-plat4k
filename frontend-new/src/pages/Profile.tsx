@@ -10,6 +10,7 @@ import {
 import { useAuthStore } from '@/store/auth';
 import { authApi } from '@/api/auth';
 import { groupsApi } from '@/api/groups';
+import { notificationsApi } from '@/api/notifications';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -17,6 +18,67 @@ import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/toast';
 import { timeAgo } from '@/utils/timeAgo';
+
+const PREF_CATEGORIES = [
+  { key: 'app',     label: 'Applications', description: 'Déploiements, santé, modifications' },
+  { key: 'cluster', label: 'Clusters',     description: 'Mise hors ligne / rétablissement' },
+  { key: 'group',   label: 'Groupes',      description: 'Membres ajoutés / retirés, renommage' },
+];
+
+function NotificationPreferences() {
+  const qc = useQueryClient();
+  const { data: prefs = [], isLoading } = useQuery({
+    queryKey: ['notification-preferences'],
+    queryFn: notificationsApi.getPreferences,
+  });
+
+  const updatePref = useMutation({
+    mutationFn: ({ category, enabled }: { category: string; enabled: boolean }) =>
+      notificationsApi.updatePreference(category, enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notification-preferences'] }),
+  });
+
+  function isEnabled(category: string) {
+    const pref = prefs.find((p) => p.category === category);
+    return pref === undefined ? true : pref.enabled;
+  }
+
+  return (
+    <Card>
+      <h2 className="text-sm font-medium text-foreground mb-4">Préférences de notification</h2>
+      {isLoading ? (
+        <Spinner size="sm" />
+      ) : (
+        <ul className="divide-y divide-border">
+          {PREF_CATEGORIES.map(({ key, label, description }) => (
+            <li key={key} className="flex items-center gap-3 py-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-foreground">{label}</p>
+                <p className="text-[11px] text-muted-foreground">{description}</p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={isEnabled(key)}
+                onClick={() => updatePref.mutate({ category: key, enabled: !isEnabled(key) })}
+                className={[
+                  'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200',
+                  isEnabled(key) ? 'bg-primary' : 'bg-muted',
+                ].join(' ')}
+              >
+                <span
+                  className={[
+                    'pointer-events-none block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5',
+                    isEnabled(key) ? 'translate-x-4' : 'translate-x-0.5',
+                  ].join(' ')}
+                />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
 
 export function Profile() {
   const { user } = useAuthStore();
@@ -129,6 +191,9 @@ export function Profile() {
             </ul>
           )}
         </Card>
+
+        {/* Notification preferences */}
+        <NotificationPreferences />
 
         {/* API Keys */}
         <Card>

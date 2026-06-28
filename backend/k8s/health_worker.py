@@ -101,9 +101,32 @@ async def _process_cluster(
     # Cascade uniquement sur transition confirmée ONLINE <-> OFFLINE : jamais depuis
     # UNKNOWN, sinon un cluster lent au démarrage dégraderait ses apps au premier échec.
     if new_status == ClusterStatus.OFFLINE and old_status == ClusterStatus.ONLINE:
-        degraded_apps[cluster.id] = await _cascade_offline(db, cluster.id)
+        app_ids = await _cascade_offline(db, cluster.id)
+        degraded_apps[cluster.id] = app_ids
+        from backend.alerting.constants import EventType
+        from backend.alerting.emitter import emit_event
+        await emit_event(db, EventType.CLUSTER_OFFLINE, "critical", "health_worker",
+                         payload={"cluster_id": cluster.id, "cluster_name": cluster.name})
+        for aid in app_ids:
+            app = await db.get(Application, aid)
+            if app:
+                await emit_event(db, EventType.APP_HEALTH_DEGRADED, "critical", "health_worker",
+                                 app_id=aid,
+                                 payload={"name": app.name, "reason": "cluster_offline",
+                                          "cluster_name": cluster.name})
     elif new_status == ClusterStatus.ONLINE and old_status == ClusterStatus.OFFLINE:
-        await _cascade_recovery(db, cluster.id, degraded_apps.pop(cluster.id, set()))
+        ids_to_restore = degraded_apps.pop(cluster.id, set())
+        await _cascade_recovery(db, cluster.id, ids_to_restore)
+        from backend.alerting.constants import EventType
+        from backend.alerting.emitter import emit_event
+        await emit_event(db, EventType.CLUSTER_ONLINE, "info", "health_worker",
+                         payload={"cluster_id": cluster.id, "cluster_name": cluster.name})
+        for aid in ids_to_restore:
+            app = await db.get(Application, aid)
+            if app:
+                await emit_event(db, EventType.APP_HEALTH_RECOVERED, "info", "health_worker",
+                                 app_id=aid,
+                                 payload={"name": app.name, "cluster_name": cluster.name})
 
     cluster.status = new_status
     await db.commit()

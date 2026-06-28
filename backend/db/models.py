@@ -109,12 +109,13 @@ class AuditLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    action = Column(String, nullable=False) # e.g. "CREATE_RESOURCE", "DELETE_API_KEY"
+    action = Column(String, nullable=False)
     resource_id = Column(Integer, ForeignKey("resources.id", ondelete="SET NULL"), nullable=True)
     app_id = Column(Integer, ForeignKey("applications.id", ondelete="SET NULL"), nullable=True)
     cloud = Column(SQLEnum(CloudType), nullable=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     ip_address = Column(String, nullable=True)
+    extra = Column(JSON, nullable=True)
 
     user = relationship("User", back_populates="audit_logs")
 
@@ -227,4 +228,52 @@ class AppMember(Base):
     __table_args__ = (
         UniqueConstraint("gitlab_project_id", "gitlab_user_id", name="uq_app_member_gitlab_user"),
         UniqueConstraint("gitlab_project_id", "email", name="uq_app_member_email"),
+    )
+
+
+# ── Alerting ──────────────────────────────────────────────────────────────────
+
+class Event(Base):
+    __tablename__ = "events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    type = Column(String, nullable=False)
+    severity = Column(String, nullable=False)
+    source = Column(String, nullable=False)
+    app_id = Column(Integer, ForeignKey("applications.id", ondelete="SET NULL"), nullable=True)
+    payload = Column(JSON, nullable=True)
+    dedup_key = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    notifications = relationship("Notification", back_populates="event", cascade="all, delete-orphan")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    recipient_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    state = Column(String, nullable=False, default="new")
+    read_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    event = relationship("Event", back_populates="notifications")
+    recipient = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint("event_id", "recipient_user_id", name="uq_notification_event_recipient"),
+    )
+
+
+class NotificationPreference(Base):
+    __tablename__ = "notification_preferences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    category = Column(String, nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "category", name="uq_notif_pref_user_category"),
     )

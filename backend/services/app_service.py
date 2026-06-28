@@ -463,6 +463,7 @@ class AppService:
 
     async def update_ci_status(self, app_id: int, payload: CiStatusUpdate) -> Application:
         app = await self.get_app(app_id)
+        old_status = app.last_known_status
         app.last_pipeline_status = payload.pipeline_status
         if payload.app_status is not None:
             app.last_known_status = payload.app_status
@@ -471,6 +472,12 @@ class AppService:
             logger.info("App %s promoted to READY after successful CI run", app.id)
         await self.db.commit()
         await self.db.refresh(app)
+        if payload.pipeline_status == "success" and old_status != app.last_known_status:
+            from backend.alerting.constants import EventType
+            from backend.alerting.emitter import emit_event
+            await emit_event(self.db, EventType.APP_DEPLOYED, "info", "ci",
+                             app_id=app.id, payload={"name": app.name, "pipeline_status": "success"})
+            await self.db.commit()
         return app
 
     async def get_postgresql_credentials(self, app_id: int, namespace: str):

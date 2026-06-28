@@ -56,7 +56,7 @@ export function AdminAudit() {
                 key={log.id}
                 className="grid grid-cols-[1fr_1fr_2fr_1fr_1fr] gap-4 px-4 py-2.5 border-b border-border last:border-0 items-center hover:bg-accent transition-colors"
               >
-                <p className="text-xs font-mono text-muted-foreground">{formatDate(log.created_at)}</p>
+                <p className="text-xs font-mono text-muted-foreground">{formatDate(log.timestamp)}</p>
                 <p className="text-xs text-foreground truncate">{log.user_id ?? '—'}</p>
                 <p className="text-xs text-foreground font-medium truncate">{log.action}</p>
                 <p className="text-xs font-mono text-muted-foreground truncate">

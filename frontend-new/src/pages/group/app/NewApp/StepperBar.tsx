@@ -29,7 +29,7 @@ export function StepperBar({ steps, onStepClick, locked = false }: StepperBarPro
               step.state === 'active' && 'bg-primary text-white cursor-default',
               step.state === 'done' && !locked && 'bg-primary text-white cursor-pointer hover:bg-primary/80',
               step.state === 'done' && locked && 'bg-primary text-white cursor-not-allowed opacity-60',
-              step.state === 'todo' && 'bg-zinc-100 text-zinc-400 cursor-default',
+              step.state === 'todo' && 'bg-muted text-muted-foreground cursor-default',
             )}
           >
             {step.state === 'done' ? (
@@ -41,7 +41,7 @@ export function StepperBar({ steps, onStepClick, locked = false }: StepperBarPro
         );
         const line =
           i < steps.length - 1 ? (
-            <div key={`line-${i}`} className="flex-1 h-0.5 bg-zinc-200" />
+            <div key={`line-${i}`} className="flex-1 h-0.5 bg-border" />
           ) : null;
         return line ? [circle, line] : [circle];
       })}

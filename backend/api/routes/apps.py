@@ -2,6 +2,8 @@ from typing import List
 
 import httpx
 import yaml
+from backend.alerting.constants import EventType
+from backend.alerting.emitter import emit_event
 from backend.api.deps import (
     _access_level_to_tier,
     get_current_user,
@@ -25,6 +27,7 @@ from backend.gitlab.client import GitLabClient
 from backend.k8s.client import get_k8s_client_for_cluster
 from backend.k8s.manifests import sanitize_k8s_name
 from backend.services.app_service import AppService
+from backend.services.audit_service import AuditService
 from backend.services.scaffolding_service import ScaffoldingService
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -138,10 +141,17 @@ async def get_app_runtime_status(
         ref = prod_data if prod_data.get("health_status") else dev_data
         health = ref.get("health_status")
         sync = ref.get("sync_status")
+        old_status = app.last_known_status
         if health in ("Degraded", "Missing"):
             app.last_known_status = ApplicationStatus.DEGRADED
+            if old_status != ApplicationStatus.DEGRADED:
+                await emit_event(db, EventType.APP_HEALTH_DEGRADED, "critical", "argocd",
+                                 app_id=app.id, payload={"name": app.name, "health": health})
         elif sync == "Synced" and health == "Healthy":
             app.last_known_status = ApplicationStatus.DEPLOYED
+            if old_status == ApplicationStatus.DEGRADED:
+                await emit_event(db, EventType.APP_HEALTH_RECOVERED, "info", "argocd",
+                                 app_id=app.id, payload={"name": app.name})
         await db.commit()
     except (HTTPException, httpx.HTTPError) as e:
         payload["argocd_error"] = str(e)
@@ -233,12 +243,17 @@ async def rollback_app(
     new_content = yaml.dump(data, default_flow_style=False, allow_unicode=True)
     gl.push_file(gitops_project, values_path, new_content, f"chore: rollback {app.slug}-{payload.env} to {old_tag}")
 
-    from backend.services.audit_service import AuditService
-    await AuditService(db).log_action(
+    audit = AuditService(db)
+    await audit.log_action(
         current_user.id,
         f"rollback:{payload.env}:{payload.history_id}",
         app_id=app_id,
+        extra={"env": payload.env, "history_id": payload.history_id},
     )
+    await emit_event(db, EventType.APP_ROLLBACK, "warning", "argocd",
+                     app_id=app_id,
+                     payload={"name": app.name, "env": payload.env, "history_id": payload.history_id},
+                     actor_user_id=current_user.id)
     await db.commit()
 
     return {"ok": True}
@@ -326,7 +341,15 @@ async def scaffold_app(
     current_user: User = Depends(require_role(UserRole.DEV)),
 ):
     """Create a new app from a CNP template (scaffolding)."""
-    return await AppService(db).scaffold_app(payload)
+    app = await AppService(db).scaffold_app(payload)
+    audit = AuditService(db)
+    await audit.log_action(current_user.id, "app.created", app_id=app.id,
+                           extra={"name": app.name, "origin": app.origin})
+    await emit_event(db, EventType.APP_CREATED, "info", "app_service",
+                     app_id=app.id, payload={"name": app.name, "origin": app.origin},
+                     actor_user_id=current_user.id)
+    await db.commit()
+    return app
 
 
 @router.post("/onboard", response_model=ApplicationResponse, status_code=201)
@@ -336,7 +359,15 @@ async def onboard_app(
     current_user: User = Depends(require_role(UserRole.DEV)),
 ):
     """Register an existing internal GitLab repo as a CNP app (onboard)."""
-    return await AppService(db).onboard_app(payload)
+    app = await AppService(db).onboard_app(payload)
+    audit = AuditService(db)
+    await audit.log_action(current_user.id, "app.created", app_id=app.id,
+                           extra={"name": app.name, "origin": app.origin})
+    await emit_event(db, EventType.APP_CREATED, "info", "app_service",
+                     app_id=app.id, payload={"name": app.name, "origin": app.origin},
+                     actor_user_id=current_user.id)
+    await db.commit()
+    return app
 
 
 @router.post("/import", response_model=ApplicationResponse, status_code=201)
@@ -346,7 +377,15 @@ async def import_app(
     current_user: User = Depends(require_role(UserRole.DEV)),
 ):
     """Clone a public external repo (GitHub/GitLab) into cnp-apps and register it."""
-    return await AppService(db).external_import_app(payload)
+    app = await AppService(db).external_import_app(payload)
+    audit = AuditService(db)
+    await audit.log_action(current_user.id, "app.created", app_id=app.id,
+                           extra={"name": app.name, "origin": app.origin})
+    await emit_event(db, EventType.APP_CREATED, "info", "app_service",
+                     app_id=app.id, payload={"name": app.name, "origin": app.origin},
+                     actor_user_id=current_user.id)
+    await db.commit()
+    return app
 
 
 @router.post("/sync", response_model=List[ApplicationResponse])
@@ -365,7 +404,15 @@ async def create_app(
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     """Register an app directly (no scaffold, no repo validation)."""
-    return await AppService(db).create_app(payload)
+    app = await AppService(db).create_app(payload)
+    audit = AuditService(db)
+    await audit.log_action(current_user.id, "app.created", app_id=app.id,
+                           extra={"name": app.name, "origin": app.origin})
+    await emit_event(db, EventType.APP_CREATED, "info", "app_service",
+                     app_id=app.id, payload={"name": app.name, "origin": app.origin},
+                     actor_user_id=current_user.id)
+    await db.commit()
+    return app
 
 
 @router.get("/{app_id}/services/postgresql/credentials", response_model=PostgreSQLCredentials)
@@ -386,7 +433,16 @@ async def update_app(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
-    return await AppService(db).update_app(app_id, payload)
+    app = await AppService(db).update_app(app_id, payload)
+    changed = list(payload.model_dump(exclude_unset=True).keys())
+    audit = AuditService(db)
+    await audit.log_action(current_user.id, "app.updated", app_id=app.id,
+                           extra={"name": app.name, "changed": changed})
+    await emit_event(db, EventType.APP_UPDATED, "info", "app_service",
+                     app_id=app.id, payload={"name": app.name, "changed": changed},
+                     actor_user_id=current_user.id)
+    await db.commit()
+    return app
 
 
 @router.post("/{app_id}/ci-status", response_model=ApplicationResponse)
@@ -406,7 +462,15 @@ async def delete_app(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.DEV)),
 ):
+    app = await AppService(db).get_app(app_id)
+    app_name = app.name
     await AppService(db).delete_app(app_id)
+    audit = AuditService(db)
+    await audit.log_action(current_user.id, "app.deleted", extra={"name": app_name})
+    await emit_event(db, EventType.APP_DELETED, "warning", "app_service",
+                     payload={"name": app_name},
+                     actor_user_id=current_user.id)
+    await db.commit()
     return {"msg": "Application deleted"}
 
 
@@ -419,7 +483,15 @@ async def toggle_expose(
     app_id: int,
     payload: ExposeToggleRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.DEV)),
+    current_user: User = Depends(require_role(UserRole.DEV)),
 ):
     """Enable or disable public internet exposure (nginx ingress) for all environments."""
-    return await AppService(db).update_expose(app_id, payload.expose)
+    app = await AppService(db).update_expose(app_id, payload.expose)
+    audit = AuditService(db)
+    await audit.log_action(current_user.id, "app.expose.changed", app_id=app.id,
+                           extra={"name": app.name, "expose": payload.expose})
+    await emit_event(db, EventType.APP_EXPOSE_CHANGED, "info", "app_service",
+                     app_id=app.id, payload={"name": app.name, "expose": payload.expose},
+                     actor_user_id=current_user.id)
+    await db.commit()
+    return app

@@ -157,15 +157,72 @@ class CredentialResponse(CredentialBase):
 
 class AuditLogResponse(BaseModel):
     id: int
-    user_id: int
+    user_id: Optional[int]
     action: str
     resource_id: Optional[int]
+    app_id: Optional[int] = None
     cloud: Optional[CloudType]
     timestamp: datetime
     ip_address: Optional[str]
+    extra: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True
+
+
+# ── Alerting ──────────────────────────────────────────────────────────────────
+
+class EventSeverity(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class NotificationState(str, Enum):
+    NEW = "new"
+    READ = "read"
+    ACKNOWLEDGED = "acknowledged"
+
+
+class EventResponse(BaseModel):
+    id: int
+    type: str
+    severity: str
+    source: str
+    app_id: Optional[int] = None
+    payload: Optional[Dict[str, Any]] = None
+    dedup_key: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class NotificationResponse(BaseModel):
+    id: int
+    event: EventResponse
+    state: str
+    read_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class NotificationPreferenceResponse(BaseModel):
+    category: str
+    enabled: bool
+
+    class Config:
+        from_attributes = True
+
+
+class NotificationPreferenceUpdate(BaseModel):
+    enabled: bool
+
+
+class UnreadCountResponse(BaseModel):
+    count: int
 
 
 # ── IDP entities ──────────────────────────────────────────────────────────────
