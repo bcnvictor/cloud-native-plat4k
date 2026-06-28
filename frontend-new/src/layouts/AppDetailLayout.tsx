@@ -23,7 +23,7 @@ export const useAppDetail = () => useContext(Ctx);
 const TABS = [
   { key: '', label: 'Overview' },
   { key: 'logs', label: 'Logs' },
-  { key: 'history', label: 'Historique' },
+  { key: 'history', label: 'History' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -111,9 +111,9 @@ export function AppDetailLayout() {
           {health === 'unhealthy' && (
             <div className="flex items-center gap-2 py-2 mb-1 px-3 bg-danger-subtle rounded-md text-xs text-danger-text">
               <span>⚠</span>
-              <span>L'application est en erreur.</span>
+              <span>The application is in error.</span>
               <button className="underline ml-auto" onClick={() => navigateTo('logs')}>
-                Voir les logs
+                View logs
               </button>
             </div>
           )}

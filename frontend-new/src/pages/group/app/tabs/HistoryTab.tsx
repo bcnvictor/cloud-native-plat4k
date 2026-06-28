@@ -41,12 +41,12 @@ function EntryRow({ entry, isLatest, env, appId }: EntryRowProps) {
   const { mutate: doRollback, isPending } = useMutation({
     mutationFn: () => appsApi.rollback(appId, entry.id, env),
     onSuccess: () => {
-      toast({ title: `Rollback ${env} lancé`, description: `Révision ${shortSha(entry.revisions)} en cours de déploiement.` });
+      toast({ title: `Rollback ${env} started`, description: `Revision ${shortSha(entry.revisions)} is being deployed.` });
       setConfirming(false);
       queryClient.invalidateQueries({ queryKey: ['app-status', appId] });
     },
     onError: (err: Error) => {
-      toast({ title: 'Rollback échoué', description: err.message, variant: 'destructive' });
+      toast({ title: 'Rollback failed', description: err.message, variant: 'destructive' });
       setConfirming(false);
     },
   });
@@ -62,13 +62,13 @@ function EntryRow({ entry, isLatest, env, appId }: EntryRowProps) {
       <span className="flex-1 text-muted-foreground">{formatDate(entry.deployedAt)}</span>
       <span className="w-28 text-muted-foreground truncate">{initiatorLabel(entry)}</span>
       {isLatest ? (
-        <span className="text-xs font-medium text-primary w-24 text-right">actuel</span>
+        <span className="text-xs font-medium text-primary w-24 text-right">current</span>
       ) : (
         <div className="flex gap-1.5 w-24 justify-end">
           {confirming ? (
             <>
               <Button size="sm" variant="danger" onClick={() => doRollback()} disabled={isPending}>
-                {isPending ? <Spinner size="sm" /> : 'Confirmer'}
+                {isPending ? <Spinner size="sm" /> : 'Confirm'}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={isPending}>
                 ✕
@@ -99,7 +99,7 @@ function EnvSection({ label, entries, env, appId, isLoading }: EnvSectionProps) 
       <div className="flex items-center gap-2 px-4 py-2.5 bg-background-subtle border-b border-border">
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</span>
         {!isLoading && (
-          <span className="text-xs text-muted-foreground">· {entries.length} entrée{entries.length !== 1 ? 's' : ''}</span>
+          <span className="text-xs text-muted-foreground">· {entries.length} {entries.length !== 1 ? 'entries' : 'entry'}</span>
         )}
       </div>
       {isLoading ? (
@@ -108,7 +108,7 @@ function EnvSection({ label, entries, env, appId, isLoading }: EnvSectionProps) 
           <Skeleton className="h-8 w-full" />
         </div>
       ) : entries.length === 0 ? (
-        <div className="px-4 py-6 text-sm text-muted-foreground text-center">Aucun déploiement enregistré.</div>
+        <div className="px-4 py-6 text-sm text-muted-foreground text-center">No deployments recorded.</div>
       ) : (
         <div>
           {[...entries].reverse().map((entry, i) => (
@@ -142,7 +142,7 @@ export function HistoryTab() {
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <IconHistory size={16} className="text-muted-foreground" />
-        <h2 className="text-sm font-semibold">Historique de déploiement</h2>
+        <h2 className="text-sm font-semibold">Deployment history</h2>
       </div>
 
       <EnvSection
@@ -153,7 +153,7 @@ export function HistoryTab() {
         isLoading={isLoading}
       />
       <EnvSection
-        label="Développement"
+        label="Development"
         entries={data?.dev ?? []}
         env="dev"
         appId={app.id}
