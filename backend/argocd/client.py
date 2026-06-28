@@ -1,3 +1,4 @@
+import json
 import logging
 
 import httpx
@@ -25,6 +26,41 @@ class ArgoCDClient:
         async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=_TIMEOUT, verify=False) as client:
             resp = await client.post(f"/api/v1/applications/{app_name}/sync", json={})
             resp.raise_for_status()
+
+    async def get_app_history(self, app_name: str) -> list[dict]:
+        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=_TIMEOUT, verify=False) as client:
+            resp = await client.get(f"/api/v1/applications/{app_name}")
+            resp.raise_for_status()
+            return resp.json().get("status", {}).get("history", [])
+
+    async def rollback_app(self, app_name: str, history_id: int) -> None:
+        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=_TIMEOUT, verify=False) as client:
+            # Read current automated sync config so we can restore it exactly
+            resp = await client.get(f"/api/v1/applications/{app_name}")
+            resp.raise_for_status()
+            automated = resp.json().get("spec", {}).get("syncPolicy", {}).get("automated")
+
+            # 1. Disable auto-sync (required — ArgoCD rejects rollback when auto-sync is on)
+            resp = await client.patch(
+                f"/api/v1/applications/{app_name}",
+                json={"patch": json.dumps({"spec": {"syncPolicy": {"automated": None}}}), "patchType": "merge"},
+            )
+            resp.raise_for_status()
+
+            try:
+                # 2. Rollback to the requested history entry
+                resp = await client.post(
+                    f"/api/v1/applications/{app_name}/rollback",
+                    json={"id": history_id},
+                )
+                resp.raise_for_status()
+            finally:
+                # 3. Always re-enable auto-sync to avoid leaving the app unmanaged
+                if automated is not None:
+                    await client.patch(
+                        f"/api/v1/applications/{app_name}",
+                        json={"patch": json.dumps({"spec": {"syncPolicy": {"automated": automated}}}), "patchType": "merge"},
+                    )
 
 
 def get_argocd_client_for_cluster(cluster) -> ArgoCDClient:
