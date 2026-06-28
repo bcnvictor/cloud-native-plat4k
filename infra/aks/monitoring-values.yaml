@@ -1,0 +1,4 @@
+USER-SUPPLIED VALUES:
+kube-state-metrics:
+  metricLabelsAllowlist:
+  - pods=[app.kubernetes.io/name,app.kubernetes.io/managed-by,cnp.io/owner,cnp.io/group-id]
