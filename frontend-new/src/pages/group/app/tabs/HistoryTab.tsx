@@ -53,8 +53,8 @@ function EntryRow({ entry, isLatest, env, appId }: EntryRowProps) {
 
   return (
     <div className={cn(
-      'flex items-center gap-4 px-4 py-3 text-sm border-b border-border last:border-0',
-      isLatest && 'bg-background-subtle'
+      'flex items-center gap-4 px-4 py-3 text-sm border-b border-border last:border-0 bg-background hover:bg-muted/40 transition-colors',
+      isLatest && 'bg-primary/5 hover:bg-primary/10'
     )}>
       <code className="w-20 font-mono text-xs text-muted-foreground shrink-0">
         {shortSha(entry.revisions)}
@@ -95,7 +95,7 @@ interface EnvSectionProps {
 
 function EnvSection({ label, entries, env, appId, isLoading }: EnvSectionProps) {
   return (
-    <div className="rounded-lg border border-border overflow-hidden">
+    <div className="rounded-lg border border-border overflow-hidden bg-background">
       <div className="flex items-center gap-2 px-4 py-2.5 bg-background-subtle border-b border-border">
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</span>
         {!isLoading && (
