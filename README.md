@@ -200,6 +200,14 @@ Les décisions d'architecture importantes sont documentées dans [`docs/adr/`](d
 | [0013](docs/adr/0013-migration-gitlab-saas.md) | Migration vers GitLab.com SaaS (free tier) | Accepted |
 | [0014](docs/adr/0014-app-lifecycle-v2.md) | Provisioning GitOps CI-driven et cycle de vie complet des apps | Accepted |
 | [0015](docs/adr/0015-service-discovery-cluster-health.md) | Service discovery multi-cluster et health-check des clusters | Accepted |
+| [0016](docs/adr/0016-vault-secrets-manager.md) | Intégration HashiCorp Vault comme secrets manager | Accepted |
+| [0017](docs/adr/0017-gitlab-appartenance-autorisation.md) | Appartenance et autorisation dérivées des groupes GitLab | Accepted |
+| [0018](docs/adr/0018-refonte-frontend-new.md) | Refonte UI/UX du frontend (`frontend-new/`) | Accepted |
+| [0019](docs/adr/0019-tailscale-reseau-overlay.md) | Tailscale comme réseau overlay inter-cluster | Accepted |
+| [0020](docs/adr/0020-observabilite-centralisee.md) | Observabilité centralisée — Grafana multi-sources | Accepted |
+| [0021](docs/adr/0021-grafana-https-letsencrypt.md) | Exposition HTTPS de Grafana via Let's Encrypt + nginx sur OCI | Accepted |
+| [0022](docs/adr/0022-cloud-prive-k3s-multi-cluster.md) | Cloud privé k3s auto-géré et routage multi-cluster du déploiement | Accepted |
+| [0023](docs/adr/0023-alerting-notifications-centre-notif.md) | Alerting in-app — événements, notifications et centre de notifications | Accepted |
 
 ## Guide de contribution
 
