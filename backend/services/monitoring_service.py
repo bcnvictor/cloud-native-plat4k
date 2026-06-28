@@ -25,6 +25,12 @@ RANGE_SECONDS = 1800  # fenêtre affichée : 30 min
 STEP_SECONDS  = 60    # 1 point/min → 30 points max
 
 
+async def _query_instant(client: httpx.AsyncClient, promql: str) -> list[dict]:
+    resp = await client.get("/api/v1/query", params={"query": promql}, timeout=15)
+    resp.raise_for_status()
+    return resp.json()["data"]["result"]
+
+
 async def _query_range(client: httpx.AsyncClient, promql: str, start: int, end: int) -> list[dict]:
     resp = await client.get(
         "/api/v1/query_range",
@@ -74,6 +80,54 @@ async def get_metrics(prometheus_url: str) -> dict:
         })
 
     return {"apps": apps}
+
+
+_CPU_COST_QUERY = (
+    "sum by (label_app_kubernetes_io_name) ("
+    "  rate(container_cpu_usage_seconds_total{{namespace=~'prod|dev', container!='', container!='POD'}}[5m])"
+    "  * on(pod, namespace) group_left(label_app_kubernetes_io_name)"
+    "  kube_pod_labels{{label_cnp_io_group_id='{group_id}', namespace=~'prod|dev'}}"
+    ") * 0.048 * 24 * 30"
+)
+_RAM_COST_QUERY = (
+    "sum by (label_app_kubernetes_io_name) ("
+    "  container_memory_working_set_bytes{{namespace=~'prod|dev', container!='', container!='POD'}}"
+    "  * on(pod, namespace) group_left(label_app_kubernetes_io_name)"
+    "  kube_pod_labels{{label_cnp_io_group_id='{group_id}', namespace=~'prod|dev'}}"
+    ") / 1073741824 * 0.006 * 24 * 30"
+)
+
+
+async def get_cost_by_group(prometheus_url: str, group_id: str) -> list[dict]:
+    cpu_q = _CPU_COST_QUERY.format(group_id=group_id)
+    ram_q = _RAM_COST_QUERY.format(group_id=group_id)
+
+    async with httpx.AsyncClient(base_url=prometheus_url) as client:
+        cpu_results = await _query_instant(client, cpu_q)
+        ram_results = await _query_instant(client, ram_q)
+
+    cpu_map = {
+        r["metric"].get("label_app_kubernetes_io_name", "unknown"): round(float(r["value"][1]), 4)
+        for r in cpu_results
+    }
+    ram_map = {
+        r["metric"].get("label_app_kubernetes_io_name", "unknown"): round(float(r["value"][1]), 4)
+        for r in ram_results
+    }
+
+    all_apps = sorted(set(cpu_map) | set(ram_map))
+    result = []
+    for name in all_apps:
+        cpu = cpu_map.get(name, 0.0)
+        ram = ram_map.get(name, 0.0)
+        result.append({
+            "app_name": name,
+            "cpu_cost_usd": cpu,
+            "ram_cost_usd": ram,
+            "total_cost_usd": round(cpu + ram, 4),
+        })
+
+    return sorted(result, key=lambda x: x["total_cost_usd"], reverse=True)
 
 
 def _detect_level(line: str, stream_labels: dict) -> str:

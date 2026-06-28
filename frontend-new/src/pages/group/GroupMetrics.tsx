@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   IconLayoutDashboard,
@@ -8,12 +8,15 @@ import {
   IconTerminal2,
   IconExternalLink,
 } from '@tabler/icons-react';
+import { useParams } from 'react-router-dom';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { useTheme } from '@/contexts/ThemeContext';
 import { groupsApi } from '@/api/groups';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs } from '@/components/ui/Tabs';
 import { cn } from '@/utils/cn';
+import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
+import { FinOpsCostWidget } from '@/components/FinOpsCostWidget';
 
 const VIEW_TABS = [
   { key: 'overview', label: 'Overview' },
@@ -70,40 +73,40 @@ interface TabContentProps {
   baseUrl: string;
   theme: string;
   dashboardUrl: string | null;
+  groupId: number;
 }
 
-function OverviewContent({ baseUrl, theme }: TabContentProps) {
+function OverviewContent({ baseUrl, theme, groupId }: TabContentProps) {
   return (
     <>
-      <SectionHeader icon={IconLayoutDashboard} label="Vue d'ensemble" />
+      <SectionHeader icon={IconLayoutDashboard} label="Overview" />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <GrafanaPanel panelId={2}  title="Apps actives"    baseUrl={baseUrl} theme={theme} height={140} />
-        <GrafanaPanel panelId={3}  title="Pods Running"    baseUrl={baseUrl} theme={theme} height={140} />
-        <GrafanaPanel panelId={4}  title="Coût estimé 30j" baseUrl={baseUrl} theme={theme} height={140} />
-        <GrafanaPanel panelId={5}  title="Restart count"   baseUrl={baseUrl} theme={theme} height={140} />
+        <GrafanaPanel panelId={2}  title="Active apps"      baseUrl={baseUrl} theme={theme} height={140} />
+        <GrafanaPanel panelId={3}  title="Pods running"     baseUrl={baseUrl} theme={theme} height={140} />
+        <GrafanaPanel panelId={4}  title="Est. cost 30d"    baseUrl={baseUrl} theme={theme} height={140} />
+        <GrafanaPanel panelId={5}  title="Restart count"    baseUrl={baseUrl} theme={theme} height={140} />
       </div>
 
       <SectionHeader icon={IconCoin} label="FinOps Showback" />
-      <div className="grid grid-cols-3 gap-3">
-        <GrafanaPanel panelId={11} title="Coût par app"     baseUrl={baseUrl} theme={theme} height={280} className="col-span-2" />
-        <GrafanaPanel panelId={12} title="Répartition coût" baseUrl={baseUrl} theme={theme} height={280} />
+      <div className="rounded-lg border border-border bg-background p-4">
+        <FinOpsCostWidget groupId={groupId} />
       </div>
     </>
   );
 }
 
-function DeepDiveContent({ baseUrl, theme, dashboardUrl }: TabContentProps) {
+function DeepDiveContent({ baseUrl, theme, dashboardUrl }: Omit<TabContentProps, 'groupId'> & { groupId: number }) {
   return (
     <>
       <SectionHeader icon={IconCpu} label="Compute" />
       <div className="grid grid-cols-2 gap-3 mb-6">
-        <GrafanaPanel panelId={21} title="CPU par app" baseUrl={baseUrl} theme={theme} height={260} />
-        <GrafanaPanel panelId={22} title="RAM par app" baseUrl={baseUrl} theme={theme} height={260} />
+        <GrafanaPanel panelId={21} title="CPU per app" baseUrl={baseUrl} theme={theme} height={260} />
+        <GrafanaPanel panelId={22} title="RAM per app" baseUrl={baseUrl} theme={theme} height={260} />
       </div>
 
-      <SectionHeader icon={IconActivity} label="Santé" />
+      <SectionHeader icon={IconActivity} label="Health" />
       <div className="grid grid-cols-2 gap-3 mb-6">
-        <GrafanaPanel panelId={31} title="Restarts par pod" baseUrl={baseUrl} theme={theme} height={220} />
+        <GrafanaPanel panelId={31} title="Restarts per pod" baseUrl={baseUrl} theme={theme} height={220} />
         <GrafanaPanel panelId={32} title="Pod readiness"    baseUrl={baseUrl} theme={theme} height={220} />
       </div>
 
@@ -119,7 +122,7 @@ function DeepDiveContent({ baseUrl, theme, dashboardUrl }: TabContentProps) {
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <IconExternalLink size={13} />
-            Ouvrir dans Grafana
+            Open in Grafana
           </a>
         </div>
       )}
@@ -129,8 +132,18 @@ function DeepDiveContent({ baseUrl, theme, dashboardUrl }: TabContentProps) {
 
 export function GroupMetrics() {
   const group = useCurrentGroup();
+  const { slug } = useParams<{ slug: string }>();
   const { theme } = useTheme();
   const [activeTab, setActiveTab] = useState('overview');
+  const { setBreadcrumb } = useBreadcrumb();
+
+  useEffect(() => {
+    setBreadcrumb([
+      { label: group?.name ?? '…', to: `/groups/${slug}` },
+      { label: 'Metrics' },
+    ]);
+    return () => setBreadcrumb([]);
+  }, [group?.name, slug, setBreadcrumb]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['group-grafana-url', group?.gitlab_group_id],
@@ -141,7 +154,7 @@ export function GroupMetrics() {
   if (!group || isLoading) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-        Chargement…
+        Loading…
       </div>
     );
   }
@@ -149,9 +162,9 @@ export function GroupMetrics() {
   if (!data?.panel_base_url) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 h-64 text-center px-8">
-        <p className="text-sm font-medium">Métriques non disponibles</p>
+        <p className="text-sm font-medium">Metrics unavailable</p>
         <p className="text-xs text-muted-foreground max-w-sm">
-          Aucune app déployée pour ce groupe, ou Grafana n'est pas encore configuré.
+          No apps deployed for this group, or Grafana is not yet configured.
         </p>
       </div>
     );
@@ -161,8 +174,7 @@ export function GroupMetrics() {
 
   return (
     <div className="px-6 py-4">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold">{group.name} — métriques</h2>
+      <div className="flex items-center justify-end mb-4">
         {dashboardUrl && activeTab === 'overview' && (
           <a
             href={dashboardUrl}
@@ -171,7 +183,7 @@ export function GroupMetrics() {
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <IconExternalLink size={13} />
-            Voir tout dans Grafana
+            View in Grafana
           </a>
         )}
       </div>
@@ -179,9 +191,9 @@ export function GroupMetrics() {
       <Tabs tabs={VIEW_TABS} active={activeTab} onChange={setActiveTab} className="mb-6" />
 
       {activeTab === 'overview' ? (
-        <OverviewContent baseUrl={baseUrl} theme={theme} dashboardUrl={dashboardUrl} />
+        <OverviewContent baseUrl={baseUrl} theme={theme} dashboardUrl={dashboardUrl} groupId={group.gitlab_group_id} />
       ) : (
-        <DeepDiveContent baseUrl={baseUrl} theme={theme} dashboardUrl={dashboardUrl} />
+        <DeepDiveContent baseUrl={baseUrl} theme={theme} dashboardUrl={dashboardUrl} groupId={group.gitlab_group_id} />
       )}
 
       <div className="h-6" />
