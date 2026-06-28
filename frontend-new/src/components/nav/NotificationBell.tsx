@@ -43,14 +43,16 @@ function NotificationItem({
   return (
     <li
       className={cn(
-        'flex items-start gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-accent transition-colors',
-        isNew ? 'bg-background' : 'bg-muted/50',
+        'flex items-start gap-2.5 px-3 py-2.5 cursor-pointer transition-colors',
+        isNew
+          ? 'bg-background hover:bg-accent'
+          : 'bg-muted hover:bg-muted/70',
       )}
       onClick={onRead}
     >
       <span className={cn(
         'mt-1.5 h-2 w-2 shrink-0 rounded-full transition-colors',
-        isNew ? severityDot : 'bg-muted-foreground/30',
+        isNew ? severityDot : 'bg-muted-foreground/25',
       )} />
       <div className="flex-1 min-w-0">
         <p className={cn(
@@ -60,7 +62,12 @@ function NotificationItem({
           {label}
           {name && <span className="font-normal"> · {name}</span>}
         </p>
-        <p className="text-[10px] text-muted-foreground/70 mt-0.5">{timeAgo(n.created_at)}</p>
+        <p className={cn(
+          'text-[10px] mt-0.5 transition-colors',
+          isNew ? 'text-muted-foreground' : 'text-muted-foreground/50',
+        )}>
+          {timeAgo(n.created_at)}
+        </p>
       </div>
     </li>
   );
@@ -94,7 +101,7 @@ export function NotificationBell() {
 
   const clearAll = useMutation({
     mutationFn: notificationsApi.clearAll,
-    onSuccess: () => {
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['notifications'] });
       qc.invalidateQueries({ queryKey: ['notifications-count'] });
     },
@@ -132,11 +139,11 @@ export function NotificationBell() {
             <div className="flex items-center gap-2">
               {notifications.length > 0 && (
                 <button
-                  onClick={() => clearAll.mutate()}
+                  onClick={() => { if (!clearAll.isPending) clearAll.mutate(); }}
                   disabled={clearAll.isPending}
-                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Clear all
+                  {clearAll.isPending ? 'Clearing…' : 'Clear all'}
                 </button>
               )}
               <button
