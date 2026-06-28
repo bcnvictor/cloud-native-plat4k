@@ -10,6 +10,7 @@ import { GroupSettings } from '@/pages/group/GroupSettings';
 import { AppDetailLayout } from '@/layouts/AppDetailLayout';
 import { OverviewTab } from '@/pages/group/app/tabs/OverviewTab';
 import { LogsTab } from '@/pages/group/app/tabs/LogsTab';
+import { HistoryTab } from '@/pages/group/app/tabs/HistoryTab';
 import { SettingsTab } from '@/pages/group/app/tabs/SettingsTab';
 import { NewApp } from '@/pages/group/app/NewApp';
 import { Clusters } from '@/pages/admin/Clusters';
@@ -40,6 +41,7 @@ export const router = createBrowserRouter([
             children: [
               { index: true, element: <OverviewTab /> },
               { path: 'logs', element: <LogsTab /> },
+              { path: 'history', element: <HistoryTab /> },
               { path: 'settings', element: <SettingsTab /> },
             ],
           },
