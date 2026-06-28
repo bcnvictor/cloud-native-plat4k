@@ -148,6 +148,80 @@ async def get_app_runtime_status(
     return AppRuntimeStatus(**payload)
 
 
+@router.get("/{app_id}/history")
+async def get_app_history(
+    app_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_tier(CnpTier.VIEWER)),
+):
+    """Return ArgoCD deployment history for dev and prod environments."""
+    app_result = await db.execute(select(Application).where(Application.id == app_id))
+    app = app_result.scalar_one_or_none()
+    if app is None:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if not app.target_cluster_id:
+        raise HTTPException(status_code=409, detail="Application has no target cluster configured")
+
+    cluster_result = await db.execute(
+        select(ClusterConnection).where(ClusterConnection.id == app.target_cluster_id)
+    )
+    cluster = cluster_result.scalar_one_or_none()
+    if cluster is None:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    argocd = get_argocd_client_for_cluster(cluster)
+    result: dict[str, list] = {}
+    for env in ("dev", "prod"):
+        try:
+            result[env] = await argocd.get_app_history(f"{app.slug}-{env}")
+        except Exception:
+            result[env] = []
+    return result
+
+
+class RollbackRequest(BaseModel):
+    history_id: int
+    env: str  # "dev" or "prod"
+
+
+@router.post("/{app_id}/rollback", status_code=200)
+async def rollback_app(
+    app_id: int,
+    payload: RollbackRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_tier(CnpTier.MAINTAINER)),
+):
+    """Roll back an ArgoCD application to a previous history entry (Maintainer+)."""
+    app_result = await db.execute(select(Application).where(Application.id == app_id))
+    app = app_result.scalar_one_or_none()
+    if app is None:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if not app.target_cluster_id:
+        raise HTTPException(status_code=409, detail="Application has no target cluster configured")
+    if payload.env not in ("dev", "prod"):
+        raise HTTPException(status_code=422, detail="env must be 'dev' or 'prod'")
+
+    cluster_result = await db.execute(
+        select(ClusterConnection).where(ClusterConnection.id == app.target_cluster_id)
+    )
+    cluster = cluster_result.scalar_one_or_none()
+    if cluster is None:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    argocd = get_argocd_client_for_cluster(cluster)
+    await argocd.rollback_app(f"{app.slug}-{payload.env}", payload.history_id)
+
+    from backend.services.audit_service import AuditService
+    await AuditService(db).log_action(
+        current_user.id,
+        f"rollback:{payload.env}:{payload.history_id}",
+        app_id=app_id,
+    )
+    await db.commit()
+
+    return {"ok": True}
+
+
 @router.get("/{app_id}/members", response_model=List[MemberRead])
 async def list_app_members(
     app_id: int,

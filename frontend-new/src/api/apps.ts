@@ -1,5 +1,5 @@
 import { api } from './client';
-import { Application, AppRuntimeStatus, AppMember, AppTemplate, EnvVar } from '@/types';
+import { Application, AppHistory, AppRuntimeStatus, AppMember, AppTemplate, EnvVar } from '@/types';
 
 export const appsApi = {
   async list(): Promise<Application[]> {
@@ -84,6 +84,15 @@ export const appsApi = {
   async getStatus(appId: number): Promise<AppRuntimeStatus> {
     const res = await api.get<AppRuntimeStatus>(`/apps/${appId}/status`);
     return res.data;
+  },
+
+  async getHistory(appId: number): Promise<AppHistory> {
+    const res = await api.get<AppHistory>(`/apps/${appId}/history`);
+    return res.data;
+  },
+
+  async rollback(appId: number, historyId: number, env: 'dev' | 'prod'): Promise<void> {
+    await api.post(`/apps/${appId}/rollback`, { history_id: historyId, env });
   },
 
   async getEnvVars(_appId: number): Promise<EnvVar[]> {
