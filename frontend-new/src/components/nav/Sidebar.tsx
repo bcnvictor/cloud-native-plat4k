@@ -1,4 +1,4 @@
-import { IconBell, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
+import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/auth';
 import { authApi } from '@/api/auth';
@@ -6,6 +6,7 @@ import { Avatar } from '@/components/Avatar';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { NavItems } from './NavItems';
 import { ScopeSwitcher } from './ScopeSwitcher';
+import { NotificationBell } from './NotificationBell';
 
 interface SidebarProps {
   expanded: boolean;
@@ -40,15 +41,6 @@ export function Sidebar({ expanded, onToggle }: SidebarProps) {
     />
   ) : (
     <div className="h-8 w-8" />
-  );
-
-  const bellButton = (
-    <button
-      className="relative h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-      aria-label="Notifications"
-    >
-      <IconBell size={17} />
-    </button>
   );
 
   return (
@@ -102,11 +94,11 @@ export function Sidebar({ expanded, onToggle }: SidebarProps) {
         {expanded ? (
           <>
             {profileDropdown}
-            {bellButton}
+            <NotificationBell />
           </>
         ) : (
           <>
-            {bellButton}
+            <NotificationBell />
             {profileDropdown}
           </>
         )}

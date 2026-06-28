@@ -56,7 +56,7 @@ export function Toaster() {
             'px-4 py-3 rounded-lg border shadow-lg min-w-[280px] max-w-sm pointer-events-auto',
             t.variant === 'destructive'
               ? 'bg-danger text-white border-red-700'
-              : 'bg-white text-foreground border-border shadow-md'
+              : 'bg-background text-foreground border-border shadow-md'
           )}
         >
           <p className="text-sm font-medium leading-snug">{t.title}</p>

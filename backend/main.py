@@ -20,6 +20,7 @@ from backend.api.routes import (
     groups,
     health,
     monitoring,
+    notifications,
     resources,
     users,
     webhooks,
@@ -123,3 +124,4 @@ app.include_router(groups.router, prefix=f"{settings.API_V1_STR}/groups", tags=[
 app.include_router(webhooks.router, prefix=f"{settings.API_V1_STR}/webhooks", tags=["webhooks"])
 app.include_router(monitoring.router, prefix=f"{settings.API_V1_STR}/monitoring", tags=["monitoring"])
 app.include_router(admin.router, prefix=f"{settings.API_V1_STR}/admin", tags=["admin"])
+app.include_router(notifications.router, prefix=f"{settings.API_V1_STR}/notifications", tags=["notifications"])

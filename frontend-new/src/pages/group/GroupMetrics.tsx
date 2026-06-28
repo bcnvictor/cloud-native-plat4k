@@ -42,7 +42,7 @@ function GrafanaPanel({ panelId, title, baseUrl, theme, height, className }: Pan
       style={{ height }}
     >
       {!loaded && (
-        <Skeleton className="absolute inset-0 h-full rounded-lg dark:bg-zinc-800" />
+        <Skeleton className="absolute inset-0 h-full rounded-lg" />
       )}
       <iframe
         src={src}

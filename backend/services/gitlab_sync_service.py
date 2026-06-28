@@ -79,6 +79,12 @@ async def _discover_subgroups(db: AsyncSession, gl: Any) -> int:
         )
         existing = result.scalar_one_or_none()
         if existing:
+            if existing.name != sg.name:
+                from backend.alerting.constants import EventType
+                from backend.alerting.emitter import emit_event
+                await emit_event(db, EventType.GROUP_RENAMED, "info", "gitlab_sync",
+                                 payload={"group_id": sg.id, "old_name": existing.name,
+                                          "new_name": sg.name})
             existing.name = sg.name
             existing.full_path = sg.full_path
         else:
@@ -116,6 +122,9 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
         r.gitlab_user_id: r for r in result.scalars().all() if r.gitlab_user_id is not None
     }
 
+    from backend.alerting.constants import EventType
+    from backend.alerting.emitter import emit_event
+
     for m in gl_members:
         cnp_user_id = await _resolve_cnp_user_id(db, m.id)
         if m.id in existing:
@@ -137,6 +146,11 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
                 status=MemberStatus.ACTIVE,
             ))
             stats["created"] += 1
+            if cnp_user_id:
+                await emit_event(db, EventType.GROUP_MEMBER_ADDED, "info", "gitlab_sync",
+                                 payload={"cnp_user_id": cnp_user_id, "group_name": group.name,
+                                          "group_id": group.gitlab_group_id,
+                                          "access_level": m.access_level})
 
     # Soft-revoke members absent from GitLab (never hard-delete)
     for gl_id, row in existing.items():
@@ -144,6 +158,10 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
             row.status = MemberStatus.LEFT
             row.updated_at = datetime.now(timezone.utc)
             stats["revoked"] += 1
+            if row.cnp_user_id:
+                await emit_event(db, EventType.GROUP_MEMBER_REMOVED, "info", "gitlab_sync",
+                                 payload={"cnp_user_id": row.cnp_user_id, "group_name": group.name,
+                                          "group_id": group.gitlab_group_id})
 
     group.synced_at = datetime.now(timezone.utc)
     return stats
