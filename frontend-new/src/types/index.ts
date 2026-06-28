@@ -1,7 +1,7 @@
 export type UserRole = 'admin' | 'dev' | 'viewer';
 export type CnpTier = 'viewer' | 'developer' | 'maintainer' | 'owner';
 
-export type ApplicationStatus = 'onboarding' | 'ready' | 'deployed';
+export type ApplicationStatus = 'onboarding' | 'ready' | 'deployed' | 'degraded';
 export type AppHealthStatus =
   | 'healthy'
   | 'deploying'
