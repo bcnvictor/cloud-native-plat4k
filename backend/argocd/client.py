@@ -1,4 +1,3 @@
-import json
 import logging
 
 import httpx
@@ -32,24 +31,6 @@ class ArgoCDClient:
             resp = await client.get(f"/api/v1/applications/{app_name}")
             resp.raise_for_status()
             return resp.json().get("status", {}).get("history", [])
-
-    async def rollback_app(self, app_name: str, history_id: int) -> None:
-        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=_TIMEOUT, verify=False) as client:
-            # 1. Disable auto-sync (required — ArgoCD rejects rollback when auto-sync is on)
-            resp = await client.patch(
-                f"/api/v1/applications/{app_name}",
-                json={"patch": json.dumps({"spec": {"syncPolicy": {"automated": None}}}), "patchType": "merge"},
-            )
-            resp.raise_for_status()
-
-            # 2. Rollback to the requested history entry — auto-sync stays OFF
-            # intentionally: re-enabling auto-sync would immediately resync to Git HEAD,
-            # undoing the rollback. The next CI push will trigger a fresh sync.
-            resp = await client.post(
-                f"/api/v1/applications/{app_name}/rollback",
-                json={"id": history_id},
-            )
-            resp.raise_for_status()
 
 
 def get_argocd_client_for_cluster(cluster) -> ArgoCDClient:
