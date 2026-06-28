@@ -76,7 +76,7 @@ export function Clusters() {
                       <p className="text-xs text-muted-foreground">{label}</p>
                       <p className="text-sm font-medium text-foreground">{value}</p>
                       {pct !== undefined && (
-                        <div className="h-1 w-full bg-zinc-100 rounded-full mt-2">
+                        <div className="h-1 w-full bg-muted rounded-full mt-2">
                           <div className="h-1 bg-[#007BA7] rounded-full" style={{ width: `${pct}%` }} />
                         </div>
                       )}
@@ -98,7 +98,7 @@ export function Clusters() {
                     {m.namespaces.map((ns) => (
                       <li
                         key={ns.name}
-                        className="flex items-center gap-2 px-1 py-1 rounded-md hover:bg-zinc-50 cursor-pointer transition-colors"
+                        className="flex items-center gap-2 px-1 py-1 rounded-md hover:bg-accent cursor-pointer transition-colors"
                         onClick={() => navigate(`/admin/apps?namespace=${ns.name}`)}
                       >
                         <span className="text-xs font-mono text-foreground flex-1">{ns.name}</span>
