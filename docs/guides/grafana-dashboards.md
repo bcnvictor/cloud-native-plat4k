@@ -120,6 +120,27 @@ curl -s -X POST https://grafana.cloud-native-plat4k.me/api/dashboards/import \
   }"
 ```
 
+## Dashboard FinOps Overview (`cnp-finops-overview`)
+
+Vue FinOps globale non paramétrique (pas de `$group_id`), scope cluster AKS uniquement — le cluster Oracle k3s n'est pas encore instrumenté (cf ADR-0020, 4K-90). Fichier versionné : `infra/grafana/cnp-finops-overview.json`, UID `cnp-finops-overview`.
+
+Contrairement à `dashboard.json` (export via `jq '.dashboard'`, à réenvelopper manuellement dans `{"dashboard": ..., "overwrite": true, "folderId": 0}` au moment du push), ce fichier contient déjà l'enveloppe complète attendue par `/api/dashboards/import`. Le pousser directement :
+
+```bash
+curl -s -X POST https://grafana.cloud-native-plat4k.me/api/dashboards/import \
+  -H "Content-Type: application/json" \
+  -u admin:$(vault kv get -field=GRAFANA_ADMIN_PASSWORD secret/cnp/platform) \
+  -d @infra/grafana/cnp-finops-overview.json
+```
+
+Pour resynchroniser le fichier après une édition dans l'UI Grafana :
+
+```bash
+curl -s https://grafana.cloud-native-plat4k.me/api/dashboards/uid/cnp-finops-overview \
+  -u admin:$(vault kv get -field=GRAFANA_ADMIN_PASSWORD secret/cnp/platform) \
+  | jq '{dashboard: .dashboard, folderId: 0, overwrite: true}' > infra/grafana/cnp-finops-overview.json
+```
+
 ## Ajouter un panel
 
 1. Ouvrir le dashboard en mode Edit.

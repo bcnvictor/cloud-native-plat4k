@@ -1,0 +1,329 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "cnp-finops-overview",
+    "title": "CNP — FinOps Overview",
+    "description": "Vue FinOps globale de la plateforme (cluster AKS uniquement, non paramétrique par groupe)",
+    "tags": ["cnp", "finops", "global"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "30s",
+    "time": { "from": "now-30d", "to": "now" },
+    "templating": {
+      "list": [
+        {
+          "name": "env",
+          "label": "Environnement",
+          "type": "custom",
+          "query": "dev,prod",
+          "current": { "text": "All", "value": "$__all" },
+          "options": [
+            { "text": "All", "value": "$__all", "selected": true },
+            { "text": "dev", "value": "dev" },
+            { "text": "prod", "value": "prod" }
+          ],
+          "includeAll": true,
+          "multi": false,
+          "hide": 0
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Coût total AKS (30j)",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "colorMode": "background",
+          "graphMode": "none",
+          "textMode": "auto",
+          "orientation": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyEUR",
+            "decimals": 2,
+            "color": { "mode": "fixed", "fixedColor": "purple" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [{ "color": "purple", "value": null }]
+            }
+          }
+        },
+        "targets": [
+          {
+            "expr": "(\n  sum(\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum(\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
+            "legendFormat": "",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Coût par équipe",
+        "type": "table",
+        "gridPos": { "x": 0, "y": 5, "w": 12, "h": 9 },
+        "options": {
+          "showHeader": true,
+          "sortBy": [{ "displayName": "Coût EUR/mois", "desc": true }]
+        },
+        "fieldConfig": {
+          "defaults": { "custom": { "align": "auto" } },
+          "overrides": [
+            {
+              "matcher": { "id": "byName", "options": "Coût EUR/mois" },
+              "properties": [
+                { "id": "unit", "value": "currencyEUR" },
+                { "id": "decimals", "value": 2 },
+                { "id": "custom.displayMode", "value": "color-background" },
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "mode": "absolute",
+                    "steps": [
+                      { "color": "green", "value": null },
+                      { "color": "yellow", "value": 5 },
+                      { "color": "red", "value": 20 }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": { "id": "byName", "options": "CPU cores" },
+              "properties": [
+                { "id": "unit", "value": "short" },
+                { "id": "decimals", "value": 3 }
+              ]
+            },
+            {
+              "matcher": { "id": "byName", "options": "RAM GB" },
+              "properties": [
+                { "id": "unit", "value": "short" },
+                { "id": "decimals", "value": 2 }
+              ]
+            }
+          ]
+        },
+        "transformations": [
+          { "id": "merge", "options": {} },
+          {
+            "id": "organize",
+            "options": {
+              "renameByName": {
+                "label_cnp_io_group_id": "Équipe",
+                "Value #CPU": "CPU cores",
+                "Value #RAM": "RAM GB",
+                "Value #COST": "Coût EUR/mois"
+              }
+            }
+          }
+        ],
+        "targets": [
+          {
+            "expr": "sum by (label_cnp_io_group_id) (\n  rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n)",
+            "legendFormat": "",
+            "refId": "CPU",
+            "instant": true
+          },
+          {
+            "expr": "sum by (label_cnp_io_group_id) (\n  container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n) / 1073741824",
+            "legendFormat": "",
+            "refId": "RAM",
+            "instant": true
+          },
+          {
+            "expr": "(\n  sum by (label_cnp_io_group_id) (\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n    * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum by (label_cnp_io_group_id) (\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n    * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
+            "legendFormat": "",
+            "refId": "COST",
+            "instant": true
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Top 5 apps les plus coûteuses",
+        "type": "table",
+        "gridPos": { "x": 12, "y": 5, "w": 12, "h": 9 },
+        "options": {
+          "showHeader": true,
+          "sortBy": [{ "displayName": "Coût EUR/mois", "desc": true }]
+        },
+        "fieldConfig": {
+          "defaults": { "custom": { "align": "auto" } },
+          "overrides": [
+            {
+              "matcher": { "id": "byName", "options": "Coût EUR/mois" },
+              "properties": [
+                { "id": "unit", "value": "currencyEUR" },
+                { "id": "decimals", "value": 2 },
+                { "id": "custom.displayMode", "value": "color-background" },
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "mode": "absolute",
+                    "steps": [
+                      { "color": "green", "value": null },
+                      { "color": "yellow", "value": 0.5 },
+                      { "color": "red", "value": 2 }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": { "Time": true },
+              "renameByName": {
+                "label_app_kubernetes_io_name": "App",
+                "label_cnp_io_group_id": "Équipe",
+                "Value": "Coût EUR/mois"
+              }
+            }
+          }
+        ],
+        "targets": [
+          {
+            "expr": "topk(5,\n  (\n    sum by (label_app_kubernetes_io_name, label_cnp_io_group_id) (\n      rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n      * on(pod, namespace) group_left(label_app_kubernetes_io_name, label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n    ) * 0.048 * 24 * 30\n  )\n  +\n  (\n    sum by (label_app_kubernetes_io_name, label_cnp_io_group_id) (\n      container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n      * on(pod, namespace) group_left(label_app_kubernetes_io_name, label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n    ) / 1073741824 * 0.006 * 24 * 30\n  )\n)",
+            "legendFormat": "",
+            "refId": "A",
+            "instant": true
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Tendance du coût (30j)",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 14, "w": 24, "h": 9 },
+        "options": {
+          "tooltip": { "mode": "single" },
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyEUR",
+            "decimals": 2,
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 15,
+              "gradientMode": "opacity"
+            },
+            "color": { "mode": "fixed", "fixedColor": "purple" }
+          }
+        },
+        "targets": [
+          {
+            "expr": "(\n  sum(\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum(\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
+            "legendFormat": "Coût total AKS",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "type": "row",
+        "title": "Ratio usage/requests (bonus)",
+        "collapsed": true,
+        "gridPos": { "x": 0, "y": 23, "w": 24, "h": 1 },
+        "panels": [
+          {
+            "id": 6,
+            "title": "Ratio usage/requests par app",
+            "type": "table",
+            "gridPos": { "x": 0, "y": 24, "w": 24, "h": 8 },
+            "options": { "showHeader": true },
+            "fieldConfig": {
+              "defaults": { "custom": { "align": "auto" } },
+              "overrides": [
+                {
+                  "matcher": { "id": "byName", "options": "CPU usage (cores)" },
+                  "properties": [
+                    { "id": "unit", "value": "short" },
+                    { "id": "decimals", "value": 3 }
+                  ]
+                },
+                {
+                  "matcher": { "id": "byName", "options": "CPU requests (cores)" },
+                  "properties": [
+                    { "id": "unit", "value": "short" },
+                    { "id": "decimals", "value": 3 }
+                  ]
+                },
+                {
+                  "matcher": { "id": "byName", "options": "Ratio usage/requests" },
+                  "properties": [
+                    { "id": "unit", "value": "percentunit" },
+                    { "id": "decimals", "value": 2 },
+                    { "id": "custom.displayMode", "value": "color-background" },
+                    {
+                      "id": "thresholds",
+                      "value": {
+                        "mode": "absolute",
+                        "steps": [
+                          { "color": "red", "value": null },
+                          { "color": "yellow", "value": 0.3 },
+                          { "color": "green", "value": 0.6 }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "transformations": [
+              { "id": "merge", "options": {} },
+              {
+                "id": "calculateField",
+                "options": {
+                  "mode": "binary",
+                  "binary": {
+                    "left": "Value #USAGE",
+                    "operator": "/",
+                    "right": "Value #REQUESTS"
+                  },
+                  "alias": "Ratio usage/requests",
+                  "reduce": { "reducer": "sum" }
+                }
+              },
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": { "Time": true },
+                  "renameByName": {
+                    "label_app_kubernetes_io_name": "App",
+                    "Value #USAGE": "CPU usage (cores)",
+                    "Value #REQUESTS": "CPU requests (cores)"
+                  }
+                }
+              }
+            ],
+            "targets": [
+              {
+                "expr": "sum by (label_app_kubernetes_io_name) (\n  rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{namespace=~\"$env\"}\n)",
+                "legendFormat": "",
+                "refId": "USAGE",
+                "instant": true
+              },
+              {
+                "expr": "sum by (label_app_kubernetes_io_name) (\n  kube_pod_container_resource_requests{resource=\"cpu\", namespace=~\"$env\"}\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{namespace=~\"$env\"}\n)",
+                "legendFormat": "",
+                "refId": "REQUESTS",
+                "instant": true
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "folderId": 0,
+  "overwrite": true
+}
