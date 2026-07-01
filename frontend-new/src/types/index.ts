@@ -189,18 +189,17 @@ export interface ActivityEvent {
   timestamp: string;
 }
 
-export interface FinOpsData {
-  period: string;
-  totalCostUsd: number;
-  azureCreditsTotal: number;
-  azureCreditsUsed: number;
-  azureCreditsRemainingDays: number;
-  clusters: Array<{ name: string; provider: string; costUsd: number }>;
-  groups: Array<{
-    groupName: string;
-    totalUsd: number;
-    apps: Array<{ appName: string; costUsd: number }>;
-  }>;
+export interface FinopsGrafanaUrls {
+  total_cost_panel_url: string | null;
+  top_apps_panel_url: string | null;
+  trend_panel_url: string | null;
+  dashboard_url: string | null;
+}
+
+export interface TeamCostEntry {
+  group_id: string;
+  group_name: string;
+  cost_eur_month: number;
 }
 
 // Stepper form state
