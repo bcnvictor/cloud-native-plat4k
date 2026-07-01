@@ -46,11 +46,20 @@
           "defaults": {
             "unit": "currencyEUR",
             "decimals": 2,
-            "color": { "mode": "fixed", "fixedColor": "purple" },
+            "color": { "mode": "fixed", "fixedColor": "#007BA7" },
             "thresholds": {
               "mode": "absolute",
-              "steps": [{ "color": "purple", "value": null }]
-            }
+              "steps": [{ "color": "#007BA7", "value": null }]
+            },
+            "mappings": [
+              {
+                "type": "special",
+                "options": {
+                  "match": "null+nan",
+                  "result": { "text": "No data", "color": "transparent" }
+                }
+              }
+            ]
           }
         },
         "targets": [
