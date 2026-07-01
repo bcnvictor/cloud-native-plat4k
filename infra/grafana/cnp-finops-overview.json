@@ -3,7 +3,7 @@
     "id": null,
     "uid": "cnp-finops-overview",
     "title": "CNP — FinOps Overview",
-    "description": "Vue FinOps globale de la plateforme (cluster AKS uniquement, non paramétrique par groupe)",
+    "description": "Global FinOps view of the platform (AKS cluster only, not parameterized per group)",
     "tags": ["cnp", "finops", "global"],
     "timezone": "browser",
     "schemaVersion": 38,
@@ -14,7 +14,7 @@
       "list": [
         {
           "name": "env",
-          "label": "Environnement",
+          "label": "Environment",
           "type": "custom",
           "query": "dev,prod",
           "current": { "text": "All", "value": "$__all" },
@@ -32,7 +32,7 @@
     "panels": [
       {
         "id": 1,
-        "title": "Coût total AKS (30j)",
+        "title": "Total AKS cost (30d)",
         "type": "stat",
         "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
         "options": {
@@ -63,18 +63,18 @@
       },
       {
         "id": 2,
-        "title": "Coût par équipe",
+        "title": "Cost by team",
         "type": "table",
         "gridPos": { "x": 0, "y": 5, "w": 12, "h": 9 },
         "options": {
           "showHeader": true,
-          "sortBy": [{ "displayName": "Coût EUR/mois", "desc": true }]
+          "sortBy": [{ "displayName": "Cost EUR/month", "desc": true }]
         },
         "fieldConfig": {
           "defaults": { "custom": { "align": "auto" } },
           "overrides": [
             {
-              "matcher": { "id": "byName", "options": "Coût EUR/mois" },
+              "matcher": { "id": "byName", "options": "Cost EUR/month" },
               "properties": [
                 { "id": "unit", "value": "currencyEUR" },
                 { "id": "decimals", "value": 2 },
@@ -114,10 +114,10 @@
             "id": "organize",
             "options": {
               "renameByName": {
-                "label_cnp_io_group_id": "Équipe",
+                "label_cnp_io_group_id": "Team",
                 "Value #CPU": "CPU cores",
                 "Value #RAM": "RAM GB",
-                "Value #COST": "Coût EUR/mois"
+                "Value #COST": "Cost EUR/month"
               }
             }
           }
@@ -145,36 +145,25 @@
       },
       {
         "id": 3,
-        "title": "Top 5 apps les plus coûteuses",
-        "type": "table",
+        "title": "Top 5 most expensive apps",
+        "type": "barchart",
         "gridPos": { "x": 12, "y": 5, "w": 12, "h": 9 },
         "options": {
-          "showHeader": true,
-          "sortBy": [{ "displayName": "Coût EUR/mois", "desc": true }]
+          "orientation": "horizontal",
+          "xField": "App",
+          "showValue": "auto",
+          "stacking": "none",
+          "barWidth": 0.6,
+          "groupWidth": 0.7,
+          "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false },
+          "tooltip": { "mode": "single" }
         },
         "fieldConfig": {
-          "defaults": { "custom": { "align": "auto" } },
-          "overrides": [
-            {
-              "matcher": { "id": "byName", "options": "Coût EUR/mois" },
-              "properties": [
-                { "id": "unit", "value": "currencyEUR" },
-                { "id": "decimals", "value": 2 },
-                { "id": "custom.displayMode", "value": "color-background" },
-                {
-                  "id": "thresholds",
-                  "value": {
-                    "mode": "absolute",
-                    "steps": [
-                      { "color": "green", "value": null },
-                      { "color": "yellow", "value": 0.5 },
-                      { "color": "red", "value": 2 }
-                    ]
-                  }
-                }
-              ]
-            }
-          ]
+          "defaults": {
+            "unit": "currencyEUR",
+            "decimals": 2,
+            "color": { "mode": "palette-classic" }
+          }
         },
         "transformations": [
           {
@@ -183,8 +172,8 @@
               "excludeByName": { "Time": true },
               "renameByName": {
                 "label_app_kubernetes_io_name": "App",
-                "label_cnp_io_group_id": "Équipe",
-                "Value": "Coût EUR/mois"
+                "label_cnp_io_group_id": "Team",
+                "Value": "Cost EUR/month"
               }
             }
           }
@@ -200,7 +189,7 @@
       },
       {
         "id": 4,
-        "title": "Tendance du coût (30j)",
+        "title": "Recent cost trend (30d)",
         "type": "timeseries",
         "gridPos": { "x": 0, "y": 14, "w": 24, "h": 9 },
         "options": {
@@ -222,7 +211,7 @@
         "targets": [
           {
             "expr": "(\n  sum(\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum(\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
-            "legendFormat": "Coût total AKS",
+            "legendFormat": "Total AKS cost",
             "refId": "A"
           }
         ]
@@ -230,13 +219,13 @@
       {
         "id": 5,
         "type": "row",
-        "title": "Ratio usage/requests (bonus)",
+        "title": "Usage/requests ratio (bonus)",
         "collapsed": true,
         "gridPos": { "x": 0, "y": 23, "w": 24, "h": 1 },
         "panels": [
           {
             "id": 6,
-            "title": "Ratio usage/requests par app",
+            "title": "Usage/requests ratio by app",
             "type": "table",
             "gridPos": { "x": 0, "y": 24, "w": 24, "h": 8 },
             "options": { "showHeader": true },
@@ -258,7 +247,7 @@
                   ]
                 },
                 {
-                  "matcher": { "id": "byName", "options": "Ratio usage/requests" },
+                  "matcher": { "id": "byName", "options": "Usage/requests ratio" },
                   "properties": [
                     { "id": "unit", "value": "percentunit" },
                     { "id": "decimals", "value": 2 },
@@ -289,7 +278,7 @@
                     "operator": "/",
                     "right": "Value #REQUESTS"
                   },
-                  "alias": "Ratio usage/requests",
+                  "alias": "Usage/requests ratio",
                   "reduce": { "reducer": "sum" }
                 }
               },

@@ -130,6 +130,37 @@ async def get_cost_by_group(prometheus_url: str, group_id: str) -> list[dict]:
     return sorted(result, key=lambda x: x["total_cost_usd"], reverse=True)
 
 
+_TEAM_COST_QUERY = (
+    "("
+    "  sum by (label_cnp_io_group_id) ("
+    "    rate(container_cpu_usage_seconds_total{namespace=~'dev|prod', container!='', container!='POD'}[5m])"
+    "    * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~'dev|prod'}"
+    "  ) * 0.048 * 24 * 30"
+    ")"
+    "+"
+    "("
+    "  sum by (label_cnp_io_group_id) ("
+    "    container_memory_working_set_bytes{namespace=~'dev|prod', container!='', container!='POD'}"
+    "    * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~'dev|prod'}"
+    "  ) / 1073741824 * 0.006 * 24 * 30"
+    ")"
+)
+
+
+async def get_cost_by_team(prometheus_url: str) -> list[dict]:
+    async with httpx.AsyncClient(base_url=prometheus_url) as client:
+        results = await _query_instant(client, _TEAM_COST_QUERY)
+
+    entries = [
+        {
+            "group_id": r["metric"].get("label_cnp_io_group_id", "unknown"),
+            "cost_eur_month": round(float(r["value"][1]), 4),
+        }
+        for r in results
+    ]
+    return sorted(entries, key=lambda x: x["cost_eur_month"], reverse=True)
+
+
 def _detect_level(line: str, stream_labels: dict) -> str:
     if "level" in stream_labels:
         return stream_labels["level"].upper()

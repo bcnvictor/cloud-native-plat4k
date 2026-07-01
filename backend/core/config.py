@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     LOKI_URL: str = "http://loki.monitoring.svc.cluster.local:3100"
     GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: https://grafana.example.com
     GRAFANA_DASHBOARD_UID: str = ""  # UID du dashboard team-metrics dans Grafana (visible dans l'URL /d/{UID}/...)
+    GRAFANA_FINOPS_DASHBOARD_UID: str = ""  # UID du dashboard FinOps global (cnp-finops-overview) dans Grafana
     GRAFANA_EMBED_TOKEN: str = ""  # Token service account Grafana (rôle Viewer) pour l'embedding sécurisé en iframe
 
     # Logging
