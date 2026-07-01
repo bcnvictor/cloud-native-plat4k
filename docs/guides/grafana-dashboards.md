@@ -78,7 +78,7 @@ curl -s 'http://prometheus.cloud-native-plat4k.me/api/v1/query' \
 
 ### La variable `$group_id` dans Grafana
 
-Le dashboard `cnp—group-overview` (UID `amc2nv`) contient une variable de template `group_id`. Chaque panel filtre ses données par :
+Le dashboard `cnp-group-overview` (UID `cnp-group-overview`) contient une variable de template `group_id`. Chaque panel filtre ses données par :
 
 ```promql
 * on(pod, namespace) group_left() kube_pod_labels{label_cnp_io_group_id="$group_id"}
@@ -100,31 +100,45 @@ Via l'UI : Dashboard → Share → Export → "Save to file".
 
 Via l'API (depuis cnp-control) :
 ```bash
-curl -s https://grafana.cloud-native-plat4k.me/api/dashboards/uid/amc2nv \
+curl -s https://grafana.cloud-native-plat4k.me/api/dashboards/uid/cnp-group-overview \
   -u admin:$(vault kv get -field=GRAFANA_ADMIN_PASSWORD secret/cnp/platform) \
-  | jq '.dashboard' > infra/grafana/dashboard.json
+  | jq '{dashboard: .dashboard, folderId: 0, overwrite: true}' > infra/grafana/dashboard.json
 ```
 
 Committer `infra/grafana/dashboard.json` pour garder le dashboard sous contrôle de version. Cela permet de le recréer si Grafana est recréé.
 
 ### Réimporter un dashboard depuis le JSON
 
+Le fichier contient déjà l'enveloppe complète attendue par `/api/dashboards/import` (`dashboard` + `folderId` + `overwrite`), donc pas besoin de la reconstruire :
+
 ```bash
 curl -s -X POST https://grafana.cloud-native-plat4k.me/api/dashboards/import \
   -H "Content-Type: application/json" \
-  -u admin:<password> \
-  -d "{
-    \"dashboard\": $(cat infra/grafana/dashboard.json),
-    \"overwrite\": true,
-    \"folderId\": 0
-  }"
+  -u admin:$(vault kv get -field=GRAFANA_ADMIN_PASSWORD secret/cnp/platform) \
+  -d @infra/grafana/dashboard.json
 ```
+
+### Migration de l'UID auto-généré (`amc2nv`) vers l'UID fixe `cnp-group-overview`
+
+Le dashboard a d'abord été créé sans UID explicite, ce qui a fait que Grafana lui a attribué un UID aléatoire (`amc2nv`). Le fichier versionné fixe désormais `"uid": "cnp-group-overview"`. Comme un UID différent = un nouveau dashboard aux yeux de Grafana, il faut :
+
+1. Pousser `infra/grafana/dashboard.json` (commande ci-dessus) — crée le dashboard `cnp-group-overview` sans toucher à l'ancien `amc2nv`.
+2. Mettre à jour la valeur dans Vault pour que le backend (endpoint `/groups/{id}/grafana-url`) pointe vers le nouvel UID :
+   ```bash
+   vault kv patch secret/cnp/platform GRAFANA_DASHBOARD_UID="cnp-group-overview"
+   ```
+3. Redémarrer/redéployer le backend pour qu'il relise Vault au démarrage (`bootstrap_from_vault`).
+4. Une fois vérifié que les iframes groupe fonctionnent avec le nouvel UID, supprimer l'ancien dashboard orphelin :
+   ```bash
+   curl -s -X DELETE https://grafana.cloud-native-plat4k.me/api/dashboards/uid/amc2nv \
+     -u admin:$(vault kv get -field=GRAFANA_ADMIN_PASSWORD secret/cnp/platform)
+   ```
 
 ## Dashboard FinOps Overview (`cnp-finops-overview`)
 
 Vue FinOps globale non paramétrique (pas de `$group_id`), scope cluster AKS uniquement — le cluster Oracle k3s n'est pas encore instrumenté (cf ADR-0020, 4K-90). Fichier versionné : `infra/grafana/cnp-finops-overview.json`, UID `cnp-finops-overview`.
 
-Contrairement à `dashboard.json` (export via `jq '.dashboard'`, à réenvelopper manuellement dans `{"dashboard": ..., "overwrite": true, "folderId": 0}` au moment du push), ce fichier contient déjà l'enveloppe complète attendue par `/api/dashboards/import`. Le pousser directement :
+Comme `dashboard.json`, ce fichier contient déjà l'enveloppe complète attendue par `/api/dashboards/import`. Le pousser directement :
 
 ```bash
 curl -s -X POST https://grafana.cloud-native-plat4k.me/api/dashboards/import \
