@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { IconChevronDown, IconChevronRight } from '@tabler/icons-react';
+import { IconAlertTriangle, IconChevronDown, IconChevronRight } from '@tabler/icons-react';
 import { useScopeStore } from '@/store/scope';
 import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { finopsApi } from '@/api/finops';
@@ -55,6 +55,14 @@ export function FinOps() {
           onChange={setMonth}
           className="w-36"
         />
+      </div>
+
+      <div className="flex items-start gap-2 rounded-lg border border-warning-border bg-warning-subtle px-4 py-3 mb-6 text-sm text-warning-text">
+        <IconAlertTriangle size={16} className="shrink-0 mt-0.5" />
+        <p>
+          <span className="font-medium">Cluster Oracle (k3s) temporairement non monitoré</span> — les coûts
+          affichés couvrent uniquement le cluster AKS. Monitoring multi-cluster planifié (voir roadmap).
+        </p>
       </div>
 
       {/* KPIs */}
