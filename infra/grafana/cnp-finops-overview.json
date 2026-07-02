@@ -118,6 +118,7 @@
           ]
         },
         "transformations": [
+          { "id": "labelsToFields", "options": { "mode": "columns" } },
           { "id": "merge", "options": {} },
           {
             "id": "organize",
@@ -175,6 +176,7 @@
           }
         },
         "transformations": [
+          { "id": "labelsToFields", "options": { "mode": "columns" } },
           {
             "id": "organize",
             "options": {
@@ -277,6 +279,7 @@
               ]
             },
             "transformations": [
+              { "id": "labelsToFields", "options": { "mode": "columns" } },
               { "id": "merge", "options": {} },
               {
                 "id": "calculateField",
