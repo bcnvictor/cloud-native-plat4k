@@ -1,19 +1,24 @@
-import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCloud, IconCpu, IconDatabase, IconExternalLink, IconRefresh, IconServer, IconTerminal2 } from '@tabler/icons-react';
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCloud, IconCpu, IconDatabase, IconExternalLink, IconPlayerPlay, IconPlayerStop, IconRefresh, IconServer, IconTerminal2 } from '@tabler/icons-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { MetricCard } from '@/components/MetricCard';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
+import { toast } from '@/components/ui/toast';
 import { timeAgo } from '@/utils/timeAgo';
+import { appsApi } from '@/api/apps';
 import { useAppMetrics } from '@/hooks/useAppMetrics';
 import { useAppStatus } from '@/hooks/useAppStatus';
+import { useAppScaleState } from '@/hooks/useAppScaleState';
 import { useMetricUrl } from '@/hooks/useMonitoringConfig';
 import { appUrl } from '@/utils/appUrls';
 import { clustersApi } from '@/api/clusters';
 import { isPrivateCluster } from '@/utils/clusterUtils';
 import { cn } from '@/utils/cn';
-import type { ArgoEnvStatus } from '@/types';
+import type { ArgoEnvStatus, AppScaleStateItem } from '@/types';
 
 function SyncBadge({ status }: { status: string | null | undefined }) {
   if (!status) return <span className="text-xs text-muted-foreground">—</span>;
@@ -74,6 +79,90 @@ function ArgoCard({ title, env }: { title: string; env: ArgoEnvStatus | null | u
           ))}
         </dl>
       )}
+    </Card>
+  );
+}
+
+interface EnvScaleRowProps {
+  label: string;
+  env: 'dev' | 'prod';
+  appId: number;
+  state: AppScaleStateItem | null | undefined;
+}
+
+function EnvScaleRow({ label, env, appId, state }: EnvScaleRowProps) {
+  const [confirming, setConfirming] = useState(false);
+  const queryClient = useQueryClient();
+  const isStopped = state?.is_stopped ?? false;
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['app-scale-state', appId] });
+    queryClient.invalidateQueries({ queryKey: ['app-status', appId] });
+  };
+
+  const { mutate: doStop, isPending: stopping } = useMutation({
+    mutationFn: () => appsApi.stopApp(appId, env),
+    onSuccess: () => {
+      toast({ title: `${label} stopped`, description: 'Scaled to zero via a gitops commit.' });
+      setConfirming(false);
+      invalidate();
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Stop failed', description: err.message, variant: 'destructive' });
+      setConfirming(false);
+    },
+  });
+
+  const { mutate: doResume, isPending: resuming } = useMutation({
+    mutationFn: () => appsApi.resumeApp(appId, env),
+    onSuccess: () => {
+      toast({ title: `${label} resumed` });
+      invalidate();
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Resume failed', description: err.message, variant: 'destructive' });
+    },
+  });
+
+  const statusText = isStopped
+    ? `Stopped${state?.stop_reason ? ` (${state.stop_reason})` : ''}${state?.stopped_at ? ` · ${timeAgo(state.stopped_at)}` : ''}`
+    : 'Running';
+
+  return (
+    <div className="flex items-center gap-4 px-4 py-3 text-sm border-b border-border last:border-0 bg-background">
+      <span className="w-28 font-medium text-foreground shrink-0">{label}</span>
+      <span className="flex-1 text-xs text-muted-foreground">{statusText}</span>
+      {isStopped ? (
+        <Button size="sm" variant="secondary" icon={<IconPlayerPlay size={13} />} onClick={() => doResume()} disabled={resuming}>
+          {resuming ? <Spinner size="sm" /> : 'Resume'}
+        </Button>
+      ) : confirming ? (
+        <div className="flex gap-1.5">
+          <Button size="sm" variant="danger" onClick={() => doStop()} disabled={stopping}>
+            {stopping ? <Spinner size="sm" /> : 'Confirm'}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={stopping}>
+            ✕
+          </Button>
+        </div>
+      ) : (
+        <Button size="sm" variant="secondary" icon={<IconPlayerStop size={13} />} onClick={() => setConfirming(true)}>
+          Stop
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function EnvironmentControlCard({ appId }: { appId: number }) {
+  const { data: scale } = useAppScaleState(appId);
+  return (
+    <Card>
+      <h2 className="text-sm font-medium text-foreground mb-3">Environment control</h2>
+      <div className="rounded-lg border border-border overflow-hidden">
+        <EnvScaleRow label="Production" env="prod" appId={appId} state={scale?.prod} />
+        <EnvScaleRow label="Development" env="dev" appId={appId} state={scale?.dev} />
+      </div>
     </Card>
   );
 }
@@ -158,6 +247,9 @@ export function OverviewTab() {
           <ArgoCard title="Dev environment" env={runtimeStatus?.argocd_dev} />
         </div>
       )}
+
+      {/* Environment control (stop/resume) */}
+      {app?.id && <EnvironmentControlCard appId={app.id} />}
 
       {/* Cloud target */}
       {cluster && (

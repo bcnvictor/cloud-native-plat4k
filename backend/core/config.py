@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     CLUSTER_HEALTH_FAILURE_THRESHOLD: int = 2  # sondes échouées consécutives avant de marquer OFFLINE (grace period)
     KUBECONFIG_DIR: Optional[str] = None    # répertoire de kubeconfigs, optionnel
 
+    # Scale-to-zero nocturne des environnements de dev (4K-82)
+    SCALE_SCHEDULE_ENABLED: bool = False          # kill switch — off tant que la clé replicas n'est pas vérifiée côté cnp-templates
+    SCALE_SCHEDULE_INTERVAL_MINUTES: int = 15     # cadence du worker de réconciliation
+    DEV_SCALE_DOWN_HOUR: int = 20                 # heure locale [0-23] à laquelle les env dev passent à 0 replica
+    DEV_SCALE_UP_HOUR: int = 8                    # heure locale [0-23] à laquelle les env dev reprennent
+    DEV_SCALE_TIMEZONE: str = "Europe/Paris"      # nom de fuseau IANA
+    DEV_SCALE_WEEKDAYS_ONLY: bool = True          # si True, reste éteint le week-end (pas de réveil samedi/dimanche)
+
     # Monitoring
     PROMETHEUS_URL: str = "http://prometheus-operated.monitoring.svc.cluster.local:9090"
     LOKI_URL: str = "http://loki.monitoring.svc.cluster.local:3100"

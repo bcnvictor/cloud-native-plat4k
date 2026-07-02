@@ -32,6 +32,7 @@ from backend.k8s.dashboards import FINOPS_DASHBOARD_JSON
 from backend.k8s.discovery import discover_clusters
 from backend.k8s.health_worker import run_health_worker
 from backend.services.gitlab_sync_service import run_gitlab_sync_worker
+from backend.services.scale_worker import run_scale_worker
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +72,22 @@ async def lifespan(app: FastAPI):
     # Lancement des workers
     health_task = asyncio.create_task(run_health_worker(settings.CLUSTER_HEALTH_INTERVAL))
     sync_task = asyncio.create_task(run_gitlab_sync_worker(settings.GITLAB_SYNC_INTERVAL_MINUTES))
+    scale_task = (
+        asyncio.create_task(run_scale_worker(settings.SCALE_SCHEDULE_INTERVAL_MINUTES))
+        if settings.SCALE_SCHEDULE_ENABLED else None
+    )
     yield
     health_task.cancel()
     sync_task.cancel()
+    if scale_task:
+        scale_task.cancel()
     with suppress(asyncio.CancelledError):
         await health_task
     with suppress(asyncio.CancelledError):
         await sync_task
+    if scale_task:
+        with suppress(asyncio.CancelledError):
+            await scale_task
 
 
 # Rate limiting setup

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
@@ -21,3 +22,15 @@ class AppRuntimeStatus(BaseModel):
     argocd_prod: Optional[ArgoEnvStatus] = None
     k8s_error: Optional[str] = None
     argocd_error: Optional[str] = None
+
+
+class AppScaleStateItem(BaseModel):
+    is_stopped: bool
+    stop_reason: Optional[str] = None
+    stopped_at: Optional[datetime] = None
+    resumed_at: Optional[datetime] = None
+
+
+class AppScaleStateResponse(BaseModel):
+    dev: Optional[AppScaleStateItem] = None
+    prod: Optional[AppScaleStateItem] = None
