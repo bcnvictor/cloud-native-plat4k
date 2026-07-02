@@ -6,8 +6,10 @@ import { appsApi } from '@/api/apps';
 import { useScopeStore } from '@/store/scope';
 import { Application } from '@/types';
 import { AppStatusBadge } from '@/components/AppStatusBadge';
+import { AppScaleBadge } from '@/components/AppScaleBadge';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
+import { useAppScaleState } from '@/hooks/useAppScaleState';
 import { getAppHealth } from '@/utils/appHealth';
 import { cn } from '@/utils/cn';
 import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
@@ -55,6 +57,7 @@ export function AppDetailLayout() {
   }, [app?.name, appSlug, slug, setBreadcrumb]);
 
   const health = app ? getAppHealth(app) : 'stopped';
+  const { data: scaleState } = useAppScaleState(app?.id);
   const basePath = `/groups/${slug}/apps/${appSlug}`;
 
   function activeTab(): string {
@@ -83,6 +86,7 @@ export function AppDetailLayout() {
                   <div className="flex items-center gap-2">
                     <h1 className="text-xl font-bold tracking-tight text-foreground">{app?.name ?? appSlug}</h1>
                     {app && <AppStatusBadge status={health} />}
+                    {app && <AppScaleBadge scale={scaleState} />}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {app?.origin ?? 'scaffold'} · {app?.framework ?? 'app'} · {slug}

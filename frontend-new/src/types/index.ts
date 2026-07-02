@@ -98,6 +98,20 @@ export interface AppRuntimeStatus {
   argocd_error: string | null;
 }
 
+export type ScaleStopReason = 'schedule' | 'manual';
+
+export interface AppScaleStateItem {
+  is_stopped: boolean;
+  stop_reason: ScaleStopReason | null;
+  stopped_at: string | null;
+  resumed_at: string | null;
+}
+
+export interface AppScaleStateResponse {
+  dev: AppScaleStateItem | null;
+  prod: AppScaleStateItem | null;
+}
+
 export interface DeploymentExtended {
   commitHash: string;
   commitMessage: string;

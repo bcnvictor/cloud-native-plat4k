@@ -1,5 +1,7 @@
 import { api } from './client';
-import { Application, AppHistory, AppRuntimeStatus, AppMember, AppTemplate, EnvVar } from '@/types';
+import { Application, AppHistory, AppRuntimeStatus, AppScaleStateResponse, AppMember, AppTemplate, EnvVar } from '@/types';
+
+export type ScaleEnv = 'dev' | 'prod' | 'both';
 
 export const appsApi = {
   async list(): Promise<Application[]> {
@@ -93,6 +95,21 @@ export const appsApi = {
 
   async rollback(appId: number, historyId: number, env: 'dev' | 'prod'): Promise<void> {
     await api.post(`/apps/${appId}/rollback`, { history_id: historyId, env });
+  },
+
+  async getScaleState(appId: number): Promise<AppScaleStateResponse> {
+    const res = await api.get<AppScaleStateResponse>(`/apps/${appId}/scale`);
+    return res.data;
+  },
+
+  async stopApp(appId: number, env: ScaleEnv): Promise<Application> {
+    const res = await api.post<Application>(`/apps/${appId}/stop`, { env });
+    return res.data;
+  },
+
+  async resumeApp(appId: number, env: ScaleEnv): Promise<Application> {
+    const res = await api.post<Application>(`/apps/${appId}/resume`, { env });
+    return res.data;
   },
 
   async getEnvVars(_appId: number): Promise<EnvVar[]> {
