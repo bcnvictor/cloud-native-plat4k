@@ -97,6 +97,7 @@ export function GroupHome() {
     queryFn: () => eventsApi.groupActivity(group!.gitlab_group_id, 10),
     enabled: !!group?.gitlab_group_id,
     staleTime: 60_000,
+    refetchInterval: 30_000,
   });
 
   const statusCounts = apps.reduce<Record<string, number>>((acc, a) => {
