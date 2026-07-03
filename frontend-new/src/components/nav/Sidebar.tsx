@@ -1,4 +1,4 @@
-import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
+import { IconChevronLeft, IconChevronRight, IconRobot } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/auth';
 import { authApi } from '@/api/auth';
@@ -7,13 +7,16 @@ import { Dropdown } from '@/components/ui/Dropdown';
 import { NavItems } from './NavItems';
 import { ScopeSwitcher } from './ScopeSwitcher';
 import { NotificationBell } from './NotificationBell';
+import { cn } from '@/utils/cn';
 
 interface SidebarProps {
   expanded: boolean;
   onToggle: () => void;
+  assistantOpen?: boolean;
+  onAssistantToggle?: () => void;
 }
 
-export function Sidebar({ expanded, onToggle }: SidebarProps) {
+export function Sidebar({ expanded, onToggle, assistantOpen, onAssistantToggle }: SidebarProps) {
   const { user, clearAuth } = useAuthStore();
   const navigate = useNavigate();
 
@@ -89,15 +92,41 @@ export function Sidebar({ expanded, onToggle }: SidebarProps) {
         <NavItems collapsed={!expanded} />
       </div>
 
-      {/* Zone footer — bell au-dessus du profil en collapsed */}
+      {/* Zone footer — bell + AI button au-dessus du profil en collapsed */}
       <div className={`shrink-0 border-t border-border p-3 ${expanded ? 'flex items-center justify-between' : 'flex flex-col items-center gap-3'}`}>
         {expanded ? (
           <>
             {profileDropdown}
-            <NotificationBell />
+            <div className="flex items-center gap-1">
+              <button
+                onClick={onAssistantToggle}
+                title="AI Assistant"
+                className={cn(
+                  'h-7 w-7 flex items-center justify-center rounded-md transition-colors',
+                  assistantOpen
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                )}
+              >
+                <IconRobot size={15} />
+              </button>
+              <NotificationBell />
+            </div>
           </>
         ) : (
           <>
+            <button
+              onClick={onAssistantToggle}
+              title="AI Assistant"
+              className={cn(
+                'h-7 w-7 flex items-center justify-center rounded-md transition-colors',
+                assistantOpen
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+              )}
+            >
+              <IconRobot size={15} />
+            </button>
             <NotificationBell />
             {profileDropdown}
           </>
