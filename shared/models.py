@@ -240,6 +240,11 @@ class ApplicationStatus(str, Enum):
     DEGRADED = "degraded"
 
 
+class ScaleStopReason(str, Enum):
+    SCHEDULE = "schedule"
+    MANUAL = "manual"
+
+
 
 class ApplicationBase(BaseModel):
     name: str
