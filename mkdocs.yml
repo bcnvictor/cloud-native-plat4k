@@ -69,6 +69,7 @@ nav:
       - Guide API REST: frontend-export/api-rest.md
   - Architecture:
       - Vue d'ensemble: architecture/overview.md
+      - Use case IA — Chatbot par projet: architecture/ai-chatbot-use-case.md
   - Guides opérationnels:
       - Setup ArgoCD & GitOps: guides/argocd-setup.md
       - Service discovery & health: guides/cluster-health-monitoring.md
@@ -90,8 +91,13 @@ nav:
       - ADR-0011 — Injection de CI: adr/0011-ci-injection.md
       - ADR-0012 — GitOps ArgoCD (App of Apps): adr/0012-argocd-app-of-apps.md
       - ADR-0013 — Migration GitLab.com SaaS: adr/0013-migration-gitlab-saas.md
-      - ADR-0013 — Intégration Vault: adr/0013-vault-secrets-manager.md
       - ADR-0014 — Cycle de vie des apps (v2): adr/0014-app-lifecycle-v2.md
       - ADR-0015 — Service discovery & health: adr/0015-service-discovery-cluster-health.md
-      - ADR-0016 — Autorisation via groupes GitLab: adr/0016-gitlab-appartenance-autorisation.md
-      - ADR-0017 — Refonte du frontend: adr/0017-refonte-frontend-new.md
+      - ADR-0016 — Intégration Vault: adr/0016-vault-secrets-manager.md
+      - ADR-0017 — Autorisation via groupes GitLab: adr/0017-gitlab-appartenance-autorisation.md
+      - ADR-0018 — Refonte du frontend: adr/0018-refonte-frontend-new.md
+      - ADR-0019 — Réseau overlay Tailscale: adr/0019-tailscale-reseau-overlay.md
+      - ADR-0020 — Observabilité centralisée: adr/0020-observabilite-centralisee.md
+      - ADR-0021 — Grafana HTTPS: adr/0021-grafana-https-letsencrypt.md
+      - ADR-0022 — Cloud privé k3s multi-cluster: adr/0022-cloud-prive-k3s-multi-cluster.md
+      - ADR-0023 — Alerting et notifications: adr/0023-alerting-notifications-centre-notif.md
