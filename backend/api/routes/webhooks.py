@@ -1,11 +1,14 @@
 import hashlib
 import hmac
 import logging
+from typing import Optional
 
 from backend.api.deps import get_db
 from backend.core.config import settings
 from backend.db.models import Application, ClusterConnection
+from backend.services.security_scan_service import SecurityScanService
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -98,3 +101,70 @@ async def argocd_sync_webhook(
     payload = await request.json()
     app_name = payload.get("app", {}).get("metadata", {}).get("name", "<unknown>")
     logger.info("ArgoCD sync event received for app '%s' — last_known_status update not yet implemented", app_name)
+
+
+# ── Security scan CI callback ─────────────────────────────────────────────────
+
+
+class ScanFindingInput(BaseModel):
+    tool: str
+    severity: str
+    title: str
+    description: Optional[str] = None
+    file_path: Optional[str] = None
+    line_start: Optional[int] = None
+    line_end: Optional[int] = None
+    confidence: Optional[str] = None
+    remediation: Optional[str] = None
+    raw_data: Optional[dict] = None
+
+
+class ScanCallbackPayload(BaseModel):
+    scan_id: int
+    status: str  # completed | failed
+    findings: list[ScanFindingInput] = []
+    error_message: Optional[str] = None
+
+
+@router.post("/security-scan-callback", status_code=status.HTTP_200_OK)
+async def security_scan_callback(
+    payload: ScanCallbackPayload,
+    db: AsyncSession = Depends(get_db),
+    x_scan_token: Optional[str] = Header(default=None),
+):
+    """Authenticated callback from GitLab CI — attaches scan findings to a queued/running scan."""
+    if not x_scan_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing X-Scan-Token header")
+
+    svc = SecurityScanService(db)
+    scan = await svc.get_scan_by_token(scan_id=payload.scan_id, callback_token=x_scan_token)
+    if scan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or invalid token")
+
+    if scan.status not in ("queued", "running"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Scan already in terminal state: {scan.status}",
+        )
+
+    if payload.status not in ("completed", "failed"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="status must be 'completed' or 'failed'",
+        )
+
+    findings_data = [f.model_dump() for f in payload.findings]
+    await svc.apply_callback(
+        scan=scan,
+        status=payload.status,
+        findings=findings_data,
+        error_message=payload.error_message,
+    )
+
+    logger.info(
+        "Security scan callback received: scan_id=%s status=%s findings=%d",
+        scan.id,
+        payload.status,
+        len(findings_data),
+    )
+    return {"scan_id": scan.id, "status": payload.status, "findings_stored": len(findings_data)}

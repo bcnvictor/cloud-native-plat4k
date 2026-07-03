@@ -79,6 +79,39 @@ class CnpTier(str, Enum):
     OWNER = "owner"
 
 
+class AIContextMode(str, Enum):
+    METADATA_ONLY = "metadata_only"
+    METADATA_AND_CODE = "metadata_and_code"
+
+
+class AIPurpose(str, Enum):
+    CHAT = "chat"
+    SCAN_SUMMARY = "scan_summary"
+    FINOPS = "finops"
+    INCIDENT = "incident"
+
+
+class ScanStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class FindingSeverity(str, Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    INFO = "info"
+
+
+class FindingStatus(str, Enum):
+    OPEN = "open"
+    ACKNOWLEDGED = "acknowledged"
+    FIXED = "fixed"
+
+
 class ResourceBase(BaseModel):
     cloud: CloudType
     type: ResourceType
@@ -385,6 +418,45 @@ class ClusterConnectionResponse(ClusterConnectionBase):
     kubeconfig_secret_ref: str
     status: ClusterStatus = ClusterStatus.UNKNOWN
     last_seen_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ── Security scans ────────────────────────────────────────────────────────────
+
+class SecurityFindingResponse(BaseModel):
+    id: int
+    scan_id: int
+    tool: str
+    severity: FindingSeverity
+    title: str
+    description: Optional[str] = None
+    file_path: Optional[str] = None
+    line_start: Optional[int] = None
+    line_end: Optional[int] = None
+    confidence: Optional[str] = None
+    remediation: Optional[str] = None
+    status: FindingStatus
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SecurityScanResponse(BaseModel):
+    id: int
+    app_id: int
+    ref: str
+    status: ScanStatus
+    triggered_by_user_id: Optional[int] = None
+    gitlab_pipeline_id: Optional[int] = None
+    error_message: Optional[str] = None
+    ai_summary_text: Optional[str] = None
+    ai_summarized_at: Optional[datetime] = None
+    findings: List["SecurityFindingResponse"] = []
     created_at: datetime
     updated_at: Optional[datetime] = None
 
