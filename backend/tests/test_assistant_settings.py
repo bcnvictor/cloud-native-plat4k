@@ -15,12 +15,10 @@ from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
-from shared.models import UserRole
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
-from backend.db.models import AIAppSettings, Application, ApplicationStatus
-
+from backend.db.models import Application, ApplicationStatus
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -162,6 +160,7 @@ async def test_patch_metadata_and_code_with_warning_ok(client: AsyncClient, admi
 @pytest.mark.anyio
 async def test_patch_settings_creates_audit_log(client: AsyncClient, admin_token: str, db_session: AsyncSession):
     from sqlalchemy import select
+
     from backend.db.models import AuditLog
 
     app = await _create_app(db_session, "app-audit")

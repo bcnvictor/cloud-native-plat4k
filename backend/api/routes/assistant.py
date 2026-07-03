@@ -1,24 +1,10 @@
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from shared.models import (
-    AIContextMode,
-    CnpTier,
-    FindingSeverity,
-    FindingStatus,
-    ScanStatus,
-    SecurityFindingResponse,
-    SecurityScanResponse,
-)
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from backend.ai.factory import get_provider
 from backend.api.deps import get_current_user, require_admin, require_tier
 from backend.core.config import settings
-from backend.db.models import AIAppSettings, AISecurityScan, Application, User
+from backend.db.models import AIAppSettings, Application, User
 from backend.db.session import get_db
 from backend.services.ai_settings_service import (
     ALLOWED_PROVIDERS,
@@ -29,6 +15,15 @@ from backend.services.assistant_service import AssistantService
 from backend.services.audit_service import AuditService
 from backend.services.platform_knowledge_service import PlatformKnowledgeService
 from backend.services.security_scan_service import SecurityScanService
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from shared.models import (
+    AIContextMode,
+    CnpTier,
+    SecurityScanResponse,
+)
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 global_router = APIRouter()
