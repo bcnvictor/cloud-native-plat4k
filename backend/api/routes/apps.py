@@ -11,7 +11,11 @@ from backend.api.deps import (
     require_role,
     require_tier,
 )
-from backend.api.schemas.app_status import AppRuntimeStatus
+from backend.api.schemas.app_status import (
+    AppRuntimeStatus,
+    AppScaleStateItem,
+    AppScaleStateResponse,
+)
 from backend.api.schemas.members import (
     AddMemberRequest,
     InviteMemberRequest,
@@ -29,6 +33,7 @@ from backend.k8s.manifests import sanitize_k8s_name
 from backend.services.app_service import AppService
 from backend.services.audit_service import AuditService
 from backend.services.scaffolding_service import ScaffoldingService
+from backend.services.scale_service import ScaleService
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from shared.models import (
@@ -495,3 +500,92 @@ async def toggle_expose(
                      actor_user_id=current_user.id)
     await db.commit()
     return app
+
+
+class AppScaleRequest(BaseModel):
+    env: str  # "dev" | "prod" | "both"
+
+
+def _resolve_scale_envs(env: str) -> List[str]:
+    if env == "both":
+        return ["dev", "prod"]
+    if env in ("dev", "prod"):
+        return [env]
+    raise HTTPException(status_code=422, detail="env must be 'dev', 'prod', or 'both'")
+
+
+async def _require_prod_tier(app_id: int, envs: List[str], current_user: User, db: AsyncSession) -> None:
+    """Stopping/resuming production requires Owner tier on the app (or platform admin)."""
+    if "prod" not in envs or current_user.is_admin:
+        return
+    tier = await get_effective_tier(current_user.id, app_id, db)
+    if tier != CnpTier.OWNER:
+        raise HTTPException(status_code=403, detail="Stopping or resuming production requires Owner tier or admin")
+
+
+@router.post("/{app_id}/stop", response_model=ApplicationResponse)
+async def stop_app(
+    app_id: int,
+    payload: AppScaleRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_tier(CnpTier.MAINTAINER)),
+):
+    """Manually scale an app's environment(s) to zero via a gitops commit."""
+    envs = _resolve_scale_envs(payload.env)
+    await _require_prod_tier(app_id, envs, current_user, db)
+    app = await ScaleService(db).manual_stop(app_id, envs, actor_user_id=current_user.id)
+    audit = AuditService(db)
+    await audit.log_action(current_user.id, "app.scale.stop", app_id=app.id, extra={"envs": envs})
+    for env in envs:
+        await emit_event(db, EventType.APP_SCALE_STOPPED, "warning" if env == "prod" else "info", "scale_service",
+                         app_id=app.id, payload={"name": app.name, "env": env},
+                         actor_user_id=current_user.id)
+    await db.commit()
+    await db.refresh(app)
+    return app
+
+
+@router.post("/{app_id}/resume", response_model=ApplicationResponse)
+async def resume_app(
+    app_id: int,
+    payload: AppScaleRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_tier(CnpTier.MAINTAINER)),
+):
+    """Manually resume an app's environment(s) via a gitops commit (clears scheduled or manual stop)."""
+    envs = _resolve_scale_envs(payload.env)
+    await _require_prod_tier(app_id, envs, current_user, db)
+    app = await ScaleService(db).manual_resume(app_id, envs, actor_user_id=current_user.id)
+    audit = AuditService(db)
+    await audit.log_action(current_user.id, "app.scale.resume", app_id=app.id, extra={"envs": envs})
+    for env in envs:
+        await emit_event(db, EventType.APP_SCALE_RESUMED, "info", "scale_service",
+                         app_id=app.id, payload={"name": app.name, "env": env},
+                         actor_user_id=current_user.id)
+    await db.commit()
+    await db.refresh(app)
+    return app
+
+
+@router.get("/{app_id}/scale", response_model=AppScaleStateResponse)
+async def get_app_scale_state(
+    app_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_tier(CnpTier.VIEWER)),
+):
+    """Current stop/resume state per environment (dev/prod)."""
+    states = await ScaleService(db).get_scale_states(app_id)
+    return AppScaleStateResponse(
+        dev=AppScaleStateItem(
+            is_stopped=states["dev"].is_stopped,
+            stop_reason=states["dev"].stop_reason.value if states["dev"].stop_reason else None,
+            stopped_at=states["dev"].stopped_at,
+            resumed_at=states["dev"].resumed_at,
+        ) if "dev" in states else None,
+        prod=AppScaleStateItem(
+            is_stopped=states["prod"].is_stopped,
+            stop_reason=states["prod"].stop_reason.value if states["prod"].stop_reason else None,
+            stopped_at=states["prod"].stopped_at,
+            resumed_at=states["prod"].resumed_at,
+        ) if "prod" in states else None,
+    )
