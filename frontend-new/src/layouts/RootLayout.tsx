@@ -4,11 +4,13 @@ import { Sidebar } from '@/components/nav/Sidebar';
 import { TopNav } from '@/components/nav/TopNav';
 import { BreadcrumbProvider } from '@/components/nav/BreadcrumbContext';
 import { Toaster } from '@/components/ui/toast';
+import { GlobalAssistantPanel } from '@/components/GlobalAssistantPanel';
 
 export function RootLayout() {
   const [expanded, setExpanded] = useState(
     () => localStorage.getItem('cnp_sidebar_expanded') !== 'false'
   );
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('cnp_sidebar_expanded', String(expanded));
@@ -17,7 +19,12 @@ export function RootLayout() {
   return (
     <BreadcrumbProvider>
       <div className="flex h-screen-corrected overflow-hidden">
-        <Sidebar expanded={expanded} onToggle={() => setExpanded((p) => !p)} />
+        <Sidebar
+          expanded={expanded}
+          onToggle={() => setExpanded((p) => !p)}
+          assistantOpen={assistantOpen}
+          onAssistantToggle={() => setAssistantOpen((p) => !p)}
+        />
         <div className="flex flex-col flex-1 min-w-0">
           <TopNav />
           <main className="flex-1 overflow-y-auto bg-background">
@@ -26,6 +33,7 @@ export function RootLayout() {
         </div>
         <Toaster />
       </div>
+      <GlobalAssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} />
     </BreadcrumbProvider>
   );
 }

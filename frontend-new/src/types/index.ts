@@ -283,3 +283,75 @@ export interface AdminUser {
   gitlab_user_id: number | null;
   created_at: string;
 }
+
+// ── AI Assistant ──────────────────────────────────────────────────────────────
+
+export type AIContextMode = 'metadata_only' | 'metadata_and_code';
+
+export interface AIAppSettings {
+  app_id: number;
+  ai_enabled: boolean;
+  ai_context_mode: AIContextMode;
+  ai_security_scan_enabled: boolean;
+  ai_security_summary_enabled: boolean;
+  code_access_warning_accepted_by_user_id: number | null;
+  code_access_warning_accepted_at: string | null;
+  updated_by_user_id: number | null;
+  updated_at: string;
+}
+
+export interface AIAppSettingsPatch {
+  ai_enabled?: boolean;
+  ai_context_mode?: AIContextMode;
+  ai_security_scan_enabled?: boolean;
+  ai_security_summary_enabled?: boolean;
+  accept_code_access_warning?: boolean;
+}
+
+export interface ChatPayload {
+  message: string;
+  mode?: string;
+  agent?: string;
+  requested_context_mode?: AIContextMode;
+  conversation_id?: string;
+}
+
+export interface DocCitation {
+  type: string;
+  path?: string;
+  heading?: string | null;
+  ref?: string;
+}
+
+export interface AIGlobalSettings {
+  platform_data_access_enabled: boolean;
+  app_data_access_enabled: boolean;
+  allowed_app_ids: number[];
+  provider: string;
+  model: string;
+  api_key_set: boolean;
+  source: string; // "db" | "env"
+  updated_by_user_id?: number | null;
+  updated_at?: string | null;
+}
+
+export interface AIGlobalSettingsPatch {
+  platform_data_access_enabled?: boolean;
+  app_data_access_enabled?: boolean;
+  allowed_app_ids?: number[];
+  provider?: string;
+  model?: string;
+  api_key?: string; // "" clears the stored key
+}
+
+export interface ChatResponse {
+  conversation_id: string;
+  answer: string;
+  citations: unknown[];
+  used_tools: string[];
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    estimated_cost_usd: number;
+  };
+}
