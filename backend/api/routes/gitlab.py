@@ -1,13 +1,13 @@
-import base64
 from datetime import datetime, timedelta, timezone
 
 from backend.api.deps import get_current_user
 from backend.core.config import settings
+from backend.core.crypto import decrypt_str as _decrypt
+from backend.core.crypto import encrypt_str as _encrypt
 from backend.db.models import GitLabCredential, User
 from backend.db.session import get_db
 from backend.gitlab.client import GitLabClient
 from backend.services.gitlab_oauth_service import GitLabOAuthService
-from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -16,21 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 router = APIRouter()
 
 PAT_URL = f"{settings.GITLAB_BASE_URL.rstrip('/')}/-/user_settings/personal_access_tokens"
-
-
-def _fernet() -> Fernet:
-    if settings.ENCRYPTION_KEY:
-        return Fernet(settings.ENCRYPTION_KEY.encode())
-    key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32].ljust(32, b"0"))
-    return Fernet(key)
-
-
-def _encrypt(token: str) -> str:
-    return _fernet().encrypt(token.encode()).decode()
-
-
-def _decrypt(encrypted: str) -> str:
-    return _fernet().decrypt(encrypted.encode()).decode()
 
 
 async def _get_user_gitlab_cred(user_id: int, db: AsyncSession) -> GitLabCredential | None:

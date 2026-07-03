@@ -3,6 +3,8 @@ SQLAlchemy models for the backend database.
 """
 
 from shared.models import (
+    AIContextMode,
+    AIPurpose,
     ApplicationStatus,
     CloudType,
     ClusterStatus,
@@ -19,6 +21,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
 )
@@ -276,4 +279,144 @@ class NotificationPreference(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "category", name="uq_notif_pref_user_category"),
+    )
+
+
+# ── AI assistant ──────────────────────────────────────────────────────────────
+
+class AIAppSettings(Base):
+    __tablename__ = "ai_app_settings"
+
+    app_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), primary_key=True)
+    ai_enabled = Column(Boolean, nullable=False, default=False)
+    ai_context_mode = Column(
+        SQLEnum(AIContextMode, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=AIContextMode.METADATA_ONLY,
+    )
+    ai_security_scan_enabled = Column(Boolean, nullable=False, default=False)
+    ai_security_summary_enabled = Column(Boolean, nullable=False, default=False)
+    code_access_warning_accepted_by_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    code_access_warning_accepted_at = Column(DateTime(timezone=True), nullable=True)
+    updated_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    application = relationship("Application")
+    code_access_warning_accepted_by = relationship(
+        "User", foreign_keys=[code_access_warning_accepted_by_user_id]
+    )
+    updated_by = relationship("User", foreign_keys=[updated_by_user_id])
+
+
+class AIGlobalSettings(Base):
+    """Singleton row (id=1): admin-managed runtime config for the AI assistant.
+
+    When the row exists it overrides the env defaults (AI_PROVIDER, AI_MODEL,
+    AI_API_KEY, AI_PLATFORM_KB_ENABLED). Resolved on demand per request — never
+    read at startup and never triggers a provider call by itself.
+    api_key_encrypted is Fernet-encrypted and never returned nor logged.
+    """
+    __tablename__ = "ai_global_settings"
+
+    id = Column(Integer, primary_key=True, default=1)
+    platform_data_access_enabled = Column(Boolean, nullable=False, default=False)
+    app_data_access_enabled = Column(Boolean, nullable=False, default=False)
+    allowed_app_ids = Column(JSON, nullable=False, default=list)
+    provider = Column(String, nullable=True)  # "mock" | "mistral" | "gemini" | "deepseek" — null → env
+    model = Column(String, nullable=True)     # null → env AI_MODEL
+    api_key_encrypted = Column(String, nullable=True)
+    updated_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    updated_by = relationship("User", foreign_keys=[updated_by_user_id])
+
+
+class AIUsageRecord(Base):
+    __tablename__ = "ai_usage_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    app_id = Column(Integer, ForeignKey("applications.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    provider = Column(String, nullable=False)
+    model = Column(String, nullable=False)
+    purpose = Column(
+        SQLEnum(AIPurpose, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
+    input_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+    cache_hit_tokens = Column(Integer, nullable=False, default=0)
+    cache_miss_tokens = Column(Integer, nullable=False, default=0)
+    estimated_cost_usd = Column(Numeric(12, 8), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+
+# ── AI Security scans ─────────────────────────────────────────────────────────
+
+class AISecurityScan(Base):
+    __tablename__ = "ai_security_scans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    app_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    ref = Column(String, nullable=False, default="main")
+    status = Column(String, nullable=False, default="queued")
+    triggered_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    gitlab_pipeline_id = Column(BigInteger, nullable=True)
+    callback_token = Column(String, nullable=False, unique=True)
+    error_message = Column(String, nullable=True)
+    ai_summary_text = Column(String, nullable=True)
+    ai_summarized_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
+
+    application = relationship("Application")
+    triggered_by = relationship("User", foreign_keys=[triggered_by_user_id])
+    findings = relationship("AISecurityFinding", back_populates="scan", cascade="all, delete-orphan")
+
+
+class AISecurityFinding(Base):
+    __tablename__ = "ai_security_findings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    scan_id = Column(Integer, ForeignKey("ai_security_scans.id", ondelete="CASCADE"), nullable=False, index=True)
+    tool = Column(String, nullable=False)
+    severity = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    file_path = Column(String, nullable=True)
+    line_start = Column(Integer, nullable=True)
+    line_end = Column(Integer, nullable=True)
+    confidence = Column(String, nullable=True)
+    remediation = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="open")
+    raw_data = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    scan = relationship("AISecurityScan", back_populates="findings")
+
+
+# ── Platform knowledge base (docs RAG) ────────────────────────────────────────
+
+class PlatformDocChunk(Base):
+    """A chunk of CNP documentation ingested for the platform assistant.
+
+    Source content is redacted at ingestion; this table never stores source code
+    or secrets — only curated documentation text used for grounded answers.
+    """
+    __tablename__ = "platform_doc_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source = Column(String, nullable=False, default="local", index=True)
+    path = Column(String, nullable=False, index=True)
+    heading = Column(String, nullable=True)
+    ordinal = Column(Integer, nullable=False, default=0)
+    text = Column(String, nullable=False)
+    token_count = Column(Integer, nullable=False, default=0)
+    file_hash = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("source", "path", "ordinal", name="uq_platform_doc_chunk"),
     )

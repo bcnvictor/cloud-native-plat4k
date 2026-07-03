@@ -12,6 +12,7 @@ from slowapi.util import get_remote_address
 from backend.api.routes import (
     admin,
     apps,
+    assistant,
     audit,
     auth,
     clusters,
@@ -114,6 +115,8 @@ if settings.BACKEND_CORS_ORIGINS:
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["users"])
 app.include_router(apps.router, prefix=f"{settings.API_V1_STR}/apps", tags=["apps"])
+app.include_router(assistant.router, prefix=f"{settings.API_V1_STR}/apps", tags=["assistant"])
+app.include_router(assistant.global_router, prefix=f"{settings.API_V1_STR}", tags=["assistant"])
 app.include_router(clusters.router, prefix=f"{settings.API_V1_STR}/clusters", tags=["clusters"])
 app.include_router(resources.router, prefix=f"{settings.API_V1_STR}/resources", tags=["resources"])
 app.include_router(credentials.router, prefix=f"{settings.API_V1_STR}/credentials", tags=["credentials"])

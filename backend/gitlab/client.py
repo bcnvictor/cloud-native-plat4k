@@ -175,6 +175,17 @@ class GitLabClient:
         except GitlabGetError:
             return False
 
+    def trigger_scan_pipeline(self, gitlab_project_id: int, ref: str, variables: dict) -> int | None:
+        """Trigger a GitLab CI pipeline for security scan. Returns pipeline ID or None on failure."""
+        try:
+            project = self._gl.projects.get(gitlab_project_id)
+            pipeline_vars = [{"key": k, "value": v} for k, v in variables.items()]
+            pipeline = project.pipelines.create({"ref": ref, "variables": pipeline_vars})
+            return pipeline.id
+        except Exception as e:
+            logger.warning("Failed to trigger security scan pipeline for project %s: %s", gitlab_project_id, e)
+            return None
+
     def register_webhook(self, project_path: str, webhook_url: str, secret_token: str = "") -> None:
         """Register a pipeline webhook on the project. No-op if already registered."""
         project = self.get_project(project_path)

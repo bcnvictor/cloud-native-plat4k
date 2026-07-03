@@ -11,6 +11,10 @@ os.environ.setdefault("ENCRYPTION_KEY", "")
 # ci-dessous pour que les tests soient hermétiques (pas besoin d'un Vault réel).
 os.environ.setdefault("VAULT_ADDR", "http://127.0.0.1:19999")
 os.environ.setdefault("VAULT_TOKEN", "test-vault-token")
+# Keep tests hermetic (no network) regardless of a local .env: force the mock
+# LLM provider. The live integration test builds real providers directly, so
+# it is unaffected by this.
+os.environ.setdefault("AI_PROVIDER", "mock")
 
 from unittest.mock import patch
 
