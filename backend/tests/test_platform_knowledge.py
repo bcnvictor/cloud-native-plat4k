@@ -25,7 +25,6 @@ from backend.services.platform_knowledge_service import (
     chunk_markdown,
 )
 
-
 # ── chunking ─────────────────────────────────────────────────────────────────
 
 

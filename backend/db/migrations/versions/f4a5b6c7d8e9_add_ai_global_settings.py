@@ -7,8 +7,8 @@ Create Date: 2026-07-02
 Non-destructive: adds a single singleton table read on demand by the assistant
 routes. Nothing changes while AI_ASSISTANT_ENABLED=false and no row exists.
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = 'f4a5b6c7d8e9'
 down_revision = 'e3f4a5b6c7d8'

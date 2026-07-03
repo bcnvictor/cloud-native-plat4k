@@ -15,12 +15,12 @@ chatbot works end-to-end with a real provider, not just the MockProvider.
 import os
 
 import pytest
+from shared.models import AIContextMode
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
 from backend.db.models import AIUsageRecord, Application, ApplicationStatus, User
-from shared.models import AIContextMode
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("AI_API_KEY"),

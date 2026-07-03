@@ -1,6 +1,5 @@
 from backend.ai.redaction import RedactionResult, redact
 
-
 # --- Helper ---
 
 def _assert_redacted(text: str, label: str, absent: str) -> RedactionResult:

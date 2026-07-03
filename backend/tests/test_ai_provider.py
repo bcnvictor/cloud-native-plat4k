@@ -124,6 +124,7 @@ def test_router_custom_default_route():
 
 def test_get_provider_returns_mock_when_provider_is_mock():
     from unittest.mock import MagicMock, patch
+
     from backend.ai.factory import get_provider
     mock_s = MagicMock()
     mock_s.AI_PROVIDER = "mock"
@@ -135,6 +136,7 @@ def test_get_provider_returns_mock_when_provider_is_mock():
 
 def test_get_provider_returns_mock_when_no_api_key():
     from unittest.mock import MagicMock, patch
+
     from backend.ai.factory import get_provider
     mock_s = MagicMock()
     mock_s.AI_PROVIDER = "deepseek"
@@ -145,8 +147,9 @@ def test_get_provider_returns_mock_when_no_api_key():
 
 
 def test_openai_compatible_provider_raises_on_invalid_key():
-    from backend.ai.provider import OpenAICompatibleProvider
     import pytest
+
+    from backend.ai.provider import OpenAICompatibleProvider
     with pytest.raises(ValueError, match="API key"):
         OpenAICompatibleProvider(api_key="__VAULT__", base_url="https://example.com")
 
@@ -183,7 +186,6 @@ def _resp(status, json_data=None):
 
 @pytest.mark.asyncio
 async def test_openai_provider_retries_on_503_then_succeeds():
-    import httpx
     from unittest.mock import AsyncMock, patch
 
     from backend.ai.provider import OpenAICompatibleProvider
@@ -203,8 +205,9 @@ async def test_openai_provider_retries_on_503_then_succeeds():
 
 @pytest.mark.asyncio
 async def test_openai_provider_raises_after_exhausting_retries():
-    import httpx
     from unittest.mock import AsyncMock, patch
+
+    import httpx
 
     from backend.ai.provider import OpenAICompatibleProvider
 

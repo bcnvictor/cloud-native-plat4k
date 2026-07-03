@@ -8,8 +8,8 @@ Non-destructive: adds a single table used by the platform assistant to store
 ingested CNP documentation chunks. Nothing references it unless
 AI_PLATFORM_KB_ENABLED=true.
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = 'e3f4a5b6c7d8'
 down_revision = 'd2e3f4a5b6c7'
