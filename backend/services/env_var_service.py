@@ -85,3 +85,13 @@ class EnvVarService:
         app = await self._get_app(app_id)
         path = await self._vault_path(app, env)
         vault_client.delete_secret_key(path, key)
+
+    async def get_values(self, app_id: int, env: str) -> dict[str, str]:
+        """Real values — only ever called for env='dev' (enforced by the route)."""
+        _validate_env(env)
+        app = await self._get_app(app_id)
+        path = await self._vault_path(app, env)
+        try:
+            return vault_client.get_secret(path)
+        except InvalidPath:
+            return {}

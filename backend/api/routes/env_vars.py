@@ -79,6 +79,27 @@ async def delete_env_var(
     return {"msg": "Variable deleted"}
 
 
+@router.get("/{app_id}/env/{env}/values", response_model=dict)
+async def get_env_var_values(
+    app_id: int,
+    env: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Real values, dev only — exception to the write-only rule (ADR-0025 addendum),
+    needed for `cnp env pull` (a developer reproducing their env locally). Hard-blocked
+    for prod regardless of tier or admin: there is no legitimate reason to bulk-read
+    production secrets through this API.
+    """
+    if env != "dev":
+        raise ForbiddenException("Value retrieval is only available for the 'dev' environment")
+    if not current_user.is_admin:
+        tier = await get_effective_tier(current_user.id, app_id, db)
+        if _TIER_ORDER.index(tier) < _TIER_ORDER.index(CnpTier.DEVELOPER):
+            raise ForbiddenException("Reading dev environment variable values requires Developer tier or admin")
+    return await EnvVarService(db).get_values(app_id, env)
+
+
 @router.get("/{app_id}/env/{env}/{key}/status", response_model=EnvVarStatusResponse)
 async def get_env_var_status(
     app_id: int,
