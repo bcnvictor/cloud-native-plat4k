@@ -59,6 +59,18 @@ services:
       - VAULT_ADDR=${VAULT_ADDR:-http://vault:8200}
       - VAULT_TOKEN=${VAULT_TOKEN:-cnp-dev-token}
       - GRAFANA_URL=${GRAFANA_URL:-}
+      # Assistant IA — désactivé par défaut (comportement CNP inchangé si false)
+      - AI_ASSISTANT_ENABLED=${AI_ASSISTANT_ENABLED:-false}
+      - AI_PROVIDER=${AI_PROVIDER:-mock}
+      - AI_MODEL=${AI_MODEL:-gemini-flash-latest}
+      - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - AI_PLATFORM_KB_ENABLED=${AI_PLATFORM_KB_ENABLED:-false}
+      - AI_PLATFORM_KB_DIR=${AI_PLATFORM_KB_DIR:-/app/docs}
+    volumes:
+      # Source de la base de connaissance de l'assistant plateforme (lecture seule).
+      # Remplaçable plus tard par un clone du repo docs-only.
+      - ./docs:/app/docs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

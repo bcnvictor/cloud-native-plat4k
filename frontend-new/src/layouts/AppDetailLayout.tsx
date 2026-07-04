@@ -27,6 +27,7 @@ const TABS = [
   { key: 'logs', label: 'Logs' },
   { key: 'history', label: 'History' },
   { key: 'settings', label: 'Settings' },
+  { key: 'assistant', label: 'Assistant' },
 ];
 
 export function AppDetailLayout() {

@@ -90,6 +90,42 @@ class Settings(BaseSettings):
     GRAFANA_FINOPS_DASHBOARD_UID: str = ""  # UID du dashboard FinOps global (cnp-finops-overview) dans Grafana
     GRAFANA_EMBED_TOKEN: str = ""  # Token service account Grafana (rôle Viewer) pour l'embedding sécurisé en iframe
 
+    # AI Assistant
+    AI_ASSISTANT_ENABLED: bool = False
+    AI_PROVIDER: str = "deepseek"          # "deepseek" | "gemini" | "openai_compatible" | "mock"
+    # For AI_PROVIDER=gemini, AI_BASE_URL is auto-set to the Gemini OpenAI-compatible
+    # endpoint unless you override it. Suggested AI_MODEL: gemini-flash-latest.
+    AI_BASE_URL: str = "https://api.deepseek.com"
+    AI_MODEL: str = "deepseek-v4-flash"
+    AI_API_KEY: Optional[str] = None       # Stored in Vault under secret/cnp/platform
+    # Multi-model router (disabled by default — single provider/model path)
+    AI_ROUTER_ENABLED: bool = False
+    AI_SIMPLE_PROVIDER: str = "deepseek"
+    AI_SIMPLE_MODEL: str = "deepseek-v4-flash"
+    AI_COMPLEX_PROVIDER: str = "deepseek"
+    AI_COMPLEX_MODEL: str = "deepseek-v4-pro"
+    AI_SOVEREIGN_FALLBACK_PROVIDER: str = "mistral"
+    AI_SOVEREIGN_FALLBACK_MODEL: str = ""
+    # Limits and governance
+    AI_MAX_INPUT_TOKENS: int = 120000
+    AI_MAX_OUTPUT_TOKENS: int = 4096
+    AI_DAILY_BUDGET_USD: float = 5.0
+    AI_PROVIDER_TIMEOUT_SECONDS: int = 60
+    # Scan and context defaults
+    AI_SECURITY_SCAN_ENABLED: bool = True
+    AI_DEFAULT_CONTEXT_MODE: str = "metadata_only"  # "metadata_only" | "metadata_and_code"
+    AI_DEFAULT_LANGUAGE: str = "fr"
+    # Platform knowledge base (docs RAG) — grounds the "platform" agent on CNP docs.
+    # Disabled by default: nothing changes until AI_PLATFORM_KB_ENABLED=true.
+    AI_PLATFORM_KB_ENABLED: bool = False
+    AI_PLATFORM_KB_DIR: str = "docs"           # local source dir ingested into platform_doc_chunks
+    AI_PLATFORM_KB_TOP_K: int = 6              # doc chunks retrieved per question
+    AI_PLATFORM_KB_MAX_CHUNK_TOKENS: int = 400 # approx words per chunk before splitting
+    # Curated capabilities/UI page(s) always injected into the platform agent
+    # context (comma-separated repo-relative paths), so it reliably knows the
+    # menus, Settings options and capabilities regardless of lexical retrieval.
+    AI_PLATFORM_KB_PRIMER_PATHS: str = "guides/platform-overview.md"
+
     # Logging
     LOG_LEVEL: str = "INFO"
 
