@@ -24,6 +24,8 @@ from backend.core.config import settings
 from backend.db.models import Application, AppMember, ClusterConnection, GitLabGroup, User
 from backend.gitlab.client import GitLabClient
 from backend.k8s.client import get_k8s_client_for_cluster
+from backend.services.env_var_service import resolve_group_slug, vault_env_path
+from backend.vault.client import vault_client
 
 logger = logging.getLogger(__name__)
 
@@ -385,12 +387,30 @@ class AppService:
                 logger.exception("CI injection failed for app %s (%s)", app.id, app.repo_url)
                 app.ci_injected = False
 
-
-
             await self.db.commit()
             await self.db.refresh(app)
 
+        if bot and settings.GITOPS_REPO_URL:
+            cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
+            await self._push_externalsecrets_to_gitops(bot, app, cluster_name)
+
         return app
+
+    async def _push_externalsecrets_to_gitops(self, bot: "GitLabClient", app: Application, cluster_name: str) -> None:
+        """Best-effort: generate externalsecret-{dev,prod}.yaml in gitops so ESO can
+        provision the app's env var Secret as soon as it's created (4K-106 / ADR-0024).
+        Never raises — an app must still be usable if the gitops push fails.
+        """
+        try:
+            group_slug = await resolve_group_slug(self.db, app.owning_gitlab_group_id)
+            gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
+            for env_name in ("dev", "prod"):
+                await anyio.to_thread.run_sync(
+                    lambda en=env_name: bot.upsert_externalsecret(gitops_path, app.slug, group_slug, en, cluster_name),
+                    cancellable=True,
+                )
+        except Exception:
+            logger.exception("Failed to push ExternalSecret manifests to gitops for %s", app.slug)
 
     async def _push_ingress_to_gitops(self, bot: "GitLabClient", app_slug: str, cluster_name: str = "aks", enabled: bool = True) -> None:
         """Best-effort: write ingress settings into gitops values files. Never raises."""
@@ -559,7 +579,16 @@ class AppService:
             except Exception:
                 logger.exception("Failed to delete GitLab repository %s for app %s", app.repo_url, app.name)
 
-        # 3. Remove from database
+        # 3. Clean up the app's env vars in Vault (4K-106 / ADR-0025) — orphaned
+        # secrets otherwise linger under secret/apps/{group}/{app}/* forever.
+        try:
+            group_slug = await resolve_group_slug(self.db, app.owning_gitlab_group_id)
+            for env_name in ("dev", "prod"):
+                vault_client.delete_secret(vault_env_path(group_slug, app.slug, env_name))
+        except Exception:
+            logger.exception("Failed to clean up Vault env vars for app %s", app.name)
+
+        # 4. Remove from database
         await self.db.delete(app)
         await self.db.commit()
 

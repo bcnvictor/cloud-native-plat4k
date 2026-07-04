@@ -347,6 +347,46 @@ class GitLabClient:
             }],
         })
 
+    def upsert_externalsecret(
+        self,
+        project_path: str,
+        app_slug: str,
+        group_slug: str,
+        env_name: str,
+        cluster_name: str = "aks",
+        branch: str = "main",
+    ) -> None:
+        """Create/update apps/{cluster_name}/{app_slug}/externalsecret-{env}.yaml in the
+        gitops repo (4K-106 / ADR-0024). Fully regenerated each call — no merge needed,
+        the manifest has no user-editable fields.
+        """
+        file_path = f"apps/{cluster_name}/{app_slug}/externalsecret-{env_name}.yaml"
+        project = self.get_project(project_path)
+        action = "update" if self.file_exists(project_path, file_path, ref=branch) else "create"
+        manifest = {
+            "apiVersion": "external-secrets.io/v1",
+            "kind": "ExternalSecret",
+            "metadata": {
+                "name": f"{app_slug}-env",
+                "namespace": env_name,
+            },
+            "spec": {
+                "refreshInterval": "5m",
+                "secretStoreRef": {"name": "vault-backend", "kind": "ClusterSecretStore"},
+                "target": {"name": f"{app_slug}-env", "creationPolicy": "Owner"},
+                "dataFrom": [{"extract": {"key": f"secret/apps/{group_slug}/{app_slug}/{env_name}"}}],
+            },
+        }
+        project.commits.create({
+            "branch": branch,
+            "commit_message": f"chore(gitops): externalsecret for {app_slug} ({env_name})",
+            "actions": [{
+                "action": action,
+                "file_path": file_path,
+                "content": yaml.safe_dump(manifest, default_flow_style=False, sort_keys=False),
+            }],
+        })
+
     def push_replica_overrides_batch(
         self,
         project_path: str,
