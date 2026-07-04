@@ -181,6 +181,21 @@ export interface EnvVar {
   masked: boolean;
 }
 
+export interface EnvVarKeyStatus {
+  key: string;
+  is_set: boolean;
+}
+
+export interface EnvVarListResponse {
+  env: string;
+  keys: EnvVarKeyStatus[];
+}
+
+export interface MyAccessResponse {
+  tier: CnpTier;
+  is_admin: boolean;
+}
+
 export interface AppTemplate {
   name: string;
   path: string;
