@@ -1,0 +1,3 @@
+# Ne jamais versionner un Secret contenant le vrai token Vault ESO.
+# Le token est créé via kubectl create secret (impératif), pas depuis un fichier.
+vault-eso-token-secret.yaml
