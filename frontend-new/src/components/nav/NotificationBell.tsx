@@ -21,6 +21,10 @@ const TYPE_LABEL: Record<string, string> = {
   'app.health.degraded':  'App degraded',
   'app.health.recovered': 'App recovered',
   'app.expose.changed':   'Exposure changed',
+  'app.scale.stopped':           'Stopped',
+  'app.scale.resumed':           'Resumed',
+  'app.scale.scheduled_stop':    'Scaled down for the night',
+  'app.scale.scheduled_resume':  'Woke up for the day',
   'cluster.offline':      'Cluster offline',
   'cluster.online':       'Cluster online',
   'group.renamed':        'Group renamed',
@@ -38,6 +42,7 @@ function NotificationItem({
   const isNew = n.state === 'new';
   const label = TYPE_LABEL[n.event.type] ?? n.event.type;
   const name = (n.event.payload?.name as string) ?? (n.event.payload?.cluster_name as string) ?? '';
+  const env = n.event.payload?.env as string | undefined;
   const severityDot = SEVERITY_DOT[n.event.severity] ?? 'bg-muted-foreground';
 
   return (
@@ -60,7 +65,7 @@ function NotificationItem({
           isNew ? 'font-medium text-foreground' : 'text-muted-foreground',
         )}>
           {label}
-          {name && <span className="font-normal"> · {name}</span>}
+          {name && <span className="font-normal"> · {name}{env && ` (${env})`}</span>}
         </p>
         <p className={cn(
           'text-[10px] mt-0.5 transition-colors',

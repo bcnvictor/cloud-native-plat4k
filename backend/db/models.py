@@ -11,6 +11,7 @@ from shared.models import (
     MemberStatus,
     ResourceStatus,
     ResourceType,
+    ScaleStopReason,
     UserRole,
 )
 from sqlalchemy import (
@@ -148,9 +149,31 @@ class Application(Base):
         nullable=False,
         default=ApplicationStatus.ONBOARDING,
     )
+    dev_scale_enabled = Column(Boolean, nullable=True, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
 
+
+class AppScaleState(Base):
+    __tablename__ = "app_scale_states"
+
+    id = Column(Integer, primary_key=True, index=True)
+    app_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    env = Column(String, nullable=False)
+    is_stopped = Column(Boolean, nullable=False, default=False)
+    stop_reason = Column(
+        SQLEnum(ScaleStopReason, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,
+    )
+    stopped_at = Column(DateTime(timezone=True), nullable=True)
+    stopped_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    resumed_at = Column(DateTime(timezone=True), nullable=True)
+    resumed_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("app_id", "env", name="uq_app_scale_state_app_env"),
+    )
 
 
 class ClusterConnection(Base):

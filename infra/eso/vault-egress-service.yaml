@@ -1,0 +1,27 @@
+# Service egress Tailscale — permet aux pods du cluster (ESO) de joindre Vault
+# sur cnp-control (4K-105 / ADR-0024).
+#
+# Sans ce Service, aucun pod du cluster ne peut atteindre le tailnet : seul le
+# pod subnet-router (namespace tailscale) en est membre, et les routes qu'il
+# annonce ne fonctionnent que dans le sens cnp-control -> cluster (cf. ADR-0019),
+# pas l'inverse. L'annotation tailscale.com/tailnet-ip déclenche l'opérateur
+# Tailscale Kubernetes pour provisionner un pod-proxy joignable via ce Service
+# normal, qui relaie vers cnp-control sur le tailnet.
+#
+# Prérequis côté policy ACL Tailscale (console, pas dans ce repo) :
+#   - tagOwners["tag:k8s"] doit inclure "tag:k8s" lui-même (délégation), en plus
+#     de "autogroup:admin", sinon l'opérateur ne peut pas tagger le proxy créé.
+#   - La règle acls autorisant tag:k8s -> tag:cnp-control doit inclure le port
+#     8200 (Vault), en plus de 443/8000 (ArgoCD/backend CNP).
+#
+# kubectl apply -f infra/eso/vault-egress-service.yaml --context cnp-aks
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-cnp-control
+  namespace: external-secrets
+  annotations:
+    tailscale.com/tailnet-ip: "100.85.20.62"
+spec:
+  externalName: "placeholder"
+  type: ExternalName

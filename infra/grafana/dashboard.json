@@ -1,9 +1,9 @@
 {
   "dashboard": {
     "id": null,
-    "uid": null,
+    "uid": "cnp-group-overview",
     "title": "CNP — Group Overview",
-    "description": "Observability & FinOps showback par groupe CNP",
+    "description": "Observability & FinOps showback per CNP group",
     "tags": ["cnp", "group", "finops"],
     "timezone": "browser",
     "schemaVersion": 38,
@@ -14,7 +14,7 @@
       "list": [
         {
           "name": "group_id",
-          "label": "Groupe",
+          "label": "Group",
           "type": "custom",
           "query": "",
           "current": {},
@@ -25,7 +25,7 @@
         },
         {
           "name": "env",
-          "label": "Environnement",
+          "label": "Environment",
           "type": "custom",
           "query": "dev,prod",
           "current": { "text": "All", "value": "$__all" },
@@ -50,7 +50,7 @@
       },
       {
         "id": 2,
-        "title": "Apps actives",
+        "title": "Active apps",
         "type": "stat",
         "gridPos": { "x": 0, "y": 1, "w": 6, "h": 4 },
         "options": {
@@ -62,13 +62,22 @@
         },
         "fieldConfig": {
           "defaults": {
-            "color": { "mode": "fixed", "fixedColor": "blue" },
+            "color": { "mode": "fixed", "fixedColor": "#007BA7" },
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                { "color": "blue", "value": null }
+                { "color": "#007BA7", "value": null }
               ]
-            }
+            },
+            "mappings": [
+              {
+                "type": "special",
+                "options": {
+                  "match": "null+nan",
+                  "result": { "text": "No data", "color": "transparent" }
+                }
+              }
+            ]
           }
         },
         "targets": [
@@ -100,7 +109,16 @@
                 { "color": "yellow", "value": 1 },
                 { "color": "green", "value": 2 }
               ]
-            }
+            },
+            "mappings": [
+              {
+                "type": "special",
+                "options": {
+                  "match": "null+nan",
+                  "result": { "text": "No data", "color": "transparent" }
+                }
+              }
+            ]
           }
         },
         "targets": [
@@ -113,7 +131,7 @@
       },
       {
         "id": 4,
-        "title": "Cout estimé (30j)",
+        "title": "Estimated cost (30d)",
         "type": "stat",
         "gridPos": { "x": 12, "y": 1, "w": 6, "h": 4 },
         "options": {
@@ -126,11 +144,20 @@
           "defaults": {
             "unit": "currencyEUR",
             "decimals": 2,
-            "color": { "mode": "fixed", "fixedColor": "purple" },
+            "color": { "mode": "fixed", "fixedColor": "#007BA7" },
             "thresholds": {
               "mode": "absolute",
-              "steps": [{ "color": "purple", "value": null }]
-            }
+              "steps": [{ "color": "#007BA7", "value": null }]
+            },
+            "mappings": [
+              {
+                "type": "special",
+                "options": {
+                  "match": "null+nan",
+                  "result": { "text": "No data", "color": "transparent" }
+                }
+              }
+            ]
           }
         },
         "targets": [
@@ -162,7 +189,16 @@
                 { "color": "yellow", "value": 3 },
                 { "color": "red", "value": 10 }
               ]
-            }
+            },
+            "mappings": [
+              {
+                "type": "special",
+                "options": {
+                  "match": "null+nan",
+                  "result": { "text": "No data", "color": "transparent" }
+                }
+              }
+            ]
           }
         },
         "targets": [
@@ -182,18 +218,18 @@
       },
       {
         "id": 11,
-        "title": "Cout estimé par app",
+        "title": "Estimated cost by app",
         "type": "table",
         "gridPos": { "x": 0, "y": 6, "w": 14, "h": 8 },
         "options": {
           "showHeader": true,
-          "sortBy": [{ "displayName": "Cout EUR/mois", "desc": true }]
+          "sortBy": [{ "displayName": "Cost EUR/month", "desc": true }]
         },
         "fieldConfig": {
           "defaults": { "custom": { "align": "auto" } },
           "overrides": [
             {
-              "matcher": { "id": "byName", "options": "Cout EUR/mois" },
+              "matcher": { "id": "byName", "options": "Cost EUR/month" },
               "properties": [
                 { "id": "unit", "value": "currencyEUR" },
                 { "id": "decimals", "value": 2 },
@@ -239,7 +275,7 @@
                 "label_app_kubernetes_io_name": "App",
                 "Value #CPU": "CPU cores",
                 "Value #RAM": "RAM GB",
-                "Value #COST": "Cout EUR/mois"
+                "Value #COST": "Cost EUR/month"
               }
             }
           }
@@ -267,7 +303,7 @@
       },
       {
         "id": 12,
-        "title": "Repartition du cout par app",
+        "title": "Cost breakdown by app",
         "type": "piechart",
         "gridPos": { "x": 14, "y": 6, "w": 10, "h": 8 },
         "options": {
@@ -300,7 +336,7 @@
       },
       {
         "id": 21,
-        "title": "CPU par app",
+        "title": "CPU by app",
         "type": "timeseries",
         "gridPos": { "x": 0, "y": 15, "w": 12, "h": 8 },
         "options": {
@@ -328,7 +364,7 @@
       },
       {
         "id": 22,
-        "title": "RAM par app",
+        "title": "RAM by app",
         "type": "timeseries",
         "gridPos": { "x": 12, "y": 15, "w": 12, "h": 8 },
         "options": {
@@ -357,13 +393,13 @@
       {
         "id": 30,
         "type": "row",
-        "title": "Sante & Fiabilite",
+        "title": "Health & Reliability",
         "collapsed": false,
         "gridPos": { "x": 0, "y": 23, "w": 24, "h": 1 }
       },
       {
         "id": 31,
-        "title": "Restarts par pod",
+        "title": "Restarts per pod",
         "type": "bargauge",
         "gridPos": { "x": 0, "y": 24, "w": 12, "h": 6 },
         "options": {
@@ -438,7 +474,7 @@
       },
       {
         "id": 41,
-        "title": "Logs applicatifs",
+        "title": "Application logs",
         "type": "logs",
         "gridPos": { "x": 0, "y": 31, "w": 24, "h": 8 },
         "options": {

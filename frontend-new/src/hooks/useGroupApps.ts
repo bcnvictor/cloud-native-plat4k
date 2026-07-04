@@ -11,5 +11,6 @@ export function useGroupApps(groupId: number | undefined) {
       return all.filter((a) => a.owning_gitlab_group_id === groupId);
     },
     enabled: groupId !== undefined,
+    refetchInterval: 30_000,
   });
 }

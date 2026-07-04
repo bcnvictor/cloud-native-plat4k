@@ -55,5 +55,45 @@ class VaultClient:
             logger.error("Failed to delete secret at %s/%s: %s", mount_point, path, e)
             raise
 
+    def patch_secret(self, path: str, secret: dict, mount_point: str = "secret") -> None:
+        """Merge keys into an existing secret without overwriting the others.
+
+        hvac's .patch() only works if the path already has data (it does a
+        read-then-merge-then-write under the hood, not a server-side merge
+        patch) — the first write to a brand new app/env path must go through
+        create_or_update_secret instead.
+        """
+        try:
+            self.client.secrets.kv.v2.patch(
+                path=path, secret=secret, mount_point=mount_point
+            )
+        except hvac.exceptions.InvalidPath:
+            self.client.secrets.kv.v2.create_or_update_secret(
+                path=path, secret=secret, mount_point=mount_point
+            )
+        except Exception as e:
+            logger.error("Failed to patch secret at %s/%s: %s", mount_point, path, e)
+            raise
+
+    def delete_secret_key(self, path: str, key: str, mount_point: str = "secret") -> None:
+        """Remove a single key from an existing secret, leaving the others untouched.
+
+        No-op if the path or the key doesn't exist.
+        """
+        try:
+            data = self.get_secret(path, mount_point=mount_point)
+        except hvac.exceptions.InvalidPath:
+            return
+        if key not in data:
+            return
+        data.pop(key)
+        try:
+            self.client.secrets.kv.v2.create_or_update_secret(
+                path=path, secret=data, mount_point=mount_point
+            )
+        except Exception as e:
+            logger.error("Failed to delete key %s from %s/%s: %s", key, mount_point, path, e)
+            raise
+
 
 vault_client = VaultClient()

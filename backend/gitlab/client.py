@@ -358,6 +358,100 @@ class GitLabClient:
             }],
         })
 
+    def upsert_externalsecret(
+        self,
+        project_path: str,
+        app_slug: str,
+        group_slug: str,
+        env_name: str,
+        cluster_name: str = "aks",
+        branch: str = "main",
+    ) -> None:
+        """Create/update apps/{cluster_name}/{app_slug}/externalsecret-{env}.yaml in the
+        gitops repo (4K-106 / ADR-0024). Fully regenerated each call — no merge needed,
+        the manifest has no user-editable fields.
+        """
+        file_path = f"apps/{cluster_name}/{app_slug}/externalsecret-{env_name}.yaml"
+        project = self.get_project(project_path)
+        action = "update" if self.file_exists(project_path, file_path, ref=branch) else "create"
+        manifest = {
+            "apiVersion": "external-secrets.io/v1",
+            "kind": "ExternalSecret",
+            "metadata": {
+                "name": f"{app_slug}-env",
+                "namespace": env_name,
+            },
+            "spec": {
+                "refreshInterval": "5m",
+                "secretStoreRef": {"name": "vault-backend", "kind": "ClusterSecretStore"},
+                "target": {"name": f"{app_slug}-env", "creationPolicy": "Owner"},
+                "dataFrom": [{"extract": {"key": f"secret/apps/{group_slug}/{app_slug}/{env_name}"}}],
+            },
+        }
+        project.commits.create({
+            "branch": branch,
+            "commit_message": f"chore(gitops): externalsecret for {app_slug} ({env_name})",
+            "actions": [{
+                "action": action,
+                "file_path": file_path,
+                "content": yaml.safe_dump(manifest, default_flow_style=False, sort_keys=False),
+            }],
+        })
+
+    def push_replica_overrides_batch(
+        self,
+        project_path: str,
+        changes: list[dict],
+        commit_message: str,
+        branch: str = "main",
+    ) -> None:
+        """Set or clear the `replicas` override in apps/{cluster_name}/{app_slug}/values-{env}.yaml
+        for one or more apps, in a single commit.
+
+        Each entry in `changes` must have {"cluster_name": str, "app_slug": str, "env": str,
+        "replicas": int | None}. replicas=None removes the override (falls back to the chart's
+        base values.yaml default, used on resume); an int pins the replica count (0 to stop).
+        """
+        project = self.get_project(project_path)
+        try:
+            existing_paths = {
+                item["path"]
+                for item in project.repository_tree(ref=branch, recursive=True, all=True)
+                if item["type"] == "blob"
+            }
+        except GitlabGetError:
+            existing_paths = set()
+
+        actions = []
+        for change in changes:
+            file_path = f"apps/{change['cluster_name']}/{change['app_slug']}/values-{change['env']}.yaml"
+            file_exists = file_path in existing_paths
+            if file_exists:
+                try:
+                    data = yaml.safe_load(self.read_file(project_path, file_path, ref=branch)) or {}
+                except GitlabGetError:
+                    data = {}
+                    file_exists = False
+            else:
+                data = {}
+            if change["replicas"] is None:
+                data.pop("replicas", None)
+            else:
+                data["replicas"] = change["replicas"]
+            actions.append({
+                "action": "update" if file_exists else "create",
+                "file_path": file_path,
+                "content": yaml.safe_dump(data, default_flow_style=False, sort_keys=False),
+            })
+
+        if not actions:
+            return
+        project.commits.create({
+            "branch": branch,
+            "commit_message": commit_message,
+            "actions": actions,
+        })
+
     def delete_directory_contents(self, project_path: str, directory_path: str, commit_message: str, branch: str = "main") -> None:
         """Deletes all files within a directory using the Commits API."""
         project = self.get_project(project_path)
