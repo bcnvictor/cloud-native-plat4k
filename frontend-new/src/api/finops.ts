@@ -1,9 +1,14 @@
-import { FINOPS_MOCK } from '@/mocks/finops';
-import { FinOpsData } from '@/types';
+import { api } from './client';
+import { FinopsGrafanaUrls, TeamCostEntry } from '@/types';
 
 export const finopsApi = {
-  async getData(_month: string): Promise<FinOpsData> {
-    // Mock-backed for S1 — no cost API in backend
-    return Promise.resolve(FINOPS_MOCK);
+  async getGrafanaUrls(): Promise<FinopsGrafanaUrls> {
+    const res = await api.get<FinopsGrafanaUrls>('/admin/finops/grafana-urls');
+    return res.data;
+  },
+
+  async getCostByTeam(): Promise<TeamCostEntry[]> {
+    const res = await api.get<TeamCostEntry[]>('/admin/finops/cost-by-team');
+    return res.data;
   },
 };

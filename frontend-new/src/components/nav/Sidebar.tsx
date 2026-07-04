@@ -1,5 +1,6 @@
 import { IconChevronLeft, IconChevronRight, IconRobot } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/store/auth';
 import { authApi } from '@/api/auth';
 import { Avatar } from '@/components/Avatar';
@@ -19,10 +20,12 @@ interface SidebarProps {
 export function Sidebar({ expanded, onToggle, assistantOpen, onAssistantToggle }: SidebarProps) {
   const { user, clearAuth } = useAuthStore();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   async function handleLogout() {
     await authApi.logout().catch(() => null);
     clearAuth();
+    queryClient.clear();
     navigate('/login');
   }
 

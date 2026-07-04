@@ -18,6 +18,10 @@ import {
   IconPencil,
   IconTrash,
   IconHistory,
+  IconMoon,
+  IconSun,
+  IconHandStop,
+  IconPlayerPlay,
 } from '@tabler/icons-react';
 import { Button } from '@/components/ui/Button';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
@@ -43,6 +47,10 @@ const EVENT_ICON: Record<string, React.ReactNode> = {
   'app.health.degraded':  <IconAlertTriangle size={14} className="text-danger-text" />,
   'app.health.recovered': <IconHeartbeat size={14} className="text-success-text" />,
   'app.expose.changed':   <IconActivity size={14} className="text-muted-foreground" />,
+  'app.scale.stopped':           <IconHandStop size={14} className="text-warning-text" />,
+  'app.scale.resumed':           <IconPlayerPlay size={14} className="text-success-text" />,
+  'app.scale.scheduled_stop':    <IconMoon size={14} className="text-info-text" />,
+  'app.scale.scheduled_resume':  <IconSun size={14} className="text-info-text" />,
   'cluster.offline':      <IconWifiOff size={14} className="text-danger-text" />,
   'cluster.online':       <IconWifi size={14} className="text-success-text" />,
   'group.renamed':        <IconPencil size={14} className="text-muted-foreground" />,
@@ -62,6 +70,10 @@ function eventLabel(ev: NotificationEvent): string {
     case 'app.health.degraded':  return `${name} is degraded`;
     case 'app.health.recovered': return `${name} recovered`;
     case 'app.expose.changed':   return `${name} exposure changed`;
+    case 'app.scale.stopped':          return `${name} was stopped${p.env ? ` (${p.env})` : ''}`;
+    case 'app.scale.resumed':          return `${name} was resumed${p.env ? ` (${p.env})` : ''}`;
+    case 'app.scale.scheduled_stop':   return `${name} scaled down for the night${p.env ? ` (${p.env})` : ''}`;
+    case 'app.scale.scheduled_resume': return `${name} woke up for the day${p.env ? ` (${p.env})` : ''}`;
     case 'cluster.offline':      return `Cluster ${p.cluster_name ?? ''} went offline`;
     case 'cluster.online':       return `Cluster ${p.cluster_name ?? ''} is back online`;
     case 'group.renamed':        return `Group renamed to ${p.new_name ?? ''}`;
@@ -97,6 +109,7 @@ export function GroupHome() {
     queryFn: () => eventsApi.groupActivity(group!.gitlab_group_id, 10),
     enabled: !!group?.gitlab_group_id,
     staleTime: 60_000,
+    refetchInterval: 30_000,
   });
 
   const statusCounts = apps.reduce<Record<string, number>>((acc, a) => {

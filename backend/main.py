@@ -17,6 +17,7 @@ from backend.api.routes import (
     auth,
     clusters,
     credentials,
+    env_vars,
     gitlab,
     groups,
     health,
@@ -33,6 +34,7 @@ from backend.k8s.dashboards import FINOPS_DASHBOARD_JSON
 from backend.k8s.discovery import discover_clusters
 from backend.k8s.health_worker import run_health_worker
 from backend.services.gitlab_sync_service import run_gitlab_sync_worker
+from backend.services.scale_worker import run_scale_worker
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +74,22 @@ async def lifespan(app: FastAPI):
     # Lancement des workers
     health_task = asyncio.create_task(run_health_worker(settings.CLUSTER_HEALTH_INTERVAL))
     sync_task = asyncio.create_task(run_gitlab_sync_worker(settings.GITLAB_SYNC_INTERVAL_MINUTES))
+    scale_task = (
+        asyncio.create_task(run_scale_worker(settings.SCALE_SCHEDULE_INTERVAL_MINUTES))
+        if settings.SCALE_SCHEDULE_ENABLED else None
+    )
     yield
     health_task.cancel()
     sync_task.cancel()
+    if scale_task:
+        scale_task.cancel()
     with suppress(asyncio.CancelledError):
         await health_task
     with suppress(asyncio.CancelledError):
         await sync_task
+    if scale_task:
+        with suppress(asyncio.CancelledError):
+            await scale_task
 
 
 # Rate limiting setup
@@ -117,6 +128,7 @@ app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["u
 app.include_router(apps.router, prefix=f"{settings.API_V1_STR}/apps", tags=["apps"])
 app.include_router(assistant.router, prefix=f"{settings.API_V1_STR}/apps", tags=["assistant"])
 app.include_router(assistant.global_router, prefix=f"{settings.API_V1_STR}", tags=["assistant"])
+app.include_router(env_vars.router, prefix=f"{settings.API_V1_STR}/apps", tags=["env-vars"])
 app.include_router(clusters.router, prefix=f"{settings.API_V1_STR}/clusters", tags=["clusters"])
 app.include_router(resources.router, prefix=f"{settings.API_V1_STR}/resources", tags=["resources"])
 app.include_router(credentials.router, prefix=f"{settings.API_V1_STR}/credentials", tags=["credentials"])

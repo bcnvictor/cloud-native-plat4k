@@ -1,0 +1,21 @@
+# helm repo add tailscale https://pkgs.tailscale.com/helmcharts
+# helm repo update
+# helm install tailscale-operator tailscale/tailscale-operator \
+#   --namespace tailscale --create-namespace \
+#   --values infra/oracle/k3s/tailscale/operator-values.yaml \
+#   --set oauth.clientId=$TS_OAUTH_CLIENT_ID \
+#   --set oauth.clientSecret=$TS_OAUTH_CLIENT_SECRET \
+#   --kubeconfig infra/oracle/k3s/cnp-k3s.yaml
+#
+# Installé uniquement pour le mécanisme d'egress (pods -> cnp-control, 4K-105 /
+# ADR-0024) : pas de Connector/subnet-router sur k3s ici, seul l'opérateur est
+# nécessaire pour provisionner le Service egress (voir
+# infra/eso/vault-egress-service.yaml).
+
+operatorConfig:
+  hostname: k3s-cnp-operator
+  defaultTags:
+    - tag:k8s
+
+proxyConfig:
+  defaultTags: "tag:k8s"

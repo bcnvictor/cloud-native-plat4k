@@ -222,6 +222,7 @@ docker compose -f docker-compose.yml up -d backend db frontend
 | KV v2 activé sur `secret/` | OK | `vault secrets enable -path=secret kv-v2` |
 | `secret/cnp/platform` bootstrappé | OK | Bootstrap automatique au premier démarrage backend |
 | Policy `cnp-backend` créée | OK | Accès `read/create/update` sur `cnp/*`, `clusters/*` et `argocd/*` |
+| Policy `cnp-backend` étendue à `apps/*` (4K-106) | À faire | Voir section 4 — requis pour que `PUT /api/v1/apps/{id}/env/{env}` fonctionne |
 | Token applicatif en place | OK | Root token **non utilisé** par le backend |
 | `.env` nettoyé | OK | Seuls `POSTGRES_*`, `VAULT_ADDR`, `VAULT_TOKEN`, `COMPOSE_FILE` |
 
@@ -395,7 +396,69 @@ docker compose logs backend --tail=20
 
 ---
 
-## 🛠️ 4. Dépannage et Administration Générale
+## 🔐 4. Étendre la policy `cnp-backend` pour les variables d'environnement (4K-106)
+
+Le backend a besoin de lire/écrire/supprimer sous `secret/apps/*` pour la gestion des
+variables d'environnement applicatives (ADR-0025). C'est distinct de la policy `eso-reader`
+(`infra/eso/policy-eso-reader.hcl`, 4K-105) : `eso-reader` est **read-only**, réservée à
+External Secrets Operator. `cnp-backend` a besoin d'écriture pour que
+`PUT /api/v1/apps/{id}/env/{env}` et le cleanup Vault de `DELETE /api/v1/apps/{id}` fonctionnent.
+
+Vérifier la policy actuelle :
+
+```bash
+docker exec -i <VAULT_CONTAINER_ID> \
+  env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=<ROOT_TOKEN> \
+  vault policy read cnp-backend
+```
+
+Policy complète attendue (ajouter les blocs `apps` si absents, sans supprimer les blocs
+`cnp`/`clusters`/`argocd` existants) :
+
+```bash
+docker exec -i <VAULT_CONTAINER_ID> \
+  env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=<ROOT_TOKEN> \
+  vault policy write cnp-backend - << 'EOF'
+path "secret/data/cnp/*" {
+  capabilities = ["read", "create", "update"]
+}
+path "secret/data/clusters/*" {
+  capabilities = ["read", "create", "update", "delete"]
+}
+path "secret/delete/clusters/*" {
+  capabilities = ["update"]
+}
+path "secret/metadata/clusters/*" {
+  capabilities = ["delete"]
+}
+path "secret/data/argocd/*" {
+  capabilities = ["read", "create", "update", "delete"]
+}
+path "secret/metadata/argocd/*" {
+  capabilities = ["delete"]
+}
+path "secret/data/apps/*" {
+  capabilities = ["read", "create", "update", "delete"]
+}
+path "secret/metadata/apps/*" {
+  capabilities = ["read", "list", "delete"]
+}
+EOF
+```
+
+> **Pourquoi ces deux blocs ?** `patch_secret`/`get_secret` (KV v2) passent par
+> `secret/data/apps/*`. La suppression complète d'un env à la désinscription d'une app
+> (`DELETE /api/v1/apps/{id}`, `vault_client.delete_secret`) appelle
+> `delete_metadata_and_all_versions`, qui a besoin de `delete` sur `secret/metadata/apps/*`.
+> Sans ce dernier bloc, le cleanup échoue silencieusement (loggé en ERROR, mais l'app est
+> quand même supprimée de la DB) et des secrets orphelins restent dans Vault.
+
+Sans cette extension, `PUT /api/v1/apps/{id}/env/{env}` répond 500 (`Vault Forbidden on
+write`) et `DELETE /api/v1/apps/{id}` supprime l'app en base sans nettoyer Vault.
+
+---
+
+## 🛠️ 5. Dépannage et Administration Générale
 
 ### Procédure post-reboot (cnp-control)
 

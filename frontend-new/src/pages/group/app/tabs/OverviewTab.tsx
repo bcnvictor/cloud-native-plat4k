@@ -1,19 +1,24 @@
-import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCloud, IconCpu, IconDatabase, IconExternalLink, IconRefresh, IconServer, IconTerminal2 } from '@tabler/icons-react';
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCloud, IconCpu, IconDatabase, IconExternalLink, IconPlayerPlay, IconPlayerStop, IconRefresh, IconServer, IconTerminal2 } from '@tabler/icons-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { MetricCard } from '@/components/MetricCard';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
+import { toast } from '@/components/ui/toast';
 import { timeAgo } from '@/utils/timeAgo';
+import { appsApi } from '@/api/apps';
 import { useAppMetrics } from '@/hooks/useAppMetrics';
 import { useAppStatus } from '@/hooks/useAppStatus';
+import { useAppScaleState } from '@/hooks/useAppScaleState';
 import { useMetricUrl } from '@/hooks/useMonitoringConfig';
 import { appUrl } from '@/utils/appUrls';
 import { clustersApi } from '@/api/clusters';
 import { isPrivateCluster } from '@/utils/clusterUtils';
 import { cn } from '@/utils/cn';
-import type { ArgoEnvStatus } from '@/types';
+import type { ArgoEnvStatus, AppScaleStateItem } from '@/types';
 
 function SyncBadge({ status }: { status: string | null | undefined }) {
   if (!status) return <span className="text-xs text-muted-foreground">—</span>;
@@ -28,6 +33,7 @@ function SyncBadge({ status }: { status: string | null | undefined }) {
 function HealthBadge({ status }: { status: string | null | undefined }) {
   if (!status) return <span className="text-xs text-muted-foreground">—</span>;
   const color =
+    status === 'Stopped' ? 'bg-muted text-muted-foreground' :
     status === 'Healthy' ? 'bg-success/15 text-success-text' :
     status === 'Degraded' ? 'bg-destructive/15 text-destructive' :
     'bg-warning/15 text-warning-text';
@@ -38,7 +44,52 @@ function HealthBadge({ status }: { status: string | null | undefined }) {
   );
 }
 
-function ArgoCard({ title, env }: { title: string; env: ArgoEnvStatus | null | undefined }) {
+interface EnvCardProps {
+  title: string;
+  envKey: 'dev' | 'prod';
+  appId: number;
+  argo: ArgoEnvStatus | null | undefined;
+  scaleState: AppScaleStateItem | null | undefined;
+}
+
+function EnvCard({ title, envKey, appId, argo, scaleState }: EnvCardProps) {
+  const [confirming, setConfirming] = useState(false);
+  const queryClient = useQueryClient();
+  const isStopped = scaleState?.is_stopped ?? false;
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['app-scale-state', appId] });
+    queryClient.invalidateQueries({ queryKey: ['app-status', appId] });
+  };
+
+  const { mutate: doStop, isPending: stopping } = useMutation({
+    mutationFn: () => appsApi.stopApp(appId, envKey),
+    onSuccess: () => {
+      toast({ title: `${title} stopped`, description: 'Scaled to zero via a gitops commit.' });
+      setConfirming(false);
+      invalidate();
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Stop failed', description: err.message, variant: 'destructive' });
+      setConfirming(false);
+    },
+  });
+
+  const { mutate: doResume, isPending: resuming } = useMutation({
+    mutationFn: () => appsApi.resumeApp(appId, envKey),
+    onSuccess: () => {
+      toast({ title: `${title} resumed` });
+      invalidate();
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Resume failed', description: err.message, variant: 'destructive' });
+    },
+  });
+
+  const scaleStatusText = isStopped
+    ? `Stopped${scaleState?.stop_reason ? ` (${scaleState.stop_reason})` : ''}${scaleState?.stopped_at ? ` · ${timeAgo(scaleState.stopped_at)}` : ''}`
+    : 'Running';
+
   return (
     <Card>
       <h2 className="text-sm font-medium text-foreground mb-3">
@@ -47,24 +98,24 @@ function ArgoCard({ title, env }: { title: string; env: ArgoEnvStatus | null | u
           {title}
         </span>
       </h2>
-      {!env || (env.error && !env.sync_status) ? (
-        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+      {!argo || (argo.error && !argo.sync_status) ? (
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5 mb-3">
           <IconAlertTriangle size={12} className="shrink-0" />
-          {env?.error ?? 'Unavailable'}
+          {argo?.error ?? 'Unavailable'}
         </p>
       ) : (
-        <dl className="flex flex-col gap-2">
+        <dl className="flex flex-col gap-2 mb-3">
           {[
-            { label: 'Sync', value: <SyncBadge status={env.sync_status} /> },
-            { label: 'Health', value: <HealthBadge status={env.health_status} /> },
+            { label: 'Sync', value: <SyncBadge status={argo.sync_status} /> },
+            { label: 'Health', value: <HealthBadge status={isStopped ? 'Stopped' : argo.health_status} /> },
             {
               label: 'Image',
-              value: env.image ? env.image.split('/').pop() ?? env.image : '—',
+              value: argo.image ? argo.image.split('/').pop() ?? argo.image : '—',
               mono: true,
             },
             {
               label: 'Last sync',
-              value: env.last_sync_at ? timeAgo(env.last_sync_at) : '—',
+              value: argo.last_sync_at ? timeAgo(argo.last_sync_at) : '—',
             },
           ].map(({ label, value, mono }) => (
             <div key={label} className="flex items-baseline gap-2">
@@ -74,6 +125,28 @@ function ArgoCard({ title, env }: { title: string; env: ArgoEnvStatus | null | u
           ))}
         </dl>
       )}
+
+      <div className="flex items-center gap-2 pt-3 border-t border-border">
+        <span className="flex-1 text-xs text-muted-foreground">{scaleStatusText}</span>
+        {isStopped ? (
+          <Button size="sm" variant="secondary" icon={<IconPlayerPlay size={13} />} onClick={() => doResume()} disabled={resuming}>
+            {resuming ? <Spinner size="sm" /> : 'Resume'}
+          </Button>
+        ) : confirming ? (
+          <div className="flex gap-1.5">
+            <Button size="sm" variant="danger" onClick={() => doStop()} disabled={stopping}>
+              {stopping ? <Spinner size="sm" /> : 'Confirm'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={stopping}>
+              ✕
+            </Button>
+          </div>
+        ) : (
+          <Button size="sm" variant="secondary" icon={<IconPlayerStop size={13} />} onClick={() => setConfirming(true)}>
+            Stop
+          </Button>
+        )}
+      </div>
     </Card>
   );
 }
@@ -84,6 +157,7 @@ export function OverviewTab() {
   const cpuUrl = useMetricUrl(app?.slug ?? '', 'cpu');
   const ramUrl = useMetricUrl(app?.slug ?? '', 'ram');
   const { data: runtimeStatus } = useAppStatus(app?.id);
+  const { data: scale } = useAppScaleState(app?.id);
   const { data: clusters = [] } = useQuery({ queryKey: ['clusters'], queryFn: clustersApi.list });
   const cluster = app?.target_cluster_id
     ? clusters.find((c) => c.id === app.target_cluster_id)
@@ -144,18 +218,18 @@ export function OverviewTab() {
         />
       </div>
 
-      {/* ArgoCD env cards */}
-      {runtimeStatus?.argocd_error && !runtimeStatus.argocd_prod && !runtimeStatus.argocd_dev ? (
+      {/* ArgoCD env cards + stop/resume control */}
+      {!app?.id || (runtimeStatus?.argocd_error && !runtimeStatus.argocd_prod && !runtimeStatus.argocd_dev) ? (
         <Card>
           <p className="text-xs text-muted-foreground flex items-center gap-1.5">
             <IconAlertTriangle size={12} className="shrink-0" />
-            ArgoCD unavailable — {runtimeStatus.argocd_error}
+            {runtimeStatus?.argocd_error ? `ArgoCD unavailable — ${runtimeStatus.argocd_error}` : 'Unavailable'}
           </p>
         </Card>
       ) : (
         <div className="grid grid-cols-2 gap-4">
-          <ArgoCard title="Production environment" env={runtimeStatus?.argocd_prod} />
-          <ArgoCard title="Dev environment" env={runtimeStatus?.argocd_dev} />
+          <EnvCard title="Production environment" envKey="prod" appId={app.id} argo={runtimeStatus?.argocd_prod} scaleState={scale?.prod} />
+          <EnvCard title="Dev environment" envKey="dev" appId={app.id} argo={runtimeStatus?.argocd_dev} scaleState={scale?.dev} />
         </div>
       )}
 

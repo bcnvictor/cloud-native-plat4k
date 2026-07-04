@@ -98,6 +98,20 @@ export interface AppRuntimeStatus {
   argocd_error: string | null;
 }
 
+export type ScaleStopReason = 'schedule' | 'manual';
+
+export interface AppScaleStateItem {
+  is_stopped: boolean;
+  stop_reason: ScaleStopReason | null;
+  stopped_at: string | null;
+  resumed_at: string | null;
+}
+
+export interface AppScaleStateResponse {
+  dev: AppScaleStateItem | null;
+  prod: AppScaleStateItem | null;
+}
+
 export interface DeploymentExtended {
   commitHash: string;
   commitMessage: string;
@@ -167,6 +181,21 @@ export interface EnvVar {
   masked: boolean;
 }
 
+export interface EnvVarKeyStatus {
+  key: string;
+  is_set: boolean;
+}
+
+export interface EnvVarListResponse {
+  env: string;
+  keys: EnvVarKeyStatus[];
+}
+
+export interface MyAccessResponse {
+  tier: CnpTier;
+  is_admin: boolean;
+}
+
 export interface AppTemplate {
   name: string;
   path: string;
@@ -189,18 +218,17 @@ export interface ActivityEvent {
   timestamp: string;
 }
 
-export interface FinOpsData {
-  period: string;
-  totalCostUsd: number;
-  azureCreditsTotal: number;
-  azureCreditsUsed: number;
-  azureCreditsRemainingDays: number;
-  clusters: Array<{ name: string; provider: string; costUsd: number }>;
-  groups: Array<{
-    groupName: string;
-    totalUsd: number;
-    apps: Array<{ appName: string; costUsd: number }>;
-  }>;
+export interface FinopsGrafanaUrls {
+  total_cost_panel_url: string | null;
+  top_apps_panel_url: string | null;
+  trend_panel_url: string | null;
+  dashboard_url: string | null;
+}
+
+export interface TeamCostEntry {
+  group_id: string;
+  group_name: string;
+  cost_eur_month: number;
 }
 
 // Stepper form state
