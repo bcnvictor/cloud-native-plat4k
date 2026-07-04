@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { IconExternalLink, IconEye, IconEyeOff, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconExternalLink, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
-import { appsApi } from '@/api/apps';
+import { appsApi, EnvName } from '@/api/apps';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { Tabs } from '@/components/ui/Tabs';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { EnvVar } from '@/types';
 import { appUrl } from '@/utils/appUrls';
 import { cn } from '@/utils/cn';
 
@@ -29,9 +29,15 @@ export function SettingsTab() {
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
   }, []);
-  const [envVars, setEnvVars] = useState<EnvVar[]>([]);
-  const [maskedKeys, setMaskedKeys] = useState<Set<string>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const [envTab, setEnvTab] = useState<EnvName>('dev');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addingKey, setAddingKey] = useState('');
+  const [addingValue, setAddingValue] = useState('');
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+  const [deletingVarKey, setDeletingVarKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (app) {
@@ -58,21 +64,69 @@ export function SettingsTab() {
     onError: () => setExpose(app?.expose ?? false),
   });
 
-  function addEnvVar() {
-    setEnvVars((prev) => [...prev, { key: '', value: '', masked: false }]);
+  const { data: myAccess } = useQuery({
+    queryKey: ['myAccess', app?.id],
+    queryFn: () => appsApi.getMyAccess(app!.id),
+    enabled: !!app,
+  });
+
+  const { data: envVarsData, isLoading: envVarsLoading } = useQuery({
+    queryKey: ['envVars', app?.id, envTab],
+    queryFn: () => appsApi.listEnvVars(app!.id, envTab),
+    enabled: !!app,
+  });
+
+  // Developer has zero access to prod, not even key names (ADR-0025 §3).
+  const canSeeProd = !!myAccess && (myAccess.is_admin || myAccess.tier !== 'developer');
+  const canWriteEnv = !!myAccess && (
+    myAccess.is_admin ||
+    (envTab === 'dev' ? myAccess.tier !== 'viewer' : myAccess.tier === 'maintainer' || myAccess.tier === 'owner')
+  );
+
+  useEffect(() => {
+    if (envTab === 'prod' && myAccess && !canSeeProd) setEnvTab('dev');
+  }, [myAccess, canSeeProd, envTab]);
+
+  const invalidateEnvVars = () => qc.invalidateQueries({ queryKey: ['envVars', app?.id, envTab] });
+
+  const setVarsMutation = useMutation({
+    mutationFn: (variables: Record<string, string>) => appsApi.setEnvVars(app!.id, envTab, variables),
+    onSuccess: invalidateEnvVars,
+  });
+
+  const deleteVarMutation = useMutation({
+    mutationFn: (key: string) => appsApi.deleteEnvVar(app!.id, envTab, key),
+    onSuccess: invalidateEnvVars,
+  });
+
+  function submitAddVar() {
+    const key = addingKey.trim();
+    if (!key) return;
+    setVarsMutation.mutate(
+      { [key]: addingValue },
+      {
+        onSuccess: () => {
+          setAddingKey('');
+          setAddingValue('');
+          setShowAddForm(false);
+          invalidateEnvVars();
+        },
+      }
+    );
   }
 
-  function removeEnvVar(idx: number) {
-    setEnvVars((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function toggleMask(key: string) {
-    setMaskedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  function submitEditVar(key: string) {
+    if (!editingValue) return;
+    setVarsMutation.mutate(
+      { [key]: editingValue },
+      {
+        onSuccess: () => {
+          setEditingKey(null);
+          setEditingValue('');
+          invalidateEnvVars();
+        },
+      }
+    );
   }
 
   if (isLoading || !app) return null;
@@ -124,84 +178,130 @@ export function SettingsTab() {
       </Card>
 
       {/* Env vars */}
-      {/* MOCK: getEnvVars/updateEnvVars sont des stubs côté api/apps.ts — décommissionner quand le backend expose GET/PUT /apps/:id/envvars */}
       <Card>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-medium text-foreground">Environment variables</h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<IconPlus size={13} />}
-            onClick={addEnvVar}
-          >
-            Add
-          </Button>
+          {canWriteEnv && !showAddForm && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<IconPlus size={13} />}
+              onClick={() => setShowAddForm(true)}
+            >
+              Add
+            </Button>
+          )}
         </div>
 
-        {envVars.length === 0 ? (
+        <Tabs
+          tabs={
+            canSeeProd
+              ? [{ key: 'dev', label: 'dev' }, { key: 'prod', label: 'prod' }]
+              : [{ key: 'dev', label: 'dev' }]
+          }
+          active={envTab}
+          onChange={(k) => setEnvTab(k as EnvName)}
+          className="mb-3"
+        />
+
+        {envVarsLoading ? (
+          <p className="text-xs text-muted-foreground">Loading…</p>
+        ) : (envVarsData?.keys.length ?? 0) === 0 && !showAddForm ? (
           <p className="text-xs text-muted-foreground">No variables.</p>
         ) : (
           <div className="flex flex-col gap-2">
-            {envVars.map((ev, i) => {
-              const isMasked = maskedKeys.has(ev.key);
-              return (
-                <div key={i} className="flex items-center gap-2">
-                  <Input
-                    placeholder="KEY"
-                    value={ev.key}
-                    onChange={(e) => {
-                      const next = [...envVars];
-                      next[i] = { ...next[i], key: e.target.value };
-                      setEnvVars(next);
-                    }}
-                    mono
-                    className="flex-1"
-                  />
-                  <Input
-                    placeholder="value"
-                    value={ev.value}
-                    type={isMasked ? 'password' : 'text'}
-                    onChange={(e) => {
-                      const next = [...envVars];
-                      next[i] = { ...next[i], value: e.target.value };
-                      setEnvVars(next);
-                    }}
-                    mono
-                    className="flex-1"
-                    suffix={
+            {envVarsData?.keys.map((kv) => (
+              <div key={kv.key} className="flex items-center gap-2">
+                <span
+                  className={cn('h-1.5 w-1.5 rounded-full shrink-0', kv.is_set ? 'bg-success' : 'bg-border')}
+                  title={kv.is_set ? 'set' : 'unset'}
+                />
+                <span className="flex-1 text-sm font-mono text-foreground truncate">{kv.key}</span>
+                {editingKey === kv.key ? (
+                  <>
+                    <Input
+                      type="password"
+                      placeholder="New value"
+                      value={editingValue}
+                      onChange={(e) => setEditingValue(e.target.value)}
+                      mono
+                      className="flex-1"
+                      autoFocus
+                    />
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      loading={setVarsMutation.isPending}
+                      disabled={!editingValue}
+                      onClick={() => submitEditVar(kv.key)}
+                    >
+                      Save
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setEditingKey(null); setEditingValue(''); }}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  canWriteEnv && (
+                    <>
+                      <Button size="sm" variant="ghost" onClick={() => { setEditingKey(kv.key); setEditingValue(''); }}>
+                        Edit
+                      </Button>
                       <button
-                        type="button"
-                        onClick={() => toggleMask(ev.key)}
-                        className="text-muted-foreground"
+                        onClick={() => setDeletingVarKey(kv.key)}
+                        className="text-muted-foreground hover:text-danger transition-colors"
                       >
-                        {isMasked ? <IconEyeOff size={13} /> : <IconEye size={13} />}
+                        <IconTrash size={14} />
                       </button>
-                    }
-                  />
-                  <button
-                    onClick={() => removeEnvVar(i)}
-                    className="text-muted-foreground hover:text-danger transition-colors"
-                  >
-                    <IconTrash size={14} />
-                  </button>
-                </div>
-              );
-            })}
+                    </>
+                  )
+                )}
+              </div>
+            ))}
+
+            {showAddForm && (
+              <div className="flex items-center gap-2 pt-2 mt-1 border-t border-border">
+                <Input
+                  placeholder="KEY"
+                  value={addingKey}
+                  onChange={(e) => setAddingKey(e.target.value)}
+                  mono
+                  className="flex-1"
+                  autoFocus
+                />
+                <Input
+                  type="password"
+                  placeholder="value"
+                  value={addingValue}
+                  onChange={(e) => setAddingValue(e.target.value)}
+                  mono
+                  className="flex-1"
+                />
+                <Button
+                  size="sm"
+                  variant="primary"
+                  loading={setVarsMutation.isPending}
+                  disabled={!addingKey.trim()}
+                  onClick={submitAddVar}
+                >
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => { setShowAddForm(false); setAddingKey(''); setAddingValue(''); }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
-        {envVars.length > 0 && (
-          <>
-            <p className="text-xs text-muted-foreground mt-3">
-              Changes trigger a redeploy.
-            </p>
-            <div className="flex justify-end mt-3">
-              <Button variant="primary" size="sm">
-                Save
-              </Button>
-            </div>
-          </>
-        )}
+        <p className="text-xs text-muted-foreground mt-3">
+          Values are never displayed once saved. Changes sync to the cluster within a few
+          minutes and trigger a pod restart.
+        </p>
       </Card>
 
       {/* Internet exposure */}
@@ -282,6 +382,20 @@ export function SettingsTab() {
         confirmLabel="Delete"
         variant="danger"
         loading={deleteMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={!!deletingVarKey}
+        onCancel={() => setDeletingVarKey(null)}
+        onConfirm={() => {
+          if (!deletingVarKey) return;
+          deleteVarMutation.mutate(deletingVarKey, { onSuccess: () => setDeletingVarKey(null) });
+        }}
+        title="Delete variable"
+        description={`Confirm deletion of "${deletingVarKey}" (${envTab}). The app will restart once the change propagates.`}
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleteVarMutation.isPending}
       />
     </div>
   );
