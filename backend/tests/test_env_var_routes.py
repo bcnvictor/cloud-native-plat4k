@@ -311,3 +311,62 @@ class TestInvalidEnv:
             headers={"Authorization": f"Bearer {developer_token}"},
         )
         assert resp.status_code == 422
+
+
+class TestValuesEndpoint:
+    """GET /env/{env}/values (4K-107) — the one deliberate exception to write-only,
+    needed for `cnp env pull`. Must never work for prod, even for admin.
+    """
+
+    async def test_developer_can_read_dev_values(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application
+    ):
+        await client.put(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev",
+            json={"variables": {"DATABASE_URL": "postgres://real-value"}},
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        resp = await client.get(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev/values",
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"DATABASE_URL": "postgres://real-value"}
+
+    async def test_prod_values_forbidden_even_for_maintainer(
+        self, client: AsyncClient, maintainer_token: str, app_with_maintainer: Application
+    ):
+        await client.put(
+            f"/api/v1/apps/{app_with_maintainer.id}/env/prod",
+            json={"variables": {"DATABASE_URL": "postgres://prod-value"}},
+            headers={"Authorization": f"Bearer {maintainer_token}"},
+        )
+        resp = await client.get(
+            f"/api/v1/apps/{app_with_maintainer.id}/env/prod/values",
+            headers={"Authorization": f"Bearer {maintainer_token}"},
+        )
+        assert resp.status_code == 403
+
+    async def test_prod_values_forbidden_even_for_admin(
+        self, client: AsyncClient, admin_token: str, app_with_developer: Application
+    ):
+        resp = await client.get(
+            f"/api/v1/apps/{app_with_developer.id}/env/prod/values",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 403
+
+    async def test_viewer_forbidden_from_dev_values(
+        self, client: AsyncClient, developer_token: str, cluster: ClusterConnection, db_session
+    ):
+        """No membership -> VIEWER tier -> below the Developer bar for reading values."""
+        application = Application(name="viewerapp2", slug="viewerapp2", owner="o", target_cluster_id=cluster.id)
+        db_session.add(application)
+        await db_session.commit()
+        await db_session.refresh(application)
+
+        resp = await client.get(
+            f"/api/v1/apps/{application.id}/env/dev/values",
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 403

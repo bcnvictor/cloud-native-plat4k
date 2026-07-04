@@ -178,3 +178,23 @@ Neutre :
 - La rotation d'une variable (nouveau `vault kv patch`) ne crée pas de downtime : ESO
   propage la nouvelle valeur, Reloader effectue un rolling restart sans interruption si
   `replicas > 1`.
+
+## Addendum (4K-107) : exception dev-only au write-only strict
+
+`cnp env pull` (workflow développeur, §7) a besoin de vraies valeurs pour générer un
+`.env.local` utilisable — chose que la contrainte "les valeurs ne sont jamais retournées
+par l'API GET" (voir Contexte) interdit explicitement. Les deux ne peuvent pas être vrais
+en même temps ; on a tranché pour une **exception unique, explicite et verrouillée** plutôt
+que d'affaiblir la règle générale :
+
+`GET /api/v1/apps/{id}/env/dev/values` retourne les valeurs réelles, mais :
+- fonctionne **uniquement** pour `env=dev` — un `env=prod` est rejeté (403) avant même la
+  vérification de tier, y compris pour un platform admin ;
+- exige au minimum le tier `Developer` (pas `Viewer`, contrairement à la lecture des noms
+  de clés) ;
+- reste le seul endpoint de toute la feature à exposer des valeurs — `GET /{env}` et
+  `GET /{env}/{key}/status` continuent de ne renvoyer que des noms de clés et des booléens.
+
+Le risque résiduel (un token CLI volé peut lire les secrets dev d'une app) est jugé
+acceptable : c'est le même niveau d'exposition qu'un développeur qui aurait de toute façon
+un accès `Developer` en écriture sur ces mêmes variables.

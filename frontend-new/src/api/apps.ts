@@ -1,7 +1,8 @@
 import { api } from './client';
-import { Application, AppHistory, AppRuntimeStatus, AppScaleStateResponse, AppMember, AppTemplate, EnvVar } from '@/types';
+import { Application, AppHistory, AppRuntimeStatus, AppScaleStateResponse, AppMember, AppTemplate, EnvVarListResponse, MyAccessResponse } from '@/types';
 
 export type ScaleEnv = 'dev' | 'prod' | 'both';
+export type EnvName = 'dev' | 'prod';
 
 export const appsApi = {
   async list(): Promise<Application[]> {
@@ -112,12 +113,22 @@ export const appsApi = {
     return res.data;
   },
 
-  async getEnvVars(_appId: number): Promise<EnvVar[]> {
-    // Not in backend yet — return empty for S1
-    return [];
+  async getMyAccess(appId: number): Promise<MyAccessResponse> {
+    const res = await api.get<MyAccessResponse>(`/apps/${appId}/my-access`);
+    return res.data;
   },
 
-  async updateEnvVars(_appId: number, _vars: EnvVar[]): Promise<void> {
-    // Not in backend yet — no-op for S1
+  async listEnvVars(appId: number, env: EnvName): Promise<EnvVarListResponse> {
+    const res = await api.get<EnvVarListResponse>(`/apps/${appId}/env/${env}`);
+    return res.data;
+  },
+
+  async setEnvVars(appId: number, env: EnvName, variables: Record<string, string>): Promise<EnvVarListResponse> {
+    const res = await api.put<EnvVarListResponse>(`/apps/${appId}/env/${env}`, { variables });
+    return res.data;
+  },
+
+  async deleteEnvVar(appId: number, env: EnvName, key: string): Promise<void> {
+    await api.delete(`/apps/${appId}/env/${env}/${encodeURIComponent(key)}`);
   },
 };
