@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { IconFilter } from '@tabler/icons-react';
 import { useScopeStore } from '@/store/scope';
 import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { appsApi } from '@/api/apps';
 import { groupsApi } from '@/api/groups';
+import { clustersApi } from '@/api/clusters';
 import { AppStatusBadge } from '@/components/AppStatusBadge';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,6 +15,7 @@ import { getAppHealth } from '@/utils/appHealth';
 export function AdminApps() {
   const { setScope } = useScopeStore();
   const { setBreadcrumb } = useBreadcrumb();
+  const navigate = useNavigate();
   useEffect(() => { setScope('admin'); }, [setScope]);
 
   useEffect(() => {
@@ -31,10 +34,28 @@ export function AdminApps() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const { data: clusters = [] } = useQuery({
+    queryKey: ['clusters'],
+    queryFn: clustersApi.list,
+    staleTime: 5 * 60 * 1000,
+  });
+
   function groupName(groupId: number | null | undefined): string {
     if (!groupId) return '—';
     const g = groups.find((g) => g.gitlab_group_id === groupId);
     return g?.name ?? `group-${groupId}`;
+  }
+
+  function groupSlug(groupId: number | null | undefined): string | undefined {
+    if (!groupId) return undefined;
+    const g = groups.find((g) => g.gitlab_group_id === groupId);
+    return g ? groupsApi.getSlug(g) : undefined;
+  }
+
+  function clusterName(clusterId: number | null | undefined): string {
+    if (!clusterId) return '—';
+    const c = clusters.find((c) => c.id === clusterId);
+    return c?.name ?? `cluster-${clusterId}`;
   }
 
   return (
@@ -69,10 +90,12 @@ export function AdminApps() {
           <>
             {apps.map((app) => {
               const health = getAppHealth(app);
+              const slug = groupSlug(app.owning_gitlab_group_id);
               return (
                 <div
                   key={app.id}
-                  className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-4 px-4 py-2.5 border-b border-border last:border-0 items-center hover:bg-accent transition-colors"
+                  className={`grid grid-cols-[2fr_1fr_1fr_1fr] gap-4 px-4 py-2.5 border-b border-border last:border-0 items-center hover:bg-accent transition-colors ${slug ? 'cursor-pointer' : ''}`}
+                  onClick={slug ? () => navigate(`/groups/${slug}/apps/${app.slug}`) : undefined}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <AppStatusBadge status={health} showDot size="sm" />
@@ -81,7 +104,9 @@ export function AdminApps() {
                   <p className="text-sm text-muted-foreground truncate">
                     {groupName(app.owning_gitlab_group_id)}
                   </p>
-                  <p className="text-xs font-mono text-muted-foreground">—</p>
+                  <p className="text-xs font-mono text-muted-foreground truncate">
+                    {clusterName(app.target_cluster_id)}
+                  </p>
                   <p className="text-xs text-muted-foreground">{app.origin ?? 'scaffold'}</p>
                 </div>
               );

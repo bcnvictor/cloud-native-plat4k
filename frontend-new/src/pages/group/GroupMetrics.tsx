@@ -95,7 +95,7 @@ function OverviewContent({ baseUrl, theme, groupId }: TabContentProps) {
   );
 }
 
-function DeepDiveContent({ baseUrl, theme, dashboardUrl }: Omit<TabContentProps, 'groupId'> & { groupId: number }) {
+function DeepDiveContent({ baseUrl, theme }: Omit<TabContentProps, 'groupId'> & { groupId: number }) {
   return (
     <>
       <SectionHeader icon={IconCpu} label="Compute" />
@@ -112,20 +112,6 @@ function DeepDiveContent({ baseUrl, theme, dashboardUrl }: Omit<TabContentProps,
 
       <SectionHeader icon={IconTerminal2} label="Logs" />
       <GrafanaPanel panelId={41} title="Logs" baseUrl={baseUrl} theme={theme} height={320} />
-
-      {dashboardUrl && (
-        <div className="mt-4 flex justify-end">
-          <a
-            href={dashboardUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <IconExternalLink size={13} />
-            Open in Grafana
-          </a>
-        </div>
-      )}
     </>
   );
 }
@@ -175,7 +161,7 @@ export function GroupMetrics() {
   return (
     <div className="px-6 py-4">
       <div className="flex items-center justify-end mb-4">
-        {dashboardUrl && activeTab === 'overview' && (
+        {dashboardUrl && (
           <a
             href={dashboardUrl}
             target="_blank"

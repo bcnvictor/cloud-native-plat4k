@@ -191,9 +191,11 @@ class CredentialResponse(CredentialBase):
 class AuditLogResponse(BaseModel):
     id: int
     user_id: Optional[int]
+    user_email: Optional[str] = None
     action: str
     resource_id: Optional[int]
     app_id: Optional[int] = None
+    app_name: Optional[str] = None
     cloud: Optional[CloudType]
     timestamp: datetime
     ip_address: Optional[str]

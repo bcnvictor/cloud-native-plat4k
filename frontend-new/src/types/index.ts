@@ -129,24 +129,13 @@ export interface ClusterConnection {
   name: string;
   endpoint: string;
   kubeconfig_secret_ref: string;
+  prometheus_url?: string | null;
+  loki_url?: string | null;
+  argocd_url?: string | null;
   status: 'online' | 'offline' | 'unknown';
   last_seen_at?: string;
   created_at: string;
   updated_at?: string;
-}
-
-export interface ClusterMetrics {
-  nodesActive: number;
-  cpuUsed: number;
-  cpuTotal: number;
-  ramUsedGi: number;
-  ramTotalGi: number;
-  k8sVersion: string;
-  type: string;
-  provider: string;
-  icon: 'cloud' | 'server';
-  podsActive: number;
-  namespaces: Array<{ name: string; apps: number; pods: number }>;
 }
 
 export interface LogEntry {
@@ -266,10 +255,12 @@ export interface ApiKey {
 export interface AuditLog {
   id: number;
   user_id: number | null;
+  user_email?: string | null;
   action: string;
   cloud?: string | null;
   resource_id?: string | null;
   app_id?: number | null;
+  app_name?: string | null;
   ip_address?: string | null;
   extra?: Record<string, unknown> | null;
   timestamp: string;

@@ -144,9 +144,6 @@ export function GroupHome() {
     </div>
   );
 
-  // MOCK: hardcodé — décommissionner en calculant depuis GET /deployments/?group_id=...&since=7d
-  const deployments7d = 12;
-
   return (
     <div className="max-w-[1440px] mx-auto px-8 pt-4 pb-6">
       <div className="text-center pt-3 pb-6">
@@ -184,10 +181,9 @@ export function GroupHome() {
           icon={<IconApps size={14} />}
         />
         <MetricCard
-          label="Deployments 7d"
-          value={deployments7d}
-          sublabel={<span className="text-success-text">+2 vs last week</span>}
-          icon={<IconActivity size={14} />}
+          label="Applications"
+          value={apps.length}
+          icon={<IconRocket size={14} />}
         />
       </div>
 

@@ -12,7 +12,7 @@ from shared.models import MemberStatus, UserResponse, UserRole
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-_SYSTEM_GROUP_NAMES = {'cnp-templates', '4k-cnp-2027'}
+_SYSTEM_GROUP_NAMES = {'cnp-templates', '4k-cnp-2027', 'cnp-apps'}
 
 router = APIRouter()
 
