@@ -1,7 +1,8 @@
 from typing import Optional
 
-from backend.api.deps import get_db
+from backend.api.deps import get_current_user, get_db
 from backend.core.config import settings
+from backend.db.models import User
 from backend.services.cluster_service import ClusterService
 from backend.services.monitoring_service import get_cost_by_group, get_logs, get_metrics
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,7 +12,7 @@ router = APIRouter()
 
 
 @router.get("/config")
-async def config():
+async def config(current_user: User = Depends(get_current_user)):
     return {
         "grafana_url": settings.GRAFANA_URL or None,
         "prometheus_url": settings.PROMETHEUS_URL or None,
@@ -23,6 +24,7 @@ async def config():
 async def metrics(
     cluster_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     prometheus_url = settings.PROMETHEUS_URL
     if cluster_id is not None:
@@ -39,6 +41,7 @@ async def cost(
     group_id: str = Query(...),
     cluster_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     prometheus_url = settings.PROMETHEUS_URL
     if cluster_id is not None:
@@ -57,6 +60,7 @@ async def logs(
     limit: int = Query(50, ge=1, le=200),
     cluster_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     loki_url = settings.LOKI_URL
     if cluster_id is not None:

@@ -1,3 +1,4 @@
+import hmac
 from typing import List
 
 import httpx
@@ -34,7 +35,7 @@ from backend.services.app_service import AppService
 from backend.services.audit_service import AuditService
 from backend.services.scaffolding_service import ScaffoldingService
 from backend.services.scale_service import ScaleService
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel
 from shared.models import (
     ApplicationCreate,
@@ -450,12 +451,21 @@ async def update_app(
     return app
 
 
+async def _verify_ci_callback_token(x_cnp_callback_token: str | None = Header(default=None)) -> None:
+    """Valide le token partagé injecté comme variable CI (voir ADR-0011)."""
+    if not settings.CNP_CALLBACK_TOKEN:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                             detail="CNP_CALLBACK_TOKEN not configured")
+    if not x_cnp_callback_token or not hmac.compare_digest(x_cnp_callback_token, settings.CNP_CALLBACK_TOKEN):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing X-CNP-Callback-Token")
+
+
 @router.post("/{app_id}/ci-status", response_model=ApplicationResponse)
 async def update_app_ci_status(
     app_id: int,
     payload: CiStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN)),
+    _: None = Depends(_verify_ci_callback_token),
 ):
     """CI runner callback: update pipeline status on an application."""
     return await AppService(db).update_ci_status(app_id, payload)
@@ -465,7 +475,7 @@ async def update_app_ci_status(
 async def delete_app(
     app_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.DEV)),
+    current_user: User = Depends(require_tier(CnpTier.MAINTAINER)),
 ):
     app = await AppService(db).get_app(app_id)
     app_name = app.name
@@ -488,7 +498,7 @@ async def toggle_expose(
     app_id: int,
     payload: ExposeToggleRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.DEV)),
+    current_user: User = Depends(require_tier(CnpTier.MAINTAINER)),
 ):
     """Enable or disable public internet exposure (nginx ingress) for all environments."""
     app = await AppService(db).update_expose(app_id, payload.expose)

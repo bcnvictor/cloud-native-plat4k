@@ -52,6 +52,15 @@ export function GroupSettings() {
     enabled: !!group?.gitlab_group_id,
   });
 
+  const { data: myAccess } = useQuery({
+    queryKey: ['myAccess', firstAppId],
+    queryFn: () => appsApi.getMyAccess(firstAppId!),
+    enabled: !!firstAppId,
+  });
+
+  // Inviting/removing members requires maintainer+ (mirrors require_tier(MAINTAINER) on the backend).
+  const canManageMembers = !!myAccess && (myAccess.is_admin || myAccess.tier === 'maintainer' || myAccess.tier === 'owner');
+
   const { toast } = useToast();
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<CnpTier>('developer');
@@ -118,29 +127,31 @@ export function GroupSettings() {
         <h2 className="text-sm font-medium text-foreground mb-4">Members</h2>
 
         {/* Invite form */}
-        <div className="flex gap-2 mb-5">
-          <Input
-            placeholder="GitLab email or username"
-            value={inviteEmail}
-            onChange={(e) => setInviteEmail(e.target.value)}
-            className="flex-1"
-          />
-          <Select
-            options={TIER_OPTIONS}
-            value={inviteRole}
-            onChange={(v) => setInviteRole(v as CnpTier)}
-            className="w-36"
-          />
-          <Button
-            variant="primary"
-            size="sm"
-            loading={inviteMutation.isPending}
-            disabled={!inviteEmail}
-            onClick={() => inviteMutation.mutate()}
-          >
-            Invite
-          </Button>
-        </div>
+        {canManageMembers && (
+          <div className="flex gap-2 mb-5">
+            <Input
+              placeholder="GitLab email or username"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              className="flex-1"
+            />
+            <Select
+              options={TIER_OPTIONS}
+              value={inviteRole}
+              onChange={(v) => setInviteRole(v as CnpTier)}
+              className="w-36"
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              loading={inviteMutation.isPending}
+              disabled={!inviteEmail}
+              onClick={() => inviteMutation.mutate()}
+            >
+              Invite
+            </Button>
+          </div>
+        )}
 
         {/* Member list */}
         <ul className="divide-y divide-border">
@@ -162,16 +173,18 @@ export function GroupSettings() {
                     options={TIER_OPTIONS}
                     value={m.tier_cnp}
                     onChange={() => {}}
-                    disabled={isOwner}
+                    disabled={isOwner || !canManageMembers}
                     className="w-32"
                   />
-                  <button
-                    disabled={isOwner}
-                    onClick={() => !isOwner && m.cnp_user_id && appsApi.removeMember(firstAppId!, m.cnp_user_id).then(() => qc.invalidateQueries({ queryKey: ['group-members', group?.gitlab_group_id] }))}
-                    className="text-muted-foreground hover:text-danger transition-colors disabled:opacity-30 disabled:pointer-events-none"
-                  >
-                    <IconTrash size={15} />
-                  </button>
+                  {canManageMembers && (
+                    <button
+                      disabled={isOwner}
+                      onClick={() => !isOwner && m.cnp_user_id && appsApi.removeMember(firstAppId!, m.cnp_user_id).then(() => qc.invalidateQueries({ queryKey: ['group-members', group?.gitlab_group_id] }))}
+                      className="text-muted-foreground hover:text-danger transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                    >
+                      <IconTrash size={15} />
+                    </button>
+                  )}
                 </li>
               );
             })}

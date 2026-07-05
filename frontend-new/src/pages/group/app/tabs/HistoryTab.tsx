@@ -32,9 +32,10 @@ interface EntryRowProps {
   isLatest: boolean;
   env: 'dev' | 'prod';
   appId: number;
+  canRollback: boolean;
 }
 
-function EntryRow({ entry, isLatest, env, appId }: EntryRowProps) {
+function EntryRow({ entry, isLatest, env, appId, canRollback }: EntryRowProps) {
   const [confirming, setConfirming] = useState(false);
   const queryClient = useQueryClient();
 
@@ -63,6 +64,8 @@ function EntryRow({ entry, isLatest, env, appId }: EntryRowProps) {
       <span className="w-28 text-muted-foreground truncate">{initiatorLabel(entry)}</span>
       {isLatest ? (
         <span className="text-xs font-medium text-primary w-24 text-right">current</span>
+      ) : !canRollback ? (
+        <span className="w-24" />
       ) : (
         <div className="flex gap-1.5 w-24 justify-end">
           {confirming ? (
@@ -91,9 +94,10 @@ interface EnvSectionProps {
   env: 'dev' | 'prod';
   appId: number;
   isLoading: boolean;
+  canRollback: boolean;
 }
 
-function EnvSection({ label, entries, env, appId, isLoading }: EnvSectionProps) {
+function EnvSection({ label, entries, env, appId, isLoading, canRollback }: EnvSectionProps) {
   return (
     <div className="rounded-lg border border-border overflow-hidden bg-background">
       <div className="flex items-center gap-2 px-4 py-2.5 bg-background-subtle border-b border-border">
@@ -118,6 +122,7 @@ function EnvSection({ label, entries, env, appId, isLoading }: EnvSectionProps) 
               isLatest={i === 0}
               env={env}
               appId={appId}
+              canRollback={canRollback}
             />
           ))}
         </div>
@@ -136,6 +141,14 @@ export function HistoryTab() {
     staleTime: 30_000,
   });
 
+  const { data: myAccess } = useQuery({
+    queryKey: ['myAccess', app?.id],
+    queryFn: () => appsApi.getMyAccess(app!.id),
+    enabled: !!app?.id,
+  });
+
+  const canRollback = !!myAccess && (myAccess.is_admin || myAccess.tier === 'maintainer' || myAccess.tier === 'owner');
+
   if (!app) return null;
 
   return (
@@ -151,6 +164,7 @@ export function HistoryTab() {
         env="prod"
         appId={app.id}
         isLoading={isLoading}
+        canRollback={canRollback}
       />
       <EnvSection
         label="Development"
@@ -158,6 +172,7 @@ export function HistoryTab() {
         env="dev"
         appId={app.id}
         isLoading={isLoading}
+        canRollback={canRollback}
       />
     </div>
   );

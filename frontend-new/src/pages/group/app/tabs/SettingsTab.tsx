@@ -76,6 +76,9 @@ export function SettingsTab() {
     enabled: !!app,
   });
 
+  // Rename/delete/expose require maintainer+ (mirrors require_tier(MAINTAINER) on the backend).
+  const canManageApp = !!myAccess && (myAccess.is_admin || myAccess.tier === 'maintainer' || myAccess.tier === 'owner');
+
   // Developer has zero access to prod, not even key names (ADR-0025 §3).
   const canSeeProd = !!myAccess && (myAccess.is_admin || myAccess.tier !== 'developer');
   const canWriteEnv = !!myAccess && (
@@ -143,6 +146,7 @@ export function SettingsTab() {
             label="Display name"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            disabled={!canManageApp}
           />
           <Input
             label="Slug"
@@ -160,7 +164,8 @@ export function SettingsTab() {
               onChange={(e) => { setDescription(e.target.value); autoResize(); }}
               placeholder="Optional description"
               rows={2}
-              className="w-full resize-none overflow-hidden rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              disabled={!canManageApp}
+              className="w-full resize-none overflow-hidden rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
             />
           </div>
           <div className="flex justify-end">
@@ -169,7 +174,7 @@ export function SettingsTab() {
               size="sm"
               loading={updateMutation.isPending}
               onClick={() => updateMutation.mutate()}
-              disabled={name === app.name && description === (app.description ?? '')}
+              disabled={!canManageApp || (name === app.name && description === (app.description ?? ''))}
             >
               Save
             </Button>
@@ -314,9 +319,9 @@ export function SettingsTab() {
               setExpose(next);
               exposeMutation.mutate(next);
             }}
-            disabled={exposeMutation.isPending}
+            disabled={!canManageApp || exposeMutation.isPending}
             className={cn(
-              'relative mt-0.5 h-5 w-9 shrink-0 rounded-full border-2 transition-colors',
+              'relative mt-0.5 h-5 w-9 shrink-0 rounded-full border-2 transition-colors disabled:opacity-50',
               expose ? 'bg-info border-info' : 'bg-border border-border'
             )}
           >
@@ -368,9 +373,14 @@ export function SettingsTab() {
           Deletion is irreversible.
           {app.origin === 'scaffold' && ' The associated GitLab repository will also be deleted.'}
         </p>
-        <Button variant="danger" size="sm" onClick={() => setDeleteOpen(true)}>
+        <Button variant="danger" size="sm" onClick={() => setDeleteOpen(true)} disabled={!canManageApp}>
           Delete this app
         </Button>
+        {!canManageApp && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Only maintainers and owners can delete this app.
+          </p>
+        )}
       </Card>
 
       <ConfirmDialog

@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     # GitLab webhook secret (sent as X-Gitlab-Token to verify incoming webhook calls)
     GITLAB_WEBHOOK_SECRET: Optional[str] = None
     ARGOCD_WEBHOOK_SECRET: Optional[str] = None
+    # Shared secret injected as a CI variable, sent back as X-CNP-Callback-Token on
+    # POST /apps/{id}/ci-status so the CI runner can report pipeline status (see ADR-0011).
+    CNP_CALLBACK_TOKEN: Optional[str] = None
 
     # Kubernetes
     KUBECONFIG_PATH: Optional[str] = None
