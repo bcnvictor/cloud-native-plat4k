@@ -47,7 +47,11 @@ export function RootLayout() {
         </div>
         <Toaster />
       </div>
-      <GlobalAssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} />
+      <GlobalAssistantPanel
+        open={assistantOpen}
+        onToggle={() => setAssistantOpen((p) => !p)}
+        onClose={() => setAssistantOpen(false)}
+      />
     </BreadcrumbProvider>
   );
 }
