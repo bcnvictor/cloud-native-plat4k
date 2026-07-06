@@ -55,3 +55,39 @@
   background-image: radial-gradient(circle, #C8C8CC 1px, transparent 1px);
   background-size: 20px 20px;
 }
+
+/* ===== Assistant Plat4k — mascotte robot + tiroir de chat ===== */
+@keyframes mascotBob { 0%,100%{ transform: translateY(0); } 50%{ transform: translateY(-6px); } }
+@keyframes mascotWave { 0%,100%{ transform: rotate(8deg); } 25%{ transform: rotate(-24deg); } 50%{ transform: rotate(10deg); } 75%{ transform: rotate(-18deg); } }
+@keyframes mascotBlink { 0%,92%,100%{ transform: scaleY(1); } 96%{ transform: scaleY(0.12); } }
+@keyframes mascotPop { 0%{ transform: translateY(120%) scale(.7); opacity:0; } 60%{ transform: translateY(-8px) scale(1.04); } 100%{ transform: translateY(0) scale(1); opacity:1; } }
+@keyframes bubblePop { 0%{ transform: translateY(6px) scale(.6); opacity:0; } 60%{ transform: translateY(-2px) scale(1.05); } 100%{ transform: translateY(0) scale(1); opacity:1; } }
+@keyframes msgIn { 0%{ transform: translateY(8px); opacity:0; } 100%{ transform: translateY(0); opacity:1; } }
+@keyframes dotPulse { 0%,60%,100%{ opacity:.35; transform: translateY(0);} 30%{ opacity:1; transform: translateY(-3px);} }
+@keyframes ringPulse { 0%{ transform: scale(.6); opacity:.5; } 100%{ transform: scale(1.9); opacity:0; } }
+
+.plat4k-assistant .m-drawer {
+  visibility: hidden;
+  transform: translateX(106%);
+  transition: transform .5s cubic-bezier(.4,0,.2,1), visibility 0s .5s;
+}
+.plat4k-assistant.is-open .m-drawer {
+  visibility: visible;
+  transform: translateX(0);
+  transition: transform .5s cubic-bezier(.4,0,.2,1);
+}
+
+.plat4k-assistant .m-dock {
+  transition: transform .58s cubic-bezier(.34,1.28,.4,1);
+  transform-origin: top left;
+}
+/* Docké dans le bandeau héro du tiroir (440px de large, héro 150px).
+   100vh / 1.25 : compense le zoom body, cf. .h-screen-corrected. */
+.plat4k-assistant.is-open .m-dock {
+  transform: translate(-318px, calc(150px - 100vh / 1.25)) scale(1.02);
+}
+
+.plat4k-assistant.is-attn .m-robot { animation: mascotBob 1.1s ease-in-out 2; }
+.plat4k-assistant.is-attn .m-arm { animation: mascotWave .55s ease-in-out 4; }
+.plat4k-assistant.is-attn .m-ring { animation: ringPulse 1.4s ease-out 2; }
+.plat4k-assistant .m-eye { animation: mascotBlink 4.2s ease-in-out infinite; transform-origin: center; }
