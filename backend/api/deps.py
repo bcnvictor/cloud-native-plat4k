@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.config import settings
 from backend.core.exceptions import ForbiddenException, UnauthorizedException
 from backend.core.security import get_api_key_hash
-from backend.db.models import APIKey, Application, AppMember, User
+from backend.db.models import APIKey, Application, AppMember, GitLabGroupMember, User
 from backend.db.session import get_db
 from backend.services.audit_service import AuditService
 
@@ -30,21 +30,37 @@ def _access_level_to_tier(access_level: int) -> CnpTier:
 async def get_effective_tier(user_id: int, app_id: int, db: AsyncSession) -> CnpTier:
     result = await db.execute(select(Application).where(Application.id == app_id))
     app = result.scalar_one_or_none()
-    if not app or not app.gitlab_project_id:
+    if not app:
         return CnpTier.VIEWER
 
-    result = await db.execute(
-        select(AppMember).where(
-            AppMember.gitlab_project_id == app.gitlab_project_id,
-            AppMember.cnp_user_id == user_id,
-            AppMember.status == MemberStatus.ACTIVE,
+    access_levels: list[int] = []
+
+    if app.gitlab_project_id:
+        result = await db.execute(
+            select(AppMember.access_level).where(
+                AppMember.gitlab_project_id == app.gitlab_project_id,
+                AppMember.cnp_user_id == user_id,
+                AppMember.status == MemberStatus.ACTIVE,
+            )
         )
-    )
-    member = result.scalar_one_or_none()
-    if not member:
+        access_levels.extend(result.scalars().all())
+
+    # Scaffolded apps can exist before project membership has been mirrored.
+    # Fall back to the owning GitLab group so group maintainers can manage the app.
+    if app.owning_gitlab_group_id:
+        result = await db.execute(
+            select(GitLabGroupMember.access_level).where(
+                GitLabGroupMember.gitlab_group_id == app.owning_gitlab_group_id,
+                GitLabGroupMember.cnp_user_id == user_id,
+                GitLabGroupMember.status == MemberStatus.ACTIVE,
+            )
+        )
+        access_levels.extend(result.scalars().all())
+
+    if not access_levels:
         return CnpTier.VIEWER
 
-    return _access_level_to_tier(member.access_level)
+    return _access_level_to_tier(max(access_levels))
 
 
 def require_tier(min_tier: CnpTier, app_id_param: str = "app_id"):

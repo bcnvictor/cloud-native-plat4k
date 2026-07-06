@@ -146,6 +146,30 @@ Puis redémarrer le backend pour que les nouvelles valeurs soient prises en comp
 docker compose restart backend
 ```
 
+### Assistant IA — activation en production
+
+L'assistant IA se configure **depuis l'UI admin** (Platform settings → Assistant IA) :
+activation du chatbot, choix du provider (Gemini, Mistral, DeepSeek, mock), clé API
+(chiffrée Fernet en base, jamais renvoyée par l'API), accès aux données plateforme (doc)
+et allowlist des applications accessibles. Ces réglages en base priment sur les valeurs
+d'environnement/Vault — aucun redémarrage du backend n'est nécessaire.
+
+Les variables Vault (`secret/cnp/platform`) restent les valeurs par défaut quand aucun
+réglage admin n'existe :
+
+```bash
+docker compose exec vault vault kv patch secret/cnp/platform \
+  AI_ASSISTANT_ENABLED=true \
+  AI_PROVIDER=gemini \
+  AI_MODEL=gemini-flash-latest \
+  AI_API_KEY=<clé-gemini>
+# puis : docker compose restart backend
+```
+
+> **Attention** : Vault ayant été bootstrappé avec `AI_ASSISTANT_ENABLED=false`, poser la
+> variable dans le `.env` de la VM ne suffit pas — les valeurs Vault écrasent l'env à
+> chaque démarrage. Passer par l'UI admin (recommandé) ou par `vault kv patch` ci-dessus.
+
 ### Tokens ArgoCD par cluster
 
 Les tokens ArgoCD sont stockés dans des chemins Vault **séparés** (cycle de vie distinct des kubeconfigs) :
