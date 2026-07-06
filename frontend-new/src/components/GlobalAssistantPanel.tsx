@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { IconX, IconSend } from '@tabler/icons-react';
 import { assistantApi } from '@/api/assistant';
@@ -91,6 +91,10 @@ function TypingDots({ className }: { className?: string }) {
 export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
   const conversationId = useRef<string | undefined>(undefined);
   const msgRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const slotRef = useRef<HTMLDivElement>(null);
+  const robotBtnRef = useRef<HTMLButtonElement>(null);
   const talkTimeout = useRef<ReturnType<typeof setTimeout>>();
   const attnTimeout = useRef<ReturnType<typeof setTimeout>>();
   const [messages, setMessages] = useState<LocalMessage[]>([
@@ -106,6 +110,51 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     clearTimeout(talkTimeout.current);
     talkTimeout.current = setTimeout(() => setTalk(false), ms);
   }
+
+  // Mesure FLIP du vol du robot vers le bandeau héro. Les unités viewport
+  // (100vh) sont résolues différemment sous `zoom` body selon les navigateurs
+  // (Chrome legacy vs Firefox spec) : on mesure donc la cible réelle et on
+  // injecte le delta en px locaux via --dock-tx/--dock-ty.
+  const measureDockFlight = useCallback(() => {
+    const dock = dockRef.current;
+    const btn = robotBtnRef.current;
+    const drawer = drawerRef.current;
+    const slot = slotRef.current;
+    if (!dock || !btn || !drawer || !slot) return;
+
+    // Neutralise le transform du dock le temps de la mesure (aucun paint
+    // n'a lieu entre les deux : invisible à l'écran).
+    const prevTransform = dock.style.transform;
+    const prevTransition = dock.style.transition;
+    dock.style.transition = 'none';
+    dock.style.transform = 'none';
+    const b = btn.getBoundingClientRect(); // position naturelle du robot (coin)
+    const d = drawer.getBoundingClientRect();
+    const s = slot.getBoundingClientRect();
+    dock.style.transform = prevTransform;
+    dock.style.transition = prevTransition;
+
+    // Le tiroir ouvert est ancré top:0 / right:0 ; l'offset du slot dans le
+    // tiroir est invariant par translation, donc sa position finale se déduit
+    // sans dépendre de l'état de la transition du tiroir.
+    const finalX = window.innerWidth - d.width + (s.x - d.x);
+    const finalY = s.y - d.y;
+    // getBoundingClientRect renvoie des px viewport ; le translate CSS du dock
+    // s'exprime en px locaux (zoomés). Le robot fait 92px locaux de large.
+    const zoom = b.width / 92 || 1;
+    dock.style.setProperty('--dock-tx', `${(finalX - b.x) / zoom}px`);
+    dock.style.setProperty('--dock-ty', `${(finalY - b.y) / zoom}px`);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (open) measureDockFlight();
+  }, [open, measureDockFlight]);
+
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener('resize', measureDockFlight);
+    return () => window.removeEventListener('resize', measureDockFlight);
+  }, [open, measureDockFlight]);
 
   // Signe de la main périodique quand le tiroir est fermé
   useEffect(() => {
@@ -196,11 +245,14 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     >
       {/* ===== Tiroir de chat (glisse depuis la droite) ===== */}
       <div
+        ref={drawerRef}
         className="m-drawer fixed inset-y-0 right-0 z-40 flex w-[440px] max-w-[calc(92vw/1.25)] flex-col border-l border-border bg-background shadow-[-24px_0_60px_rgba(31,44,84,.14)]"
         aria-hidden={!open}
       >
         {/* Bandeau héro : le robot vient se docker sur la gauche */}
         <div className="relative h-[150px] flex-none border-b border-border bg-gradient-to-b from-primary-50 to-background">
+          {/* Cible du vol du robot (mesurée par measureDockFlight) */}
+          <div ref={slotRef} aria-hidden="true" className="pointer-events-none absolute left-2 top-5 h-[104px] w-[92px]" />
           <button
             onClick={onClose}
             aria-label="Fermer"
@@ -310,7 +362,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
       </div>
 
       {/* ===== Dock du robot (lanceur en coin → se docke dans le bandeau) ===== */}
-      <div className="m-dock fixed bottom-[26px] right-[30px] z-50 flex flex-col items-end gap-[11px]">
+      <div ref={dockRef} className="m-dock fixed bottom-[26px] right-[30px] z-50 flex flex-col items-end gap-[11px]">
         {attn && !open && (
           <div className="flex items-center gap-[5px] rounded-[14px_14px_4px_14px] border border-primary-border bg-primary-50 px-3.5 py-[9px] shadow-[0_8px_20px_rgba(31,44,84,.12)] animate-[bubblePop_.3s_cubic-bezier(.2,1.3,.5,1)_both]">
             <TypingDots className="bg-primary" />
@@ -318,6 +370,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
         )}
 
         <button
+          ref={robotBtnRef}
           onClick={onToggle}
           aria-label={open ? "Fermer l'assistant" : "Ouvrir l'assistant"}
           className="relative cursor-pointer border-none bg-transparent p-0 animate-[mascotPop_.5s_cubic-bezier(.2,1.3,.5,1)_both]"
