@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { IconX, IconSend } from '@tabler/icons-react';
 import { assistantApi } from '@/api/assistant';
 import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown';
@@ -105,6 +105,21 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
   const [attn, setAttn] = useState(false);
   const [talk, setTalk] = useState(false);
 
+  const { data: uiSettings } = useQuery({
+    queryKey: ['ai-ui-settings'],
+    queryFn: assistantApi.getUiSettings,
+    retry: false,
+  });
+  const graphicalBotEnabled = uiSettings?.graphical_bot_enabled ?? true;
+
+  useEffect(() => {
+    if (uiSettings?.assistant_enabled === false) {
+      setGloballyDisabled(true);
+    } else if (uiSettings?.assistant_enabled === true) {
+      setGloballyDisabled(false);
+    }
+  }, [uiSettings?.assistant_enabled]);
+
   function wave(ms = 1600) {
     setTalk(true);
     clearTimeout(talkTimeout.current);
@@ -116,6 +131,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
   // (Chrome legacy vs Firefox spec) : on mesure donc la cible réelle et on
   // injecte le delta en px locaux via --dock-tx/--dock-ty.
   const measureDockFlight = useCallback(() => {
+    if (!graphicalBotEnabled) return;
     const dock = dockRef.current;
     const btn = robotBtnRef.current;
     const drawer = drawerRef.current;
@@ -144,21 +160,21 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     const zoom = b.width / 92 || 1;
     dock.style.setProperty('--dock-tx', `${(finalX - b.x) / zoom}px`);
     dock.style.setProperty('--dock-ty', `${(finalY - b.y) / zoom}px`);
-  }, []);
+  }, [graphicalBotEnabled]);
 
   useLayoutEffect(() => {
-    if (open) measureDockFlight();
-  }, [open, measureDockFlight]);
+    if (open && graphicalBotEnabled) measureDockFlight();
+  }, [open, graphicalBotEnabled, measureDockFlight]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !graphicalBotEnabled) return;
     window.addEventListener('resize', measureDockFlight);
     return () => window.removeEventListener('resize', measureDockFlight);
-  }, [open, measureDockFlight]);
+  }, [open, graphicalBotEnabled, measureDockFlight]);
 
   // Signe de la main périodique quand le tiroir est fermé
   useEffect(() => {
-    if (open || globallyDisabled) return;
+    if (open || globallyDisabled || !graphicalBotEnabled) return;
     const interval = setInterval(() => {
       setAttn(true);
       clearTimeout(attnTimeout.current);
@@ -168,16 +184,16 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
       clearInterval(interval);
       clearTimeout(attnTimeout.current);
     };
-  }, [open, globallyDisabled]);
+  }, [open, globallyDisabled, graphicalBotEnabled]);
 
   useEffect(() => () => clearTimeout(talkTimeout.current), []);
 
   useEffect(() => {
-    if (open) {
+    if (open && graphicalBotEnabled) {
       setAttn(false);
       wave(1800);
     }
-  }, [open]);
+  }, [open, graphicalBotEnabled]);
 
   const chatMutation = useMutation({
     mutationFn: (message: string) =>
@@ -240,7 +256,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
       className={cn(
         'plat4k-assistant',
         open && 'is-open',
-        ((attn && !open) || talk) && 'is-attn'
+        graphicalBotEnabled && ((attn && !open) || talk) && 'is-attn'
       )}
     >
       {/* ===== Tiroir de chat (glisse depuis la droite) ===== */}
@@ -250,9 +266,22 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
         aria-hidden={!open}
       >
         {/* Bandeau héro : le robot vient se docker sur la gauche */}
-        <div className="relative h-[150px] flex-none border-b border-border bg-gradient-to-b from-primary-50 to-background">
+        <div
+          className={cn(
+            'relative flex-none border-b border-border',
+            graphicalBotEnabled
+              ? 'h-[150px] bg-gradient-to-b from-primary-50 to-background'
+              : 'h-[92px] bg-background'
+          )}
+        >
           {/* Cible du vol du robot (mesurée par measureDockFlight) */}
-          <div ref={slotRef} aria-hidden="true" className="pointer-events-none absolute left-2 top-5 h-[104px] w-[92px]" />
+          {graphicalBotEnabled && (
+            <div
+              ref={slotRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute left-2 top-5 h-[104px] w-[92px]"
+            />
+          )}
           <button
             onClick={onClose}
             aria-label="Fermer"
@@ -260,7 +289,12 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
           >
             <IconX size={16} />
           </button>
-          <div className="absolute left-[150px] right-4 top-11">
+          <div
+            className={cn(
+              'absolute right-4',
+              graphicalBotEnabled ? 'left-[150px] top-11' : 'left-5 top-6'
+            )}
+          >
             <div className="text-[17px] font-bold text-foreground">Assistant Plat4k</div>
             <div className="mt-1.5 flex items-center gap-1.5">
               <span className="h-[7px] w-[7px] rounded-full bg-success shadow-[0_0_0_3px_rgba(34,197,94,.16)]" />
@@ -276,7 +310,8 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
             <div>
               <p className="text-sm font-medium text-foreground">Assistant IA inactif</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                La fonctionnalité IA est désactivée sur cette plateforme.
+                La fonctionnalité IA est désactivée sur cette plateforme. Un administrateur
+                peut l’activer dans Réglages plateforme → Assistant IA.
               </p>
             </div>
           </div>
@@ -288,10 +323,13 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
                 m.role === 'assistant' ? (
                   <div
                     key={m.id}
-                    className="mb-3.5 flex items-end gap-[9px] animate-[msgIn_.28s_ease-out_both]"
+                    className={cn(
+                      'mb-3.5 flex items-end animate-[msgIn_.28s_ease-out_both]',
+                      graphicalBotEnabled && 'gap-[9px]'
+                    )}
                   >
-                    <BotAvatar />
-                    <div className="max-w-[76%]">
+                    {graphicalBotEnabled && <BotAvatar />}
+                    <div className={cn(graphicalBotEnabled ? 'max-w-[76%]' : 'max-w-[88%]')}>
                       <div className="rounded-[4px_15px_15px_15px] bg-muted px-3.5 py-[11px] text-[13.5px] leading-relaxed text-foreground">
                         <SimpleMarkdown content={m.content} />
                       </div>
@@ -315,8 +353,13 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
               )}
 
               {chatMutation.isPending && (
-                <div className="mb-3.5 flex items-end gap-[9px]">
-                  <BotAvatar />
+                <div
+                  className={cn(
+                    'mb-3.5 flex items-end',
+                    graphicalBotEnabled && 'gap-[9px]'
+                  )}
+                >
+                  {graphicalBotEnabled && <BotAvatar />}
                   <div className="flex gap-[5px] rounded-[4px_15px_15px_15px] bg-muted px-[15px] py-[13px]">
                     <TypingDots className="bg-muted-foreground/60" />
                   </div>
@@ -362,23 +405,25 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
       </div>
 
       {/* ===== Dock du robot (lanceur en coin → se docke dans le bandeau) ===== */}
-      <div ref={dockRef} className="m-dock fixed bottom-[26px] right-[30px] z-50 flex flex-col items-end gap-[11px]">
-        {attn && !open && (
-          <div className="flex items-center gap-[5px] rounded-[14px_14px_4px_14px] border border-primary-border bg-primary-50 px-3.5 py-[9px] shadow-[0_8px_20px_rgba(31,44,84,.12)] animate-[bubblePop_.3s_cubic-bezier(.2,1.3,.5,1)_both]">
-            <TypingDots className="bg-primary" />
-          </div>
-        )}
+      {graphicalBotEnabled && (
+        <div ref={dockRef} className="m-dock fixed bottom-[26px] right-[30px] z-50 flex flex-col items-end gap-[11px]">
+          {attn && !open && (
+            <div className="flex items-center gap-[5px] rounded-[14px_14px_4px_14px] border border-primary-border bg-primary-50 px-3.5 py-[9px] shadow-[0_8px_20px_rgba(31,44,84,.12)] animate-[bubblePop_.3s_cubic-bezier(.2,1.3,.5,1)_both]">
+              <TypingDots className="bg-primary" />
+            </div>
+          )}
 
-        <button
-          ref={robotBtnRef}
-          onClick={onToggle}
-          aria-label={open ? "Fermer l'assistant" : "Ouvrir l'assistant"}
-          className="relative cursor-pointer border-none bg-transparent p-0 animate-[mascotPop_.5s_cubic-bezier(.2,1.3,.5,1)_both]"
-        >
-          <span className="m-ring absolute inset-x-1.5 bottom-1 top-1.5 rounded-full bg-primary opacity-0" />
-          <Mascot />
-        </button>
-      </div>
+          <button
+            ref={robotBtnRef}
+            onClick={onToggle}
+            aria-label={open ? "Fermer l'assistant" : "Ouvrir l'assistant"}
+            className="relative cursor-pointer border-none bg-transparent p-0 animate-[mascotPop_.5s_cubic-bezier(.2,1.3,.5,1)_both]"
+          >
+            <span className="m-ring absolute inset-x-1.5 bottom-1 top-1.5 rounded-full bg-primary opacity-0" />
+            <Mascot />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

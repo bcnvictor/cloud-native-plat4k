@@ -17,6 +17,19 @@ interface LocalMessage {
   content: string;
 }
 
+function getApiStatus(error: unknown): number | undefined {
+  return (error as { response?: { status?: number } })?.response?.status;
+}
+
+function getApiMessage(error: unknown, fallback: string): string {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object' && 'message' in detail) {
+    return String((detail as { message?: unknown }).message ?? fallback);
+  }
+  return fallback;
+}
+
 function Toggle({
   value,
   onChange,
@@ -53,6 +66,7 @@ export function AssistantTab() {
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [input, setInput] = useState('');
   const [warnOpen, setWarnOpen] = useState(false);
+  const [settingsMutationError, setSettingsMutationError] = useState<string | null>(null);
 
   const {
     data: aiSettings,
@@ -68,7 +82,16 @@ export function AssistantTab() {
   const patchMutation = useMutation({
     mutationFn: (patch: Parameters<typeof assistantApi.patchAppSettings>[1]) =>
       assistantApi.patchAppSettings(app!.id, patch),
+    onMutate: () => setSettingsMutationError(null),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-settings', app?.id] }),
+    onError: (err) => {
+      const status = getApiStatus(err);
+      setSettingsMutationError(
+        status === 403
+          ? 'Maintainer or Owner access is required to change assistant settings for this application.'
+          : getApiMessage(err, 'Assistant settings could not be saved. Please retry.')
+      );
+    },
   });
 
   const chatMutation = useMutation({
@@ -86,11 +109,10 @@ export function AssistantTab() {
       ]);
     },
     onError: (err: unknown) => {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      const content =
-        typeof detail === 'string'
-          ? detail
-          : "Une erreur est survenue lors de la requête à l'assistant. Réessayez.";
+      const content = getApiMessage(
+        err,
+        "Une erreur est survenue lors de la requête à l'assistant. Réessayez."
+      );
       setMessages((prev) => [
         ...prev,
         { id: 'err' + Date.now(), role: 'assistant', content: `⚠️ ${content}` },
@@ -101,9 +123,8 @@ export function AssistantTab() {
   if (appLoading || !app) return null;
 
   // Global AI feature disabled (503)
-  const isGloballyDisabled =
-    settingsError != null &&
-    (settingsError as { response?: { status?: number } }).response?.status === 503;
+  const settingsErrorStatus = getApiStatus(settingsError);
+  const isGloballyDisabled = settingsErrorStatus === 503;
 
   if (isGloballyDisabled) {
     return (
@@ -114,9 +135,8 @@ export function AssistantTab() {
             <div>
               <p className="text-sm font-medium text-foreground">AI assistant inactive</p>
               <p className="text-xs text-muted-foreground mt-1">
-                The AI feature is disabled on this platform (
-                <code className="font-mono">AI_ASSISTANT_ENABLED=false</code>).
-                Contact your administrator to enable it.
+                The AI feature is disabled on this platform. An administrator can enable
+                it in Platform settings → Assistant IA.
               </p>
             </div>
           </div>
@@ -126,6 +146,29 @@ export function AssistantTab() {
   }
 
   if (settingsLoading) return <Spinner size="md" />;
+
+  if (settingsError) {
+    const isForbidden = settingsErrorStatus === 403;
+    return (
+      <div className="max-w-2xl">
+        <Card>
+          <div className="flex items-start gap-3">
+            <IconRobot size={20} className="text-muted-foreground mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                {isForbidden ? 'Maintainer access required' : 'Assistant settings unavailable'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {isForbidden
+                  ? 'You need Maintainer or Owner access on this application to configure its assistant.'
+                  : getApiMessage(settingsError, 'The assistant settings could not be loaded.')}
+              </p>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   const enabled = aiSettings?.ai_enabled ?? false;
   const contextMode: AIContextMode = aiSettings?.ai_context_mode ?? 'metadata_only';
@@ -154,6 +197,12 @@ export function AssistantTab() {
       <Card>
         <h2 className="text-sm font-medium text-foreground mb-4">AI Assistant settings</h2>
         <div className="flex flex-col gap-4">
+          {settingsMutationError && (
+            <div className="rounded-md border border-danger/30 bg-danger-subtle px-3 py-2 text-xs text-danger-text">
+              {settingsMutationError}
+            </div>
+          )}
+
           <div className="flex items-start gap-3">
             <Toggle
               value={enabled}

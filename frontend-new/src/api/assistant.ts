@@ -4,6 +4,7 @@ import {
   AIAppSettingsPatch,
   AIGlobalSettings,
   AIGlobalSettingsPatch,
+  AIUISettings,
   ChatPayload,
   ChatResponse,
 } from '@/types';
@@ -31,6 +32,11 @@ export const assistantApi = {
 
   async getGlobalSettings(): Promise<AIGlobalSettings> {
     const res = await api.get<AIGlobalSettings>('/assistant/global-settings');
+    return res.data;
+  },
+
+  async getUiSettings(): Promise<AIUISettings> {
+    const res = await api.get<AIUISettings>('/assistant/ui-settings');
     return res.data;
   },
 
