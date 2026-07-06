@@ -336,14 +336,17 @@ class AIAppSettings(Base):
 class AIGlobalSettings(Base):
     """Singleton row (id=1): admin-managed runtime config for the AI assistant.
 
-    When the row exists it overrides the env defaults (AI_PROVIDER, AI_MODEL,
-    AI_API_KEY, AI_PLATFORM_KB_ENABLED). Resolved on demand per request — never
-    read at startup and never triggers a provider call by itself.
-    api_key_encrypted is Fernet-encrypted and never returned nor logged.
+    When the row exists it overrides the env defaults (AI_ASSISTANT_ENABLED,
+    AI_PROVIDER, AI_MODEL, AI_API_KEY, AI_PLATFORM_KB_ENABLED). Resolved on
+    demand per request — never read at startup and never triggers a provider
+    call by itself. api_key_encrypted is Fernet-encrypted and never returned
+    nor logged.
     """
     __tablename__ = "ai_global_settings"
 
     id = Column(Integer, primary_key=True, default=1)
+    assistant_enabled = Column(Boolean, nullable=True)  # null → env AI_ASSISTANT_ENABLED
+    graphical_bot_enabled = Column(Boolean, nullable=False, default=True)
     platform_data_access_enabled = Column(Boolean, nullable=False, default=False)
     app_data_access_enabled = Column(Boolean, nullable=False, default=False)
     allowed_app_ids = Column(JSON, nullable=False, default=list)

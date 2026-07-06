@@ -343,6 +343,8 @@ export interface DocCitation {
 }
 
 export interface AIGlobalSettings {
+  assistant_enabled: boolean;
+  graphical_bot_enabled: boolean;
   platform_data_access_enabled: boolean;
   app_data_access_enabled: boolean;
   allowed_app_ids: number[];
@@ -355,12 +357,19 @@ export interface AIGlobalSettings {
 }
 
 export interface AIGlobalSettingsPatch {
+  assistant_enabled?: boolean;
+  graphical_bot_enabled?: boolean;
   platform_data_access_enabled?: boolean;
   app_data_access_enabled?: boolean;
   allowed_app_ids?: number[];
   provider?: string;
   model?: string;
   api_key?: string; // "" clears the stored key
+}
+
+export interface AIUISettings {
+  assistant_enabled: boolean;
+  graphical_bot_enabled: boolean;
 }
 
 export interface ChatResponse {

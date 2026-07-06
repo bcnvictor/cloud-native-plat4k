@@ -38,12 +38,21 @@ _CODE_ACCESS_WARNING = (
 )
 
 
-def _check_ai_enabled() -> None:
-    if not settings.AI_ASSISTANT_ENABLED:
+async def _require_ai_enabled(db: AsyncSession) -> EffectiveAIConfig:
+    """503 sauf si l'assistant est actif — réglage admin (DB) > env AI_ASSISTANT_ENABLED.
+
+    Renvoie la config effective pour éviter une double résolution dans les routes
+    qui en ont besoin. Les routes admin /assistant/global-settings ne passent PAS
+    par ce garde : un admin doit pouvoir configurer et activer l'assistant même
+    quand il est désactivé.
+    """
+    cfg = await AISettingsService(db).effective_config()
+    if not cfg.assistant_enabled:
         raise HTTPException(
             status_code=503,
-            detail="AI assistant is disabled (AI_ASSISTANT_ENABLED=false).",
+            detail="AI assistant is disabled on this platform.",
         )
+    return cfg
 
 
 def _build_assistant(db: AsyncSession, cfg: EffectiveAIConfig) -> AssistantService:
@@ -87,7 +96,7 @@ async def get_assistant_settings(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_tier(CnpTier.MAINTAINER)),
 ):
-    _check_ai_enabled()
+    await _require_ai_enabled(db)
 
     app_result = await db.execute(select(Application).where(Application.id == app_id))
     if app_result.scalar_one_or_none() is None:
@@ -120,7 +129,7 @@ async def patch_assistant_settings(
     # metadata_and_code aux owners uniquement (question ouverte §Questions à trancher).
     current_user: User = Depends(require_tier(CnpTier.MAINTAINER)),
 ):
-    _check_ai_enabled()
+    await _require_ai_enabled(db)
 
     app_result = await db.execute(select(Application).where(Application.id == app_id))
     if app_result.scalar_one_or_none() is None:
@@ -186,6 +195,8 @@ async def patch_assistant_settings(
 
 
 class AIGlobalSettingsResponse(BaseModel):
+    assistant_enabled: bool
+    graphical_bot_enabled: bool
     platform_data_access_enabled: bool
     app_data_access_enabled: bool
     allowed_app_ids: list[int]
@@ -199,6 +210,8 @@ class AIGlobalSettingsResponse(BaseModel):
 
 
 class AIGlobalSettingsPatch(BaseModel):
+    assistant_enabled: Optional[bool] = None
+    graphical_bot_enabled: Optional[bool] = None
     platform_data_access_enabled: Optional[bool] = None
     app_data_access_enabled: Optional[bool] = None
     allowed_app_ids: Optional[list[int]] = None
@@ -211,6 +224,8 @@ class AIGlobalSettingsPatch(BaseModel):
 
 def _global_settings_response(row, cfg: EffectiveAIConfig) -> AIGlobalSettingsResponse:
     return AIGlobalSettingsResponse(
+        assistant_enabled=cfg.assistant_enabled,
+        graphical_bot_enabled=cfg.graphical_bot_enabled,
         platform_data_access_enabled=cfg.platform_kb_enabled,
         app_data_access_enabled=(
             cfg.app_data_access_enabled if cfg.from_db else True
@@ -225,12 +240,29 @@ def _global_settings_response(row, cfg: EffectiveAIConfig) -> AIGlobalSettingsRe
     )
 
 
+class AIUISettingsResponse(BaseModel):
+    assistant_enabled: bool
+    graphical_bot_enabled: bool
+
+
+@global_router.get("/assistant/ui-settings", response_model=AIUISettingsResponse)
+async def get_assistant_ui_settings(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    cfg = await AISettingsService(db).effective_config()
+    return AIUISettingsResponse(
+        assistant_enabled=cfg.assistant_enabled,
+        graphical_bot_enabled=cfg.graphical_bot_enabled,
+    )
+
+
 @global_router.get("/assistant/global-settings", response_model=AIGlobalSettingsResponse)
 async def get_assistant_global_settings(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    _check_ai_enabled()
+    # Pas de garde 503 : l'admin doit voir/configurer même quand l'assistant est off.
     svc = AISettingsService(db)
     row = await svc.get_row()
     cfg = await svc.effective_config()
@@ -243,8 +275,7 @@ async def patch_assistant_global_settings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    _check_ai_enabled()
-
+    # Pas de garde 503 : c'est ici que l'admin active/désactive l'assistant.
     if payload.provider is not None and payload.provider not in ALLOWED_PROVIDERS:
         raise HTTPException(
             status_code=422,
@@ -255,6 +286,8 @@ async def patch_assistant_global_settings(
     row = await svc.get_or_create_row()
 
     old = {
+        "assistant_enabled": row.assistant_enabled,
+        "graphical_bot_enabled": row.graphical_bot_enabled,
         "platform_data_access_enabled": row.platform_data_access_enabled,
         "app_data_access_enabled": row.app_data_access_enabled,
         "allowed_app_count": len(row.allowed_app_ids or []),
@@ -262,6 +295,10 @@ async def patch_assistant_global_settings(
         "model": row.model,
     }
 
+    if payload.assistant_enabled is not None:
+        row.assistant_enabled = payload.assistant_enabled
+    if payload.graphical_bot_enabled is not None:
+        row.graphical_bot_enabled = payload.graphical_bot_enabled
     if payload.platform_data_access_enabled is not None:
         row.platform_data_access_enabled = payload.platform_data_access_enabled
     if payload.app_data_access_enabled is not None:
@@ -290,6 +327,8 @@ async def patch_assistant_global_settings(
         extra={
             "old": old,
             "new": {
+                "assistant_enabled": row.assistant_enabled,
+                "graphical_bot_enabled": row.graphical_bot_enabled,
                 "platform_data_access_enabled": row.platform_data_access_enabled,
                 "app_data_access_enabled": row.app_data_access_enabled,
                 "allowed_app_count": len(row.allowed_app_ids or []),
@@ -351,7 +390,7 @@ async def chat_with_app(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_tier(CnpTier.VIEWER)),
 ):
-    _check_ai_enabled()
+    cfg = await _require_ai_enabled(db)
 
     app_result = await db.execute(select(Application).where(Application.id == app_id))
     app = app_result.scalar_one_or_none()
@@ -368,7 +407,6 @@ async def chat_with_app(
         )
 
     # Global admin gate: once ai_global_settings exists, the app must be allowed.
-    cfg = await AISettingsService(db).effective_config()
     if not cfg.app_allowed(app_id):
         raise HTTPException(
             status_code=403,
@@ -401,9 +439,7 @@ async def chat_global(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _check_ai_enabled()
-
-    cfg = await AISettingsService(db).effective_config()
+    cfg = await _require_ai_enabled(db)
     svc = _build_assistant(db, cfg)
     resp = await svc.chat(
         message=payload.message,
@@ -431,7 +467,7 @@ async def reindex_platform_kb(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    _check_ai_enabled()
+    await _require_ai_enabled(db)
     if not settings.AI_PLATFORM_KB_ENABLED:
         raise HTTPException(
             status_code=400,
@@ -481,7 +517,7 @@ async def create_security_scan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_tier(CnpTier.DEVELOPER)),
 ):
-    _check_ai_enabled()
+    await _require_ai_enabled(db)
 
     app_result = await db.execute(select(Application).where(Application.id == app_id))
     app = app_result.scalar_one_or_none()
@@ -520,7 +556,7 @@ async def list_security_scans(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_tier(CnpTier.DEVELOPER)),
 ):
-    _check_ai_enabled()
+    await _require_ai_enabled(db)
 
     app_result = await db.execute(select(Application).where(Application.id == app_id))
     if app_result.scalar_one_or_none() is None:
@@ -543,7 +579,7 @@ async def get_security_scan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_tier(CnpTier.DEVELOPER)),
 ):
-    _check_ai_enabled()
+    await _require_ai_enabled(db)
 
     svc = SecurityScanService(db)
     scan = await svc.get_scan(scan_id=scan_id, app_id=app_id)
@@ -583,7 +619,7 @@ async def summarize_security_scan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_tier(CnpTier.DEVELOPER)),
 ):
-    _check_ai_enabled()
+    cfg = await _require_ai_enabled(db)
 
     app_result = await db.execute(select(Application).where(Application.id == app_id))
     app = app_result.scalar_one_or_none()
@@ -620,7 +656,7 @@ async def summarize_security_scan(
         "recommandations prioritaires. Ne génère pas de code. Ne propose pas de MR ou de deploy automatique."
     )
 
-    assistant_svc = _build_assistant(db, await AISettingsService(db).effective_config())
+    assistant_svc = _build_assistant(db, cfg)
     resp = await assistant_svc.chat(
         message=prompt,
         mode="scan_summary",

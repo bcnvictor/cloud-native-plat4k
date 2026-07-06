@@ -30,6 +30,9 @@ class EffectiveAIConfig:
     model: str
     api_key: Optional[str]
     platform_kb_enabled: bool
+    # Activation globale : réglage admin (DB) > env AI_ASSISTANT_ENABLED
+    assistant_enabled: bool = False
+    graphical_bot_enabled: bool = True
     # None tant qu'aucune ligne admin n'existe (comportement historique conservé)
     app_data_access_enabled: Optional[bool] = None
     allowed_app_ids: list[int] = field(default_factory=list)
@@ -69,6 +72,8 @@ class AISettingsService:
                 model=settings.AI_MODEL,
                 api_key=settings.AI_API_KEY,
                 platform_kb_enabled=settings.AI_PLATFORM_KB_ENABLED,
+                assistant_enabled=settings.AI_ASSISTANT_ENABLED,
+                graphical_bot_enabled=True,
                 from_db=False,
             )
 
@@ -86,6 +91,12 @@ class AISettingsService:
             model=row.model or settings.AI_MODEL,
             api_key=api_key,
             platform_kb_enabled=row.platform_data_access_enabled,
+            assistant_enabled=(
+                row.assistant_enabled
+                if row.assistant_enabled is not None
+                else settings.AI_ASSISTANT_ENABLED
+            ),
+            graphical_bot_enabled=row.graphical_bot_enabled,
             app_data_access_enabled=row.app_data_access_enabled,
             allowed_app_ids=list(row.allowed_app_ids or []),
             from_db=True,

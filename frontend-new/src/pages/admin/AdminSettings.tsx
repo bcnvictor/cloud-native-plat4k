@@ -103,6 +103,8 @@ export function AdminSettings() {
   });
   const { data: apps } = useQuery({ queryKey: ['apps-list'], queryFn: appsApi.list });
 
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [graphicalBotEnabled, setGraphicalBotEnabled] = useState(true);
   const [platformAccess, setPlatformAccess] = useState(false);
   const [appAccess, setAppAccess] = useState(false);
   const [allowedAppIds, setAllowedAppIds] = useState<number[]>([]);
@@ -114,6 +116,8 @@ export function AdminSettings() {
 
   useEffect(() => {
     if (!aiSettings) return;
+    setAiEnabled(aiSettings.assistant_enabled);
+    setGraphicalBotEnabled(aiSettings.graphical_bot_enabled);
     setPlatformAccess(aiSettings.platform_data_access_enabled);
     setAppAccess(aiSettings.app_data_access_enabled);
     setAllowedAppIds(aiSettings.allowed_app_ids ?? []);
@@ -124,6 +128,8 @@ export function AdminSettings() {
   const saveAiMutation = useMutation({
     mutationFn: () =>
       assistantApi.patchGlobalSettings({
+        assistant_enabled: aiEnabled,
+        graphical_bot_enabled: graphicalBotEnabled,
         platform_data_access_enabled: platformAccess,
         app_data_access_enabled: appAccess,
         allowed_app_ids: allowedAppIds,
@@ -175,6 +181,37 @@ export function AdminSettings() {
           {aiSettings && <Badge variant="muted">source&nbsp;: {aiSettings.source}</Badge>}
         </div>
         <div className="flex flex-col gap-4">
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={aiEnabled}
+              onChange={(e) => setAiEnabled(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium text-foreground">Activer l’assistant IA</span>
+              <span className="block text-xs text-muted-foreground">
+                Active le chatbot sur toute la plateforme. Tant qu’il est désactivé, les
+                utilisateurs voient « Assistant IA inactif ».
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={graphicalBotEnabled}
+              onChange={(e) => setGraphicalBotEnabled(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium text-foreground">Afficher le bot graphique</span>
+              <span className="block text-xs text-muted-foreground">
+                Affiche la mascotte flottante et les avatars du chatbot. Le bouton assistant de la sidebar reste disponible.
+              </span>
+            </span>
+          </label>
+
           <label className="flex items-start gap-2 text-sm cursor-pointer">
             <input
               type="checkbox"

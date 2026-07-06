@@ -176,6 +176,22 @@ class TestGetEffectiveTier:
         tier = await get_effective_tier(regular_user.id, app_without_project.id, db_session)
         assert tier == CnpTier.VIEWER
 
+    async def test_group_membership_grants_tier_when_project_membership_missing(
+        self, db_session, regular_user, app_without_project, gitlab_group
+    ):
+        app_without_project.owning_gitlab_group_id = gitlab_group.gitlab_group_id
+        db_session.add(GitLabGroupMember(
+            gitlab_group_id=gitlab_group.gitlab_group_id,
+            gitlab_user_id=regular_user.gitlab_user_id,
+            access_level=40,
+            cnp_user_id=regular_user.id,
+            status=MemberStatus.ACTIVE,
+        ))
+        await db_session.commit()
+
+        tier = await get_effective_tier(regular_user.id, app_without_project.id, db_session)
+        assert tier == CnpTier.MAINTAINER
+
     async def test_developer_access_level(self, db_session, regular_user, app_with_project):
         db_session.add(AppMember(
             gitlab_project_id=app_with_project.gitlab_project_id,
@@ -192,6 +208,29 @@ class TestGetEffectiveTier:
     async def test_maintainer_access_level(self, db_session, regular_user, app_with_project):
         db_session.add(AppMember(
             gitlab_project_id=app_with_project.gitlab_project_id,
+            gitlab_user_id=regular_user.gitlab_user_id,
+            access_level=40,
+            cnp_user_id=regular_user.id,
+            status=MemberStatus.ACTIVE,
+        ))
+        await db_session.commit()
+
+        tier = await get_effective_tier(regular_user.id, app_with_project.id, db_session)
+        assert tier == CnpTier.MAINTAINER
+
+    async def test_effective_tier_uses_highest_project_or_group_level(
+        self, db_session, regular_user, app_with_project, gitlab_group
+    ):
+        app_with_project.owning_gitlab_group_id = gitlab_group.gitlab_group_id
+        db_session.add(AppMember(
+            gitlab_project_id=app_with_project.gitlab_project_id,
+            gitlab_user_id=regular_user.gitlab_user_id,
+            access_level=30,
+            cnp_user_id=regular_user.id,
+            status=MemberStatus.ACTIVE,
+        ))
+        db_session.add(GitLabGroupMember(
+            gitlab_group_id=gitlab_group.gitlab_group_id,
             gitlab_user_id=regular_user.gitlab_user_id,
             access_level=40,
             cnp_user_id=regular_user.id,

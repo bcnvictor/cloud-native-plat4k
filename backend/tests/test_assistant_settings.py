@@ -15,10 +15,11 @@ from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
+from shared.models import MemberStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
-from backend.db.models import Application, ApplicationStatus
+from backend.db.models import Application, ApplicationStatus, GitLabGroup, GitLabGroupMember
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -118,6 +119,48 @@ async def test_patch_settings_enable_ai_metadata_only(client: AsyncClient, admin
     data = resp.json()
     assert data["ai_enabled"] is True
     assert data["ai_context_mode"] == "metadata_only"
+
+
+@pytest.mark.anyio
+async def test_group_maintainer_can_patch_settings_before_project_membership_sync(
+    client: AsyncClient,
+    dev_token: str,
+    dev_user,
+    db_session: AsyncSession,
+):
+    group = GitLabGroup(gitlab_group_id=4242, name="team", full_path="org/team")
+    db_session.add(group)
+    await db_session.commit()
+
+    app = Application(
+        name="app-group-maintainer",
+        slug="app-group-maintainer",
+        owner="org/team",
+        owning_gitlab_group_id=group.gitlab_group_id,
+        last_known_status=ApplicationStatus.ONBOARDING,
+    )
+    db_session.add(app)
+    db_session.add(GitLabGroupMember(
+        gitlab_group_id=group.gitlab_group_id,
+        gitlab_user_id=1000,
+        access_level=40,
+        cnp_user_id=dev_user.id,
+        status=MemberStatus.ACTIVE,
+    ))
+    await db_session.commit()
+    await db_session.refresh(app)
+
+    with patch.object(settings, "AI_ASSISTANT_ENABLED", True):
+        resp = await client.patch(
+            f"/api/v1/apps/{app.id}/assistant/settings",
+            json={"ai_enabled": True, "ai_context_mode": "metadata_only"},
+            headers={"Authorization": f"Bearer {dev_token}"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ai_enabled"] is True
+    assert data["updated_by_user_id"] == dev_user.id
 
 
 # ── PATCH : metadata_and_code sans warning → 422 ────────────────────────────
