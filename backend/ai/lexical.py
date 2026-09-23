@@ -22,7 +22,23 @@ _STOPWORDS = {
     "ces", "il", "elle", "je", "tu", "on", "se", "sa", "son", "ses", "mon",
     "ma", "mes", "the", "a", "an", "of", "and", "or", "to", "in", "on", "for",
     "is", "are", "be", "with", "what", "which", "how", "do", "does", "can",
+    # Mots interrogatifs / verbes d'intention : présents dans presque toutes les
+    # questions (« comment faire… ») et dans des titres sans rapport.
+    "comment", "pourquoi", "quand", "où", "combien", "faire", "fait", "peux",
+    "puis", "peut", "veux", "voudrais", "voir", "ai", "as", "mon", "notre", "nos",
+    "votre", "vos", "leur", "leurs", "ne", "pas", "plus", "moi", "nous", "vous",
 }
+
+
+def _normalize(token: str) -> str:
+    """Very light FR/EN plural folding (logs→log, métriques→métrique, travaux→travau).
+
+    Not a stemmer: it only aligns singular/plural forms, which is the most
+    common lexical mismatch between a question and a doc heading.
+    """
+    if len(token) > 3 and token[-1] in "sx" and token[-2] not in "s":
+        return token[:-1]
+    return token
 
 _BM25_K1 = 1.5
 _BM25_B = 0.75
@@ -30,7 +46,7 @@ _BM25_B = 0.75
 
 def tokenize(text: str) -> list[str]:
     return [
-        t for t in (m.group(0).lower() for m in _TOKEN_RE.finditer(text))
+        _normalize(t) for t in (m.group(0).lower() for m in _TOKEN_RE.finditer(text))
         if len(t) > 1 and t not in _STOPWORDS
     ]
 

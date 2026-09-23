@@ -127,7 +127,9 @@ class Settings(BaseSettings):
     # Curated capabilities/UI page(s) always injected into the platform agent
     # context (comma-separated repo-relative paths), so it reliably knows the
     # menus, Settings options and capabilities regardless of lexical retrieval.
-    AI_PLATFORM_KB_PRIMER_PATHS: str = "guides/platform-overview.md"
+    AI_PLATFORM_KB_PRIMER_PATHS: str = "guides/platform-overview.md,guides/ui-guide.md"
+    # Re-ingest docs/ at backend startup (idempotent: unchanged files are skipped).
+    AI_PLATFORM_KB_SYNC_ON_STARTUP: bool = True
 
     # Logging
     LOG_LEVEL: str = "INFO"

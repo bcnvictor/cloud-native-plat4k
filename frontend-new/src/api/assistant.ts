@@ -7,7 +7,25 @@ import {
   AIUISettings,
   ChatPayload,
   ChatResponse,
+  ChatTurn,
 } from '@/types';
+
+/** Nombre de tours renvoyés au backend pour garder le fil de la conversation. */
+const HISTORY_TURNS = 12;
+
+/**
+ * Convertit le fil affiché en historique pour l'API : on écarte le message
+ * d'accueil et les erreurs locales (ids `greeting` / `err…`), qui ne sont pas
+ * de vraies réponses du modèle.
+ */
+export function toChatHistory(
+  messages: { id: string; role: 'user' | 'assistant'; content: string }[]
+): ChatTurn[] {
+  return messages
+    .filter((m) => m.id !== 'greeting' && !m.id.startsWith('err'))
+    .slice(-HISTORY_TURNS)
+    .map(({ role, content }) => ({ role, content }));
+}
 
 export const assistantApi = {
   async getAppSettings(appId: number): Promise<AIAppSettings> {

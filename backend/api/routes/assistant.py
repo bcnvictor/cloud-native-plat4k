@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from backend.ai.factory import get_provider
 from backend.api.deps import get_current_user, require_admin, require_tier
@@ -12,11 +12,12 @@ from backend.services.ai_settings_service import (
     EffectiveAIConfig,
 )
 from backend.services.assistant_service import AssistantService
+from backend.services.assistant_tools import PageContext
 from backend.services.audit_service import AuditService
 from backend.services.platform_knowledge_service import PlatformKnowledgeService
 from backend.services.security_scan_service import SecurityScanService
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from shared.models import (
     AIContextMode,
     CnpTier,
@@ -63,6 +64,7 @@ def _build_assistant(db: AsyncSession, cfg: EffectiveAIConfig) -> AssistantServi
         provider=provider,
         model=cfg.model,
         platform_kb_enabled=cfg.platform_kb_enabled,
+        cfg=cfg,
     )
 
 
@@ -348,14 +350,30 @@ async def patch_assistant_global_settings(
 # ── Chat schemas ──────────────────────────────────────────────────────────────
 
 
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=8000)
+
+
+class PagePayload(BaseModel):
+    """Où se trouve l'utilisateur dans l'UI (résolu côté serveur avec la RBAC)."""
+
+    path: Optional[str] = Field(default=None, max_length=300)
+    group_slug: Optional[str] = Field(default=None, max_length=200)
+    app_slug: Optional[str] = Field(default=None, max_length=200)
+
+
 class ChatPayload(BaseModel):
-    message: str
+    message: str = Field(max_length=8000)
     mode: str = "general"
-    # "default" = assistant classique ; "platform" = agent ancré sur la doc CNP
+    # "default" = assistant classique ; "platform" = agent CNP (doc + outils live)
     agent: str = "default"
     requested_context_mode: AIContextMode = AIContextMode.METADATA_ONLY
     conversation_id: Optional[str] = None
     stream: bool = False
+    # Tours précédents de la conversation (le serveur ne stocke pas l'historique).
+    history: list[ChatTurn] = Field(default_factory=list, max_length=30)
+    page: Optional[PagePayload] = None
 
 
 class ChatResponseSchema(BaseModel):
@@ -426,6 +444,7 @@ async def chat_with_app(
         conversation_id=payload.conversation_id,
         current_user=current_user,
         app=app,
+        history=[t.model_dump() for t in payload.history],
     )
     return _build_chat_response(resp)
 
@@ -448,6 +467,8 @@ async def chat_global(
         conversation_id=payload.conversation_id,
         current_user=current_user,
         app=None,
+        history=[t.model_dump() for t in payload.history],
+        page=PageContext(**payload.page.model_dump()) if payload.page else None,
     )
     return _build_chat_response(resp)
 
@@ -467,11 +488,14 @@ async def reindex_platform_kb(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    await _require_ai_enabled(db)
-    if not settings.AI_PLATFORM_KB_ENABLED:
+    cfg = await _require_ai_enabled(db)
+    if not cfg.platform_kb_enabled:
         raise HTTPException(
             status_code=400,
-            detail="Platform knowledge base is disabled (AI_PLATFORM_KB_ENABLED=false).",
+            detail=(
+                "Platform knowledge base is disabled "
+                "(Réglages plateforme → Assistant IA → Accès aux données de la CNP)."
+            ),
         )
 
     stats = await PlatformKnowledgeService(db).ingest_local_dir(

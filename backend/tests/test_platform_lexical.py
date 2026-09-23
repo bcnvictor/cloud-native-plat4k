@@ -5,11 +5,17 @@ from backend.ai.lexical import bm25_rank, tokenize
 
 def test_tokenize_drops_stopwords_and_short_tokens():
     toks = tokenize("Quelles sont les options du menu Settings ?")
-    assert "options" in toks
+    assert "option" in toks  # plural folded
     assert "menu" in toks
-    assert "settings" in toks
+    assert "setting" in toks
     assert "les" not in toks  # stopword
     assert "du" not in toks
+
+
+def test_tokenize_folds_plurals_and_drops_question_words():
+    assert tokenize("Comment voir les logs ?") == ["log"]
+    assert tokenize("log") == tokenize("logs")
+    assert tokenize("access") == ["access"]  # double s kept
 
 
 def test_bm25_ranks_relevant_document_first():

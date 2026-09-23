@@ -1,7 +1,10 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { IconX, IconSend } from '@tabler/icons-react';
-import { assistantApi } from '@/api/assistant';
+import { assistantApi, toChatHistory } from '@/api/assistant';
+import { ChatTurn } from '@/types';
+import { docSources, pageContextFrom, suggestionsFor } from '@/utils/assistantContext';
 import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown';
 import { cn } from '@/utils/cn';
 
@@ -20,8 +23,6 @@ interface Props {
 
 const GREETING =
   "Salut 👋 Je suis l'assistant Plat4k. Pose-moi une question sur tes applications ou la plateforme.";
-
-const SUGGESTIONS = ['État des apps', 'Voir les métriques', 'Membres du groupe'];
 
 /** La mascotte fait signe toutes les X ms quand le tiroir est fermé. */
 const ATTENTION_INTERVAL_MS = 60_000;
@@ -89,6 +90,9 @@ function TypingDots({ className }: { className?: string }) {
 }
 
 export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
+  const { pathname } = useLocation();
+  const page = useMemo(() => pageContextFrom(pathname), [pathname]);
+  const suggestions = useMemo(() => suggestionsFor(page), [page]);
   const conversationId = useRef<string | undefined>(undefined);
   const msgRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
@@ -196,17 +200,17 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
   }, [open, graphicalBotEnabled]);
 
   const chatMutation = useMutation({
-    mutationFn: (message: string) =>
-      assistantApi.chatGlobal({ message, agent: 'platform', conversation_id: conversationId.current }),
+    mutationFn: ({ message, history }: { message: string; history: ChatTurn[] }) =>
+      assistantApi.chatGlobal({
+        message,
+        agent: 'platform',
+        conversation_id: conversationId.current,
+        history,
+        page,
+      }),
     onSuccess: (data) => {
       conversationId.current = data.conversation_id;
-      const citations = Array.from(
-        new Set(
-          (data.citations as { type?: string; ref?: string }[] | undefined)
-            ?.filter((c) => c?.type === 'doc' && c.ref)
-            .map((c) => c.ref as string) ?? []
-        )
-      );
+      const citations = docSources(data.citations);
       setMessages((prev) => [
         ...prev,
         {
@@ -248,7 +252,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     if (!msg || chatMutation.isPending) return;
     setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'user', content: msg }]);
     setInput('');
-    chatMutation.mutate(msg);
+    chatMutation.mutate({ message: msg, history: toChatHistory(messages) });
   }
 
   return (
@@ -369,10 +373,10 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
 
             {/* Puces de suggestions */}
             <div className="flex flex-wrap gap-2 px-[18px] pb-0.5 pt-1.5">
-              {SUGGESTIONS.map((label) => (
+              {suggestions.map(({ label, question }) => (
                 <button
                   key={label}
-                  onClick={() => ask(`${label} ?`)}
+                  onClick={() => ask(question)}
                   className="rounded-[20px] border border-border bg-card px-3 py-[7px] text-xs font-medium text-muted-foreground hover:border-primary hover:bg-primary-50 hover:text-primary"
                 >
                   {label}

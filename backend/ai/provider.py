@@ -11,8 +11,21 @@ import httpx
 
 @dataclasses.dataclass
 class LLMMessage:
-    role: str  # "system" | "user" | "assistant"
-    content: str
+    role: str  # "system" | "user" | "assistant" | "tool"
+    content: Optional[str]
+    # Function calling (format OpenAI) : appels d'outils émis par l'assistant,
+    # conservés tels quels (Gemini y attache des métadonnées à renvoyer), et
+    # identifiant de l'appel auquel répond un message "tool".
+    tool_calls: Optional[list[dict]] = None
+    tool_call_id: Optional[str] = None
+
+    def to_openai(self) -> dict:
+        msg: dict = {"role": self.role, "content": self.content}
+        if self.tool_calls:
+            msg["tool_calls"] = self.tool_calls
+        if self.tool_call_id:
+            msg["tool_call_id"] = self.tool_call_id
+        return msg
 
 
 @dataclasses.dataclass
@@ -21,6 +34,7 @@ class LLMResponse:
     model: str
     input_tokens: int = 0
     output_tokens: int = 0
+    tool_calls: list[dict] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass
@@ -45,7 +59,10 @@ class LLMProvider(ABC):
         model: str,
         max_tokens: int = 4096,
         temperature: float = 0.3,
-    ) -> LLMResponse: ...
+        tools: Optional[list[dict]] = None,
+    ) -> LLMResponse:
+        """*tools* : définitions JSON-schema (format OpenAI). Un provider qui
+        ne sait pas appeler d'outils les ignore et répond directement."""
 
     @abstractmethod
     def supports_streaming(self) -> bool: ...
@@ -68,6 +85,7 @@ class MockProvider(LLMProvider):
         model: str = "mock",
         max_tokens: int = 4096,
         temperature: float = 0.3,
+        tools: Optional[list[dict]] = None,
     ) -> LLMResponse:
         last_user = next(
             (m.content for m in reversed(messages) if m.role == "user"), ""
@@ -115,14 +133,18 @@ class OpenAICompatibleProvider(LLMProvider):
         model: str,
         max_tokens: int = 4096,
         temperature: float = 0.3,
+        tools: Optional[list[dict]] = None,
     ) -> LLMResponse:
         payload = {
             "model": model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "messages": [m.to_openai() for m in messages],
             "max_tokens": max_tokens,
             "temperature": temperature,
             "stream": False,
         }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
         data = None
         for attempt in range(self._max_retries + 1):
             try:
@@ -149,11 +171,13 @@ class OpenAICompatibleProvider(LLMProvider):
 
         choice = data["choices"][0]
         usage = data.get("usage", {})
+        message = choice.get("message") or {}
         return LLMResponse(
-            content=choice["message"]["content"],
+            content=message.get("content") or "",
             model=data.get("model", model),
             input_tokens=usage.get("prompt_tokens", 0),
             output_tokens=usage.get("completion_tokens", 0),
+            tool_calls=list(message.get("tool_calls") or []),
         )
 
     def supports_streaming(self) -> bool:

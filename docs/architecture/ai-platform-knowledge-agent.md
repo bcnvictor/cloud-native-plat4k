@@ -1,6 +1,6 @@
 # Agent « CNP Helper » — base de connaissance plateforme (RAG docs)
 
-Statut : **Lot 1 implémenté** (ingestion docs locale + agent `platform` + retrieval lexical + grounding strict + citations, derrière `AI_PLATFORM_KB_ENABLED`). Les lots suivants (repo docs-only, apps autorisées, embeddings) sont proposés ci-dessous.
+Statut : **Lot 1 implémenté** (ingestion docs locale + agent `platform` + retrieval lexical + citations, derrière `AI_PLATFORM_KB_ENABLED`) et **Lot 2 implémenté** (outils live en lecture seule via function calling, contexte de page, historique de conversation, guide de l'interface, indexation automatique au démarrage). Les lots suivants (repo docs-only, embeddings) sont proposés ci-dessous.
 
 Complète le plan général : [ai-chatbot-use-case.md](./ai-chatbot-use-case.md) (§ « Stratégie contexte / RAG », § anti-hallucination).
 
@@ -58,12 +58,41 @@ En Docker, `docs/` est monté en lecture seule (`./docs:/app/docs:ro`).
 - Agent **sans outil d'écriture / exécution** : il conseille seulement.
 - Le repo docs-only ne « supprime » pas l'injection (une page de doc peut être empoisonnée) : il réduit la **confidentialité** (pas de code/secret) et la surface. La vraie défense = protéger le repo docs (branche protégée + review MR), token **read-only scoppé**, et la séparation données/instructions ci-dessus.
 
+## Lot 2 — données live, contexte de page, guide UI
+
+Le lot 1 ne répondait qu'à partir de la doc : « État des apps ? », « Voir les métriques ? » ou « Membres du groupe ? » aboutissaient à « je n'ai pas accès à ces données ». Le lot 2 donne à l'agent des **outils en lecture seule** (function calling, format OpenAI — supporté par Gemini, Mistral et DeepSeek) :
+
+| Outil | Données | Garde-fous |
+|---|---|---|
+| `list_my_groups` | groupes + rôle + nb d'apps | groupes de l'utilisateur (admin : tous) |
+| `list_apps` | statut, pipeline CI, arrêt dev/prod, cluster, exposition | apps des groupes/projets de l'utilisateur |
+| `get_app_details` | métadonnées, statut live ArgoCD dev/prod, scale-to-zero, événements | + allow-list admin (`app_allowed`) |
+| `get_metrics` | CPU/RAM courants (Prometheus) | + allow-list admin |
+| `get_costs` | coûts 30 j par app d'un groupe | + allow-list admin (détail masqué sinon) |
+| `list_group_members` | membres actifs et rôles (bots exclus) | groupe visible par l'utilisateur |
+| `get_recent_activity` | événements d'un groupe ou d'une app | + allow-list admin |
+| `search_platform_docs` | recherche BM25 dans la doc | — |
+
+Principes :
+- **RBAC** : chaque outil s'exécute *en tant que* l'utilisateur (`backend/services/assistant_tools.py`) ; un groupe ou une app hors de son périmètre est « introuvable ».
+- **Lecture seule** : aucun outil n'écrit ; l'assistant indique le bouton à utiliser (Stop, Rollback…).
+- **Boucle bornée** : au plus 4 tours d'appels d'outils, puis réponse forcée ; tokens cumulés pour le suivi des coûts. Si le provider refuse les outils (HTTP 400), repli automatique sur la doc seule.
+- **Résultats rédigés** (redaction) et tronqués avant envoi au provider.
+- **Contexte de page** : le front envoie `page: {path, group_slug, app_slug}` ; « État des apps ? » sur la page d'un groupe porte sur ce groupe.
+- **Historique** : le front renvoie les 12 derniers tours (`history`, rôles `user`/`assistant` uniquement — un rôle `system` est refusé en 422).
+- **Guide de l'interface** (`guides/ui-guide.md`) : description écran par écran (menus, onglets, boutons, permissions), injectée à chaque question avec `platform-overview.md` (`AI_PLATFORM_KB_PRIMER_PATHS`).
+- **Indexation automatique** au démarrage (`AI_PLATFORM_KB_SYNC_ON_STARTUP`, idempotente, supprime les chunks des fichiers disparus) ; `POST /assistant/platform-kb/reindex` reste disponible.
+
+### « Entraîner » l'assistant = enrichir la doc
+
+Il n'y a ni fine-tuning ni entraînement : la clé API ne sert qu'à authentifier les appels au provider. Pour qu'il réponde mieux sur une fonctionnalité, **on écrit ou corrige la page Markdown correspondante dans `docs/`** (idéalement `guides/ui-guide.md` pour tout ce qui touche à l'interface), puis on redémarre le backend ou on appelle le reindex. Pour une nouvelle donnée live, on ajoute un outil dans `assistant_tools.py`.
+
 ## Roadmap (lots suivants proposés)
 
 1. **Repo docs-only GitLab (`cnp-docs`)** : branche protégée + review MR ; CI dans le repo principal qui `mkdocs build` et publie vers `cnp-docs` (pas de doc en double). Ingestion via clone/pull read-only ou API GitLab → il suffit de changer l'origine dans `ingest_local_dir` (source `cnp-docs`). Rafraîchi par webhook.
-2. **Apps autorisées** : agréger dans le contexte de l'agent les métadonnées (`metadata_only`) des apps que l'utilisateur peut voir **et** `ai_enabled`, en réutilisant la RBAC existante.
+2. ~~**Apps autorisées**~~ : livré au lot 2 sous forme d'outils à la demande (plutôt qu'un contexte agrégé).
 3. **Retrieval avancé** : passer de BM25 à un hybride lexical + embeddings (pgvector) si le corpus grossit — le point d'appel (`search`) ne change pas.
-4. **Page de doc « capacités & UI »** dédiée (menu Settings, onglets, actions) pour que l'agent réponde précisément aux questions produit.
+4. ~~**Page de doc « capacités & UI »**~~ : livré au lot 2 (`guides/ui-guide.md`).
 
 ## Comment tester (lot 1)
 
