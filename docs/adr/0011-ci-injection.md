@@ -69,6 +69,17 @@ Le résultat de l'injection est exposé dans `ApplicationResponse.ci_injected` (
 - `false` → injection échouée (app créée, CI non injectée)
 - `null` → non applicable (pas de repo_url ou origin non concerné)
 
+### Génération du Dockerfile / chart Helm manquants (4K-243)
+
+Pour les origins `onboarded` et `imported` (pas `scaffolded`, pas les imports `raw`), `backend/ci/build_files.py` inspecte la racine de la branche par défaut et génère **uniquement** ce qui manque. Rien d'existant n'est écrasé. Les fichiers sont ajoutés au **même commit et à la même MR** que `.gitlab-ci.yml` : la MR CI seule ferait échouer le pipeline (hadolint, docker-build) sans `Dockerfile`, et ArgoCD a besoin de `chart/`.
+
+- **Dockerfile Python** : si un objet `FastAPI(...)` ou `Flask(...)` est trouvé dans `main.py`, `app.py`, `src/main.py`, `src/app.py` ou `app/main.py`, le Dockerfile installe les dépendances (`requirements.txt`, sinon `pyproject.toml`/`setup.py`, sinon `Pipfile`) et démarre uvicorn ou gunicorn sur `0.0.0.0:8000`, en utilisateur non-root.
+- **Autres cas** (framework non Python, ou Python sans point d'entrée reconnu) : un squelette dont le **build échoue volontairement**. Comme `update-gitops` dépend de `docker-build`, rien de non déployable n'atteint le cluster. Le dev complète le Dockerfile dans la MR.
+- **Chart** : `chart/**` est copié depuis le template CNP du framework (`python` → `python-fastapi`, `nodejs` → `node-express`, `go` → `go`, sinon `python-fastapi`). `values.yaml` et `Chart.yaml` sont générés par les helpers du scaffolding, avec `image.repository` = `$CI_REGISTRY_IMAGE` et `probes.type: tcp`, car une app importée expose rarement `/health`.
+- Si la génération échoue (template inaccessible, etc.), la MR reste CI seule. L'erreur est loguée, elle ne bloque pas l'enregistrement.
+
+Limite connue : un repo `onboarded` hors du groupe GitLab CNP peut ne pas être lisible par ArgoCD (chart) ni par le cluster (pull de l'image), selon la configuration des credentials.
+
 ## Conséquences
 
 Positif :
