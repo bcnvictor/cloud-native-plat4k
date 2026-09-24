@@ -53,3 +53,15 @@ export function docSources(citations: unknown): string[] {
     .map((c) => c.path ?? (c.ref as string).split('#')[0]);
   return Array.from(new Set(refs)).slice(0, 5);
 }
+
+/**
+ * Message affiché sous l'indicateur de saisie quand la réponse tarde : un tour
+ * peut enchaîner plusieurs appels d'outils et attendre le quota du provider.
+ */
+export function waitHint(elapsedMs: number): string | null {
+  if (elapsedMs >= 25_000) {
+    return 'Le fournisseur IA est très sollicité, la réponse peut prendre jusqu’à une minute…';
+  }
+  if (elapsedMs >= 6_000) return 'Je consulte les données de la plateforme…';
+  return null;
+}

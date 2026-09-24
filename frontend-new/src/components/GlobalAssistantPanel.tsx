@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { IconX, IconSend } from '@tabler/icons-react';
 import { assistantApi, toChatHistory } from '@/api/assistant';
 import { ChatTurn } from '@/types';
-import { docSources, pageContextFrom, suggestionsFor } from '@/utils/assistantContext';
+import { docSources, pageContextFrom, suggestionsFor, waitHint } from '@/utils/assistantContext';
 import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown';
 import { cn } from '@/utils/cn';
 
@@ -241,11 +241,26 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     },
   });
 
+  // Message d'attente progressif tant que la réponse n'est pas arrivée
+  const [pendingSince, setPendingSince] = useState<number | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
+  useEffect(() => {
+    if (!chatMutation.isPending) {
+      setPendingSince(null);
+      setHint(null);
+      return;
+    }
+    const start = Date.now();
+    setPendingSince(start);
+    const timer = setInterval(() => setHint(waitHint(Date.now() - start)), 1_000);
+    return () => clearInterval(timer);
+  }, [chatMutation.isPending]);
+
   // Défilement auto vers le dernier message
   useEffect(() => {
     const el = msgRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, chatMutation.isPending]);
+  }, [messages, chatMutation.isPending, hint]);
 
   function ask(text: string) {
     const msg = text.trim();
@@ -364,8 +379,14 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
                   )}
                 >
                   {graphicalBotEnabled && <BotAvatar />}
-                  <div className="flex gap-[5px] rounded-[4px_15px_15px_15px] bg-muted px-[15px] py-[13px]">
-                    <TypingDots className="bg-muted-foreground/60" />
+                  <div className="rounded-[4px_15px_15px_15px] bg-muted px-[15px] py-[13px]">
+                    {/* Pas de modificateur d'opacité : les couleurs sont des var() CSS */}
+                    <div className="flex gap-[5px]" aria-label="L'assistant réfléchit">
+                      <TypingDots className="bg-muted-foreground" />
+                    </div>
+                    {pendingSince !== null && hint && (
+                      <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
+                    )}
                   </div>
                 </div>
               )}

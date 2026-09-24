@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { docSources, pageContextFrom, suggestionsFor } from '@/utils/assistantContext';
+import { docSources, pageContextFrom, suggestionsFor, waitHint } from '@/utils/assistantContext';
 
 describe('pageContextFrom', () => {
   it('extrait groupe et app sur une page application', () => {
@@ -43,5 +43,13 @@ describe('docSources', () => {
         { type: 'app', id: 1 },
       ])
     ).toEqual(['guides/ui-guide.md', 'faq.md']);
+  });
+});
+
+describe('waitHint', () => {
+  it("reste silencieux les premières secondes puis rassure l'utilisateur", () => {
+    expect(waitHint(2_000)).toBeNull();
+    expect(waitHint(8_000)).toMatch(/consulte/);
+    expect(waitHint(30_000)).toMatch(/sollicité/);
   });
 });

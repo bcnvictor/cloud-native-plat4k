@@ -335,3 +335,25 @@ def test_llm_message_openai_serialization():
     assert LLMMessage(role="tool", content="ok", tool_call_id="c1").to_openai() == {
         "role": "tool", "content": "ok", "tool_call_id": "c1",
     }
+
+
+@pytest.mark.anyio
+async def test_provider_quota_error_returns_429_with_message(client: AsyncClient, dev_token: str):
+    class QuotaProvider(MockProvider):
+        async def complete(self, messages, model="mock", max_tokens=4096, temperature=0.3, tools=None):
+            request = httpx.Request("POST", "https://x/chat/completions")
+            raise httpx.HTTPStatusError(
+                "quota", request=request, response=httpx.Response(429, request=request)
+            )
+
+    with (
+        patch.object(settings, "AI_ASSISTANT_ENABLED", True),
+        patch("backend.api.routes.assistant.get_provider", return_value=QuotaProvider()),
+    ):
+        resp = await client.post(
+            "/api/v1/assistant/chat",
+            json={"message": "x", "agent": "platform"},
+            headers={"Authorization": f"Bearer {dev_token}"},
+        )
+    assert resp.status_code == 429
+    assert "quota" in resp.json()["detail"].lower()

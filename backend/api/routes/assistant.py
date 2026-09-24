@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
+import httpx
 from backend.ai.factory import get_provider
 from backend.api.deps import get_current_user, require_admin, require_tier
 from backend.core.config import settings
@@ -54,6 +55,35 @@ async def _require_ai_enabled(db: AsyncSession) -> EffectiveAIConfig:
             detail="AI assistant is disabled on this platform.",
         )
     return cfg
+
+
+async def _chat(svc: AssistantService, **kwargs):
+    """Run a chat turn, turning provider failures into readable API errors.
+
+    503 is reserved for "assistant disabled" (the UI hides the chat on it), so
+    quota errors use 429 and other upstream failures 502.
+    """
+    try:
+        return await svc.chat(**kwargs)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Quota du fournisseur IA atteint (limite par minute ou par jour). "
+                    "Réessayez dans une minute ; si cela persiste, un administrateur peut "
+                    "changer de modèle ou de provider dans Réglages plateforme → Assistant IA."
+                ),
+            ) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"Le fournisseur IA a renvoyé une erreur ({exc.response.status_code}). Réessayez.",
+        ) from exc
+    except httpx.TransportError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Le fournisseur IA est injoignable pour le moment. Réessayez.",
+        ) from exc
 
 
 def _build_assistant(db: AsyncSession, cfg: EffectiveAIConfig) -> AssistantService:
@@ -437,7 +467,8 @@ async def chat_with_app(
         effective_mode = AIContextMode.METADATA_ONLY
 
     svc = _build_assistant(db, cfg)
-    resp = await svc.chat(
+    resp = await _chat(
+        svc,
         message=payload.message,
         mode=payload.mode,
         effective_context_mode=effective_mode,
@@ -460,7 +491,8 @@ async def chat_global(
 ):
     cfg = await _require_ai_enabled(db)
     svc = _build_assistant(db, cfg)
-    resp = await svc.chat(
+    resp = await _chat(
+        svc,
         message=payload.message,
         mode=payload.mode,
         agent=payload.agent,
@@ -681,7 +713,8 @@ async def summarize_security_scan(
     )
 
     assistant_svc = _build_assistant(db, cfg)
-    resp = await assistant_svc.chat(
+    resp = await _chat(
+        assistant_svc,
         message=prompt,
         mode="scan_summary",
         current_user=current_user,
