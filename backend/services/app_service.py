@@ -121,7 +121,11 @@ class AppService:
             "expose": payload.expose,
             "target_cluster_id": await self._resolve_target_cluster_id(payload.target_cluster_id),
         }
-        return await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
+        app = await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
+        services = payload.scaffolding.services if payload.scaffolding else []
+        if "keycloak" in services:
+            await self._provision_keycloak(app)
+        return app
 
     async def onboard_app(self, payload: ApplicationOnboardRequest) -> Application:
         slug = _validated_slug(payload.name)
@@ -178,6 +182,12 @@ class AppService:
         if payload.expose and bot and settings.GITOPS_REPO_URL:
             cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
             await self._push_ingress_to_gitops(bot, slug, cluster_name)
+
+        if "keycloak" in payload.services:
+            await self._provision_keycloak(app)
+            if bot:
+                await self._check_envfrom_warning(app, bot)
+
         return app
 
     async def external_import_app(self, payload: ApplicationExternalImportRequest) -> Application:
@@ -396,6 +406,46 @@ class AppService:
 
         return app
 
+    async def _provision_keycloak(self, app: Application) -> None:
+        """Best-effort (4K-15/ADR-0026): the app is created and usable even if
+        Keycloak provisioning fails — auth_provisioned reports the outcome (mirrors
+        ci_injected), never raises so app creation itself never fails because of it.
+        """
+        from backend.services.keycloak_service import KeycloakService
+
+        app.auth_enabled = True
+        service = KeycloakService(self.db)
+        try:
+            await service.provision(app, "dev")
+            await service.provision(app, "prod")
+            app.auth_provisioned = True
+        except Exception:
+            logger.exception("Keycloak provisioning failed for app %s", app.slug)
+            app.auth_provisioned = False
+        await self.db.commit()
+        await self.db.refresh(app)
+
+    async def _check_envfrom_warning(self, app: Application, bot: "GitLabClient") -> None:
+        """Onboarded-app-only (mode A, ADR-0026 §6): best-effort check that the
+        repo's own chart actually consumes the {app_slug}-env Secret. Never raises.
+        """
+        from backend.services.keycloak_service import detect_envfrom_warning
+
+        if not app.repo_url:
+            return
+        try:
+            project_path = extract_project_path(app.repo_url)
+            warnings = await anyio.to_thread.run_sync(
+                lambda: detect_envfrom_warning(bot, project_path, app.slug), cancellable=True,
+            )
+        except Exception:
+            logger.exception("envFrom detection failed for app %s", app.slug)
+            return
+        if warnings:
+            app.auth_warnings = warnings
+            await self.db.commit()
+            await self.db.refresh(app)
+
     async def _push_externalsecrets_to_gitops(self, bot: "GitLabClient", app: Application, cluster_name: str) -> None:
         """Best-effort: generate externalsecret-{dev,prod}.yaml in gitops so ESO can
         provision the app's env var Secret as soon as it's created (4K-106 / ADR-0024).
@@ -590,6 +640,12 @@ class AppService:
                 vault_client.delete_secret(vault_env_path(group_slug, app.slug, env_name))
         except Exception:
             logger.exception("Failed to clean up Vault env vars for app %s", app.name)
+
+        # 3b. Delete the app's Keycloak realms, if any (4K-15/ADR-0026) — best-effort,
+        # like every other step here.
+        if app.auth_enabled:
+            from backend.services.keycloak_service import KeycloakService
+            await KeycloakService(self.db).deprovision(app)
 
         # 4. Remove from database
         await self.db.delete(app)

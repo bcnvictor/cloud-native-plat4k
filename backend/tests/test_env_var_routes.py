@@ -143,7 +143,7 @@ class TestDevAccess:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["keys"] == [{"key": "DATABASE_URL", "is_set": True}]
+        assert body["keys"] == [{"key": "DATABASE_URL", "is_set": True, "managed": False}]
 
     async def test_value_never_returned_in_get(
         self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault
@@ -162,7 +162,7 @@ class TestDevAccess:
         assert resp.status_code == 200
         raw_body = resp.text
         assert "sk-super-secret-value" not in raw_body
-        assert resp.json()["keys"] == [{"key": "SECRET_TOKEN", "is_set": True}]
+        assert resp.json()["keys"] == [{"key": "SECRET_TOKEN", "is_set": True, "managed": False}]
 
     async def test_list_empty_env_returns_empty_keys(
         self, client: AsyncClient, developer_token: str, app_with_developer: Application
@@ -192,7 +192,7 @@ class TestDevAccess:
             f"/api/v1/apps/{app_with_developer.id}/env/dev",
             headers={"Authorization": f"Bearer {developer_token}"},
         )
-        assert resp.json()["keys"] == [{"key": "B", "is_set": True}]
+        assert resp.json()["keys"] == [{"key": "B", "is_set": True, "managed": False}]
 
     async def test_status_endpoint_reflects_key_presence(
         self, client: AsyncClient, developer_token: str, app_with_developer: Application
@@ -262,7 +262,7 @@ class TestProdAccess:
         )
         assert resp.status_code == 200
         assert "prod-value" not in resp.text
-        assert resp.json()["keys"] == [{"key": "DATABASE_URL", "is_set": True}]
+        assert resp.json()["keys"] == [{"key": "DATABASE_URL", "is_set": True, "managed": False}]
 
     async def test_dev_write_forbidden_without_membership(
         self, client: AsyncClient, developer_token: str, cluster: ClusterConnection, db_session
@@ -370,3 +370,51 @@ class TestValuesEndpoint:
             headers={"Authorization": f"Bearer {developer_token}"},
         )
         assert resp.status_code == 403
+
+
+class TestManagedKeys:
+    """OIDC_* keys are written exclusively by KeycloakService (4K-15/ADR-0026) —
+    the env var CRUD must refuse to touch them.
+    """
+
+    async def test_set_oidc_key_rejected(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application
+    ):
+        resp = await client.put(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev",
+            json={"variables": {"OIDC_CLIENT_ID": "should-not-work"}},
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 409
+
+    async def test_delete_oidc_key_rejected(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault
+    ):
+        fake_vault["apps/_ungrouped/demo/dev"] = {"OIDC_ISSUER_URL": "https://auth.example/realms/demo-dev"}
+        resp = await client.delete(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev/OIDC_ISSUER_URL",
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 409
+
+    async def test_oidc_key_reported_as_managed_in_list(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault
+    ):
+        fake_vault["apps/_ungrouped/demo/dev"] = {"OIDC_CLIENT_ID": "demo"}
+        resp = await client.get(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev",
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.json()["keys"] == [{"key": "OIDC_CLIENT_ID", "is_set": True, "managed": True}]
+
+    async def test_mixed_set_rejected_if_any_key_managed(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application
+    ):
+        """A single PUT with a mix of managed and normal keys is rejected wholesale
+        (no partial write) rather than silently dropping the managed one."""
+        resp = await client.put(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev",
+            json={"variables": {"NORMAL_KEY": "x", "OIDC_CLIENT_SECRET": "y"}},
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 409

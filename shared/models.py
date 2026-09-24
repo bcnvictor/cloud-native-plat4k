@@ -422,9 +422,35 @@ class ApplicationResponse(ApplicationBase):
     owning_gitlab_group_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    # Keycloak app-auth service (4K-15/ADR-0026)
+    auth_enabled: bool = False
+    auth_provisioned: Optional[bool] = None  # None = n/a, True/False = last provisioning attempt's outcome
+    auth_warnings: Optional[List[str]] = None  # e.g. ["chart_missing_envfrom"] — onboarded apps only
 
     class Config:
         from_attributes = True
+
+
+# ── Keycloak app-auth (4K-15/ADR-0026) ──────────────────────────────────────────
+
+class KeycloakEnvStatus(BaseModel):
+    enabled: bool
+    realm: str
+    exists: bool
+    console_url: Optional[str] = None
+    issuer_url: Optional[str] = None
+
+
+class KeycloakStatusResponse(BaseModel):
+    dev: KeycloakEnvStatus
+    prod: KeycloakEnvStatus
+    auth_warnings: List[str] = []
+
+
+class KeycloakConsoleAccessResponse(BaseModel):
+    console_url: str
+    username: str
+    temporary_password: str
 
 
 class ClusterConnectionBase(BaseModel):

@@ -21,6 +21,7 @@ from backend.api.routes import (
     gitlab,
     groups,
     health,
+    keycloak,
     monitoring,
     notifications,
     resources,
@@ -129,6 +130,7 @@ app.include_router(apps.router, prefix=f"{settings.API_V1_STR}/apps", tags=["app
 app.include_router(assistant.router, prefix=f"{settings.API_V1_STR}/apps", tags=["assistant"])
 app.include_router(assistant.global_router, prefix=f"{settings.API_V1_STR}", tags=["assistant"])
 app.include_router(env_vars.router, prefix=f"{settings.API_V1_STR}/apps", tags=["env-vars"])
+app.include_router(keycloak.router, prefix=f"{settings.API_V1_STR}/apps", tags=["keycloak"])
 app.include_router(clusters.router, prefix=f"{settings.API_V1_STR}/clusters", tags=["clusters"])
 app.include_router(resources.router, prefix=f"{settings.API_V1_STR}/resources", tags=["resources"])
 app.include_router(credentials.router, prefix=f"{settings.API_V1_STR}/credentials", tags=["credentials"])

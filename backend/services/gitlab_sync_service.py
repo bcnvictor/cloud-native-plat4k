@@ -167,6 +167,25 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
     return stats
 
 
+async def _maybe_revoke_keycloak_access(db: AsyncSession, app: Application, cnp_user_id: int | None) -> None:
+    """Best-effort (4K-15/ADR-0026): revoke a member's Keycloak console access when
+    they lose Maintainer+ on an app or leave it entirely. No-op if Keycloak isn't
+    enabled/provisioned for this app, or the member never had a linked CNP account
+    (can't resolve a Keycloak username without one — see KeycloakService._username_for).
+    """
+    if not cnp_user_id or not app.auth_enabled or not settings.KEYCLOAK_ENABLED:
+        return
+    try:
+        result = await db.execute(select(User).where(User.id == cnp_user_id))
+        cnp_user = result.scalar_one_or_none()
+        if not cnp_user:
+            return
+        from backend.services.keycloak_service import KeycloakService, _username_for
+        await KeycloakService(db).revoke_member(app, _username_for(cnp_user))
+    except Exception:
+        logger.exception("Failed to revoke Keycloak access for user %s on app %s", cnp_user_id, app.slug)
+
+
 async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
     """Upsert active members and pending invitations for one GitLab project."""
     stats = {"created": 0, "updated": 0, "revoked": 0}
@@ -204,6 +223,11 @@ async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
         cnp_user_id = await _resolve_cnp_user_id(db, m.id)
         if m.id in existing_by_gl_id:
             row = existing_by_gl_id[m.id]
+            # 4K-15/ADR-0026: dropping below Maintainer loses Keycloak console access
+            # (realm-admin is gated on the same tier). Check before overwriting
+            # access_level below.
+            if row.access_level >= 40 > m.access_level:
+                await _maybe_revoke_keycloak_access(db, app, row.cnp_user_id)
             row.access_level = m.access_level
             row.status = MemberStatus.ACTIVE
             if cnp_user_id:
@@ -243,6 +267,7 @@ async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
     # Soft-revoke absent active members
     for gl_id, row in existing_by_gl_id.items():
         if gl_id not in active_gl_ids and row.status == MemberStatus.ACTIVE:
+            await _maybe_revoke_keycloak_access(db, app, row.cnp_user_id)
             row.status = MemberStatus.LEFT
             row.updated_at = datetime.now(timezone.utc)
             stats["revoked"] += 1

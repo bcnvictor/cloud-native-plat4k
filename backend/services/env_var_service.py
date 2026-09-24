@@ -13,6 +13,12 @@ logger = logging.getLogger(__name__)
 
 VALID_ENVS = ("dev", "prod")
 
+# Written exclusively by KeycloakService.provision (4K-15/ADR-0026) — never by this
+# CRUD. Defined here (not in keycloak_service) so keycloak_service can import it
+# without a circular import (it already imports resolve_group_slug/vault_env_path
+# from this module).
+MANAGED_ENV_KEYS = frozenset({"OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"})
+
 # Vault path segment used when an app has no GitLab group (owning_gitlab_group_id
 # is nullable — onboarded/imported apps aren't always attached to a group). Shared
 # with AppService's gitops provisioning so the ExternalSecret's dataFrom.extract.key
@@ -62,7 +68,10 @@ class EnvVarService:
             data = vault_client.get_secret(path)
         except InvalidPath:
             return []
-        return [EnvVarKeyStatus(key=k, is_set=True) for k in sorted(data.keys())]
+        return [
+            EnvVarKeyStatus(key=k, is_set=True, managed=k in MANAGED_ENV_KEYS)
+            for k in sorted(data.keys())
+        ]
 
     async def get_key_status(self, app_id: int, env: str, key: str) -> bool:
         _validate_env(env)
@@ -76,12 +85,22 @@ class EnvVarService:
 
     async def set_vars(self, app_id: int, env: str, variables: dict[str, str]) -> None:
         _validate_env(env)
+        managed = MANAGED_ENV_KEYS & variables.keys()
+        if managed:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Key(s) managed by Keycloak, cannot be set manually: {', '.join(sorted(managed))}",
+            )
         app = await self._get_app(app_id)
         path = await self._vault_path(app, env)
         vault_client.patch_secret(path, variables)
 
     async def delete_key(self, app_id: int, env: str, key: str) -> None:
         _validate_env(env)
+        if key in MANAGED_ENV_KEYS:
+            raise HTTPException(
+                status_code=409, detail=f"Key '{key}' is managed by Keycloak, cannot be deleted manually"
+            )
         app = await self._get_app(app_id)
         path = await self._vault_path(app, env)
         vault_client.delete_secret_key(path, key)
