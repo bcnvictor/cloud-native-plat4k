@@ -66,9 +66,8 @@ pour les variables d'environnement applicatives (ADR-0024, ADR-0025).
 
 - `realm master` : réservé aux admins plateforme et au service account backend
   `cnp-provisioner` (client confidential, service account activé, rôle `admin` du realm
-  master — ou `create-realm` si les tests en Lot 7 montrent que ce droit plus étroit suffit
-  à couvrir toutes les opérations utilisées ; le choix effectif est documenté dans
-  `infra/keycloak/README.md`). **Aucun compte d'équipe ne vit dans `master`.**
+  master — tranché par le smoke test local du Lot 7, voir `infra/keycloak/README.md`).
+  **Aucun compte d'équipe ne vit dans `master`.**
 - `realm {app_slug}-{env}` : créé au provisioning. Contient :
   - un client `{app_slug}` pour l'app elle-même (public + PKCE `S256` si le framework est une
     SPA — `react-vite` — sinon confidential) ;
@@ -260,6 +259,11 @@ Neutre :
 - Keycloak est optionnel et désactivé par défaut (`KEYCLOAK_ENABLED=false`) : le reste de la
   plateforme fonctionne sans lui, et une app peut être créée avec ou sans le service Keycloak
   coché, avec le même template.
-- Le choix `create-realm` vs `admin` pour le rôle du service account `cnp-provisioner` dans le
-  realm `master` est documenté dans `infra/keycloak/README.md` plutôt que figé ici — dépend de
-  la surface exacte d'opérations nécessaires (constatée en Lot 7 / à l'usage).
+- Le rôle `admin` du service account `cnp-provisioner` a été validé de bout en bout par le
+  smoke test local du Lot 7 (`scripts/keycloak-smoke.py`, contre une vraie instance Keycloak
+  en docker compose) : provisioning, vérification realm/client/mapper audience, obtention et
+  validation d'un vrai token, suppression puis recréation d'un realm. Ce test a aussi révélé
+  et corrigé un bug réel indépendant du choix de rôle — un token admin mis en cache avant la
+  création d'un realm ne porte pas encore les droits sur ce realm, faisant échouer l'appel
+  suivant (`create_client`) en 403 ; `KeycloakClient.create_realm` invalide maintenant son
+  token en cache après un succès (voir `infra/keycloak/README.md` §6 pour le détail).

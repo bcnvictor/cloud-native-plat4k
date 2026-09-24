@@ -50,7 +50,7 @@ until dc exec -T keycloak "$KCADM" config credentials \
 done
 info "Authenticated as admin on realm master."
 
-EXISTING_ID="$(dc exec -T keycloak "$KCADM" get clients -r master -q "clientId=${CLIENT_ID}" --fields id --format csv --noquotes 2>/dev/null | tail -n +2 || true)"
+EXISTING_ID="$(dc exec -T keycloak "$KCADM" get clients -r master -q "clientId=${CLIENT_ID}" --fields id --format csv --noquotes 2>/dev/null || true)"
 
 if [ -n "$EXISTING_ID" ]; then
   info "Client '${CLIENT_ID}' already exists (id=${EXISTING_ID}) — updating."
@@ -64,7 +64,7 @@ else
     -s clientId="${CLIENT_ID}" -s enabled=true -s serviceAccountsEnabled=true \
     -s publicClient=false -s standardFlowEnabled=false -s directAccessGrantsEnabled=false \
     >/dev/null
-  CLIENT_UUID="$(dc exec -T keycloak "$KCADM" get clients -r master -q "clientId=${CLIENT_ID}" --fields id --format csv --noquotes | tail -n +2)"
+  CLIENT_UUID="$(dc exec -T keycloak "$KCADM" get clients -r master -q "clientId=${CLIENT_ID}" --fields id --format csv --noquotes)"
 fi
 
 info "Granting the 'admin' realm role to the service account..."
@@ -74,7 +74,7 @@ info "Granting the 'admin' realm role to the service account..."
 dc exec -T keycloak "$KCADM" add-roles \
   --uusername "service-account-${CLIENT_ID}" --rolename admin -r master >/dev/null
 
-CLIENT_SECRET="$(dc exec -T keycloak "$KCADM" get "clients/${CLIENT_UUID}/client-secret" -r master --fields value --format csv --noquotes | tail -n +2)"
+CLIENT_SECRET="$(dc exec -T keycloak "$KCADM" get "clients/${CLIENT_UUID}/client-secret" -r master --fields value --format csv --noquotes)"
 
 echo
 info "Done. Add these to your .env:"

@@ -109,6 +109,18 @@ class KeycloakClient:
             )
         except KeycloakConflict:
             logger.info("Keycloak realm %s already exists, skipping create", realm)
+            return
+
+        # Creating a realm changes what the CURRENT admin token is authorized to do:
+        # Keycloak auto-creates a "{realm}-realm" client in master representing the
+        # new realm's admin permissions, and the service account's composite roles
+        # (e.g. "admin") only reflect that new resource_access entry in a FRESHLY
+        # issued token. A token cached from before this realm existed keeps 403ing
+        # on calls scoped to it (confirmed against a real Keycloak instance — the
+        # very next call in provision() is create_client on this same realm).
+        # Force the next _get_token() to fetch a new one.
+        self._token = None
+        self._token_expires_at = 0.0
 
     async def delete_realm(self, realm: str) -> None:
         try:

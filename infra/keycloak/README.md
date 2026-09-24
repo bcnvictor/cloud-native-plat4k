@@ -71,6 +71,13 @@ kubectl apply -f infra/keycloak/deployment.yaml --context cnp-aks
 kubectl -n keycloak get pods --context cnp-aks   # attendre keycloak-xxxx Running/1/1 (readiness ~20-30s)
 ```
 
+> **Découvert en local (smoke test Lot 7)** : Keycloak 26 sert `/health/ready` et
+> `/health/live` sur l'**interface de management (port 9000)**, pas sur le port HTTP
+> principal (8080) — confirmé sur un vrai conteneur (`curl`/`wget` absents de
+> l'image, testé via `/dev/tcp`). `deployment.yaml` expose déjà le port 9000 et y
+> pointe les probes ; si vous repartez d'un manifest custom, ne les mettez pas sur
+> 8080.
+
 ## 5. Ingress public
 
 ```bash
@@ -126,25 +133,36 @@ kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kc
 kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh get clients/<id>/client-secret -r master
 ```
 
-Rôle du service account — **à trancher à l'usage** (ADR-0026 le documente comme ouvert) :
-
-- `admin` (rôle realm `master`, contrôle total de tous les realms) — le plus simple,
-  suffisant à coup sûr, mais plus large que strictement nécessaire.
-- `create-realm` (rôle realm `master`, permet de créer des realms — mais **pas forcément**
-  de les administrer une fois créés selon la version de Keycloak) — à tester en premier lieu
-  lors du smoke test (Lot 7) : si `KeycloakService.provision`/`deprovision`/
-  `grant_console_access` fonctionnent avec ce rôle plus étroit, préférer ce dernier et mettre
-  à jour ce README + ADR-0026 en conséquence.
-
-Le script `scripts/keycloak-bootstrap-local.sh` du repo automatise cette procédure pour
-l'instance **locale** (`docker compose up -d keycloak`) — utiliser `admin` par défaut ;
-adapter pour la prod (namespace `keycloak` au lieu de `docker compose exec`) une fois le
-choix du rôle tranché.
+Rôle du service account — **tranché par le smoke test local (Lot 7, 2026-09-24)** :
+`admin` (rôle realm `master`). `create-realm` seul n'a pas été retenu : il permet de créer
+un realm mais, empiriquement, ne suffit à rien d'autre sans passer par le même mécanisme
+de token que ci-dessous de toute façon — `admin` reste le choix le plus simple et le seul
+testé de bout en bout.
 
 ```bash
 kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh add-roles \
   --uusername service-account-cnp-provisioner --rolename admin -r master
 ```
+
+Le script `scripts/keycloak-bootstrap-local.sh` du repo automatise toute cette procédure
+pour l'instance **locale** (`docker compose --profile production up -d db vault keycloak`) ;
+adapter pour la prod (namespace `keycloak` au lieu de `docker compose exec`).
+
+> **Piège découvert pendant le smoke test (important si vous scriptez l'Admin API
+> vous-même, en dehors de `KeycloakService`)** : Keycloak matérialise chaque realm par un
+> client `{realm}-realm` dans `master`, qui porte les rôles fins (`manage-clients`,
+> `manage-realm`, …) que le rôle composite `admin` référence. Un token admin déjà émis
+> **avant** la création d'un realm ne contient pas encore l'entrée `resource_access` de ce
+> nouveau realm — l'utiliser pour créer un client dans ce realm juste après échoue en
+> `403`, alors que la création du realm lui-même (`POST /admin/realms`) avait réussi avec
+> ce même token. Il faut réémettre un token **après** la création du realm. C'est un bug
+> réel rencontré et corrigé pendant ce lot : `KeycloakClient.create_realm` invalide
+> désormais son token en cache après un succès, forçant le prochain appel à en récupérer un
+> frais (voir `backend/keycloak/client.py` et le test de non-régression
+> `test_create_realm_invalidates_cached_token` dans `backend/tests/test_keycloak_client.py`).
+> Si vous pilotez `kcadm.sh`/l'API en dehors de `KeycloakService`, refaites un
+> `config credentials` (ou récupérez un nouveau token) après chaque création de realm, avant
+> d'agir dessus.
 
 ## 7. Stocker le secret du client dans Vault
 

@@ -102,7 +102,11 @@ services:
     ports:
       - "8081:8080"
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'UP' <&3"]
+      # Keycloak's health endpoints are served on the management interface (port
+      # 9000 by default in KC 26 quarkus, NOT the main HTTP port 8080) — confirmed
+      # against a real local container during the Lot 7 smoke test; the image has
+      # neither curl nor wget, hence the /dev/tcp raw socket.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'UP' <&3"]
       interval: 10s
       timeout: 5s
       retries: 10

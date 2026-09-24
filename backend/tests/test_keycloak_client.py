@@ -196,6 +196,43 @@ async def test_create_realm_conflict_is_swallowed():
     assert await client.realm_exists("demo-dev") is True
 
 
+async def test_create_realm_invalidates_cached_token():
+    """Regression test (found during the 4K-15 Lot 7 smoke test against a real
+    Keycloak): a service account's admin token only carries resource_access for a
+    given realm once that realm exists AND the token was issued after it was
+    created. provision()'s create_realm -> create_client sequence reuses one
+    KeycloakClient/token across both calls, so a cached pre-existing-realm token
+    403s on create_client. create_realm must invalidate the cache so the next
+    request fetches a fresh, correctly-scoped token.
+    """
+    fake = FakeKeycloak()
+    client = _client(fake)
+
+    await client.realm_exists("demo-dev")  # forces an initial token fetch
+    assert fake.token_calls == 1
+
+    await client.create_realm("demo-dev")
+    assert client._token is None, "cached token must be cleared after creating a realm"
+
+    await client.realm_exists("demo-dev")
+    assert fake.token_calls == 2, "the next call must fetch a fresh token"
+
+
+async def test_create_realm_conflict_does_not_invalidate_token():
+    """If the realm already existed (409), nothing actually changed permission-wise
+    — no need to force a token refresh."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    await client.realm_exists("demo-dev")  # re-fetch token after the invalidation above
+    calls_before = fake.token_calls
+
+    await client.create_realm("demo-dev")  # 409, swallowed
+
+    assert client._token is not None
+    assert fake.token_calls == calls_before
+
+
 async def test_delete_realm_missing_is_noop():
     fake = FakeKeycloak()
     client = _client(fake)

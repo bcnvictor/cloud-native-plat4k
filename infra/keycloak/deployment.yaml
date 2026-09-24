@@ -70,16 +70,22 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            - name: management
+              containerPort: 9000
+          # Keycloak serves /health/* on the management interface (port 9000 by
+          # default in KC 26 quarkus), NOT the main HTTP port — confirmed against a
+          # real local container during the 4K-15 Lot 7 smoke test. Probing 8080
+          # here would 404 and the pod would never go Ready.
           readinessProbe:
             httpGet:
               path: /health/ready
-              port: 8080
+              port: 9000
             initialDelaySeconds: 20
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /health/live
-              port: 8080
+              port: 9000
             initialDelaySeconds: 30
             periodSeconds: 20
           resources:
