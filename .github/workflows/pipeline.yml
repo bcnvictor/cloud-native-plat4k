@@ -22,7 +22,7 @@ jobs:
             shared/pyproject.toml
 
       - name: Install dev tools
-        run: pip install ruff
+        run: pip install ruff==0.16.8
 
       - name: Install shared package
         run: pip install -e ./shared

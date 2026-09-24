@@ -9,3 +9,11 @@ description = "Shared models for CNP"
 dependencies = [
     "pydantic[email]"
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]   # mêmes règles que backend/ (sinon ruff applique ses défauts, qui changent selon la version)
+ignore = ["E501"]
