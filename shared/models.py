@@ -5,7 +5,7 @@ This avoids duplicating code between the client and server.
 
 import re
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
@@ -291,6 +291,25 @@ class ApplicationBase(BaseModel):
     framework: Optional[str] = None
 
 
+# Whitelist of backing services that can be requested at scaffold time. Keep in sync
+# with ONBOARD_SUPPORTED_SERVICES below and with ScaffoldingService/KeycloakService.
+SCAFFOLD_SUPPORTED_SERVICES = {"postgresql", "keycloak"}
+
+# Onboarded apps keep their own chart — CNP never rewrites chart/values.yaml for them,
+# so "postgresql" (which requires patching values.yaml) isn't offered. Keycloak only
+# needs Vault + a realm, no chart change, so it works the same for both origins.
+ONBOARD_SUPPORTED_SERVICES = {"keycloak"}
+
+
+def _validate_services(services: List[str], allowed: set[str]) -> List[str]:
+    unknown = sorted(set(services) - allowed)
+    if unknown:
+        raise ValueError(
+            f"Unsupported service(s): {', '.join(unknown)}. Allowed: {', '.join(sorted(allowed))}"
+        )
+    return services
+
+
 class ScaffoldingParams(BaseModel):
     """Settings for generating the values.yaml file during scaffolding."""
     port: int = 8000
@@ -300,6 +319,11 @@ class ScaffoldingParams(BaseModel):
     env: Dict[str, str] = {}
     services: List[str] = []  # backing services to provision (e.g., ["postgresql"])
     pg_size: str = "1Gi"  # PVC size for PostgreSQL (e.g., "1Gi", "5Gi", "20Gi")
+
+    @field_validator("services")
+    @classmethod
+    def _validate_scaffold_services(cls, v: List[str]) -> List[str]:
+        return _validate_services(v, SCAFFOLD_SUPPORTED_SERVICES)
 
 
 class PostgreSQLCredentials(BaseModel):
@@ -336,6 +360,12 @@ class ApplicationOnboardRequest(BaseModel):
     target_cluster_id: Optional[int] = None
     owning_gitlab_group_id: Optional[int] = None
     expose: bool = False
+    services: List[str] = []  # backing services to provision (only "keycloak" for onboard — see ONBOARD_SUPPORTED_SERVICES)
+
+    @field_validator("services")
+    @classmethod
+    def _validate_onboard_services(cls, v: List[str]) -> List[str]:
+        return _validate_services(v, ONBOARD_SUPPORTED_SERVICES)
 
 
 class ApplicationExternalImportRequest(BaseModel):

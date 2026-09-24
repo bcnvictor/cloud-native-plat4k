@@ -35,6 +35,7 @@ export const appsApi = {
     owning_gitlab_group_id?: number;
     expose?: boolean;
     target_cluster_id?: number | null;
+    scaffolding?: { services: string[]; pg_size?: string };
   }): Promise<Application> {
     const res = await api.post<Application>('/apps/scaffold', payload);
     return res.data;
@@ -46,6 +47,7 @@ export const appsApi = {
     repo_url: string;
     owning_gitlab_group_id?: number;
     expose?: boolean;
+    services?: string[];
   }): Promise<Application> {
     const res = await api.post<Application>('/apps/onboard', payload);
     return res.data;

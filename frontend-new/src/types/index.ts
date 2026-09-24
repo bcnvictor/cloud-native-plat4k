@@ -234,6 +234,12 @@ export interface ServiceConfig {
   cache: { enabled: boolean };
 }
 
+/** Backing services requested at scaffold/onboard time (shared/models.py ScaffoldingParams.services). */
+export interface ScaffoldingServicesPayload {
+  services: string[];
+  pg_size?: string;
+}
+
 export interface CiDeployConfig {
   trigger: DeployTrigger;
   envVars: EnvVar[];
