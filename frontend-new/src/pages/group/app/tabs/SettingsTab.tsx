@@ -450,7 +450,7 @@ export function SettingsTab() {
                   This app's chart doesn't appear to consume the <code>{app.slug}-env</code>{' '}
                   Secret via <code>envFrom</code> — OIDC variables may never reach the pod.{' '}
                   <a
-                    href="/docs/guides/keycloak-app-auth"
+                    href="https://cnp-docs.pages.dev/guides/keycloak-app-auth/"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="underline"
