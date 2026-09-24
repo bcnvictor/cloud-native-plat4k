@@ -1,16 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { IconExternalLink, IconPlus, IconTrash } from '@tabler/icons-react';
+import {
+  IconExternalLink,
+  IconPlus,
+  IconTrash,
+  IconCopy,
+  IconCheck,
+  IconAlertTriangle,
+} from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { appsApi, EnvName } from '@/api/apps';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Tabs } from '@/components/ui/Tabs';
+import { Badge } from '@/components/ui/Badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { appUrl } from '@/utils/appUrls';
 import { cn } from '@/utils/cn';
+import type { KeycloakConsoleAccessResponse } from '@/types';
 
 export function SettingsTab() {
   const { app, isLoading } = useAppDetail();
@@ -38,6 +47,10 @@ export function SettingsTab() {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [deletingVarKey, setDeletingVarKey] = useState<string | null>(null);
+
+  const [consoleCreds, setConsoleCreds] = useState<KeycloakConsoleAccessResponse | null>(null);
+  const [copiedPassword, setCopiedPassword] = useState(false);
+  const [recreateEnv, setRecreateEnv] = useState<EnvName | null>(null);
 
   useEffect(() => {
     if (app) {
@@ -132,6 +145,42 @@ export function SettingsTab() {
     );
   }
 
+  // Authentication (Keycloak) — 4K-15/ADR-0026
+  const { data: authStatus } = useQuery({
+    queryKey: ['authStatus', app?.id],
+    queryFn: () => appsApi.getAuthStatus(app!.id),
+    enabled: !!app,
+  });
+
+  const isOwner = !!myAccess && (myAccess.is_admin || myAccess.tier === 'owner');
+
+  const enableAuthMutation = useMutation({
+    mutationFn: () => appsApi.enableAuth(app!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['authStatus', app?.id] });
+      qc.invalidateQueries({ queryKey: ['app', appSlug] });
+    },
+  });
+
+  const consoleAccessMutation = useMutation({
+    mutationFn: (env: EnvName) => appsApi.getAuthConsoleAccess(app!.id, env),
+    onSuccess: (creds) => setConsoleCreds(creds),
+  });
+
+  const reprovisionMutation = useMutation({
+    mutationFn: (env: EnvName) => appsApi.reprovisionAuth(app!.id, env),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['authStatus', app?.id] });
+      setRecreateEnv(null);
+    },
+  });
+
+  async function copyPassword(password: string) {
+    await navigator.clipboard.writeText(password);
+    setCopiedPassword(true);
+    setTimeout(() => setCopiedPassword(false), 2000);
+  }
+
   if (isLoading || !app) return null;
 
   const appSlugComputed = app.slug;
@@ -222,7 +271,12 @@ export function SettingsTab() {
                   title={kv.is_set ? 'set' : 'unset'}
                 />
                 <span className="flex-1 text-sm font-mono text-foreground truncate">{kv.key}</span>
-                {editingKey === kv.key ? (
+                {kv.managed && (
+                  <Badge variant="info" className="shrink-0">
+                    managed by CNP
+                  </Badge>
+                )}
+                {kv.managed ? null : editingKey === kv.key ? (
                   <>
                     <Input
                       type="password"
@@ -307,6 +361,108 @@ export function SettingsTab() {
           Values are never displayed once saved. Changes sync to the cluster within a few
           minutes and trigger a pod restart.
         </p>
+      </Card>
+
+      {/* Authentication (Keycloak) */}
+      <Card>
+        <h2 className="text-sm font-medium text-foreground mb-1">Authentication (Keycloak)</h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          A dedicated realm per environment provides your app with OIDC login. Delegated
+          admin console access is granted per member (Owner/Maintainer only).
+        </p>
+
+        {!app.auth_enabled ? (
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">Not activated for this app.</p>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={enableAuthMutation.isPending}
+              disabled={!canManageApp}
+              onClick={() => enableAuthMutation.mutate()}
+            >
+              Activate Keycloak
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {(['dev', 'prod'] as EnvName[])
+              .filter((env) => env === 'dev' || canSeeProd)
+              .map((env) => {
+                const envStatus = authStatus?.[env];
+                const canRecreate = env === 'prod' ? isOwner : canManageApp;
+                return (
+                  <div key={env} className="flex items-center justify-between border-t border-border pt-3 first:border-t-0 first:pt-0">
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-foreground uppercase">{env}</span>
+                        {envStatus ? (
+                          <Badge variant={envStatus.exists ? 'success' : 'warning'}>
+                            {envStatus.exists ? 'active' : 'realm missing'}
+                          </Badge>
+                        ) : (
+                          <Badge variant="muted">loading…</Badge>
+                        )}
+                      </div>
+                      {envStatus?.issuer_url && (
+                        <span className="text-xs font-mono text-muted-foreground truncate">
+                          {envStatus.issuer_url}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {envStatus?.exists ? (
+                        <>
+                          <a href={envStatus.console_url ?? '#'} target="_blank" rel="noopener noreferrer">
+                            <Button size="sm" variant="ghost" icon={<IconExternalLink size={13} />}>
+                              Console
+                            </Button>
+                          </a>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={!canManageApp}
+                            loading={consoleAccessMutation.isPending && consoleAccessMutation.variables === env}
+                            onClick={() => consoleAccessMutation.mutate(env)}
+                          >
+                            Get access
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          disabled={!canRecreate}
+                          onClick={() => setRecreateEnv(env)}
+                        >
+                          Recreate
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+            {(authStatus?.auth_warnings ?? []).length > 0 && (
+              <div className="flex items-start gap-2 mt-1 p-2 bg-warning-subtle rounded-md">
+                <IconAlertTriangle size={14} className="text-warning-text shrink-0 mt-0.5" />
+                <p className="text-xs text-warning-text">
+                  This app's chart doesn't appear to consume the <code>{app.slug}-env</code>{' '}
+                  Secret via <code>envFrom</code> — OIDC variables may never reach the pod.{' '}
+                  <a
+                    href="/docs/guides/keycloak-app-auth"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    See the integration guide
+                  </a>
+                  .
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </Card>
 
       {/* Internet exposure */}
@@ -407,6 +563,64 @@ export function SettingsTab() {
         variant="danger"
         loading={deleteVarMutation.isPending}
       />
+
+      <ConfirmDialog
+        open={!!recreateEnv}
+        onCancel={() => setRecreateEnv(null)}
+        onConfirm={() => recreateEnv && reprovisionMutation.mutate(recreateEnv)}
+        title={`Recreate the ${recreateEnv ?? ''} realm`}
+        description="This creates a brand new, empty realm: existing users, roles and the OIDC client secret are permanently lost, and a new client secret is written to this app's env vars. There is no automatic backup."
+        confirmLabel="Recreate"
+        variant="danger"
+        loading={reprovisionMutation.isPending}
+      />
+
+      {consoleCreds && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setConsoleCreds(null)} />
+          <div className="relative bg-background border border-border rounded-lg shadow-lg p-6 w-full max-w-sm mx-4">
+            <h3 className="text-sm font-semibold text-foreground mb-2">Keycloak console access</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Copy this password now — it won't be shown again. You'll be asked to set a new
+              one on first login.
+            </p>
+            <div className="flex flex-col gap-2 mb-4">
+              <div>
+                <label className="text-xs text-muted-foreground">Username</label>
+                <p className="text-sm font-mono text-foreground">{consoleCreds.username}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Temporary password</label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs font-mono text-foreground break-all">
+                    {consoleCreds.temporary_password}
+                  </code>
+                  <button
+                    onClick={() => copyPassword(consoleCreds.temporary_password)}
+                    className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                  >
+                    {copiedPassword ? (
+                      <IconCheck size={14} className="text-success-text" />
+                    ) : (
+                      <IconCopy size={14} />
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <a href={consoleCreds.console_url} target="_blank" rel="noopener noreferrer">
+                <Button variant="ghost" size="sm" icon={<IconExternalLink size={13} />}>
+                  Open console
+                </Button>
+              </a>
+              <Button variant="primary" size="sm" onClick={() => setConsoleCreds(null)}>
+                Done
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

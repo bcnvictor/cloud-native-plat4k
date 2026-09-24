@@ -63,6 +63,10 @@ export interface Application {
   target_cluster_id?: number | null;
   created_at: string;
   updated_at: string | null;
+  // Keycloak app-auth service (4K-15/ADR-0026)
+  auth_enabled?: boolean;
+  auth_provisioned?: boolean | null;
+  auth_warnings?: string[] | null;
 }
 
 export interface ArgoEnvStatus {
@@ -173,6 +177,7 @@ export interface EnvVar {
 export interface EnvVarKeyStatus {
   key: string;
   is_set: boolean;
+  managed: boolean;
 }
 
 export interface EnvVarListResponse {
@@ -183,6 +188,28 @@ export interface EnvVarListResponse {
 export interface MyAccessResponse {
   tier: CnpTier;
   is_admin: boolean;
+}
+
+// ── Keycloak app-auth (4K-15/ADR-0026) ──────────────────────────────────────────
+
+export interface KeycloakEnvStatus {
+  enabled: boolean;
+  realm: string;
+  exists: boolean;
+  console_url: string | null;
+  issuer_url: string | null;
+}
+
+export interface KeycloakStatusResponse {
+  dev: KeycloakEnvStatus;
+  prod: KeycloakEnvStatus;
+  auth_warnings: string[];
+}
+
+export interface KeycloakConsoleAccessResponse {
+  console_url: string;
+  username: string;
+  temporary_password: string;
 }
 
 export interface AppTemplate {
