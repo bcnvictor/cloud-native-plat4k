@@ -108,6 +108,20 @@ Deux axes séparés : **l'accès** est décidé par le code, **le style** par le
 - Le profil est calculé sur la page ouverte (on peut être maintainer dans un groupe et viewer dans un autre) et injecté dans le prompt avec le niveau de détail attendu.
 - `list_env_var_keys` ne renvoie que les **noms** des variables (jamais les valeurs), comme l'UI (ADR-0025).
 
+## Lot 4 — diagnostic et « Expliquer avec l'IA »
+
+| Outil | Source | Contenu | Rôle min. |
+|---|---|---|---|
+| `get_app_logs` | Loki (`cluster.loki_url` ou `LOKI_URL`) | dernière heure, filtre ERROR / WARN / ALL, 30 lignes max, lignes tronquées | developer |
+| `get_pod_status` | Kubernetes (kubeconfig du cluster dans Vault) | réplicas, redémarrages, raison d'attente/dernier arrêt, événements Warning + explication des causes courantes | developer |
+| `get_ci_failure` | GitLab (`GITLAB_BOT_TOKEN`) | dernier pipeline ; s'il a échoué, jobs en échec + fin du log (ANSI et sections GitLab retirées) | developer |
+
+Toutes les sorties passent par la redaction (un token dans un log n'atteint jamais le provider) ; le rôle est revérifié sur l'application ciblée. Les appels K8s/GitLab (clients synchrones) tournent dans un thread.
+
+Front : `askAssistant(question)` émet l'événement `plat4k:assistant-ask` ; `RootLayout` ouvre le tiroir et le panneau pose la question. Le composant `AskAIButton` (masqué si l'assistant est désactivé) est placé sur le bandeau « app en erreur », le nouveau bandeau « pipeline en échec », les cartes d'environnement Degraded/Missing et l'onglet Logs (s'il y a des lignes ERROR).
+
+Démo locale : `scripts/assistant-demo/` (comptes de test par profil + faux Loki).
+
 ## Roadmap (lots suivants proposés)
 
 1. **Repo docs-only GitLab (`cnp-docs`)** : branche protégée + review MR ; CI dans le repo principal qui `mkdocs build` et publie vers `cnp-docs` (pas de doc en double). Ingestion via clone/pull read-only ou API GitLab → il suffit de changer l'origine dans `ingest_local_dir` (source `cnp-docs`). Rafraîchi par webhook.

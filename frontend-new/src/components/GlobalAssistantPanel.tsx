@@ -4,7 +4,14 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { IconX, IconSend } from '@tabler/icons-react';
 import { assistantApi, toChatHistory } from '@/api/assistant';
 import { ChatTurn } from '@/types';
-import { docSources, pageContextFrom, suggestionsFor, waitHint } from '@/utils/assistantContext';
+import {
+  ASSISTANT_ASK_EVENT,
+  AssistantAskDetail,
+  docSources,
+  pageContextFrom,
+  suggestionsFor,
+  waitHint,
+} from '@/utils/assistantContext';
 import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown';
 import { cn } from '@/utils/cn';
 
@@ -269,6 +276,18 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     setInput('');
     chatMutation.mutate({ message: msg, history: toChatHistory(messages) });
   }
+
+  // Questions posées depuis un bouton « Expliquer avec l'IA » ailleurs dans l'UI.
+  const askRef = useRef(ask);
+  askRef.current = ask;
+  useEffect(() => {
+    const onAsk = (e: Event) => {
+      const question = (e as CustomEvent<AssistantAskDetail>).detail?.question;
+      if (question) askRef.current(question);
+    };
+    window.addEventListener(ASSISTANT_ASK_EVENT, onAsk);
+    return () => window.removeEventListener(ASSISTANT_ASK_EVENT, onAsk);
+  }, []);
 
   return (
     <div

@@ -65,3 +65,16 @@ export function waitHint(elapsedMs: number): string | null {
   if (elapsedMs >= 6_000) return 'Je consulte les données de la plateforme…';
   return null;
 }
+
+/** Événement global : ouvre l'assistant et lui pose une question (« Expliquer avec l'IA »). */
+export const ASSISTANT_ASK_EVENT = 'plat4k:assistant-ask';
+
+export interface AssistantAskDetail {
+  question: string;
+}
+
+export function askAssistant(question: string): void {
+  window.dispatchEvent(
+    new CustomEvent<AssistantAskDetail>(ASSISTANT_ASK_EVENT, { detail: { question } })
+  );
+}

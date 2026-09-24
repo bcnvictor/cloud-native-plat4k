@@ -17,6 +17,7 @@ No imports from backend.api.*.
 """
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -44,7 +45,7 @@ from backend.db.models import (
 )
 from backend.services.ai_limits_service import AILimitsService
 from backend.services.ai_settings_service import EffectiveAIConfig
-from backend.services.monitoring_service import get_cost_by_group, get_metrics
+from backend.services.monitoring_service import get_cost_by_group, get_logs, get_metrics
 from backend.services.platform_knowledge_service import PlatformKnowledgeService
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,18 @@ _BOT_USERNAMES = {"4k-service-bot"}
 _MAX_RESULT_CHARS = 6000
 _MAX_DOC_RESULT_CHARS = 16000
 _MAX_EVENTS = 10
+_MAX_LOG_LINES = 30
+_MAX_LOG_LINE_CHARS = 300
+
+# Lecture des causes de panne Kubernetes les plus courantes, pour guider le diagnostic.
+_K8S_HINTS = {
+    "CrashLoopBackOff": "le conteneur plante au démarrage en boucle → lire les logs ERROR",
+    "OOMKilled": "mémoire dépassée (limite RAM) → fuite mémoire ou limite trop basse",
+    "ImagePullBackOff": "image introuvable ou registry inaccessible → vérifier le build CI et le tag",
+    "ErrImagePull": "image introuvable ou registry inaccessible → vérifier le build CI et le tag",
+    "CreateContainerConfigError": "configuration invalide (secret ou variable manquante)",
+    "Error": "le processus s'est arrêté en erreur → lire les logs",
+}
 
 _TIER_BY_LEVEL = ((50, "owner"), (40, "maintainer"), (30, "developer"))
 
@@ -71,6 +84,9 @@ ROLE_ORDER = ("viewer", "developer", "maintainer", "owner", "admin")
 
 # Rôle minimum pour qu'un outil soit proposé au modèle (défaut : viewer).
 TOOL_MIN_ROLE: dict[str, str] = {
+    "get_app_logs": "developer",
+    "get_pod_status": "developer",
+    "get_ci_failure": "developer",
     "list_env_var_keys": "developer",
     "get_platform_health": "admin",
 }
@@ -181,6 +197,43 @@ TOOL_DEFINITIONS: list[dict] = [
         {**_GROUP_ARG, **_APP_ARG},
     ),
     _fn(
+        "get_app_logs",
+        "Dernières lignes de logs d'une application (Loki), filtrées par niveau (ERROR par "
+        "défaut). À utiliser pour « pourquoi mon app plante / est en erreur ».",
+        {
+            **_APP_ARG,
+            "env": {
+                "type": "string",
+                "enum": ["dev", "prod"],
+                "description": "Environnement (prod par défaut).",
+            },
+            "level": {
+                "type": "string",
+                "enum": ["ERROR", "WARN", "ALL"],
+                "description": "ERROR (défaut), WARN (warnings + erreurs) ou ALL.",
+            },
+        },
+    ),
+    _fn(
+        "get_pod_status",
+        "État des pods Kubernetes d'une application : réplicas, redémarrages, "
+        "CrashLoopBackOff, OOMKilled, raison du dernier crash, événements Warning.",
+        {
+            **_APP_ARG,
+            "env": {
+                "type": "string",
+                "enum": ["dev", "prod"],
+                "description": "Environnement (prod par défaut).",
+            },
+        },
+    ),
+    _fn(
+        "get_ci_failure",
+        "Dernier pipeline GitLab CI d'une application et, s'il a échoué, les jobs en échec "
+        "avec la fin de leur log. À utiliser pour « pourquoi mon build / pipeline casse ».",
+        _APP_ARG,
+    ),
+    _fn(
         "list_env_var_keys",
         "Noms des variables d'environnement d'une application (jamais les valeurs) en dev "
         "ou prod, et si elles sont définies. Dev : developer+, prod : maintainer+.",
@@ -253,6 +306,9 @@ class PlatformTools:
             "get_recent_activity": self.get_recent_activity,
             "search_platform_docs": self.search_platform_docs,
             "list_env_var_keys": self.list_env_var_keys,
+            "get_app_logs": self.get_app_logs,
+            "get_pod_status": self.get_pod_status,
+            "get_ci_failure": self.get_ci_failure,
             "get_platform_health": self.get_platform_health,
         }
 
@@ -898,4 +954,162 @@ class PlatformTools:
             f"{questions} question(s), coût estimé ${spent:.4f} / budget "
             f"${settings.AI_DAILY_BUDGET_USD:.2f}"
         )
+        return ToolResult("\n".join(lines))
+
+    # ── diagnostic tools (developer+) ─────────────────────────────────────
+
+    async def _diagnosable_app(
+        self, app: Optional[str], env: Optional[str] = None
+    ) -> tuple[Optional[Application], Optional[str], Optional[ToolResult]]:
+        """Resolve app + env and apply the checks shared by diagnostic tools."""
+        env = (env or "prod").lower()
+        if env not in ("dev", "prod"):
+            return None, None, ToolResult("Environnement inconnu : utiliser dev ou prod.")
+        a = await self._resolve_app(app)
+        if a is None:
+            return None, None, ToolResult(
+                f"Application « {app or self.page.app_slug or '?'} » introuvable ou non accessible."
+            )
+        if not self._app_allowed(a):
+            return None, None, ToolResult(_APP_NOT_ALLOWED.format(name=a.name))
+        role = await self.role_for_app(a)
+        if role_rank(role) < role_rank("developer"):
+            return None, None, ToolResult(
+                f"Accès refusé : le diagnostic de {a.name} est réservé au rôle developer ou "
+                f"supérieur (rôle de l'utilisateur : {role})."
+            )
+        return a, env, None
+
+    async def _cluster_of(self, app: Application) -> Optional[ClusterConnection]:
+        if not app.target_cluster_id:
+            return None
+        return await self.db.get(ClusterConnection, app.target_cluster_id)
+
+    async def get_app_logs(
+        self, app: Optional[str] = None, env: str = "prod", level: str = "ERROR"
+    ) -> ToolResult:
+        a, env, refused = await self._diagnosable_app(app, env)
+        if refused:
+            return refused
+        level = (level or "ERROR").upper()
+        allowed_levels = {"ERROR": {"ERROR", "FATAL", "CRITICAL"},
+                          "WARN": {"ERROR", "FATAL", "CRITICAL", "WARN"}}.get(level)
+        cluster = await self._cluster_of(a)
+        loki_url = (cluster.loki_url if cluster else None) or settings.LOKI_URL
+        if not loki_url:
+            return ToolResult("Loki n'est pas configuré pour cette application.")
+        try:
+            entries = await get_logs(loki_url, namespace=env, app=a.slug, limit=200)
+        except Exception as exc:
+            return ToolResult(
+                f"Logs indisponibles : Loki injoignable ({type(exc).__name__}). "
+                "Onglet Logs de l'application pour réessayer."
+            )
+        counts: dict[str, int] = {}
+        for e in entries:
+            counts[e["level"]] = counts.get(e["level"], 0) + 1
+        selected = [e for e in entries if allowed_levels is None or e["level"] in allowed_levels]
+        summary = ", ".join(f"{n} {lvl}" for lvl, n in sorted(counts.items())) or "aucune ligne"
+        header = f"Logs {env} de {a.name} (dernière heure, {len(entries)} lignes lues : {summary})."
+        if not selected:
+            return ToolResult(f"{header}\nAucune ligne de niveau {level} sur la période.")
+        lines = [header, f"{min(len(selected), _MAX_LOG_LINES)} dernières lignes {level} :"]
+        for e in selected[:_MAX_LOG_LINES]:
+            ts = datetime.fromtimestamp(e["ts"], tz=timezone.utc).strftime("%H:%M:%S")
+            msg = e["msg"][:_MAX_LOG_LINE_CHARS]
+            lines.append(f"- {ts} [{e['level']}] {msg}")
+        return ToolResult("\n".join(lines))
+
+    async def get_pod_status(self, app: Optional[str] = None, env: str = "prod") -> ToolResult:
+        a, env, refused = await self._diagnosable_app(app, env)
+        if refused:
+            return refused
+        cluster = await self._cluster_of(a)
+        if cluster is None:
+            return ToolResult(f"État des pods indisponible : {a.name} n'a pas de cluster cible.")
+        from backend.k8s.client import get_k8s_client_for_cluster
+        from backend.k8s.manifests import sanitize_k8s_name
+
+        def _read() -> Optional[dict]:
+            k8s = get_k8s_client_for_cluster(cluster)
+            if not k8s.is_configured():
+                return None
+            return k8s.get_pod_diagnostics(env, sanitize_k8s_name(a.name))
+
+        try:
+            diag = await asyncio.to_thread(_read)
+        except Exception as exc:
+            status = getattr(exc, "status", None)
+            if status == 404:
+                return ToolResult(f"Aucun déploiement {a.name} dans le namespace {env} (app non déployée ?).")
+            return ToolResult(f"Kubernetes injoignable ({type(exc).__name__}).")
+        if diag is None:
+            return ToolResult(f"Accès Kubernetes non configuré pour le cluster {cluster.name}.")
+
+        lines = [
+            f"Pods {env} de {a.name} sur {cluster.name} : "
+            f"{diag['replicas_ready']}/{diag['replicas_desired']} réplicas prêts."
+        ]
+        for pod in diag["pods"]:
+            lines.append(f"- {pod['name']} : {pod['phase']}")
+            for c in pod["containers"]:
+                parts = [f"prêt={'oui' if c['ready'] else 'non'}", f"redémarrages={c['restarts']}"]
+                if c["waiting_reason"]:
+                    parts.append(f"en attente : {c['waiting_reason']}")
+                if c["last_terminated_reason"]:
+                    parts.append(
+                        f"dernier arrêt : {c['last_terminated_reason']} "
+                        f"(code {c['last_exit_code']}, {c['last_finished_at'] or '?'})"
+                    )
+                lines.append(f"    · {c['name']} : " + ", ".join(parts))
+                for reason in (c["waiting_reason"], c["last_terminated_reason"]):
+                    if reason in _K8S_HINTS:
+                        lines.append(f"      ↳ {reason} : {_K8S_HINTS[reason]}")
+        if not diag["pods"]:
+            lines.append("Aucun pod (déploiement à 0 réplica : arrêté / scale-to-zero ?).")
+        if diag["warnings"]:
+            lines.append("Événements Warning récents :")
+            for w in diag["warnings"]:
+                lines.append(f"- {w['reason']} ×{w['count']} ({w['object']}) : {w['message']}")
+        return ToolResult("\n".join(lines))
+
+    async def get_ci_failure(self, app: Optional[str] = None) -> ToolResult:
+        a, _env, refused = await self._diagnosable_app(app)
+        if refused:
+            return refused
+        if not a.gitlab_project_id:
+            return ToolResult(f"{a.name} n'est pas rattachée à un projet GitLab : pas de pipeline à analyser.")
+        if not settings.GITLAB_BOT_TOKEN:
+            return ToolResult("Accès GitLab non configuré (GITLAB_BOT_TOKEN absent).")
+        from backend.gitlab.client import GitLabClient
+
+        def _read() -> Optional[dict]:
+            gl = GitLabClient(
+                token=settings.GITLAB_BOT_TOKEN,
+                namespace=settings.GITLAB_BOT_NAMESPACE or "",
+                use_private_token=True,
+            )
+            return gl.get_last_pipeline_failure(a.gitlab_project_id)
+
+        try:
+            info = await asyncio.to_thread(_read)
+        except Exception as exc:
+            return ToolResult(f"GitLab injoignable ou projet inaccessible ({type(exc).__name__}).")
+        if info is None:
+            return ToolResult(f"Aucun pipeline trouvé pour {a.name}.")
+        lines = [
+            f"Dernier pipeline de {a.name} : #{info['id']} {info['status']} "
+            f"(branche {info['ref']}, commit {info['sha']}, {info['created_at']}) — {info['web_url']}"
+        ]
+        if info["status"] != "failed":
+            lines.append("Le dernier pipeline n'est pas en échec.")
+            return ToolResult("\n".join(lines))
+        for job in info["failed_jobs"]:
+            lines.append(
+                f"\n=== Job en échec : {job['name']} (stage {job['stage']}"
+                f"{', raison : ' + job['failure_reason'] if job['failure_reason'] else ''}) ==="
+            )
+            lines.append(f"Lien : {job['web_url']}")
+            lines.append("Fin du log :")
+            lines.append(job["log_tail"] or "(log vide)")
         return ToolResult("\n".join(lines))

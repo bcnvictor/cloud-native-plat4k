@@ -151,9 +151,11 @@ L'assistant global (mascotte ou bouton AI Assistant) :
 
 - connaît la page ouverte : « État des apps ? » sur la page d'un groupe porte sur ce groupe, « Ses métriques ? » sur une application porte sur cette application ;
 - consulte en direct, avec les droits de l'utilisateur, l'état des applications (statut, pipeline CI, ArgoCD dev/prod, arrêt), les métriques CPU/RAM, les coûts 30 jours, les membres d'un groupe et l'activité récente ;
+- **diagnostique** une application en erreur (rôle developer ou plus) : dernières lignes ERROR des logs, état des pods Kubernetes (redémarrages, CrashLoopBackOff, OOMKilled) et dernier pipeline CI en échec avec la fin de son log ;
 - explique où trouver une fonctionnalité et comment l'utiliser, à partir de cette documentation ;
 - ne fait aucune action : il ne déploie pas, n'arrête pas, ne modifie rien — il indique le bouton à utiliser ;
 - adapte ses réponses au profil de l'utilisateur sur la page ouverte : **viewer** (réponse courte, orientée impact), **developer** (diagnostic technique, noms des variables dev), **maintainer/owner** (diagnostic + actions possibles, variables prod), **admin** (vue plateforme : clusters, anomalies, usage IA). Il ne montre jamais plus que ce que l'utilisateur peut voir dans l'interface ;
+- peut être lancé en un clic avec les boutons **Expliquer avec l'IA** : bandeau « The application is in error » et bandeau « The last CI pipeline failed » en haut d'une application, carte d'environnement **Degraded** / **Missing** (onglet Overview), bouton **Expliquer les erreurs** de l'onglet Logs quand des lignes ERROR sont affichées ;
 - est limité à quelques questions par minute et par jour par utilisateur, et à un budget journalier pour la plateforme ; un message l'indique quand une limite est atteinte.
 
 Les détails d'une application (événements, statut ArgoCD, métriques, coûts) ne sont accessibles à l'assistant que si un administrateur l'a autorisée dans Platform settings → Assistant IA.
