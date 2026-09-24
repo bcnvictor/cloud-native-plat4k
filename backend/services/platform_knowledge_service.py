@@ -10,6 +10,7 @@ docs-only GitLab repo later only means changing how files are read here.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from dataclasses import dataclass
 
@@ -19,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ai.lexical import bm25_rank
 from backend.ai.redaction import redact
 from backend.db.models import PlatformDocChunk
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -162,6 +165,15 @@ class PlatformKnowledgeService:
                 stats.chunks_written += 1
             stats.files_indexed += 1
 
+        # Files removed from the source: drop their stale chunks.
+        current = {os.path.relpath(f, base_dir) for f in md_files}
+        await self.db.execute(
+            delete(PlatformDocChunk).where(
+                PlatformDocChunk.source == source,
+                PlatformDocChunk.path.not_in(current),
+            )
+        )
+
         await self.db.commit()
         return stats
 
@@ -219,3 +231,29 @@ class PlatformKnowledgeService:
             r = rows[idx]
             out.append(RetrievedChunk(path=r.path, heading=r.heading, text=r.text, score=score))
         return out
+
+
+async def sync_platform_docs_at_startup() -> None:
+    """Index the local docs once at boot so the assistant never starts empty.
+
+    Runs as a background task: failures (DB not migrated yet, missing dir) are
+    logged and never block the API. Idempotent thanks to the per-file hash.
+    """
+    from backend.core.config import settings
+    from backend.db.session import AsyncSessionLocal
+
+    if not os.path.isdir(settings.AI_PLATFORM_KB_DIR):
+        logger.info("Platform KB: %s not found, skipping sync", settings.AI_PLATFORM_KB_DIR)
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            stats = await PlatformKnowledgeService(db).ingest_local_dir(
+                settings.AI_PLATFORM_KB_DIR,
+                max_tokens=settings.AI_PLATFORM_KB_MAX_CHUNK_TOKENS,
+            )
+        logger.info(
+            "Platform KB synced: %d files seen, %d indexed, %d chunks written",
+            stats.files_seen, stats.files_indexed, stats.chunks_written,
+        )
+    except Exception:
+        logger.warning("Platform KB sync at startup failed", exc_info=True)

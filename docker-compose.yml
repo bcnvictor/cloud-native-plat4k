@@ -67,6 +67,11 @@ services:
       - AI_API_KEY=${AI_API_KEY:-}
       - AI_PLATFORM_KB_ENABLED=${AI_PLATFORM_KB_ENABLED:-false}
       - AI_PLATFORM_KB_DIR=${AI_PLATFORM_KB_DIR:-/app/docs}
+      - AI_PLATFORM_KB_SYNC_ON_STARTUP=${AI_PLATFORM_KB_SYNC_ON_STARTUP:-true}
+      - AI_USER_REQUESTS_PER_MINUTE=${AI_USER_REQUESTS_PER_MINUTE:-6}
+      - AI_USER_REQUESTS_PER_DAY=${AI_USER_REQUESTS_PER_DAY:-200}
+      - AI_DAILY_BUDGET_USD=${AI_DAILY_BUDGET_USD:-5.0}
+      - AI_MASK_PII_FOR_NON_EU_PROVIDERS=${AI_MASK_PII_FOR_NON_EU_PROVIDERS:-true}
     volumes:
       # Source de la base de connaissance de l'assistant plateforme (lecture seule).
       # Remplaçable plus tard par un clone du repo docs-only.

@@ -1,22 +1,25 @@
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
+import httpx
 from backend.ai.factory import get_provider
 from backend.api.deps import get_current_user, require_admin, require_tier
 from backend.core.config import settings
 from backend.db.models import AIAppSettings, Application, User
 from backend.db.session import get_db
+from backend.services.ai_limits_service import AILimitExceeded, AILimitsService
 from backend.services.ai_settings_service import (
     ALLOWED_PROVIDERS,
     AISettingsService,
     EffectiveAIConfig,
 )
 from backend.services.assistant_service import AssistantService
+from backend.services.assistant_tools import PageContext
 from backend.services.audit_service import AuditService
 from backend.services.platform_knowledge_service import PlatformKnowledgeService
 from backend.services.security_scan_service import SecurityScanService
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from shared.models import (
     AIContextMode,
     CnpTier,
@@ -55,6 +58,43 @@ async def _require_ai_enabled(db: AsyncSession) -> EffectiveAIConfig:
     return cfg
 
 
+async def _check_limits(db: AsyncSession, user: User) -> None:
+    """429 when the user's rate limit or the platform's daily AI budget is used up."""
+    try:
+        await AILimitsService(db).check(user)
+    except AILimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+
+
+async def _chat(svc: AssistantService, **kwargs):
+    """Run a chat turn, turning provider failures into readable API errors.
+
+    503 is reserved for "assistant disabled" (the UI hides the chat on it), so
+    quota errors use 429 and other upstream failures 502.
+    """
+    try:
+        return await svc.chat(**kwargs)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Quota du fournisseur IA atteint (limite par minute ou par jour). "
+                    "Réessayez dans une minute ; si cela persiste, un administrateur peut "
+                    "changer de modèle ou de provider dans Réglages plateforme → Assistant IA."
+                ),
+            ) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"Le fournisseur IA a renvoyé une erreur ({exc.response.status_code}). Réessayez.",
+        ) from exc
+    except httpx.TransportError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Le fournisseur IA est injoignable pour le moment. Réessayez.",
+        ) from exc
+
+
 def _build_assistant(db: AsyncSession, cfg: EffectiveAIConfig) -> AssistantService:
     """Instantiate the assistant with the effective (DB > env) runtime config."""
     provider = get_provider(cfg.provider_name, cfg.api_key)
@@ -63,6 +103,7 @@ def _build_assistant(db: AsyncSession, cfg: EffectiveAIConfig) -> AssistantServi
         provider=provider,
         model=cfg.model,
         platform_kb_enabled=cfg.platform_kb_enabled,
+        cfg=cfg,
     )
 
 
@@ -348,14 +389,30 @@ async def patch_assistant_global_settings(
 # ── Chat schemas ──────────────────────────────────────────────────────────────
 
 
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=8000)
+
+
+class PagePayload(BaseModel):
+    """Où se trouve l'utilisateur dans l'UI (résolu côté serveur avec la RBAC)."""
+
+    path: Optional[str] = Field(default=None, max_length=300)
+    group_slug: Optional[str] = Field(default=None, max_length=200)
+    app_slug: Optional[str] = Field(default=None, max_length=200)
+
+
 class ChatPayload(BaseModel):
-    message: str
+    message: str = Field(max_length=8000)
     mode: str = "general"
-    # "default" = assistant classique ; "platform" = agent ancré sur la doc CNP
+    # "default" = assistant classique ; "platform" = agent CNP (doc + outils live)
     agent: str = "default"
     requested_context_mode: AIContextMode = AIContextMode.METADATA_ONLY
     conversation_id: Optional[str] = None
     stream: bool = False
+    # Tours précédents de la conversation (le serveur ne stocke pas l'historique).
+    history: list[ChatTurn] = Field(default_factory=list, max_length=30)
+    page: Optional[PagePayload] = None
 
 
 class ChatResponseSchema(BaseModel):
@@ -418,14 +475,17 @@ async def chat_with_app(
     if ai_settings.ai_context_mode == AIContextMode.METADATA_ONLY:
         effective_mode = AIContextMode.METADATA_ONLY
 
+    await _check_limits(db, current_user)
     svc = _build_assistant(db, cfg)
-    resp = await svc.chat(
+    resp = await _chat(
+        svc,
         message=payload.message,
         mode=payload.mode,
         effective_context_mode=effective_mode,
         conversation_id=payload.conversation_id,
         current_user=current_user,
         app=app,
+        history=[t.model_dump() for t in payload.history],
     )
     return _build_chat_response(resp)
 
@@ -440,14 +500,18 @@ async def chat_global(
     current_user: User = Depends(get_current_user),
 ):
     cfg = await _require_ai_enabled(db)
+    await _check_limits(db, current_user)
     svc = _build_assistant(db, cfg)
-    resp = await svc.chat(
+    resp = await _chat(
+        svc,
         message=payload.message,
         mode=payload.mode,
         agent=payload.agent,
         conversation_id=payload.conversation_id,
         current_user=current_user,
         app=None,
+        history=[t.model_dump() for t in payload.history],
+        page=PageContext(**payload.page.model_dump()) if payload.page else None,
     )
     return _build_chat_response(resp)
 
@@ -467,11 +531,14 @@ async def reindex_platform_kb(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    await _require_ai_enabled(db)
-    if not settings.AI_PLATFORM_KB_ENABLED:
+    cfg = await _require_ai_enabled(db)
+    if not cfg.platform_kb_enabled:
         raise HTTPException(
             status_code=400,
-            detail="Platform knowledge base is disabled (AI_PLATFORM_KB_ENABLED=false).",
+            detail=(
+                "Platform knowledge base is disabled "
+                "(Réglages plateforme → Assistant IA → Accès aux données de la CNP)."
+            ),
         )
 
     stats = await PlatformKnowledgeService(db).ingest_local_dir(
@@ -656,8 +723,10 @@ async def summarize_security_scan(
         "recommandations prioritaires. Ne génère pas de code. Ne propose pas de MR ou de deploy automatique."
     )
 
+    await _check_limits(db, current_user)
     assistant_svc = _build_assistant(db, cfg)
-    resp = await assistant_svc.chat(
+    resp = await _chat(
+        assistant_svc,
         message=prompt,
         mode="scan_summary",
         current_user=current_user,

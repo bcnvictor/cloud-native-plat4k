@@ -56,6 +56,7 @@ export interface Application {
   origin: AppOrigin | null;
   source_url: string | null;
   last_known_status: ApplicationStatus;
+  last_pipeline_status?: string | null;
   framework?: string | null;
   gitlab_project_id?: number | null;
   owning_gitlab_group_id?: number | null;
@@ -327,12 +328,27 @@ export interface AIAppSettingsPatch {
   accept_code_access_warning?: boolean;
 }
 
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/** Où se trouve l'utilisateur : le backend s'en sert pour cibler groupe/app. */
+export interface ChatPageContext {
+  path?: string;
+  group_slug?: string;
+  app_slug?: string;
+}
+
 export interface ChatPayload {
   message: string;
   mode?: string;
   agent?: string;
   requested_context_mode?: AIContextMode;
   conversation_id?: string;
+  /** Tours précédents (le serveur ne conserve pas l'historique). */
+  history?: ChatTurn[];
+  page?: ChatPageContext;
 }
 
 export interface DocCitation {

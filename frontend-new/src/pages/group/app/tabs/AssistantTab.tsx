@@ -2,13 +2,13 @@ import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { IconRobot, IconSend } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
-import { assistantApi } from '@/api/assistant';
+import { assistantApi, toChatHistory } from '@/api/assistant';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { AIContextMode } from '@/types';
+import { AIContextMode, ChatTurn } from '@/types';
 import { cn } from '@/utils/cn';
 
 interface LocalMessage {
@@ -95,9 +95,10 @@ export function AssistantTab() {
   });
 
   const chatMutation = useMutation({
-    mutationFn: (message: string) =>
+    mutationFn: ({ message, history }: { message: string; history: ChatTurn[] }) =>
       assistantApi.chatWithApp(app!.id, {
         message,
+        history,
         conversation_id: conversationId.current,
         requested_context_mode: aiSettings?.ai_context_mode ?? 'metadata_only',
       }),
@@ -180,7 +181,7 @@ export function AssistantTab() {
     if (!msg || chatMutation.isPending) return;
     setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'user', content: msg }]);
     setInput('');
-    chatMutation.mutate(msg);
+    chatMutation.mutate({ message: msg, history: toChatHistory(messages) });
   }
 
   function handleCodeModeToggle() {
