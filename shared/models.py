@@ -4,11 +4,11 @@ This avoids duplicating code between the client and server.
 """
 
 import re
-
-from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel
 
 
 def sanitize_k8s_label_value(value: str) -> str:
