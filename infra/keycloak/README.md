@@ -1,0 +1,195 @@
+# Keycloak — instance partagée pour l'auth des apps (4K-15)
+
+Runbook d'installation manuelle du service Keycloak partagé qui fournit un realm OIDC par
+app et par environnement ([ADR-0026](../../docs/adr/0026-keycloak-app-auth.md)), sur le
+modèle des runbooks `infra/eso/README.md` et `infra/aks/tailscale/`.
+
+**Statut : non déployé.** Ce dossier contient les manifests et la procédure, mais rien n'a
+été appliqué sur un cluster réel — cet agent n'a ni les credentials ni le mandat pour le
+faire (voir règles d'exécution du plan). Ce README est donc écrit comme un plan d'action à
+suivre par un humain, pas comme un compte-rendu de déploiement (contrairement à
+`infra/eso/README.md`, qui documente un déploiement déjà fait).
+
+## Composants
+
+| Namespace  | Contenu |
+|---|---|
+| `keycloak` | `Deployment keycloak` (mode `start`, prod), `StatefulSet keycloak-postgres` (base dédiée), `Ingress keycloak` (`auth.cloud-native-plat4k.me`) |
+
+Une seule instance, partagée par toutes les apps de la plateforme (décision §0.1 du plan
+d'exécution / ADR-0026) — pas une instance par app.
+
+## Prérequis
+
+- Cluster AKS (`cnp-aks`) avec `ingress-nginx` déjà installé (utilisé par les apps
+  exposées, cf. `chart/templates/ingress.yaml` de `cnp-templates/*`).
+- DNS : un enregistrement `auth.cloud-native-plat4k.me` pointant vers l'IP publique de
+  l'ingress-nginx (même zone Cloudflare que le reste de `cloud-native-plat4k.me`).
+
+## 1. Namespace
+
+```bash
+kubectl apply -f infra/keycloak/namespace.yaml --context cnp-aks
+```
+
+## 2. Secret de la base Postgres dédiée
+
+Base dédiée à Keycloak — **pas** partagée avec la base du backend CNP. Générer un mot de
+passe aléatoire, ne jamais le committer (voir `keycloak-db-secret.example.yaml` pour la
+forme attendue, à ne pas appliquer tel quel) :
+
+```bash
+kubectl create secret generic keycloak-db \
+  --namespace keycloak \
+  --from-literal=username=keycloak \
+  --from-literal=password="$(openssl rand -base64 32)" \
+  --context cnp-aks
+```
+
+```bash
+kubectl apply -f infra/keycloak/postgres.yaml --context cnp-aks
+kubectl -n keycloak get pods --context cnp-aks   # attendre keycloak-postgres-0 Running/1/1
+```
+
+## 3. Secret admin Keycloak (bootstrap `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD`)
+
+Ce compte administre le realm `master` (toute la plateforme). Générer un mot de passe fort,
+le stocker dans un password manager (pas seulement dans le Secret K8s) :
+
+```bash
+kubectl create secret generic keycloak-admin \
+  --namespace keycloak \
+  --from-literal=username=admin \
+  --from-literal=password="$(openssl rand -base64 24)" \
+  --context cnp-aks
+```
+
+## 4. Déployer Keycloak
+
+```bash
+kubectl apply -f infra/keycloak/deployment.yaml --context cnp-aks
+kubectl -n keycloak get pods --context cnp-aks   # attendre keycloak-xxxx Running/1/1 (readiness ~20-30s)
+```
+
+## 5. Ingress public
+
+```bash
+kubectl apply -f infra/keycloak/ingress.yaml --context cnp-aks
+```
+
+Vérifier :
+
+```bash
+curl -I http://auth.cloud-native-plat4k.me/health/ready
+```
+
+### TLS — écart assumé par rapport à une lecture stricte d'ADR-0021
+
+Le plan d'exécution demandait "TLS comme ADR-0021", mais ADR-0021 documente un mécanisme
+spécifique à Grafana sur la VM OCI (nginx + Certbot HTTP-01, hors cluster Kubernetes) — il ne
+s'applique pas tel quel à un service tournant sur AKS derrière `ingress-nginx`. Il n'existe
+par ailleurs aucun cert-manager/ClusterIssuer dans ce repo (vérifié : absent de `infra/`), et
+le pattern **déjà en place pour toutes les apps exposées** (`ingress.tls: false` par défaut,
+généré par `ScaffoldingService._build_ingress_values`) indique que la plateforme s'appuie sur
+Cloudflare pour terminer le TLS côté visiteur (probablement en mode "Flexible SSL", HTTP en
+clair entre Cloudflare et l'ingress-nginx du cluster — la même tension que celle documentée en
+détail dans ADR-0021 §"Contrainte mixed-content" pour Grafana, mais tranchée différemment ici
+faute d'alternative déjà en place pour les apps).
+
+Décision autonome (la plus simple compatible avec l'existant, à documenter/challenger) :
+`infra/keycloak/ingress.yaml` suit ce même pattern (`tls` absent) plutôt que d'introduire un
+mécanisme TLS end-to-end inédit sur ce repo pour ce seul service. **Conséquence de sécurité à
+noter** : le trafic Cloudflare → ingress-nginx (incluant les échanges avec la console Keycloak
+et les tokens OIDC) n'est chiffré qu'en Flexible SSL si c'est bien le mode actif sur la zone —
+à vérifier avant mise en prod, et à durcir (cert-manager + Let's Encrypt DNS-01, ou passage en
+Full/Full Strict côté Cloudflare) si ce n'est pas déjà le cas pour le reste du trafic
+applicatif exposé.
+
+## 6. Bootstrap du client `cnp-provisioner`
+
+Le backend a besoin d'un client confidential avec service account dans le realm `master`
+pour piloter l'Admin REST API (ADR-0026 §1). Depuis un pod temporaire ou `kubectl exec` dans
+le pod Keycloak :
+
+```bash
+KC_POD=$(kubectl -n keycloak get pod -l app=keycloak -o jsonpath='{.items[0].metadata.name}' --context cnp-aks)
+
+kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh config credentials \
+  --server http://localhost:8080 --realm master --user admin --password <mot de passe du Secret keycloak-admin>
+
+kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh create clients -r master \
+  -s clientId=cnp-provisioner -s enabled=true -s serviceAccountsEnabled=true \
+  -s publicClient=false -s standardFlowEnabled=false -s directAccessGrantsEnabled=false
+
+# Récupérer l'id interne du client puis son secret :
+kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh get clients -r master -q clientId=cnp-provisioner --fields id
+kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh get clients/<id>/client-secret -r master
+```
+
+Rôle du service account — **à trancher à l'usage** (ADR-0026 le documente comme ouvert) :
+
+- `admin` (rôle realm `master`, contrôle total de tous les realms) — le plus simple,
+  suffisant à coup sûr, mais plus large que strictement nécessaire.
+- `create-realm` (rôle realm `master`, permet de créer des realms — mais **pas forcément**
+  de les administrer une fois créés selon la version de Keycloak) — à tester en premier lieu
+  lors du smoke test (Lot 7) : si `KeycloakService.provision`/`deprovision`/
+  `grant_console_access` fonctionnent avec ce rôle plus étroit, préférer ce dernier et mettre
+  à jour ce README + ADR-0026 en conséquence.
+
+Le script `scripts/keycloak-bootstrap-local.sh` du repo automatise cette procédure pour
+l'instance **locale** (`docker compose up -d keycloak`) — utiliser `admin` par défaut ;
+adapter pour la prod (namespace `keycloak` au lieu de `docker compose exec`) une fois le
+choix du rôle tranché.
+
+```bash
+kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh add-roles \
+  --uusername service-account-cnp-provisioner --rolename admin -r master
+```
+
+## 7. Stocker le secret du client dans Vault
+
+```bash
+docker compose exec -T -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault \
+  vault kv patch secret/cnp/platform \
+    KEYCLOAK_ENABLED=true \
+    KEYCLOAK_URL=http://keycloak.keycloak.svc.cluster.local:8080 \
+    KEYCLOAK_PUBLIC_URL=https://auth.cloud-native-plat4k.me \
+    KEYCLOAK_ADMIN_CLIENT_ID=cnp-provisioner \
+    KEYCLOAK_ADMIN_CLIENT_SECRET=<secret récupéré à l'étape 6>
+```
+
+Le backend relit `secret/cnp/platform` au démarrage (`bootstrap_from_vault`,
+`backend/core/config.py`) — un redémarrage du pod backend suffit à charger ces valeurs, pas
+besoin de toucher `.env` en prod.
+
+## 8. Durcissement du realm `master`
+
+- Activer la MFA (OTP) pour tous les comptes admin humains du realm `master` (console →
+  Authentication → bind `mfa` flow, ou via l'API admin).
+- Vérifier `registrationAllowed: false` sur le realm `master` (auto-inscription publique
+  désactivée — c'est déjà la valeur par défaut de Keycloak, à re-vérifier explicitement).
+- Ne **pas** exposer la console `master` (`/admin/master/console/`) plus largement que
+  nécessaire : à terme, restreindre son accès réseau via Tailscale (comme `cnp-control`,
+  ADR-0019) plutôt que de compter uniquement sur les credentials — hors scope de ce lot,
+  à planifier séparément.
+- Aucun compte d'équipe (app) ne doit jamais être créé dans `master` — seuls
+  `KeycloakService` (via `cnp-provisioner`) et les humains administrant la plateforme y ont
+  un compte.
+
+## Cleanup / désinstallation
+
+```bash
+kubectl delete ingress keycloak -n keycloak --context cnp-aks
+kubectl delete deployment,svc keycloak -n keycloak --context cnp-aks
+kubectl delete statefulset,svc keycloak-postgres -n keycloak --context cnp-aks
+kubectl delete secret keycloak-db keycloak-admin -n keycloak --context cnp-aks
+kubectl delete ns keycloak --context cnp-aks
+```
+
+## Voir aussi
+
+- [ADR-0026](../../docs/adr/0026-keycloak-app-auth.md) — décisions produit/architecture.
+- [`docs/guides/keycloak-app-auth.md`](../../docs/guides/keycloak-app-auth.md) — guide côté
+  développeur d'app (variables injectées, snippets de validation JWT par stack).
+- `scripts/keycloak-bootstrap-local.sh` — équivalent de l'étape 6 pour l'instance locale
+  docker-compose.
