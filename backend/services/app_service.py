@@ -546,6 +546,9 @@ class AppService:
         if bot and settings.GITOPS_REPO_URL:
             try:
                 gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
+                # Recursive delete of the whole apps/{cluster}/{app}/ tree — this
+                # already covers platform/{env}/externalsecret.yaml (4K-15/ADR-0026
+                # Lot 1c), no separate cleanup needed for that subdirectory.
                 await anyio.to_thread.run_sync(
                     lambda: bot.delete_directory_contents(
                         project_path=gitops_path,

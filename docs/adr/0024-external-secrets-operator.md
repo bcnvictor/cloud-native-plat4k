@@ -167,3 +167,35 @@ Neutre :
   configurable par app via les values Helm si nécessaire.
 - Les `ExternalSecret` générés par le backend sont idempotents : rejouer le provisioning
   GitOps met à jour le manifest sans créer de doublon.
+
+## Addendum (4K-15 / ADR-0026 Lot 1c) : les ExternalSecret n'étaient déployés par personne
+
+Constat après coup (vérifié sur `cnp-gitops` `origin/main`) : le chemin décrit en §3
+(`apps/{app_slug}/externalsecret-{env}.yaml`) n'était scanné par aucune Application ArgoCD.
+La root-app (`bootstrap/root-app.yaml`) ne scanne que `argocd/` ; et la source `ref: gitops`
+d'une Application (ADR-0014) ne sert qu'à résoudre les `valueFiles` du Helm chart, elle ne
+déploie aucun manifest par elle-même. Résultat : les `ExternalSecret` existaient bien dans
+git mais n'étaient jamais appliqués sur le cluster — le Secret K8s `{app_slug}-env` n'existait
+donc jamais, indépendamment de tout ce que ce document décrit par ailleurs.
+
+Correctif : le manifest est désormais écrit sous
+`apps/{cluster}/{app_slug}/platform/{env}/externalsecret.yaml` (et non plus
+`apps/{app_slug}/externalsecret-{env}.yaml` — le chemin inclut aussi le cluster, qui manquait
+dans la version originale de cet ADR), et `cnp-ci-modules/base/pipeline.yml`
+(`update-gitops`) ajoute une 3e source à l'Application générée :
+
+```yaml
+- repoURL: '<CLEAN_GITOPS_URL>'
+  targetRevision: HEAD
+  path: apps/<cluster>/<app>/platform/<env>
+```
+
+Ce dossier `platform/{env}/` est un emplacement dédié aux manifests posés par la plateforme
+(pas seulement l'ExternalSecret — extensible à oauth2-proxy ou d'autres primitives futures),
+distinct de `apps/{cluster}/{app}/values-{env}.yaml` qui n'est pas un manifest K8s et ne doit
+jamais être inclus dans une source ArgoCD `path:`. `update-gitops` retrofit cette source de
+façon idempotente sur les Applications déjà générées avant ce correctif (`yq`, vérifie
+l'absence avant d'ajouter). Un script one-shot
+(`cloud-native-plat4k/scripts/migrate_externalsecrets_platform_dir.py`, dry-run par défaut)
+migre les fichiers déjà présents à l'ancien emplacement, à exécuter manuellement sur un clone
+local de `cnp-gitops`.
