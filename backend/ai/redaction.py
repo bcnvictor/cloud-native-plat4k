@@ -82,3 +82,14 @@ def redact(text: str) -> RedactionResult:
             result = new_result
 
     return RedactionResult(text=result, labels=list(seen))
+
+
+def mask_email(email: str) -> str:
+    """Pseudonymise an email for non-EU providers: ``alice@corp.fr`` → ``a***@corp.fr``.
+
+    The domain is kept (it says which organisation) but not the person.
+    """
+    local, sep, domain = email.partition("@")
+    if not sep or not local:
+        return email
+    return f"{local[0]}***@{domain}"

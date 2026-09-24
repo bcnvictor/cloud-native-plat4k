@@ -3,7 +3,11 @@
 Every tool runs *as the current user*: results are scoped to the groups and
 applications that user can see (admins see everything), and detailed app data
 (events, runtime, metrics, costs) additionally honours the admin allow-list
-(``EffectiveAIConfig.app_allowed``). No tool writes anything: the assistant
+(``EffectiveAIConfig.app_allowed``).
+
+Profiles: each tool declares a minimum role (TOOL_MIN_ROLE). Tools above the
+user's highest role are not even sent to the model, and every call re-checks
+the role on its target (group/app) — the prompt never decides access. No tool writes anything: the assistant
 advises, it never deploys, stops or modifies.
 
 Tool results are plain text (French), capped in size, and redacted before they
@@ -17,16 +21,18 @@ import inspect
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
 
 from shared.models import MemberStatus
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.ai.redaction import redact
+from backend.ai.redaction import mask_email, redact
 from backend.core.config import settings
 from backend.db.models import (
     AIAppSettings,
+    AIUsageRecord,
     Application,
     AppMember,
     AppScaleState,
@@ -36,6 +42,7 @@ from backend.db.models import (
     GitLabGroupMember,
     User,
 )
+from backend.services.ai_limits_service import AILimitsService
 from backend.services.ai_settings_service import EffectiveAIConfig
 from backend.services.monitoring_service import get_cost_by_group, get_metrics
 from backend.services.platform_knowledge_service import PlatformKnowledgeService
@@ -57,6 +64,20 @@ _APP_NOT_ALLOWED = (
     "administrateur doit l'ajouter dans Réglages plateforme (Settings) → Assistant IA → "
     "« Accès aux données d'une application / repo GitLab »."
 )
+
+
+# Hiérarchie des profils (admin = administrateur plateforme).
+ROLE_ORDER = ("viewer", "developer", "maintainer", "owner", "admin")
+
+# Rôle minimum pour qu'un outil soit proposé au modèle (défaut : viewer).
+TOOL_MIN_ROLE: dict[str, str] = {
+    "list_env_var_keys": "developer",
+    "get_platform_health": "admin",
+}
+
+
+def role_rank(role: str) -> int:
+    return ROLE_ORDER.index(role) if role in ROLE_ORDER else 0
 
 
 def _tier(access_level: int) -> str:
@@ -160,6 +181,24 @@ TOOL_DEFINITIONS: list[dict] = [
         {**_GROUP_ARG, **_APP_ARG},
     ),
     _fn(
+        "list_env_var_keys",
+        "Noms des variables d'environnement d'une application (jamais les valeurs) en dev "
+        "ou prod, et si elles sont définies. Dev : developer+, prod : maintainer+.",
+        {
+            **_APP_ARG,
+            "env": {
+                "type": "string",
+                "enum": ["dev", "prod"],
+                "description": "Environnement (dev par défaut).",
+            },
+        },
+    ),
+    _fn(
+        "get_platform_health",
+        "Vue d'ensemble de la plateforme (administrateurs) : état des clusters, "
+        "applications par statut, apps dégradées ou arrêtées, usage IA du jour.",
+    ),
+    _fn(
         "search_platform_docs",
         "Recherche dans la documentation CNP (guides, FAQ, CLI, architecture). À utiliser "
         "pour « comment faire X », une notion ou une fonctionnalité de la plateforme.",
@@ -200,6 +239,8 @@ class PlatformTools:
         self.user = user
         self.cfg = cfg
         self.page = page or PageContext()
+        self._mask_pii = bool(cfg is not None and cfg.mask_pii)
+        self._project_levels_cache: Optional[dict[int, int]] = None
         self._groups_cache: Optional[list[tuple[GitLabGroup, Optional[int]]]] = None
         self._apps_cache: Optional[list[Application]] = None
         self._handlers: dict[str, Callable[..., Awaitable[ToolResult]]] = {
@@ -211,17 +252,30 @@ class PlatformTools:
             "list_group_members": self.list_group_members,
             "get_recent_activity": self.get_recent_activity,
             "search_platform_docs": self.search_platform_docs,
+            "list_env_var_keys": self.list_env_var_keys,
+            "get_platform_health": self.get_platform_health,
         }
 
     @staticmethod
     def definitions() -> list[dict]:
         return TOOL_DEFINITIONS
 
+    async def available_definitions(self) -> list[dict]:
+        """Tool definitions this user's profile may use (others are never shown)."""
+        rank = role_rank(await self.max_role())
+        return [
+            d for d in TOOL_DEFINITIONS
+            if role_rank(TOOL_MIN_ROLE.get(d["function"]["name"], "viewer")) <= rank
+        ]
+
     async def call(self, name: str, raw_args: Any) -> ToolResult:
         """Dispatch a tool call; never raises (errors become tool output)."""
         handler = self._handlers.get(name)
         if handler is None:
             return ToolResult(f"Outil inconnu : {name}.")
+        min_role = TOOL_MIN_ROLE.get(name, "viewer")
+        if role_rank(await self.max_role()) < role_rank(min_role):
+            return ToolResult(f"Outil {name} non disponible pour ce profil (rôle {min_role} requis).")
         try:
             args = json.loads(raw_args) if isinstance(raw_args, str) and raw_args else {}
             if not isinstance(args, dict):
@@ -241,6 +295,68 @@ class PlatformTools:
         if len(text) > limit:
             text = text[:limit] + "\n… (résultat tronqué)"
         return ToolResult(text, result.citations)
+
+    # ── roles / profile ───────────────────────────────────────────────────
+
+    async def _project_levels(self) -> dict[int, int]:
+        """GitLab project id → user's access level (direct project membership)."""
+        if self._project_levels_cache is None:
+            rows = (
+                await self.db.execute(
+                    select(AppMember.gitlab_project_id, AppMember.access_level).where(
+                        AppMember.cnp_user_id == self.user.id,
+                        AppMember.status == MemberStatus.ACTIVE,
+                    )
+                )
+            ).all()
+            levels: dict[int, int] = {}
+            for project_id, level in rows:
+                levels[project_id] = max(level, levels.get(project_id, 0))
+            self._project_levels_cache = levels
+        return self._project_levels_cache
+
+    async def role_for_group(self, group: GitLabGroup) -> str:
+        if self.user.is_admin:
+            return "admin"
+        for g, level in await self._groups():
+            if g.gitlab_group_id == group.gitlab_group_id and level is not None:
+                return _tier(level)
+        return "viewer"
+
+    async def role_for_app(self, app: Application) -> str:
+        """Same rule as the API (deps.get_effective_tier): best of project and group membership."""
+        if self.user.is_admin:
+            return "admin"
+        levels: list[int] = []
+        if app.gitlab_project_id:
+            level = (await self._project_levels()).get(app.gitlab_project_id)
+            if level is not None:
+                levels.append(level)
+        for g, level in await self._groups():
+            if g.gitlab_group_id == app.owning_gitlab_group_id and level is not None:
+                levels.append(level)
+        return _tier(max(levels)) if levels else "viewer"
+
+    async def max_role(self) -> str:
+        if self.user.is_admin:
+            return "admin"
+        levels = [lvl for _, lvl in await self._groups() if lvl is not None]
+        levels += list((await self._project_levels()).values())
+        return _tier(max(levels)) if levels else "viewer"
+
+    async def profile(self) -> tuple[str, str]:
+        """(role, scope) used to adapt the answer style to who is asking, and where."""
+        if self.user.is_admin:
+            return "admin", "administrateur plateforme"
+        if self.page.app_slug:
+            app = await self._resolve_app(None)
+            if app is not None:
+                return await self.role_for_app(app), f"sur l'application {app.name}"
+        if self.page.group_slug:
+            group = await self._resolve_group(None)
+            if group is not None:
+                return await self.role_for_group(group), f"dans le groupe {group.name}"
+        return await self.max_role(), "rôle le plus élevé parmi ses groupes"
 
     # ── visibility helpers ────────────────────────────────────────────────
 
@@ -639,8 +755,16 @@ class PlatformTools:
             return ToolResult(f"Aucun membre actif synchronisé pour le groupe {g.name}.")
         lines = [f"{len(rows)} membre(s) du groupe {g.name} :"]
         for m, u in rows:
-            who = u.email if u else (m.username or "utilisateur GitLab non lié")
+            if u is not None:
+                who = mask_email(u.email) if self._mask_pii else u.email
+            else:
+                who = m.username or "utilisateur GitLab non lié"
             lines.append(f"- {who} — {_tier(m.access_level)}")
+        if self._mask_pii:
+            lines.append(
+                "(Emails pseudonymisés : le fournisseur IA est hors UE. Les adresses complètes "
+                "sont visibles dans la page Settings du groupe.)"
+            )
         lines.append(
             f"Gestion des membres (inviter, retirer) : /groups/{_group_slug(g)}/settings "
             "(section Members, rôle maintainer/owner requis)."
@@ -692,3 +816,86 @@ class PlatformTools:
             + "\n\n---\n\n".join(parts),
             citations,
         )
+
+    async def list_env_var_keys(self, app: Optional[str] = None, env: str = "dev") -> ToolResult:
+        env = (env or "dev").lower()
+        if env not in ("dev", "prod"):
+            return ToolResult("Environnement inconnu : utiliser dev ou prod.")
+        a = await self._resolve_app(app)
+        if a is None:
+            return ToolResult(
+                f"Application « {app or self.page.app_slug or '?'} » introuvable ou non accessible."
+            )
+        if not self._app_allowed(a):
+            return ToolResult(_APP_NOT_ALLOWED.format(name=a.name))
+        role = await self.role_for_app(a)
+        needed = "developer" if env == "dev" else "maintainer"
+        if role_rank(role) < role_rank(needed):
+            return ToolResult(
+                f"Accès refusé : les variables {env} de {a.name} sont réservées au rôle "
+                f"{needed} ou supérieur (rôle de l'utilisateur : {role})."
+            )
+        # Import local : le service tire le client Vault.
+        from backend.services.env_var_service import EnvVarService
+
+        try:
+            keys = await EnvVarService(self.db).list_keys(a.id, env)
+        except Exception as exc:
+            detail = getattr(exc, "detail", None) or type(exc).__name__
+            return ToolResult(f"Variables {env} indisponibles (Vault) : {detail}.")
+        if not keys:
+            return ToolResult(
+                f"Aucune variable {env} pour {a.name}. Pour en ajouter : onglet Settings → "
+                "Environment variables → Add."
+            )
+        lines = [
+            f"Variables {env} de {a.name} (noms uniquement — l'assistant n'a jamais accès "
+            "aux valeurs) :"
+        ]
+        lines += [f"- {k.key} ({'définie' if k.is_set else 'non définie'})" for k in keys]
+        return ToolResult("\n".join(lines))
+
+    async def get_platform_health(self) -> ToolResult:
+        if not self.user.is_admin:
+            return ToolResult("Réservé aux administrateurs de la plateforme.")
+        clusters = (
+            await self.db.execute(select(ClusterConnection).order_by(ClusterConnection.name))
+        ).scalars().all()
+        apps = await self._apps()
+        lines = [f"=== Clusters ({len(clusters)}) ==="]
+        for c in clusters:
+            lines.append(f"- {c.name} : {c.status.value} (vu : {_fmt_dt(c.last_seen_at)})")
+        if not clusters:
+            lines.append("Aucun cluster enregistré (Platform → Settings → Register cluster).")
+
+        counts: dict[str, int] = {}
+        for a in apps:
+            status = a.last_known_status.value if a.last_known_status else "unknown"
+            counts[status] = counts.get(status, 0) + 1
+        lines.append(f"\n=== Applications ({len(apps)}) ===")
+        lines.append(", ".join(f"{n} {st}" for st, n in sorted(counts.items())) or "aucune")
+        degraded = [a.name for a in apps if a.last_known_status and a.last_known_status.value == "degraded"]
+        if degraded:
+            lines.append("Dégradées : " + ", ".join(degraded))
+        failed_ci = [a.name for a in apps if a.last_pipeline_status == "failed"]
+        if failed_ci:
+            lines.append("Dernier pipeline en échec : " + ", ".join(failed_ci))
+        scale = await self._scale_states([a.id for a in apps])
+        stopped = [f"{a.name} ({env})" for a in apps for env in ("dev", "prod") if scale.get((a.id, env))]
+        if stopped:
+            lines.append("Environnements arrêtés : " + ", ".join(stopped))
+
+        limits = AILimitsService(self.db)
+        day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        questions = (
+            await self.db.execute(
+                select(func.count(AIUsageRecord.id)).where(AIUsageRecord.created_at >= day_start)
+            )
+        ).scalar_one()
+        spent = await limits.spent_today_usd()
+        lines.append("\n=== Assistant IA aujourd'hui ===")
+        lines.append(
+            f"{questions} question(s), coût estimé ${spent:.4f} / budget "
+            f"${settings.AI_DAILY_BUDGET_USD:.2f}"
+        )
+        return ToolResult("\n".join(lines))

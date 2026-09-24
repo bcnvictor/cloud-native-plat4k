@@ -7,6 +7,7 @@ from backend.api.deps import get_current_user, require_admin, require_tier
 from backend.core.config import settings
 from backend.db.models import AIAppSettings, Application, User
 from backend.db.session import get_db
+from backend.services.ai_limits_service import AILimitExceeded, AILimitsService
 from backend.services.ai_settings_service import (
     ALLOWED_PROVIDERS,
     AISettingsService,
@@ -55,6 +56,14 @@ async def _require_ai_enabled(db: AsyncSession) -> EffectiveAIConfig:
             detail="AI assistant is disabled on this platform.",
         )
     return cfg
+
+
+async def _check_limits(db: AsyncSession, user: User) -> None:
+    """429 when the user's rate limit or the platform's daily AI budget is used up."""
+    try:
+        await AILimitsService(db).check(user)
+    except AILimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
 
 
 async def _chat(svc: AssistantService, **kwargs):
@@ -466,6 +475,7 @@ async def chat_with_app(
     if ai_settings.ai_context_mode == AIContextMode.METADATA_ONLY:
         effective_mode = AIContextMode.METADATA_ONLY
 
+    await _check_limits(db, current_user)
     svc = _build_assistant(db, cfg)
     resp = await _chat(
         svc,
@@ -490,6 +500,7 @@ async def chat_global(
     current_user: User = Depends(get_current_user),
 ):
     cfg = await _require_ai_enabled(db)
+    await _check_limits(db, current_user)
     svc = _build_assistant(db, cfg)
     resp = await _chat(
         svc,
@@ -712,6 +723,7 @@ async def summarize_security_scan(
         "recommandations prioritaires. Ne génère pas de code. Ne propose pas de MR ou de deploy automatique."
     )
 
+    await _check_limits(db, current_user)
     assistant_svc = _build_assistant(db, cfg)
     resp = await _chat(
         assistant_svc,

@@ -87,6 +87,27 @@ Principes :
 
 Il n'y a ni fine-tuning ni entraînement : la clé API ne sert qu'à authentifier les appels au provider. Pour qu'il réponde mieux sur une fonctionnalité, **on écrit ou corrige la page Markdown correspondante dans `docs/`** (idéalement `guides/ui-guide.md` pour tout ce qui touche à l'interface), puis on redémarre le backend ou on appelle le reindex. Pour une nouvelle donnée live, on ajoute un outil dans `assistant_tools.py`.
 
+## Lot 3 — durcissement sécurité et profils
+
+### Garde-fous
+- **Limites** (`backend/services/ai_limits_service.py`) : `AI_USER_REQUESTS_PER_MINUTE`, `AI_USER_REQUESTS_PER_DAY` par utilisateur et `AI_DAILY_BUDGET_USD` pour toute la plateforme, calculés sur `ai_usage_records` (aucun stockage en plus). Dépassement → HTTP 429 avec un message lisible. Le budget ne compte que les modèles dont le tarif est connu (`backend/ai/pricing.py`).
+- **Audit** : chaque question qui déclenche des outils crée une entrée `ai_assistant.tools_used` (outils, arguments, page) visible dans Platform → Audit.
+- **RGPD** : si le provider est hors UE (Gemini, DeepSeek), les emails (membres, utilisateur courant) sont pseudonymisés (`a***@corp.fr`) avant envoi (`AI_MASK_PII_FOR_NON_EU_PROVIDERS`). Mistral et Mock ne sont pas masqués.
+
+### Profils
+Deux axes séparés : **l'accès** est décidé par le code, **le style** par le prompt.
+
+| Profil | Outils en plus | Style de réponse |
+|---|---|---|
+| viewer | état, activité, métriques, coûts, membres, doc | court, non technique, orienté impact |
+| developer | `list_env_var_keys` (dev) | diagnostic technique, commandes utiles |
+| maintainer / owner | `list_env_var_keys` (prod) | diagnostic + actions possibles (rollback, stop…) |
+| admin | `get_platform_health` | vue plateforme (clusters, anomalies, usage IA) |
+
+- `TOOL_MIN_ROLE` fixe le rôle minimum de chaque outil. Les outils au-dessus du rôle **ne sont pas envoyés au modèle**, et chaque appel revérifie le rôle **sur la cible** (même règle que `deps.get_effective_tier` : meilleur niveau entre projet et groupe).
+- Le profil est calculé sur la page ouverte (on peut être maintainer dans un groupe et viewer dans un autre) et injecté dans le prompt avec le niveau de détail attendu.
+- `list_env_var_keys` ne renvoie que les **noms** des variables (jamais les valeurs), comme l'UI (ADR-0025).
+
 ## Roadmap (lots suivants proposés)
 
 1. **Repo docs-only GitLab (`cnp-docs`)** : branche protégée + review MR ; CI dans le repo principal qui `mkdocs build` et publie vers `cnp-docs` (pas de doc en double). Ingestion via clone/pull read-only ou API GitLab → il suffit de changer l'origine dans `ingest_local_dir` (source `cnp-docs`). Rafraîchi par webhook.

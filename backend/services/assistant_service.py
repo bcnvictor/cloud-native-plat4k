@@ -4,6 +4,7 @@ Keeps business logic out of routes. No imports from backend.api.*.
 """
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -16,11 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.ai.pricing import estimate_cost
 from backend.ai.provider import LLMMessage, LLMProvider, LLMResponse
-from backend.ai.redaction import redact
+from backend.ai.redaction import mask_email, redact
 from backend.core.config import settings
 from backend.db.models import AIUsageRecord, Application, Event, User
 from backend.services.ai_settings_service import EffectiveAIConfig
 from backend.services.assistant_tools import PageContext, PlatformTools
+from backend.services.audit_service import AuditService
 from backend.services.monitoring_service import get_cost_by_group, get_metrics
 from backend.services.platform_knowledge_service import PlatformKnowledgeService
 
@@ -71,7 +73,8 @@ Tu es « l'assistant Plat4k », l'assistant de la Cloud Native Platform (CNP).
 Tu aides les utilisateurs à utiliser la CNP : trouver une fonctionnalité dans l'interface,
 comprendre l'état de leurs applications, lire leurs métriques et coûts, connaître leur équipe.
 
-Utilisateur : {user_email} ({user_role})
+Utilisateur : {user_email}
+{profile_block}
 {page_block}
 
 Tu disposes de deux sources, et seulement de celles-ci :
@@ -119,9 +122,46 @@ _APP_TAB_LABELS = {
     "assistant": "Assistant",
 }
 
+# Style de réponse par profil. L'accès aux données, lui, est décidé par les
+# outils (PlatformTools) : le prompt n'accorde jamais de droit.
+_PROFILE_STYLES: dict[str, str] = {
+    "viewer": (
+        "réponses courtes et non techniques, orientées impact (« l'app est indisponible "
+        "depuis 10 min ») ; pas de commandes ni de jargon ; pour agir, oriente vers un "
+        "maintainer du groupe."
+    ),
+    "developer": (
+        "diagnostic technique : cause probable, éléments factuels (statut ArgoCD, pipeline, "
+        "événements), commandes utiles (kubectl, git) ; pour les actions réservées aux "
+        "maintainers (rollback, stop/resume, variables prod, prod en général), indique "
+        "qu'il faut un maintainer."
+    ),
+    "maintainer": (
+        "diagnostic technique complet, puis les actions que l'utilisateur peut faire "
+        "lui-même (rollback, stop/resume, variables prod, exposition) avec le chemin exact "
+        "dans l'interface et un rappel de leur impact."
+    ),
+    "admin": (
+        "vue plateforme : clusters, applications en anomalie, coûts, usage ; vocabulaire "
+        "technique ; propose les actions d'administration pertinentes."
+    ),
+}
+_PROFILE_STYLES["owner"] = _PROFILE_STYLES["maintainer"]
+
 _MAX_TOOL_ROUNDS = 4
 _MAX_HISTORY_MESSAGES = 12
 _MAX_HISTORY_CHARS = 4000
+
+
+def describe_profile(role: str, scope: str) -> str:
+    """Profile block of the system prompt: who is asking, and how to answer them."""
+    style = _PROFILE_STYLES.get(role, _PROFILE_STYLES["viewer"])
+    return (
+        f"Profil : {role} ({scope}).\n"
+        f"Niveau de détail attendu pour ce profil : {style}\n"
+        "Si l'utilisateur demande explicitement plus simple ou plus détaillé, adapte-toi, "
+        "sans jamais dépasser les données renvoyées par les outils."
+    )
 
 
 def describe_page(page: Optional[PageContext]) -> str:
@@ -355,6 +395,17 @@ class ContextBuilder:
 # ── AssistantService ───────────────────────────────────────────────────────────
 
 
+def _loggable_args(raw) -> dict:
+    """Tool arguments as stored in the audit log (short strings only)."""
+    try:
+        args = json.loads(raw) if isinstance(raw, str) and raw else {}
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(args, dict):
+        return {}
+    return {str(k)[:40]: str(v)[:100] for k, v in list(args.items())[:5]}
+
+
 def _dedupe_citations(citations: list[dict]) -> list[dict]:
     seen: set[str] = set()
     out: list[dict] = []
@@ -414,9 +465,10 @@ class AssistantService:
             used_tools.extend(ctx_tools)
             citations.extend(doc_citations)
             platform_tools = PlatformTools(self.db, current_user, self._cfg, page)
+            role, scope = await platform_tools.profile()
             system_prompt = _PLATFORM_SYSTEM_PROMPT.format(
-                user_email=current_user.email,
-                user_role="administrateur plateforme" if current_user.is_admin else "utilisateur",
+                user_email=self._prompt_email(current_user),
+                profile_block=describe_profile(role, scope),
                 page_block=describe_page(page),
                 context_block=redact(context_block).text,
             )
@@ -430,7 +482,7 @@ class AssistantService:
 
             system_prompt = _SYSTEM_PROMPT.format(
                 context_mode=effective_context_mode.value,
-                user_email=current_user.email,
+                user_email=self._prompt_email(current_user),
                 context_block=redact(context_block).text,
             )
             if mode == "finops":
@@ -443,7 +495,16 @@ class AssistantService:
             LLMMessage(role="user", content=redact(message).text),
         ]
 
-        llm_resp = await self._run(messages, platform_tools, used_tools, citations)
+        tool_log: list[dict] = []
+        llm_resp = await self._run(messages, platform_tools, used_tools, citations, tool_log)
+        if tool_log:
+            # Traçabilité : quelles données l'IA a consultées, pour qui, depuis quelle page.
+            await AuditService(self.db).log_action(
+                user_id=current_user.id,
+                action="ai_assistant.tools_used",
+                app_id=app.id if app else None,
+                extra={"tools": tool_log, "page": page.path if page else None},
+            )
 
         cost = estimate_cost(
             llm_resp.model, llm_resp.input_tokens, llm_resp.output_tokens
@@ -461,6 +522,9 @@ class AssistantService:
                 estimated_cost_usd=cost,
             ),
         )
+
+    def _prompt_email(self, user: User) -> str:
+        return mask_email(user.email) if self._cfg is not None and self._cfg.mask_pii else user.email
 
     @staticmethod
     def _history_messages(history: Optional[list[dict]]) -> list[LLMMessage]:
@@ -496,6 +560,7 @@ class AssistantService:
         tools: Optional[PlatformTools],
         used_tools: list[str],
         citations: list[dict],
+        tool_log: Optional[list[dict]] = None,
     ) -> LLMResponse:
         """Call the model, executing requested tool calls until it answers.
 
@@ -505,7 +570,7 @@ class AssistantService:
             return await self._complete(messages)
 
         in_tokens = out_tokens = 0
-        definitions: Optional[list[dict]] = tools.definitions()
+        definitions: Optional[list[dict]] = await tools.available_definitions()
         for round_ in range(_MAX_TOOL_ROUNDS + 1):
             if round_ == _MAX_TOOL_ROUNDS:
                 definitions = None  # dernier tour : forcer une réponse texte
@@ -531,6 +596,8 @@ class AssistantService:
                 fn = call.get("function") or {}
                 name = fn.get("name", "")
                 result = await tools.call(name, fn.get("arguments"))
+                if tool_log is not None:
+                    tool_log.append({"name": name, "args": _loggable_args(fn.get("arguments"))})
                 if name and name not in used_tools:
                     used_tools.append(name)
                 citations.extend(result.citations)

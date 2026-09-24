@@ -83,6 +83,7 @@ Onglets : **Overview**, **Logs**, **History**, **Settings**, **Assistant**.
 - **Identity** : **Display name**, **Slug** (immuable), **Description**, bouton **Save** (maintainer+).
 - **Environment variables** : onglets **dev** / **prod**, bouton **Add** (clé + valeur), **Edit**, suppression. Les valeurs ne sont jamais réaffichées après enregistrement ; elles sont stockées dans Vault et synchronisées vers le cluster en quelques minutes (redémarrage des pods). Developer : dev uniquement ; prod : maintainer+.
 - **Internet exposure** : interrupteur *Exposed on internet* / *Port-forward only* (maintainer+).
+- Le **cluster cible** n'est pas modifiable ici : il se choisit à la création (New app → étape CI & Deploy → Target cloud).
 - **Danger zone** : **Delete this app** (maintainer+, irréversible ; pour une app scaffoldée le repo GitLab est aussi supprimé).
 
 ## Onglet Assistant (IA d'une application)
@@ -151,6 +152,8 @@ L'assistant global (mascotte ou bouton AI Assistant) :
 - connaît la page ouverte : « État des apps ? » sur la page d'un groupe porte sur ce groupe, « Ses métriques ? » sur une application porte sur cette application ;
 - consulte en direct, avec les droits de l'utilisateur, l'état des applications (statut, pipeline CI, ArgoCD dev/prod, arrêt), les métriques CPU/RAM, les coûts 30 jours, les membres d'un groupe et l'activité récente ;
 - explique où trouver une fonctionnalité et comment l'utiliser, à partir de cette documentation ;
-- ne fait aucune action : il ne déploie pas, n'arrête pas, ne modifie rien — il indique le bouton à utiliser.
+- ne fait aucune action : il ne déploie pas, n'arrête pas, ne modifie rien — il indique le bouton à utiliser ;
+- adapte ses réponses au profil de l'utilisateur sur la page ouverte : **viewer** (réponse courte, orientée impact), **developer** (diagnostic technique, noms des variables dev), **maintainer/owner** (diagnostic + actions possibles, variables prod), **admin** (vue plateforme : clusters, anomalies, usage IA). Il ne montre jamais plus que ce que l'utilisateur peut voir dans l'interface ;
+- est limité à quelques questions par minute et par jour par utilisateur, et à un budget journalier pour la plateforme ; un message l'indique quand une limite est atteinte.
 
 Les détails d'une application (événements, statut ArgoCD, métriques, coûts) ne sont accessibles à l'assistant que si un administrateur l'a autorisée dans Platform settings → Assistant IA.
