@@ -101,3 +101,22 @@ def test_never_commits_or_pushes(tmp_path: Path):
         ["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True, text=True
     ).stdout
     assert status.strip() != ""  # working tree has uncommitted changes — script didn't commit
+
+
+def test_new_source_copies_ref_repourl_not_the_clone_remote(tmp_path: Path):
+    """The clone's remote may embed a token (or be SSH): never copy it into a
+    committed manifest — reuse the Application's own `ref: gitops` repoURL."""
+    _make_fixture_repo(tmp_path)
+    subprocess.run(
+        ["git", "remote", "set-url", "origin", "https://oauth2:glpat-SECRET@gitlab.com/g/cnp-gitops.git"],
+        cwd=tmp_path, check=True,
+    )
+
+    result = _run(str(tmp_path), "--execute")
+
+    assert result.returncode == 0
+    manifest_text = (tmp_path / "argocd" / "aks" / "my-app" / "dev.yaml").read_text()
+    assert "glpat-SECRET" not in manifest_text
+    sources = yaml.safe_load(manifest_text)["spec"]["sources"]
+    platform = next(s for s in sources if s.get("path") == "apps/aks/my-app/platform/dev")
+    assert platform["repoURL"] == "https://gitlab.com/g/cnp-gitops.git"

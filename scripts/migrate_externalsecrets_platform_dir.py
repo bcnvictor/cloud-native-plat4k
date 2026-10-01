@@ -28,7 +28,6 @@ Safety:
 """
 import argparse
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -56,7 +55,7 @@ def app_manifest_path(root: Path, cluster: str, app: str, env: str) -> Path:
 
 
 def ensure_platform_source(
-    manifest_path: Path, cluster: str, app: str, env: str, gitops_url: str, execute: bool
+    manifest_path: Path, cluster: str, app: str, env: str, gitops_url: str | None, execute: bool
 ) -> str:
     if not manifest_path.exists():
         return "SKIP (Application manifest not found)"
@@ -66,28 +65,21 @@ def ensure_platform_source(
     platform_path = f"apps/{cluster}/{app}/platform/{env}"
     if any(s.get("path") == platform_path for s in sources):
         return "already present"
+    # Reuse the exact repoURL ArgoCD already knows for cnp-gitops (the `ref: gitops`
+    # source of this same Application) rather than the clone's git remote, which may
+    # be an SSH URL or embed a token that would then be committed.
+    repo_url = next((s["repoURL"] for s in sources if s.get("ref") == "gitops"), None) or gitops_url
+    if not repo_url:
+        return "SKIP (no `ref: gitops` source to copy repoURL from; pass --gitops-url)"
     if execute:
         sources.append(
-            {"repoURL": gitops_url, "targetRevision": "HEAD", "path": platform_path}
+            {"repoURL": repo_url, "targetRevision": "HEAD", "path": platform_path}
         )
         spec["sources"] = sources
         manifest_path.write_text(
             yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
         )
     return "added" if execute else "would add"
-
-
-def resolve_gitops_url(root: Path, override: str | None) -> str:
-    if override:
-        return override
-    try:
-        return subprocess.check_output(
-            ["git", "-C", str(root), "remote", "get-url", "origin"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-    except Exception:
-        return "<GITOPS_REPO_URL>"
 
 
 def main() -> int:
@@ -101,7 +93,8 @@ def main() -> int:
     parser.add_argument(
         "--gitops-url",
         default=None,
-        help="repoURL for the new source (default: `git remote get-url origin` in the clone)",
+        help="fallback repoURL for the new source, only used when an Application has no "
+        "`ref: gitops` source to copy it from",
     )
     args = parser.parse_args()
 
@@ -113,14 +106,14 @@ def main() -> int:
         print(f"ERROR: {root} does not look like a git clone (no .git)", file=sys.stderr)
         return 1
 
-    gitops_url = resolve_gitops_url(root, args.gitops_url)
+    gitops_url = args.gitops_url
     legacy = list(find_legacy_files(root))
     if not legacy:
         print("No legacy externalsecret-{env}.yaml files found — nothing to do.")
         return 0
 
     print(f"{'EXECUTING' if args.execute else 'DRY RUN'} — gitops clone: {root}")
-    print(f"gitops repoURL for new sources: {gitops_url}\n")
+    print("repoURL for new sources: copied from each Application's `ref: gitops` source\n")
 
     for old_path, cluster, app, env in legacy:
         new_path = new_path_for(root, cluster, app, env)
