@@ -111,7 +111,9 @@ client_id = os.environ["OIDC_CLIENT_ID"]
 jwks_client = PyJWKClient(f"{issuer}/protocol/openid-connect/certs")
 bearer = HTTPBearer()
 
-async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(bearer)):
+# `def`, pas `async def` : PyJWKClient télécharge les clés (I/O bloquante) ; FastAPI
+# exécute les dépendances synchrones dans son threadpool, sans bloquer la boucle.
+def get_current_user(creds: HTTPAuthorizationCredentials = Depends(bearer)):
     try:
         signing_key = jwks_client.get_signing_key_from_jwt(creds.credentials)
         return jwt.decode(
@@ -228,8 +230,15 @@ await userManager.getUser();          // session courante
 une variable d'environnement figée au build (`import.meta.env.*`) — le même artefact
 JS est déployé en dev et en prod, avec des realms différents. Le template
 `react-vite` génère un `config.js` **au démarrage du conteneur** (script
-`docker-entrypoint.sh`, avant que nginx serve quoi que ce soit) à partir des
+`docker-entrypoint.d/40-cnp-auth-config.sh`, hook de démarrage de l'image nginx
+officielle, exécuté avant que nginx serve quoi que ce soit) à partir des
 variables d'environnement du pod, chargé par `index.html` avant le bundle React.
+
+CORS : l'échange du code contre un token est un appel cross-origin depuis le
+navigateur. CNP configure le client avec `webOrigins = +` (origines des redirect
+URIs : l'URL exposée de l'app) plus, pour le realm `dev`, `http://localhost:5173`
+(serveur Vite) et `http://localhost:8000` (conteneur). Pour une autre origine,
+l'ajouter dans la console du realm (Clients → *app* → Web origins).
 
 ## CLI
 

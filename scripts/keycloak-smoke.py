@@ -181,7 +181,7 @@ async def main() -> int:
             from fastapi.security import HTTPAuthorizationCredentials
 
             creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=access_token)
-            claims = await get_current_user(credentials=creds)
+            claims = get_current_user(credentials=creds)  # sync dependency (blocking JWKS fetch)
             assert claims["sub"], "decoded token has no 'sub' claim"
             print(f"OK: python-fastapi template's get_current_user() accepted the token (sub={claims['sub']})")
             del tmp_app, TestClient  # unused, kept for readability of intent above
