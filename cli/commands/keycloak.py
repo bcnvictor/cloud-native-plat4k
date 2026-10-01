@@ -25,6 +25,20 @@ def _validate_env(env: str) -> None:
         raise typer.Exit(1)
 
 
+_STATE_LABELS = {
+    "active": "active",
+    "missing": "realm deleted (recreate with `cnp keycloak reprovision`)",
+    "foreign": "realm name taken by another realm — contact a platform admin",
+    "unknown": "unknown (Keycloak unreachable or disabled)",
+}
+
+
+def _state_label(env_status: dict) -> str:
+    if not env_status["enabled"]:
+        return "not activated"
+    return _STATE_LABELS.get(env_status.get("state", "unknown"), env_status.get("state", "unknown"))
+
+
 @app.command("status")
 def status(
     app_slug: str = typer.Option(..., "--app", "-a", help="Application slug"),
@@ -45,7 +59,7 @@ def status(
     rows = [
         [
             env,
-            "active" if data[env]["exists"] else ("not activated" if not data[env]["enabled"] else "realm missing"),
+            _state_label(data[env]),
             data[env]["issuer_url"] or "—",
         ]
         for env in ("dev", "prod")
@@ -70,8 +84,8 @@ def enable(
     print_success(f"Keycloak activated on '{app_slug}'")
     print_table(
         f"Keycloak — {app_slug}",
-        ["Env", "Realm", "Exists"],
-        [[env, data[env]["realm"], data[env]["exists"]] for env in ("dev", "prod")],
+        ["Env", "Realm", "Status"],
+        [[env, data[env]["realm"], _state_label(data[env])] for env in ("dev", "prod")],
     )
 
 

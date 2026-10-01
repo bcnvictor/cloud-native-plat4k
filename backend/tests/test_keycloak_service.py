@@ -8,13 +8,13 @@ test_env_var_routes.py.
 import httpx
 import pytest
 from hvac.exceptions import InvalidPath
-from shared.models import CnpTier
+from shared.models import CnpTier, KeycloakEnvState
 
 from backend.core.config import settings
 from backend.db.models import Application, User
 from backend.services.keycloak_service import (
     KeycloakService,
-    _username_for,
+    console_username,
     detect_envfrom_warning,
     realm_name,
 )
@@ -110,6 +110,36 @@ class TestProvision:
         assert "OIDC_CLIENT_SECRET" not in secret
         assert secret["OIDC_CLIENT_ID"] == "demo"
 
+    async def test_provision_tags_realm_with_owning_app(self, fake_keycloak, fake_vault):
+        await KeycloakService(db=None).provision(_app(id=7), "dev")
+        assert fake_keycloak.realms["demo-dev"]["attributes"]["cnp_app_id"] == "7"
+
+    async def test_provision_completes_a_half_created_setup(self, fake_keycloak, fake_vault):
+        """Realm created, then client/Vault failed: a second provision() must finish
+        the job instead of being a no-op because the realm exists."""
+        fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "1"})  # realm only, no client
+
+        await KeycloakService(db=None).provision(_app(), "dev")
+
+        clients = fake_keycloak.realms["demo-dev"]["clients"].values()
+        assert any(c["clientId"] == "demo" for c in clients)
+        assert fake_vault["apps/_ungrouped/demo/dev"]["OIDC_CLIENT_ID"] == "demo"
+
+    async def test_provision_refuses_a_realm_owned_by_another_app(self, fake_keycloak, fake_vault):
+        """Slug reuse after a failed cleanup: the new app must not adopt the old realm."""
+        fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "999"})
+
+        with pytest.raises(Exception) as exc_info:
+            await KeycloakService(db=None).provision(_app(), "dev")
+        assert getattr(exc_info.value, "status_code", None) == 409
+        assert "apps/_ungrouped/demo/dev" not in fake_vault
+
+    async def test_assert_no_foreign_oidc_keys(self, fake_keycloak, fake_vault):
+        fake_vault["apps/_ungrouped/demo/prod"] = {"OIDC_ISSUER_URL": "https://their-own-idp"}
+        with pytest.raises(Exception) as exc_info:
+            await KeycloakService(db=None).assert_no_foreign_oidc_keys(_app())
+        assert getattr(exc_info.value, "status_code", None) == 409
+
 
 class TestStatus:
     async def test_status_when_keycloak_disabled(self, monkeypatch, fake_vault):
@@ -118,7 +148,32 @@ class TestStatus:
         result = await KeycloakService(db=None).status(app)
         assert result.dev.enabled is False
         assert result.dev.exists is False
+        assert result.dev.state == KeycloakEnvState.UNKNOWN  # never "missing" -> no Recreate
         assert result.dev.realm == "demo-dev"
+
+    async def test_status_unknown_when_keycloak_unreachable(self, monkeypatch, fake_vault):
+        """Unreachable Keycloak must not look like a deleted realm (which would offer a
+        destructive Recreate)."""
+        def _client(self):
+            from backend.keycloak.client import KeycloakClient
+
+            def _boom(request):
+                raise httpx.ConnectError("refused", request=request)
+            return KeycloakClient(
+                base_url="http://keycloak.test", admin_client_id="x", admin_client_secret="y",
+                transport=httpx.MockTransport(_boom),
+            )
+        monkeypatch.setattr(KeycloakService, "_client", _client)
+
+        result = await KeycloakService(db=None).status(_app(auth_enabled=True))
+        assert result.dev.state == KeycloakEnvState.UNKNOWN
+        assert result.prod.state == KeycloakEnvState.UNKNOWN
+
+    async def test_status_foreign_realm(self, fake_keycloak, fake_vault):
+        fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "999"})
+        result = await KeycloakService(db=None).status(_app(auth_enabled=True))
+        assert result.dev.state == KeycloakEnvState.FOREIGN
+        assert result.dev.console_url is None
 
     async def test_status_reflects_existing_realm(self, fake_keycloak, fake_vault):
         app = _app(auth_enabled=True)
@@ -127,9 +182,11 @@ class TestStatus:
 
         result = await service.status(app)
         assert result.dev.exists is True
+        assert result.dev.state == KeycloakEnvState.ACTIVE
         assert result.dev.enabled is True
         assert result.dev.console_url == "https://auth.example.com/admin/demo-dev/console/"
         assert result.prod.exists is False
+        assert result.prod.state == KeycloakEnvState.MISSING
 
     async def test_status_includes_auth_warnings(self, fake_keycloak, fake_vault):
         app = _app(auth_warnings=["chart_missing_envfrom"])
@@ -163,7 +220,7 @@ class TestConsoleAccess:
 
         result = await service.grant_console_access(app, "dev", user)
 
-        assert result.username == "alice"
+        assert result.username == "cnp.alice.42"
         assert result.console_url == "https://auth.example.com/admin/demo-dev/console/"
         assert len(result.temporary_password) > 10
 
@@ -181,7 +238,7 @@ class TestRevokeAndDeprovision:
     async def test_revoke_member_never_raises_when_disabled(self, monkeypatch, fake_vault):
         monkeypatch.setattr(settings, "KEYCLOAK_ENABLED", False)
         app = _app()
-        await KeycloakService(db=None).revoke_member(app, "alice")  # must not raise
+        await KeycloakService(db=None).revoke_member(app, 1)  # must not raise
 
     async def test_revoke_member_removes_console_user(self, fake_keycloak, fake_vault):
         app = _app()
@@ -191,9 +248,13 @@ class TestRevokeAndDeprovision:
         await service.grant_console_access(app, "dev", user)
         assert fake_keycloak.realms["demo-dev"]["users"]
 
-        await service.revoke_member(app, "alice")
+        fake_keycloak.realms["demo-dev"]["users"]["end-user"] = {"id": "end-user", "username": "alice"}
 
-        assert fake_keycloak.realms["demo-dev"]["users"] == {}
+        await service.revoke_member(app, 1)
+
+        # Only the CNP-tagged console account goes; the app's end user named
+        # "alice" is untouched.
+        assert list(fake_keycloak.realms["demo-dev"]["users"]) == ["end-user"]
 
     async def test_deprovision_deletes_both_realms(self, fake_keycloak, fake_vault):
         app = _app()
@@ -206,6 +267,11 @@ class TestRevokeAndDeprovision:
         assert "demo-dev" not in fake_keycloak.realms
         assert "demo-prod" not in fake_keycloak.realms
 
+    async def test_deprovision_keeps_realm_owned_by_another_app(self, fake_keycloak, fake_vault):
+        fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "999"})
+        await KeycloakService(db=None).deprovision(_app())
+        assert "demo-dev" in fake_keycloak.realms
+
     async def test_deprovision_never_raises_when_disabled(self, monkeypatch, fake_vault):
         monkeypatch.setattr(settings, "KEYCLOAK_ENABLED", False)
         app = _app()
@@ -217,17 +283,19 @@ class TestHelpers:
         assert realm_name("my-app", "dev") == "my-app-dev"
         assert realm_name("my-app", "prod") == "my-app-prod"
 
-    def test_username_for_derives_from_email_local_part(self):
-        user = User(id=1, email="alice.dupont@example.com", hashed_password="x")
-        assert _username_for(user) == "alice.dupont"
+    def test_console_username_is_prefixed_and_unique_per_user(self):
+        a = User(id=1, email="alice@a.com", hashed_password="x")
+        b = User(id=2, email="alice@b.com", hashed_password="x")
+        assert console_username(a) == "cnp.alice.1"
+        assert console_username(b) == "cnp.alice.2"
 
-    def test_username_for_sanitizes_unsafe_characters(self):
-        user = User(id=1, email="alice+test@example.com", hashed_password="x")
-        assert _username_for(user) == "alice-test"
+    def test_console_username_sanitizes_unsafe_characters(self):
+        user = User(id=1, email="Alice+Test@example.com", hashed_password="x")
+        assert console_username(user) == "cnp.alice-test.1"
 
-    def test_username_for_falls_back_when_email_empty(self):
+    def test_console_username_falls_back_when_email_empty(self):
         user = User(id=7, email="", hashed_password="x")
-        assert _username_for(user) == "user-7"
+        assert console_username(user) == "cnp.user.7"
 
 
 class TestEnvfromDetection:

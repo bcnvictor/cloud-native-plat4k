@@ -54,10 +54,17 @@ async def enable_auth(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_tier(CnpTier.MAINTAINER)),
 ):
-    """Activate Keycloak on an app that wasn't scaffolded/onboarded with it (dev + prod)."""
+    """Activate Keycloak on an app that wasn't scaffolded/onboarded with it (dev + prod),
+    or retry after a failed provisioning (auth_provisioned == False): provisioning is
+    idempotent step by step, so a retry completes a half-created setup.
+    """
     app = await _get_app(app_id, db)
-    app.auth_enabled = True
+    if app.auth_enabled and app.auth_provisioned is not False:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Keycloak is already enabled for this app")
     service = KeycloakService(db)
+    if not app.auth_enabled:
+        await service.assert_no_foreign_oidc_keys(app)
+    app.auth_enabled = True
     try:
         await service.provision(app, "dev")
         await service.provision(app, "prod")

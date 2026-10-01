@@ -374,8 +374,14 @@ class TestValuesEndpoint:
 
 class TestManagedKeys:
     """OIDC_* keys are written exclusively by KeycloakService (4K-15/ADR-0026) —
-    the env var CRUD must refuse to touch them.
+    the env var CRUD must refuse to touch them, but only for apps where Keycloak is
+    enabled: an app without it keeps full control of these names (its own IdP).
     """
+
+    @pytest.fixture(autouse=True)
+    async def _keycloak_enabled_on_app(self, db_session, app_with_developer: Application):
+        app_with_developer.auth_enabled = True
+        await db_session.commit()
 
     async def test_set_oidc_key_rejected(
         self, client: AsyncClient, developer_token: str, app_with_developer: Application
@@ -418,3 +424,20 @@ class TestManagedKeys:
             headers={"Authorization": f"Bearer {developer_token}"},
         )
         assert resp.status_code == 409
+
+
+class TestOidcKeysWithoutKeycloak:
+    async def test_oidc_keys_are_free_when_keycloak_disabled(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault
+    ):
+        resp = await client.put(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev",
+            json={"variables": {"OIDC_ISSUER_URL": "https://their-own-idp"}},
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code in (200, 204)
+        resp = await client.get(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev",
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.json()["keys"] == [{"key": "OIDC_ISSUER_URL", "is_set": True, "managed": False}]

@@ -186,10 +186,19 @@ besoin de toucher `.env` en prod.
   Authentication → bind `mfa` flow, ou via l'API admin).
 - Vérifier `registrationAllowed: false` sur le realm `master` (auto-inscription publique
   désactivée — c'est déjà la valeur par défaut de Keycloak, à re-vérifier explicitement).
-- Ne **pas** exposer la console `master` (`/admin/master/console/`) plus largement que
-  nécessaire : à terme, restreindre son accès réseau via Tailscale (comme `cnp-control`,
-  ADR-0019) plutôt que de compter uniquement sur les credentials — hors scope de ce lot,
-  à planifier séparément.
+- Le realm `master` **n'est pas joignable depuis Internet** : `ingress.yaml` route
+  `/admin/master`, `/admin/realms/master` et `/realms/master` vers un Service sans pod
+  (`keycloak-blocked`, réponse 503). Les consoles d'équipe (`/admin/{realm}/console/`) et
+  les endpoints OIDC des realms d'app restent publics. Le backend passe par l'URL interne
+  (`KEYCLOAK_URL`, non concernée). Accès admin plateforme :
+
+  ```bash
+  kubectl -n keycloak port-forward svc/keycloak 8080:8080 --context cnp-aks
+  # puis http://localhost:8080/admin/master/console/
+  ```
+
+  Vérification après déploiement : `curl -s -o /dev/null -w '%{http_code}'
+  https://auth.cloud-native-plat4k.me/admin/master/console/` doit renvoyer `503`.
 - Aucun compte d'équipe (app) ne doit jamais être créé dans `master` — seuls
   `KeycloakService` (via `cnp-provisioner`) et les humains administrant la plateforme y ont
   un compte.
@@ -198,6 +207,7 @@ besoin de toucher `.env` en prod.
 
 ```bash
 kubectl delete ingress keycloak -n keycloak --context cnp-aks
+kubectl delete service keycloak-blocked -n keycloak --context cnp-aks
 kubectl delete deployment,svc keycloak -n keycloak --context cnp-aks
 kubectl delete statefulset,svc keycloak-postgres -n keycloak --context cnp-aks
 kubectl delete secret keycloak-db keycloak-admin -n keycloak --context cnp-aks

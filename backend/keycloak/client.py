@@ -93,20 +93,29 @@ class KeycloakClient:
 
     # ---- Realms ----
 
-    async def realm_exists(self, realm: str) -> bool:
+    async def get_realm(self, realm: str) -> dict | None:
+        """Realm representation (incl. `attributes`), or None if it doesn't exist."""
         try:
-            await self._request("GET", f"/admin/realms/{realm}")
-            return True
+            resp = await self._request("GET", f"/admin/realms/{realm}")
         except KeycloakNotFound:
-            return False
+            return None
+        return resp.json()
 
-    async def create_realm(self, realm: str, *, registration_allowed: bool = False) -> None:
+    async def realm_exists(self, realm: str) -> bool:
+        return await self.get_realm(realm) is not None
+
+    async def create_realm(
+        self,
+        realm: str,
+        *,
+        registration_allowed: bool = False,
+        attributes: dict[str, str] | None = None,
+    ) -> None:
+        payload = {"realm": realm, "enabled": True, "registrationAllowed": registration_allowed}
+        if attributes:
+            payload["attributes"] = attributes
         try:
-            await self._request(
-                "POST",
-                "/admin/realms",
-                json={"realm": realm, "enabled": True, "registrationAllowed": registration_allowed},
-            )
+            await self._request("POST", "/admin/realms", json=payload)
         except KeycloakConflict:
             logger.info("Keycloak realm %s already exists, skipping create", realm)
             return
@@ -137,11 +146,19 @@ class KeycloakClient:
         *,
         public: bool,
         redirect_uris: list[str],
-        web_origins: list[str] | None = None,
+        extra_web_origins: list[str] | None = None,
     ) -> str:
         """Create the app's client + its audience protocol mapper. Idempotent: if the
         client already exists, reuses it rather than raising. Returns the client's
         internal Keycloak id (uuid, distinct from clientId).
+
+        webOrigins is "+" (Keycloak allows CORS from the origins of the redirect URIs)
+        plus `extra_web_origins`. Passing the redirect URIs themselves does not work
+        — web origins are bare origins (`https://host`): a value with a path or a
+        wildcard (`https://host/*`, `http://localhost:*`) never matches the browser's
+        Origin header, which blocks the SPA's token exchange (react-vite template;
+        verified against Keycloak 26). "+" can't derive an origin from
+        `http://localhost:*` either, hence explicit extra origins for local dev.
         """
         payload = {
             "clientId": client_id,
@@ -149,7 +166,7 @@ class KeycloakClient:
             "publicClient": public,
             "protocol": "openid-connect",
             "redirectUris": redirect_uris,
-            "webOrigins": web_origins if web_origins is not None else redirect_uris,
+            "webOrigins": ["+", *(extra_web_origins or [])],
             "standardFlowEnabled": True,
             "directAccessGrantsEnabled": False,
             # Confidential clients get a service account for backend-to-backend calls.
@@ -210,31 +227,89 @@ class KeycloakClient:
 
     # ---- Users (console access) ----
 
-    async def ensure_admin_user(self, realm: str, username: str, email: str) -> str:
-        """Create (or reactivate) a local user. Returns their internal user id."""
+    async def _enable_unmanaged_user_attributes(self, realm: str) -> None:
+        """Keycloak 24+ uses a declarative user profile: attributes not declared in it
+        are silently dropped on write unless the realm's unmanagedAttributePolicy
+        allows them. CNP tags its console accounts with `cnp_user_id` /
+        `cnp_managed`, so the policy must be ADMIN_EDIT (only admins see/edit them).
+        Idempotent.
+        """
+        resp = await self._request("GET", f"/admin/realms/{realm}/users/profile")
+        profile = resp.json()
+        if profile.get("unmanagedAttributePolicy") == "ADMIN_EDIT":
+            return
+        profile["unmanagedAttributePolicy"] = "ADMIN_EDIT"
+        await self._request("PUT", f"/admin/realms/{realm}/users/profile", json=profile)
+
+    async def find_users_by_attribute(self, realm: str, key: str, value: str) -> list[dict]:
+        resp = await self._request(
+            "GET",
+            f"/admin/realms/{realm}/users",
+            params={"q": f"{key}:{value}", "exact": "true", "briefRepresentation": "false"},
+        )
+        # Filter again client-side: never trust a fuzzy match when the result decides
+        # whose account gets a password reset.
+        return [u for u in resp.json() if value in (u.get("attributes") or {}).get(key, [])]
+
+    async def find_user_by_username(self, realm: str, username: str) -> dict | None:
         resp = await self._request(
             "GET", f"/admin/realms/{realm}/users", params={"username": username, "exact": "true"}
         )
         users = resp.json()
-        if users:
-            user_id = users[0]["id"]
+        return users[0] if users else None
+
+    async def ensure_cnp_admin_user(
+        self,
+        realm: str,
+        username: str,
+        *,
+        cnp_user_id: int,
+        first_name: str,
+        last_name: str = "",
+    ) -> str:
+        """Create (or reactivate) the console account of a CNP user. Returns its id.
+
+        The account is identified by its `cnp_user_id` attribute, never by username
+        alone: a realm also holds the app's own end users, and CNP must never take
+        over (password reset + realm-admin) an account it didn't create. If the
+        username is already taken by an account without the matching attribute,
+        raises KeycloakConflict instead.
+
+        No email on purpose: realms forbid duplicate emails by default, and the
+        developer may already have an end-user account with the same email.
+        """
+        await self._enable_unmanaged_user_attributes(realm)
+
+        existing = await self.find_users_by_attribute(realm, "cnp_user_id", str(cnp_user_id))
+        if existing:
+            user_id = existing[0]["id"]
             await self._request(
-                "PUT", f"/admin/realms/{realm}/users/{user_id}", json={"enabled": True, "email": email}
+                "PUT", f"/admin/realms/{realm}/users/{user_id}", json={"enabled": True}
             )
             return user_id
+
+        if await self.find_user_by_username(realm, username):
+            raise KeycloakConflict(
+                f"Username {username} already exists in realm {realm} and is not a CNP-managed account"
+            )
 
         await self._request(
             "POST",
             f"/admin/realms/{realm}/users",
-            json={"username": username, "email": email, "enabled": True, "emailVerified": True},
+            json={
+                "username": username,
+                "firstName": first_name,
+                "lastName": last_name,
+                "enabled": True,
+                "attributes": {"cnp_user_id": [str(cnp_user_id)], "cnp_managed": ["true"]},
+            },
         )
-        resp = await self._request(
-            "GET", f"/admin/realms/{realm}/users", params={"username": username, "exact": "true"}
-        )
-        users = resp.json()
-        if not users:
-            raise KeycloakError(f"User {username} not found in realm {realm} right after creation")
-        return users[0]["id"]
+        created = await self.find_users_by_attribute(realm, "cnp_user_id", str(cnp_user_id))
+        if not created:
+            raise KeycloakError(
+                f"CNP user {cnp_user_id} not found in realm {realm} right after creation"
+            )
+        return created[0]["id"]
 
     async def assign_realm_admin(self, realm: str, user_id: str) -> None:
         """Grant the `realm-management` client's `realm-admin` role — full admin of
@@ -264,11 +339,8 @@ class KeycloakClient:
             json={"type": "password", "value": password, "temporary": True},
         )
 
-    async def delete_user(self, realm: str, username: str) -> None:
-        resp = await self._request(
-            "GET", f"/admin/realms/{realm}/users", params={"username": username, "exact": "true"}
-        )
-        for u in resp.json():
+    async def delete_users_by_attribute(self, realm: str, key: str, value: str) -> None:
+        for u in await self.find_users_by_attribute(realm, key, value):
             try:
                 await self._request("DELETE", f"/admin/realms/{realm}/users/{u['id']}")
             except KeycloakNotFound:

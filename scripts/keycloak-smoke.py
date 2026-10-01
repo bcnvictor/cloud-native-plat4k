@@ -122,6 +122,7 @@ async def main() -> int:
         assert clients, "app client not found in realm"
         client_internal_id = clients[0]["id"]
         assert clients[0]["publicClient"] is False, "expected a confidential client (framework=python-fastapi)"
+        assert clients[0]["webOrigins"][0] == "+", f"webOrigins should start with '+', got {clients[0]['webOrigins']}"
         print(f"OK: client '{APP_SLUG}' exists, id={client_internal_id}, confidential")
 
         resp = await _admin_get(f"/admin/realms/{realm}/clients/{client_internal_id}/protocol-mappers/models")
@@ -185,12 +186,28 @@ async def main() -> int:
             print(f"OK: python-fastapi template's get_current_user() accepted the token (sub={claims['sub']})")
             del tmp_app, TestClient  # unused, kept for readability of intent above
 
+        _step("2b. grant_console_access(): tagged CNP account, never an end user's")
+        from backend.db.models import User
+
+        console_user = User(id=4242, email="alice@example.com", hashed_password="x")
+        creds = await service.grant_console_access(app, "dev", console_user)
+        assert creds.username == "cnp.alice.4242", creds.username
+        resp = await _admin_get(f"/admin/realms/{realm}/users?q=cnp_user_id:4242&exact=true")
+        tagged = [u for u in resp.json() if "4242" in (u.get("attributes") or {}).get("cnp_user_id", [])]
+        assert len(tagged) == 1, f"console account not found by attribute: {resp.json()}"
+        print("OK: console account created and found by its cnp_user_id attribute")
+
+        await service.revoke_member(app, 4242)
+        resp = await _admin_get(f"/admin/realms/{realm}/users?q=cnp_user_id:4242&exact=true")
+        assert not resp.json(), "console account still present after revoke_member()"
+        print("OK: revoke_member() removed the console account")
+
         _step("3. delete_realm() directly (simulating a team deleting their realm)")
         client = service._client()
         await client.delete_realm(realm)
         status_after_delete = await service.status(app)
-        assert status_after_delete.dev.exists is False, "status() should report the realm missing after deletion"
-        print("OK: status().dev.exists == False after direct deletion")
+        assert status_after_delete.dev.state == "missing", status_after_delete.dev.state
+        print("OK: status().dev.state == 'missing' after direct deletion")
 
         _step("3b. reprovision(app, 'dev') recreates it")
         result2 = await service.reprovision(app, "dev")

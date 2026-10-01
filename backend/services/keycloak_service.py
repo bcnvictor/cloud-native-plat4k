@@ -5,14 +5,24 @@ itself, and Vault as the only channel credentials travel through — reusing the
 Vault -> ESO -> Secret K8s pipeline built for application env vars (ADR-0024,
 ADR-0025). Covers both scaffolded and onboarded apps identically (mode A for
 onboarded: same provisioning, no code injection — see ADR-0026 §6).
+
+Ownership markers (never trust a name alone):
+- each realm CNP creates carries the realm attribute `cnp_app_id`; a realm with the
+  expected name but without the matching marker is "foreign" and is never adopted,
+  completed, handed out or deleted (slug reuse after a failed cleanup, manual realm);
+- each console account CNP creates carries the user attribute `cnp_user_id`; CNP
+  looks accounts up by that attribute, never by username, so it can't take over one
+  of the app's end-user accounts.
 """
 import logging
 import re
 import secrets
 
 from fastapi import HTTPException, status
+from hvac.exceptions import InvalidPath
 from shared.models import (
     KeycloakConsoleAccessResponse,
+    KeycloakEnvState,
     KeycloakEnvStatus,
     KeycloakStatusResponse,
     app_internet_url,
@@ -22,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.config import settings
 from backend.db.models import Application, User
 from backend.gitlab.client import GitLabClient
-from backend.keycloak.client import KeycloakClient, KeycloakUnavailable
+from backend.keycloak.client import KeycloakClient, KeycloakConflict, KeycloakError
 from backend.services.env_var_service import MANAGED_ENV_KEYS, resolve_group_slug, vault_env_path
 from backend.vault.client import vault_client
 
@@ -34,9 +44,8 @@ VALID_ENVS = ("dev", "prod")
 # Everything else (backend services) gets a confidential client + service account.
 PUBLIC_CLIENT_FRAMEWORKS = {"react-vite"}
 
-# Re-exported for readability at call sites — the source of truth lives in
-# env_var_service (see the comment there for why: avoids a circular import).
-MANAGED_OIDC_KEYS = MANAGED_ENV_KEYS
+REALM_OWNER_ATTRIBUTE = "cnp_app_id"
+USER_OWNER_ATTRIBUTE = "cnp_user_id"
 
 
 def realm_name(app_slug: str, env: str) -> str:
@@ -48,18 +57,28 @@ def _validate_env(env: str) -> None:
         raise HTTPException(status_code=422, detail="env must be 'dev' or 'prod'")
 
 
-def _username_for(user: User) -> str:
-    """V1 simplification (noted in ADR-0026 as an autonomous choice): `User` has no
-    GitLab-username column, only `email` — derive a Keycloak-safe username from the
-    local part of the email rather than joining through GitLabGroupMember.username.
+def console_username(user: User) -> str:
+    """`cnp.<email local part>.<cnp user id>` — unique thanks to the id, readable,
+    and the `cnp.` prefix keeps CNP console accounts visibly apart from the app's
+    own end users. The username is only a display name: lookups go through the
+    `cnp_user_id` attribute (see KeycloakClient.ensure_cnp_admin_user).
     """
-    local = (user.email or "").split("@")[0]
-    slug = re.sub(r"[^a-zA-Z0-9._-]", "-", local).strip("-")
-    return slug or f"user-{user.id}"
+    local = (user.email or "").split("@")[0].lower()
+    local = re.sub(r"[^a-z0-9_-]", "-", local).strip("-") or "user"
+    return f"cnp.{local}.{user.id}"
+
+
+def _owned_by(realm_repr: dict, app: Application) -> bool:
+    return (realm_repr.get("attributes") or {}).get(REALM_OWNER_ATTRIBUTE) == str(app.id)
 
 
 def _is_public_client(framework: str | None) -> bool:
     return framework in PUBLIC_CLIENT_FRAMEWORKS
+
+
+# Local dev origins allowed to call the dev realm's token endpoint from a browser:
+# Vite dev server and the template's nginx container port (react-vite README).
+LOCAL_DEV_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:8000"]
 
 
 def _redirect_uris(app: Application, env: str) -> list[str]:
@@ -128,41 +147,91 @@ class KeycloakService:
             admin_client_secret=settings.KEYCLOAK_ADMIN_CLIENT_SECRET,
         )
 
+    async def _vault_path(self, app: Application, env: str) -> str:
+        group_slug = await resolve_group_slug(self.db, app.owning_gitlab_group_id)
+        return vault_env_path(group_slug, app.slug, env)
+
+    async def assert_no_foreign_oidc_keys(self, app: Application) -> None:
+        """Before turning Keycloak on for an app that doesn't have it yet: refuse if the
+        app already defines OIDC_* variables itself (e.g. an onboarded app using its
+        own identity provider) — provisioning would silently overwrite them.
+        """
+        for env in VALID_ENVS:
+            try:
+                data = vault_client.get_secret(await self._vault_path(app, env))
+            except InvalidPath:
+                continue
+            clashing = sorted(MANAGED_ENV_KEYS & data.keys())
+            if clashing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"The app already defines {', '.join(clashing)} in {env} — remove "
+                        "these variables before enabling Keycloak, which manages them."
+                    ),
+                )
+
+    async def _get_owned_realm(self, client: KeycloakClient, app: Application, env: str) -> dict | None:
+        """The app's realm, None if it doesn't exist, 409 if a realm with that name
+        exists but wasn't created by CNP for this app.
+        """
+        realm = realm_name(app.slug, env)
+        repr_ = await client.get_realm(realm)
+        if repr_ is not None and not _owned_by(repr_, app):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Realm '{realm}' exists but does not belong to this app — a platform "
+                    "admin must check and delete it manually."
+                ),
+            )
+        return repr_
+
     async def provision(self, app: Application, env: str) -> KeycloakEnvStatus:
-        """Idempotent: if the realm already exists, changes nothing and just reports
-        its current status — provisioning never overwrites an existing realm.
+        """Create the realm if missing, then make sure the app's client and the OIDC_*
+        Vault variables exist. Each step is idempotent, so calling this again after a
+        partial failure (realm created, client or Vault write failed) completes the
+        setup instead of being stuck on "realm already exists".
+        Never touches anything else in an existing realm (users, roles, settings).
         """
         _validate_env(env)
         client = self._client()
         realm = realm_name(app.slug, env)
 
-        if not await client.realm_exists(realm):
-            await client.create_realm(realm, registration_allowed=False)
-            public = _is_public_client(app.framework)
-            redirect_uris = _redirect_uris(app, env)
-            internal_id = await client.create_client(
-                realm, app.slug, public=public, redirect_uris=redirect_uris, web_origins=redirect_uris,
+        if await self._get_owned_realm(client, app, env) is None:
+            await client.create_realm(
+                realm,
+                registration_allowed=False,
+                attributes={REALM_OWNER_ATTRIBUTE: str(app.id)},
             )
 
-            oidc_vars = {
-                "OIDC_ISSUER_URL": f"{settings.KEYCLOAK_PUBLIC_URL}/realms/{realm}",
-                "OIDC_CLIENT_ID": app.slug,
-            }
-            if not public:
-                oidc_vars["OIDC_CLIENT_SECRET"] = await client.get_client_secret(realm, internal_id)
-
-            group_slug = await resolve_group_slug(self.db, app.owning_gitlab_group_id)
-            # patch_secret, never put_secret: must not clobber variables a developer
-            # already set for this app/env (ADR-0025).
-            vault_client.patch_secret(vault_env_path(group_slug, app.slug, env), oidc_vars)
+        public = _is_public_client(app.framework)
+        internal_id = await client.create_client(
+            realm, app.slug, public=public, redirect_uris=_redirect_uris(app, env),
+            extra_web_origins=LOCAL_DEV_WEB_ORIGINS if env == "dev" else None,
+        )
+        oidc_vars = {
+            "OIDC_ISSUER_URL": f"{settings.KEYCLOAK_PUBLIC_URL}/realms/{realm}",
+            "OIDC_CLIENT_ID": app.slug,
+        }
+        if not public:
+            oidc_vars["OIDC_CLIENT_SECRET"] = await client.get_client_secret(realm, internal_id)
+        # patch_secret, never put_secret: must not clobber variables a developer
+        # already set for this app/env (ADR-0025).
+        vault_client.patch_secret(await self._vault_path(app, env), oidc_vars)
 
         return await self._status_for_env(app, env, client)
 
     async def status(self, app: Application) -> KeycloakStatusResponse:
-        if not settings.KEYCLOAK_ENABLED:
-            def _empty(env: str) -> KeycloakEnvStatus:
-                return KeycloakEnvStatus(enabled=False, realm=realm_name(app.slug, env), exists=False)
-            return KeycloakStatusResponse(dev=_empty("dev"), prod=_empty("prod"), auth_warnings=app.auth_warnings or [])
+        if not settings.KEYCLOAK_ENABLED or not settings.KEYCLOAK_ADMIN_CLIENT_SECRET:
+            def _unknown(env: str) -> KeycloakEnvStatus:
+                return KeycloakEnvStatus(
+                    enabled=bool(app.auth_enabled), realm=realm_name(app.slug, env),
+                    exists=False, state=KeycloakEnvState.UNKNOWN,
+                )
+            return KeycloakStatusResponse(
+                dev=_unknown("dev"), prod=_unknown("prod"), auth_warnings=app.auth_warnings or [],
+            )
         client = self._client()
         dev = await self._status_for_env(app, "dev", client)
         prod = await self._status_for_env(app, "prod", client)
@@ -170,18 +239,24 @@ class KeycloakService:
 
     async def _status_for_env(self, app: Application, env: str, client: KeycloakClient) -> KeycloakEnvStatus:
         realm = realm_name(app.slug, env)
+        base = {"enabled": bool(app.auth_enabled), "realm": realm}
         try:
-            exists = await client.realm_exists(realm)
-        except KeycloakUnavailable:
-            # Keycloak enabled but unreachable — report "unknown" as not-exists rather
-            # than raising, so the rest of the app's status page still renders.
-            exists = False
+            repr_ = await client.get_realm(realm)
+        except KeycloakError:
+            # Unreachable / erroring Keycloak is NOT "realm deleted": reporting it as
+            # missing would offer a destructive "Recreate" for a realm that is fine.
+            logger.warning("Keycloak unreachable while reading realm %s", realm, exc_info=True)
+            return KeycloakEnvStatus(**base, exists=False, state=KeycloakEnvState.UNKNOWN)
+        if repr_ is None:
+            return KeycloakEnvStatus(**base, exists=False, state=KeycloakEnvState.MISSING)
+        if not _owned_by(repr_, app):
+            return KeycloakEnvStatus(**base, exists=True, state=KeycloakEnvState.FOREIGN)
         return KeycloakEnvStatus(
-            enabled=bool(app.auth_enabled),
-            realm=realm,
-            exists=exists,
-            console_url=f"{settings.KEYCLOAK_PUBLIC_URL}/admin/{realm}/console/" if exists else None,
-            issuer_url=f"{settings.KEYCLOAK_PUBLIC_URL}/realms/{realm}" if exists else None,
+            **base,
+            exists=True,
+            state=KeycloakEnvState.ACTIVE,
+            console_url=f"{settings.KEYCLOAK_PUBLIC_URL}/admin/{realm}/console/",
+            issuer_url=f"{settings.KEYCLOAK_PUBLIC_URL}/realms/{realm}",
         )
 
     async def reprovision(self, app: Application, env: str) -> KeycloakEnvStatus:
@@ -192,7 +267,7 @@ class KeycloakService:
         _validate_env(env)
         client = self._client()
         realm = realm_name(app.slug, env)
-        if await client.realm_exists(realm):
+        if await self._get_owned_realm(client, app, env) is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Realm '{realm}' still exists — delete it first if you really want to recreate it",
@@ -203,14 +278,26 @@ class KeycloakService:
         _validate_env(env)
         client = self._client()
         realm = realm_name(app.slug, env)
-        if not await client.realm_exists(realm):
+        if await self._get_owned_realm(client, app, env) is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Realm '{realm}' does not exist — enable Keycloak / reprovision first",
             )
 
-        username = _username_for(user)
-        user_id = await client.ensure_admin_user(realm, username, user.email)
+        username = console_username(user)
+        local, _, domain = (user.email or "").partition("@")
+        try:
+            user_id = await client.ensure_cnp_admin_user(
+                realm, username, cnp_user_id=user.id, first_name=local or username, last_name=domain,
+            )
+        except KeycloakConflict:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Username '{username}' is already used in realm '{realm}' by an account "
+                    "CNP did not create — rename or delete it in the console first."
+                ),
+            )
         await client.assign_realm_admin(realm, user_id)
         temporary_password = secrets.token_urlsafe(18)
         await client.set_temporary_password(realm, user_id, temporary_password)
@@ -222,10 +309,11 @@ class KeycloakService:
             temporary_password=temporary_password,
         )
 
-    async def revoke_member(self, app: Application, username: str) -> None:
-        """Best-effort: remove `username`'s console access from both envs. Never
-        raises — called from member-removal code paths that must still succeed even
-        if Keycloak is down or the user never had console access.
+    async def revoke_member(self, app: Application, cnp_user_id: int) -> None:
+        """Best-effort: remove a CNP user's console account(s) from both realms,
+        looked up by the `cnp_user_id` attribute (robust to email/username changes).
+        Never raises — called from member-removal code paths that must still succeed
+        even if Keycloak is down or the user never had console access.
         """
         if not settings.KEYCLOAK_ENABLED:
             return
@@ -236,15 +324,16 @@ class KeycloakService:
         for env in VALID_ENVS:
             realm = realm_name(app.slug, env)
             try:
-                if await client.realm_exists(realm):
-                    await client.delete_user(realm, username)
+                repr_ = await client.get_realm(realm)
+                if repr_ is not None and _owned_by(repr_, app):
+                    await client.delete_users_by_attribute(realm, USER_OWNER_ATTRIBUTE, str(cnp_user_id))
             except Exception:
-                logger.exception("Failed to revoke Keycloak console access for %s in %s", username, realm)
+                logger.exception("Failed to revoke Keycloak console access for user %s in %s", cnp_user_id, realm)
 
     async def deprovision(self, app: Application) -> None:
-        """Best-effort: delete both realms. Never raises — called from
-        AppService.delete_app's cleanup sequence, which must not fail the app
-        deletion because Keycloak is unreachable.
+        """Best-effort: delete both realms — only if CNP created them for this app.
+        Never raises — called from AppService.delete_app's cleanup sequence, which
+        must not fail the app deletion because Keycloak is unreachable.
         """
         if not settings.KEYCLOAK_ENABLED:
             return
@@ -255,6 +344,12 @@ class KeycloakService:
         for env in VALID_ENVS:
             realm = realm_name(app.slug, env)
             try:
+                repr_ = await client.get_realm(realm)
+                if repr_ is None:
+                    continue
+                if not _owned_by(repr_, app):
+                    logger.warning("Not deleting realm %s: not owned by app %s", realm, app.id)
+                    continue
                 await client.delete_realm(realm)
             except Exception:
                 logger.exception("Failed to delete Keycloak realm %s", realm)

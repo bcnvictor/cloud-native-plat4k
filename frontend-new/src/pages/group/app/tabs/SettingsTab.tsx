@@ -19,7 +19,18 @@ import { Badge } from '@/components/ui/Badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { appUrl } from '@/utils/appUrls';
 import { cn } from '@/utils/cn';
-import type { KeycloakConsoleAccessResponse } from '@/types';
+import { useToast } from '@/components/ui/toast';
+import type { KeycloakConsoleAccessResponse, KeycloakEnvState } from '@/types';
+
+const STATE_BADGES: Record<
+  KeycloakEnvState,
+  { label: string; variant: 'success' | 'warning' | 'danger' | 'muted' }
+> = {
+  active: { label: 'active', variant: 'success' },
+  missing: { label: 'realm deleted', variant: 'warning' },
+  foreign: { label: 'name conflict — contact an admin', variant: 'danger' },
+  unknown: { label: 'Keycloak unavailable', variant: 'muted' },
+};
 
 export function SettingsTab() {
   const { app, isLoading } = useAppDetail();
@@ -153,6 +164,18 @@ export function SettingsTab() {
   });
 
   const isOwner = !!myAccess && (myAccess.is_admin || myAccess.tier === 'owner');
+  const { toast } = useToast();
+
+  function toastAuthError(title: string) {
+    return (error: unknown) => {
+      const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      toast({
+        title,
+        description: typeof detail === 'string' ? detail : 'Keycloak request failed.',
+        variant: 'destructive',
+      });
+    };
+  }
 
   const enableAuthMutation = useMutation({
     mutationFn: () => appsApi.enableAuth(app!.id),
@@ -160,11 +183,13 @@ export function SettingsTab() {
       qc.invalidateQueries({ queryKey: ['authStatus', app?.id] });
       qc.invalidateQueries({ queryKey: ['app', appSlug] });
     },
+    onError: toastAuthError('Keycloak activation failed'),
   });
 
   const consoleAccessMutation = useMutation({
     mutationFn: (env: EnvName) => appsApi.getAuthConsoleAccess(app!.id, env),
     onSuccess: (creds) => setConsoleCreds(creds),
+    onError: toastAuthError('Could not grant console access'),
   });
 
   const reprovisionMutation = useMutation({
@@ -172,6 +197,10 @@ export function SettingsTab() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['authStatus', app?.id] });
       setRecreateEnv(null);
+    },
+    onError: (error: unknown) => {
+      setRecreateEnv(null);
+      toastAuthError('Realm recreation failed')(error);
     },
   });
 
@@ -373,7 +402,11 @@ export function SettingsTab() {
 
         {!app.auth_enabled ? (
           <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Not activated for this app.</p>
+            <p className="text-xs text-muted-foreground">
+              {(app.auth_warnings ?? []).includes('oidc_keys_conflict')
+                ? 'Not activated: this app already defines OIDC_* variables (its own identity provider?). Remove them to enable Keycloak.'
+                : 'Not activated for this app.'}
+            </p>
             <Button
               variant="primary"
               size="sm"
@@ -386,6 +419,23 @@ export function SettingsTab() {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
+            {app.auth_provisioned === false && (
+              <div className="flex items-center justify-between gap-2 p-2 bg-warning-subtle rounded-md">
+                <p className="text-xs text-warning-text">
+                  Keycloak provisioning did not complete. Retrying finishes the setup without
+                  touching what already exists.
+                </p>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  loading={enableAuthMutation.isPending}
+                  disabled={!canManageApp}
+                  onClick={() => enableAuthMutation.mutate()}
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
             {(['dev', 'prod'] as EnvName[])
               .filter((env) => env === 'dev' || canSeeProd)
               .map((env) => {
@@ -397,8 +447,8 @@ export function SettingsTab() {
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-medium text-foreground uppercase">{env}</span>
                         {envStatus ? (
-                          <Badge variant={envStatus.exists ? 'success' : 'warning'}>
-                            {envStatus.exists ? 'active' : 'realm missing'}
+                          <Badge variant={STATE_BADGES[envStatus.state].variant}>
+                            {STATE_BADGES[envStatus.state].label}
                           </Badge>
                         ) : (
                           <Badge variant="muted">loading…</Badge>
@@ -411,7 +461,7 @@ export function SettingsTab() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {envStatus?.exists ? (
+                      {envStatus?.state === 'active' ? (
                         <>
                           <a href={envStatus.console_url ?? '#'} target="_blank" rel="noopener noreferrer">
                             <Button size="sm" variant="ghost" icon={<IconExternalLink size={13} />}>
@@ -428,7 +478,9 @@ export function SettingsTab() {
                             Get access
                           </Button>
                         </>
-                      ) : (
+                      ) : envStatus?.state === 'missing' ? (
+                        // Only a realm confirmed deleted can be recreated — never when
+                        // Keycloak is merely unreachable (state "unknown").
                         <Button
                           size="sm"
                           variant="danger"
@@ -437,7 +489,7 @@ export function SettingsTab() {
                         >
                           Recreate
                         </Button>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 );

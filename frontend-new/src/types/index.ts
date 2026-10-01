@@ -192,10 +192,15 @@ export interface MyAccessResponse {
 
 // ── Keycloak app-auth (4K-15/ADR-0026) ──────────────────────────────────────────
 
+/** active: realm OK · missing: deleted (Recreate offered) · foreign: name taken by a
+ *  realm CNP didn't create for this app · unknown: Keycloak unreachable/disabled. */
+export type KeycloakEnvState = 'active' | 'missing' | 'foreign' | 'unknown';
+
 export interface KeycloakEnvStatus {
   enabled: boolean;
   realm: string;
   exists: boolean;
+  state: KeycloakEnvState;
   console_url: string | null;
   issuer_url: string | null;
 }

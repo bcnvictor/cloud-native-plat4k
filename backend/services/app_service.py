@@ -413,8 +413,19 @@ class AppService:
         """
         from backend.services.keycloak_service import KeycloakService
 
-        app.auth_enabled = True
         service = KeycloakService(self.db)
+        try:
+            await service.assert_no_foreign_oidc_keys(app)
+        except HTTPException as e:
+            # The app defines OIDC_* itself (its own IdP): don't enable Keycloak over it.
+            logger.warning("Keycloak not enabled for app %s: %s", app.slug, e.detail)
+            app.auth_provisioned = False
+            app.auth_warnings = [*(app.auth_warnings or []), "oidc_keys_conflict"]
+            await self.db.commit()
+            await self.db.refresh(app)
+            return
+
+        app.auth_enabled = True
         try:
             await service.provision(app, "dev")
             await service.provision(app, "prod")

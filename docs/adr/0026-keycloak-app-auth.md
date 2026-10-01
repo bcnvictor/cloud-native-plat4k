@@ -100,9 +100,22 @@ Le login via GitLab brokering (SSO fédéré depuis le realm `master` ou depuis 
 **reporté** — évolution documentée en fin d'ADR. En V1, l'accès console fonctionne ainsi :
 1. Un Owner/Maintainer clique "Obtenir un accès" (UI) ou lance `cnp keycloak console` (CLI)
    pour un env donné.
-2. Le backend crée (ou réactive) un user local au realm : `username` = username GitLab/CNP,
-   `email` = email CNP, rôle `realm-admin`, mot de passe temporaire généré côté serveur avec
-   `requiredAction: UPDATE_PASSWORD`.
+2. Le backend crée (ou réactive) un compte console local au realm, rôle `realm-admin`, mot de
+   passe temporaire généré côté serveur (`temporary: true` → changement imposé au 1er login).
+   **Identité du compte** — un realm contient aussi les utilisateurs finaux de l'app, CNP ne
+   doit jamais s'approprier l'un de leurs comptes :
+   - `username` = `cnp.<partie locale de l'email>.<id user CNP>` (ex. `cnp.alice.42`) :
+     unique grâce à l'id (pas de collision `alice@a.com` / `alice@b.com`), lisible, et le
+     préfixe `cnp.` est réservé aux comptes plateforme ;
+   - attributs utilisateur `cnp_user_id` et `cnp_managed=true` : **toute recherche passe par
+     `cnp_user_id`**, jamais par le username. Si le username existe déjà sans l'attribut
+     correspondant (compte créé à la main), CNP refuse (409) au lieu de réinitialiser le mot
+     de passe et donner `realm-admin` à ce compte ;
+   - pas d'email sur le compte console : les realms interdisent les emails en double, et le
+     développeur peut déjà avoir un compte utilisateur final avec le même email ;
+   - Keycloak 24+ (user profile déclaratif) ignore les attributs non déclarés : CNP passe la
+     politique `unmanagedAttributePolicy` du realm à `ADMIN_EDIT` (attributs visibles et
+     modifiables par les admins seulement).
 3. La réponse contient `{console_url, username, temporary_password}` **une seule fois** — ce
    mot de passe n'est jamais loggé, jamais mis en cache (react-query : pas de `staleTime`,
    invalidation immédiate), jamais stocké en base côté CNP.
@@ -126,9 +139,12 @@ le *pattern* Vault, il écrit **dans le même secret KV** que les variables sais
 l'utilisateur. Conséquences :
 - aucun nouveau `SecretStore`/`ExternalSecret` à créer pour Keycloak : le Secret K8s
   `{app_slug}-env` que l'app consomme déjà via `envFrom` reçoit aussi les clés `OIDC_*` ;
-- les clés `OIDC_*` sont réservées : `EnvVarService.list_keys` les marque `managed: true` et
-  l'API refuse (409) toute tentative de les modifier ou supprimer via le CRUD variables — elles
-  ne sont écrites que par `KeycloakService`.
+- les clés `OIDC_*` sont réservées **pour les apps où Keycloak est activé** :
+  `EnvVarService.list_keys` les marque `managed: true` et l'API refuse (409) toute tentative de
+  les modifier ou supprimer via le CRUD variables — elles ne sont écrites que par
+  `KeycloakService`. Une app sans Keycloak (ex. app onboardée avec son propre IdP) garde le
+  contrôle de ces noms ; activer Keycloak sur une app qui les définit déjà est refusé (409)
+  plutôt que de les écraser.
 - rien n'est jamais écrit en clair dans un repo git (ni `values.yaml`, ni `cnp-gitops`) —
   contrairement au pattern PostgreSQL actuel (mot de passe généré dans `values.yaml` commité),
   qui reste une dette connue et n'est pas reproduit ici.
@@ -137,23 +153,36 @@ l'utilisateur. Conséquences :
 
 - **Provisioning** (`KeycloakService.provision`) : déclenché après `_save_app` (best-effort —
   l'app existe même si Keycloak échoue) quand `"keycloak"` est présent dans les `services`
-  demandés au scaffold/onboard. Idempotent : si le realm existe déjà, ne rien écraser.
-  Crée le realm (`registrationAllowed=false` — pas d'auto-inscription publique), le client, le
-  mapper audience, et écrit `OIDC_*` dans Vault. Les redirect URIs du client sont dérivées de
-  `app_hostname(slug, env)` si `app.expose` est actif, plus `http://localhost:*` en dev pour
-  le développement local.
+  demandés au scaffold/onboard. **Idempotent étape par étape** : crée le realm s'il manque
+  (`registrationAllowed=false`, attribut `cnp_app_id`), puis s'assure que le client, le mapper
+  audience et les `OIDC_*` dans Vault existent. Un provisioning interrompu (realm créé, client
+  ou Vault en échec, `auth_provisioned=false`) se termine donc par un simple "Retry" (UI) /
+  `cnp keycloak enable` — sans toucher au reste du realm (users, rôles, réglages). Les
+  redirect URIs du client sont dérivées de `app_hostname(slug, env)` si `app.expose` est
+  actif, plus `http://localhost:*` en dev ; `webOrigins` vaut `+` (origines déduites des
+  redirect URIs — une valeur avec chemin ou joker ne correspond jamais à un header `Origin`
+  et casserait l'échange de token CORS du template SPA).
+- **Propriété d'un realm** : chaque realm créé par CNP porte l'attribut `cnp_app_id`. Un realm
+  du bon nom mais sans ce marqueur (réutilisation d'un slug après un cleanup raté, realm créé
+  à la main) est `foreign` : CNP ne l'adopte pas, ne le complète pas, n'y donne aucun accès et
+  ne le supprime pas (409 — un admin plateforme doit trancher).
+- **États exposés** (`KeycloakEnvStatus.state`) : `active`, `missing` (realm supprimé →
+  "Recréer" proposé), `foreign`, `unknown` (Keycloak injoignable ou désactivé). `unknown`
+  n'est jamais présenté comme une suppression : aucun bouton destructif dans ce cas.
 - **Suppression d'un realm** : peut arriver hors CNP (un admin d'équipe supprime son realm
   depuis la console `realm-admin`, ou toute la plateforme via `deprovision`). **Aucune
-  recréation automatique** — CNP détecte l'absence (`status.exists == false`) et affiche
+  recréation automatique** — CNP détecte l'absence (`state == "missing"`) et affiche
   `missing` dans l'UI/CLI, avec un bouton/commande "Recréer" explicite qui relance
   `provision` sur un realm vierge (nouveaux users, nouveau `client_secret`, nouveau secret
   Vault). Dev : Owner/Maintainer. Prod : Owner uniquement — cohérent avec le fait que
   recréer un realm prod invalide tous les tokens et sessions actifs de l'app en production.
 - **Retrait d'un membre / perte de tier Owner-Maintainer** : `KeycloakService.revoke_member`
-  best-effort, supprime le user des deux realms de l'app. Branché partout où `app_service.py`
+  best-effort, supprime des deux realms de l'app le compte console portant son `cnp_user_id`
+  (robuste à un changement d'email ou de username). Limite : un `realm-admin` peut avoir créé
+  d'autres comptes admin dans son realm ; CNP ne révoque que ceux qu'il a créés. Branché partout où `app_service.py`
   / `routes/apps.py` / `gitlab_sync_service.py` retirent ou rétrogradent un membre.
 - **Suppression de l'app** (`AppService.delete_app`) : `KeycloakService.deprovision` supprime
-  les deux realms, best-effort, comme le reste du cleanup de `delete_app` (gitops, GitLab
+  les deux realms (seulement s'ils portent le `cnp_app_id` de l'app), best-effort, comme le reste du cleanup de `delete_app` (gitops, GitLab
   project, Vault env vars) — un échec Keycloak n'empêche pas la suppression de l'app.
 
 ### 6. Apps importées (`origin == "onboarded"`) : mode A

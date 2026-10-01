@@ -32,8 +32,10 @@ class FakeKeycloak:
                 return c
         raise AssertionError("test bug: realm-management client not preseeded")
 
-    def create_realm(self, name: str) -> None:
+    def create_realm(self, name: str, attributes: dict | None = None) -> None:
         self.realms[name] = {
+            "attributes": dict(attributes or {}),
+            "user_profile": {"attributes": [{"name": "username"}]},
             "clients": {
                 "rm-internal-id": {
                     "id": "rm-internal-id",
@@ -59,7 +61,7 @@ class FakeKeycloak:
             name = body["realm"]
             if name in self.realms:
                 return httpx.Response(409, json={"errorMessage": "exists"})
-            self.create_realm(name)
+            self.create_realm(name, body.get("attributes"))
             return httpx.Response(201)
 
         if path.startswith("/admin/realms/"):
@@ -71,7 +73,9 @@ class FakeKeycloak:
                 if method == "GET":
                     if realm not in self.realms:
                         return httpx.Response(404)
-                    return httpx.Response(200, json={"realm": realm})
+                    return httpx.Response(
+                        200, json={"realm": realm, "attributes": self.realms[realm]["attributes"]}
+                    )
                 if method == "DELETE":
                     if realm not in self.realms:
                         return httpx.Response(404)
@@ -84,6 +88,12 @@ class FakeKeycloak:
 
             if len(parts) >= 2 and parts[1] == "clients":
                 return self._clients(request, realm_data, parts[2:])
+            if parts[1:] == ["users", "profile"]:
+                if method == "GET":
+                    return httpx.Response(200, json=realm_data["user_profile"])
+                if method == "PUT":
+                    realm_data["user_profile"] = _json(request)
+                    return httpx.Response(200, json=realm_data["user_profile"])
             if len(parts) >= 2 and parts[1] == "users":
                 return self._users(request, realm_data, parts[2:])
 
@@ -133,11 +143,22 @@ class FakeKeycloak:
         method = request.method
         if not rest:
             if method == "GET":
-                username = dict(request.url.params).get("username")
-                matches = [u for u in realm_data["users"].values() if u["username"] == username]
+                params = dict(request.url.params)
+                if "q" in params:
+                    key, _, value = params["q"].partition(":")
+                    matches = [
+                        u for u in realm_data["users"].values()
+                        if value in (u.get("attributes") or {}).get(key, [])
+                    ]
+                else:
+                    matches = [u for u in realm_data["users"].values() if u["username"] == params.get("username")]
                 return httpx.Response(200, json=matches)
             if method == "POST":
                 body = _json(request)
+                # Like Keycloak 24+: attributes not declared in the user profile are
+                # dropped unless unmanagedAttributePolicy allows admins to edit them.
+                if realm_data["user_profile"].get("unmanagedAttributePolicy") != "ADMIN_EDIT":
+                    body.pop("attributes", None)
                 user_id = str(uuid.uuid4())
                 realm_data["users"][user_id] = {"id": user_id, **body}
                 return httpx.Response(201, headers={"Location": f".../users/{user_id}"})
@@ -270,23 +291,80 @@ async def test_get_client_secret():
     assert secret == "secret-for-demo"
 
 
-async def test_ensure_admin_user_creates_then_reactivates():
+async def test_create_client_web_origins_are_plus_not_redirect_uris():
+    """webOrigins must be "+" (origins derived from redirect URIs): a value with a
+    path or wildcard never matches a browser Origin header -> SPA token exchange
+    blocked by CORS."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    internal_id = await client.create_client(
+        "demo-dev", "demo", public=True, redirect_uris=["https://demo.example/*"],
+    )
+    assert fake.realms["demo-dev"]["clients"][internal_id]["webOrigins"] == ["+"]
+
+    other = await client.create_client(
+        "demo-dev", "demo2", public=True, redirect_uris=["http://localhost:*"],
+        extra_web_origins=["http://localhost:5173"],
+    )
+    assert fake.realms["demo-dev"]["clients"][other]["webOrigins"] == ["+", "http://localhost:5173"]
+
+
+async def test_create_realm_with_owner_attribute():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev", attributes={"cnp_app_id": "42"})
+    realm = await client.get_realm("demo-dev")
+    assert realm["attributes"]["cnp_app_id"] == "42"
+    assert await client.get_realm("nope") is None
+
+
+async def test_ensure_cnp_admin_user_creates_tagged_account_then_reactivates():
     fake = FakeKeycloak()
     client = _client(fake)
     await client.create_realm("demo-dev")
 
-    user_id_1 = await client.ensure_admin_user("demo-dev", "alice", "alice@example.com")
-    assert fake.realms["demo-dev"]["users"][user_id_1]["email"] == "alice@example.com"
+    user_id_1 = await client.ensure_cnp_admin_user(
+        "demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice",
+    )
+    stored = fake.realms["demo-dev"]["users"][user_id_1]
+    assert stored["attributes"]["cnp_user_id"] == ["42"]
+    assert "email" not in stored  # avoids clashing with an end-user account's email
+    # The realm's user profile was opened to unmanaged attributes, else KC drops them.
+    assert fake.realms["demo-dev"]["user_profile"]["unmanagedAttributePolicy"] == "ADMIN_EDIT"
 
-    user_id_2 = await client.ensure_admin_user("demo-dev", "alice", "alice@example.com")
+    user_id_2 = await client.ensure_cnp_admin_user(
+        "demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice",
+    )
     assert user_id_1 == user_id_2
+
+
+async def test_ensure_cnp_admin_user_never_takes_over_an_end_user_account():
+    """An end user of the app already owns the username: CNP must refuse, not grant
+    realm-admin / reset the password of someone else's account."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    fake.realms["demo-dev"]["users"]["end-user"] = {"id": "end-user", "username": "cnp.alice.42"}
+
+    with pytest.raises(KeycloakConflict):
+        await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice")
+
+
+async def test_ensure_cnp_admin_user_distinguishes_same_local_part():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    id_a = await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.1", cnp_user_id=1, first_name="alice")
+    id_b = await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.2", cnp_user_id=2, first_name="alice")
+    assert id_a != id_b
 
 
 async def test_assign_realm_admin_and_set_password():
     fake = FakeKeycloak()
     client = _client(fake)
     await client.create_realm("demo-dev")
-    user_id = await client.ensure_admin_user("demo-dev", "alice", "alice@example.com")
+    user_id = await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice")
 
     await client.assign_realm_admin("demo-dev", user_id)
     roles = fake.realms["demo-dev"]["users"][user_id]["roles"]
@@ -296,15 +374,17 @@ async def test_assign_realm_admin_and_set_password():
     assert fake.realms["demo-dev"]["users"][user_id]["password"]["temporary"] is True
 
 
-async def test_delete_user():
+async def test_delete_users_by_attribute_only_touches_tagged_account():
     fake = FakeKeycloak()
     client = _client(fake)
     await client.create_realm("demo-dev")
-    user_id = await client.ensure_admin_user("demo-dev", "alice", "alice@example.com")
+    user_id = await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice")
+    fake.realms["demo-dev"]["users"]["end-user"] = {"id": "end-user", "username": "alice"}
 
-    await client.delete_user("demo-dev", "alice")
+    await client.delete_users_by_attribute("demo-dev", "cnp_user_id", "42")
     assert user_id not in fake.realms["demo-dev"]["users"]
-    await client.delete_user("demo-dev", "alice")  # already gone -> no-op, must not raise
+    assert "end-user" in fake.realms["demo-dev"]["users"]
+    await client.delete_users_by_attribute("demo-dev", "cnp_user_id", "42")  # no-op
 
 
 async def test_unreachable_server_raises_keycloak_unavailable():

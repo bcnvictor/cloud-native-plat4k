@@ -5,6 +5,7 @@ from functools import partial
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -34,6 +35,7 @@ from backend.k8s.client import k8s_client
 from backend.k8s.dashboards import FINOPS_DASHBOARD_JSON
 from backend.k8s.discovery import discover_clusters
 from backend.k8s.health_worker import run_health_worker
+from backend.keycloak.client import KeycloakError, KeycloakUnavailable
 from backend.services.gitlab_sync_service import run_gitlab_sync_worker
 from backend.services.scale_worker import run_scale_worker
 
@@ -112,6 +114,15 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(KeycloakError)
+async def _keycloak_error_handler(request: Request, exc: KeycloakError) -> JSONResponse:
+    # Keycloak is an upstream dependency (4K-15/ADR-0026): surface its failures as a
+    # gateway error with a stable message instead of a bare 500 with a stack trace.
+    logger.error("Keycloak error on %s %s: %s", request.method, request.url.path, exc)
+    status_code = 503 if isinstance(exc, KeycloakUnavailable) else 502
+    return JSONResponse(status_code=status_code, content={"detail": "Keycloak is unavailable or returned an error"})
 
 # CORS configuration
 if settings.BACKEND_CORS_ORIGINS:

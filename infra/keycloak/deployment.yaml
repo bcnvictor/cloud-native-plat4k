@@ -26,7 +26,11 @@ spec:
           image: quay.io/keycloak/keycloak:26.0
           # `start` (not start-dev): production mode, requires KC_HOSTNAME and a
           # real database — see https://www.keycloak.org/server/configuration
-          args: ["start", "--optimized"]
+          # No `--optimized`: it requires an image pre-built with `kc.sh build`, and
+          # KC_DB / KC_HEALTH_ENABLED are build-time options — the stock image is not
+          # built with them, so `--optimized` would ignore/reject them. Plain `start`
+          # runs the build step at boot (slower start, same result).
+          args: ["start"]
           env:
             - name: KC_DB
               value: postgres

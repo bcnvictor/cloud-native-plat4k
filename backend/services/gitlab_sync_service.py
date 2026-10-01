@@ -171,17 +171,13 @@ async def _maybe_revoke_keycloak_access(db: AsyncSession, app: Application, cnp_
     """Best-effort (4K-15/ADR-0026): revoke a member's Keycloak console access when
     they lose Maintainer+ on an app or leave it entirely. No-op if Keycloak isn't
     enabled/provisioned for this app, or the member never had a linked CNP account
-    (can't resolve a Keycloak username without one — see KeycloakService._username_for).
+    (console accounts are tagged with the CNP user id — see KeycloakService).
     """
     if not cnp_user_id or not app.auth_enabled or not settings.KEYCLOAK_ENABLED:
         return
     try:
-        result = await db.execute(select(User).where(User.id == cnp_user_id))
-        cnp_user = result.scalar_one_or_none()
-        if not cnp_user:
-            return
-        from backend.services.keycloak_service import KeycloakService, _username_for
-        await KeycloakService(db).revoke_member(app, _username_for(cnp_user))
+        from backend.services.keycloak_service import KeycloakService
+        await KeycloakService(db).revoke_member(app, cnp_user_id)
     except Exception:
         logger.exception("Failed to revoke Keycloak access for user %s on app %s", cnp_user_id, app.slug)
 

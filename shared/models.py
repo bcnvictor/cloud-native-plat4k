@@ -433,10 +433,18 @@ class ApplicationResponse(ApplicationBase):
 
 # ── Keycloak app-auth (4K-15/ADR-0026) ──────────────────────────────────────────
 
+class KeycloakEnvState(str, Enum):
+    ACTIVE = "active"      # realm exists and was created by CNP for this app
+    MISSING = "missing"    # realm deleted -> "Recreate" is offered
+    FOREIGN = "foreign"    # a realm with that name exists but isn't this app's
+    UNKNOWN = "unknown"    # Keycloak unreachable or disabled — never offer "Recreate"
+
+
 class KeycloakEnvStatus(BaseModel):
     enabled: bool
     realm: str
     exists: bool
+    state: KeycloakEnvState = KeycloakEnvState.UNKNOWN
     console_url: Optional[str] = None
     issuer_url: Optional[str] = None
 

@@ -167,7 +167,8 @@ class TestConsoleAccessRoute:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["username"] == "maintainer"
+        user, _ = maintainer
+        assert body["username"] == f"cnp.maintainer.{user.id}"
         assert "temporary_password" in body
 
     async def test_console_access_without_realm_is_409(self, client: AsyncClient, maintainer, app_with_members, fake_keycloak):
@@ -216,3 +217,56 @@ class TestReprovisionRoute:
             f"/api/v1/apps/{app_with_members.id}/auth/dev/reprovision", headers=_auth(token)
         )
         assert resp.status_code == 409
+
+
+class TestEnableAndErrorsRoutes:
+    async def test_enable_twice_is_409(self, client: AsyncClient, maintainer, app_with_members, fake_keycloak):
+        _, token = maintainer
+        first = await client.post(f"/api/v1/apps/{app_with_members.id}/auth", headers=_auth(token))
+        assert first.status_code == 201
+        second = await client.post(f"/api/v1/apps/{app_with_members.id}/auth", headers=_auth(token))
+        assert second.status_code == 409
+
+    async def test_enable_retry_allowed_after_failed_provisioning(
+        self, client: AsyncClient, db_session, maintainer, app_with_members, fake_keycloak
+    ):
+        app_with_members.auth_enabled = True
+        app_with_members.auth_provisioned = False
+        await db_session.commit()
+        _, token = maintainer
+
+        resp = await client.post(f"/api/v1/apps/{app_with_members.id}/auth", headers=_auth(token))
+        assert resp.status_code == 201
+        assert resp.json()["dev"]["state"] == "active"
+
+    async def test_enable_refused_when_app_defines_its_own_oidc_keys(
+        self, client: AsyncClient, maintainer, app_with_members, fake_keycloak, fake_vault
+    ):
+        fake_vault[f"apps/_ungrouped/{app_with_members.slug}/dev"] = {"OIDC_CLIENT_ID": "theirs"}
+        _, token = maintainer
+        resp = await client.post(f"/api/v1/apps/{app_with_members.id}/auth", headers=_auth(token))
+        assert resp.status_code == 409
+
+    async def test_keycloak_unreachable_is_503_not_500(
+        self, client: AsyncClient, monkeypatch, maintainer, app_with_members
+    ):
+        import httpx
+
+        from backend.keycloak.client import KeycloakClient
+        from backend.services.keycloak_service import KeycloakService
+
+        def _boom(request):
+            raise httpx.ConnectError("refused", request=request)
+
+        monkeypatch.setattr(
+            KeycloakService, "_client",
+            lambda self: KeycloakClient(
+                base_url="http://keycloak.test", admin_client_id="x", admin_client_secret="y",
+                transport=httpx.MockTransport(_boom),
+            ),
+        )
+        _, token = maintainer
+        resp = await client.post(
+            f"/api/v1/apps/{app_with_members.id}/auth/dev/console-access", headers=_auth(token)
+        )
+        assert resp.status_code == 503

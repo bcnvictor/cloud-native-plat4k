@@ -21,6 +21,36 @@ spec:
     - host: auth.cloud-native-plat4k.me
       http:
         paths:
+          # The `master` realm (platform admins + cnp-provisioner) is NOT reachable
+          # publicly: its admin console, admin REST API and login/token endpoints are
+          # routed to `keycloak-blocked`, a Service with no endpoints (ingress-nginx
+          # answers 503). Snippet annotations are disabled by default in ingress-nginx
+          # >= 1.9, hence this routing trick instead of a deny rule. The backend talks
+          # to Keycloak through the in-cluster URL (KEYCLOAK_URL), and platform admins
+          # use `kubectl port-forward` — see README.md §8.
+          # Prefix matching is per path element: /realms/master does NOT match an app
+          # realm like /realms/master-dev.
+          - path: /admin/master
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak-blocked
+                port:
+                  number: 80
+          - path: /admin/realms/master
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak-blocked
+                port:
+                  number: 80
+          - path: /realms/master
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak-blocked
+                port:
+                  number: 80
           - path: /
             pathType: Prefix
             backend:
@@ -28,3 +58,17 @@ spec:
                 name: keycloak
                 port:
                   number: 8080
+---
+# Intentionally has no matching pods: every request routed here gets a 503 from
+# ingress-nginx (see the master-realm paths above).
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-blocked
+  namespace: keycloak
+spec:
+  selector:
+    app: keycloak-blocked-no-such-pod
+  ports:
+    - port: 80
+      targetPort: 80
