@@ -170,10 +170,23 @@ adapter pour la prod (namespace `keycloak` au lieu de `docker compose exec`).
 docker compose exec -T -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault \
   vault kv patch secret/cnp/platform \
     KEYCLOAK_ENABLED=true \
-    KEYCLOAK_URL=http://keycloak.keycloak.svc.cluster.local:8080 \
+    KEYCLOAK_URL=http://<ClusterIP du Service keycloak>:8080 \
     KEYCLOAK_PUBLIC_URL=https://auth.cloud-native-plat4k.me \
     KEYCLOAK_ADMIN_CLIENT_ID=cnp-provisioner \
     KEYCLOAK_ADMIN_CLIENT_SECRET=<secret récupéré à l'étape 6>
+```
+
+`KEYCLOAK_URL` : le backend tourne sur la VM `cnp-control`, **pas dans AKS** — le DNS
+`*.svc.cluster.local` n'y est pas résolu, et l'Ingress public bloque le realm `master`
+(§8). Il joint l'Admin API par la ClusterIP du Service, routée via Tailscale (subnet router
+AKS, `infra/aks/tailscale/connector.yaml`), comme Prometheus/Loki. Récupérer l'IP et la
+figer dans `deployment.yaml` (champ `clusterIP` commenté du Service) :
+
+```bash
+kubectl -n keycloak get svc keycloak -o jsonpath='{.spec.clusterIP}' --context cnp-aks
+# depuis cnp-control, vérifier la route Tailscale + que l'issuer est bien en https :
+curl -s http://<ClusterIP>:8080/realms/master/.well-known/openid-configuration | grep -o '"issuer":"[^"]*"'
+# attendu : "issuer":"https://auth.cloud-native-plat4k.me/realms/master"
 ```
 
 Le backend relit `secret/cnp/platform` au démarrage (`bootstrap_from_vault`,
@@ -190,12 +203,20 @@ besoin de toucher `.env` en prod.
   `/admin/master`, `/admin/realms/master` et `/realms/master` vers un Service sans pod
   (`keycloak-blocked`, réponse 503). Les consoles d'équipe (`/admin/{realm}/console/`) et
   les endpoints OIDC des realms d'app restent publics. Le backend passe par l'URL interne
-  (`KEYCLOAK_URL`, non concernée). Accès admin plateforme :
+  (`KEYCLOAK_URL`, non concernée). Administration plateforme du realm `master` :
+  **en CLI uniquement**, via `kcadm.sh` dans le pod :
 
   ```bash
-  kubectl -n keycloak port-forward svc/keycloak 8080:8080 --context cnp-aks
-  # puis http://localhost:8080/admin/master/console/
+  KC_POD=$(kubectl -n keycloak get pod -l app=keycloak -o name --context cnp-aks | head -1)
+  kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh \
+    config credentials --server http://localhost:8080 --realm master --user admin
   ```
+
+  La console web `master` n'est pas utilisable, même via `kubectl port-forward` :
+  `KC_HOSTNAME` étant une URL publique fixe, la console renvoie le login vers
+  `https://auth.cloud-native-plat4k.me/realms/master/...`, bloqué (vérifié sur Keycloak 26).
+  Si un besoin ponctuel d'UI survient, retirer temporairement les 3 chemins `master` de
+  l'Ingress, puis les remettre.
 
   Vérification après déploiement : `curl -s -o /dev/null -w '%{http_code}'
   https://auth.cloud-native-plat4k.me/admin/master/console/` doit renvoyer `503`.

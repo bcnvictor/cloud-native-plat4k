@@ -56,10 +56,15 @@ spec:
                 secretKeyRef:
                   name: keycloak-admin
                   key: password
-            # Public hostname — must match the Ingress host below and
-            # KEYCLOAK_PUBLIC_URL in the backend's config (see README.md step 6).
+            # Public URL — must match the Ingress host and KEYCLOAK_PUBLIC_URL in the
+            # backend's config (README.md §7). Full URL WITH scheme on purpose:
+            # with a bare hostname Keycloak derives the scheme (and port) from each
+            # request, so behind Cloudflare/ingress-nginx (X-Forwarded-Proto: http)
+            # or via the ClusterIP (backend over Tailscale) it issues tokens with
+            # iss=http://auth...(:8080) — mismatching OIDC_ISSUER_URL (https) and
+            # failing every token validation. Verified on Keycloak 26.
             - name: KC_HOSTNAME
-              value: "auth.cloud-native-plat4k.me"
+              value: "https://auth.cloud-native-plat4k.me"
             - name: KC_HOSTNAME_STRICT
               value: "false"
             # TLS terminates at the Ingress (see README.md "TLS" section for why
@@ -106,6 +111,15 @@ metadata:
   name: keycloak
   namespace: keycloak
 spec:
+  # The CNP backend runs on the cnp-control VM, not in AKS: it reaches the Admin
+  # API through the Tailscale subnet router (AKS Service CIDR advertised, see
+  # infra/aks/tailscale/connector.yaml) at http://<this ClusterIP>:8080 — the
+  # public Ingress blocks the master realm. Pin the IP so KEYCLOAK_URL stays valid
+  # if the Service is ever recreated (same approach as Prometheus/Loki,
+  # infra/scripts/pin-clusterips.sh): after the first apply, copy
+  #   kubectl -n keycloak get svc keycloak -o jsonpath='{.spec.clusterIP}'
+  # into the line below and uncomment it.
+  # clusterIP: "10.0.x.y"
   selector:
     app: keycloak
   ports:
