@@ -9,7 +9,7 @@ description = "Cloud Native Platform Backend"
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
-    "sqlalchemy",
+    "sqlalchemy[asyncio]",  # SQLAlchemy 2.1+ n'installe plus greenlet par défaut
     "asyncpg",
     "alembic",
     "python-jose[cryptography]",
