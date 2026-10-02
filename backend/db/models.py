@@ -182,6 +182,8 @@ class ClusterConnection(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True)
     endpoint = Column(String, nullable=False)
+    # Valeur de shared.models.ClusterProvider ; String (pas d'Enum SQL) pour ajouter un provider sans migration.
+    provider = Column(String, nullable=False, default="other", server_default="other")
     kubeconfig_secret_ref = Column(String, nullable=False)
     prometheus_url = Column(String, nullable=True)
     loki_url = Column(String, nullable=True)
