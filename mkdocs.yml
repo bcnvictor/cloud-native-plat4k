@@ -63,6 +63,7 @@ nav:
       - Déployer sur AKS: frontend-export/deployer.md
       - Importer un repo existant: frontend-export/importer.md
       - FAQ: frontend-export/faq.md
+      - Conseiller FinOps IA: guides/ai-finops-advisor.md
   - Référence CLI: cli.md
   - API:
       - Vue d'ensemble (Swagger UI): api/overview.md

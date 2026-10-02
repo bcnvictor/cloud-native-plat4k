@@ -24,6 +24,8 @@ _PRICES: dict[str, tuple[float, float]] = {
     "gemini-2.5-flash": (0.30, 2.50),
     "gemini-2.0-flash": (0.10, 0.40),
     "gemini-1.5-flash": (0.075, 0.30),
+    # Anthropic Claude (conseiller FinOps IA)
+    "claude-haiku-4-5": (1.00, 5.00),
 }
 
 _PER_MILLION = 1_000_000

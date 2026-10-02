@@ -18,6 +18,7 @@ from backend.api.routes import (
     clusters,
     credentials,
     env_vars,
+    finops_advisor,
     gitlab,
     groups,
     health,
@@ -128,6 +129,7 @@ app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["u
 app.include_router(apps.router, prefix=f"{settings.API_V1_STR}/apps", tags=["apps"])
 app.include_router(assistant.router, prefix=f"{settings.API_V1_STR}/apps", tags=["assistant"])
 app.include_router(assistant.global_router, prefix=f"{settings.API_V1_STR}", tags=["assistant"])
+app.include_router(finops_advisor.router, prefix=f"{settings.API_V1_STR}/apps", tags=["finops-advisor"])
 app.include_router(env_vars.router, prefix=f"{settings.API_V1_STR}/apps", tags=["env-vars"])
 app.include_router(clusters.router, prefix=f"{settings.API_V1_STR}/clusters", tags=["clusters"])
 app.include_router(resources.router, prefix=f"{settings.API_V1_STR}/resources", tags=["resources"])

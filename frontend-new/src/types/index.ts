@@ -383,3 +383,58 @@ export interface ChatResponse {
     estimated_cost_usd: number;
   };
 }
+
+// ── Conseiller FinOps IA (GET /apps/{id}/ai-advice, 4K-46) ───────────────────
+
+export interface FinOpsEnvSnapshot {
+  env: string;
+  pods: number;
+  restarts: number;
+  coverage_hours: number;
+  cpu_avg_mcpu: number;
+  cpu_p95_mcpu: number;
+  cpu_max_mcpu: number;
+  ram_avg_mib: number;
+  ram_p95_mib: number;
+  ram_max_mib: number;
+  cpu_request_mcpu: number | null;
+  cpu_limit_mcpu: number | null;
+  ram_request_mib: number | null;
+  ram_limit_mib: number | null;
+  reserved_cost_month_usd: number | null;
+  used_cost_month_usd: number;
+  proposed_cpu_request_mcpu: number;
+  proposed_ram_request_mib: number;
+  proposed_cost_month_usd: number;
+  potential_savings_month_usd: number | null;
+}
+
+export interface FinOpsRecommendation {
+  title: string;
+  env: string;
+  action: string;
+  current: string;
+  proposed: string;
+  monthly_savings_usd: number | null;
+  risk: 'bas' | 'moyen' | 'élevé' | string;
+  confidence: 'haute' | 'moyenne' | 'faible' | string;
+  rationale: string;
+}
+
+export interface AIFinOpsAdvice {
+  app_id: number;
+  app_name: string;
+  status: 'ok' | 'no_data' | 'metrics_unavailable';
+  window_hours: number;
+  generated_at: string;
+  metrics: FinOpsEnvSnapshot[];
+  summary: string;
+  recommendations: FinOpsRecommendation[];
+  raw_text: string | null;
+  provider: string | null;
+  model: string | null;
+  notice: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  estimated_cost_usd: number | null;
+}
