@@ -34,6 +34,7 @@ from backend.k8s.dashboards import FINOPS_DASHBOARD_JSON
 from backend.k8s.discovery import discover_clusters
 from backend.k8s.health_worker import run_health_worker
 from backend.services.gitlab_sync_service import run_gitlab_sync_worker
+from backend.services.platform_knowledge_service import sync_platform_docs_at_startup
 from backend.services.scale_worker import run_scale_worker
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,10 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.warning("Could not provision Grafana FinOps dashboard ConfigMap: %s", e)
         asyncio.create_task(_provision_grafana())
+
+    # Indexation de la doc CNP pour l'assistant (idempotente, en tâche de fond)
+    if settings.AI_PLATFORM_KB_SYNC_ON_STARTUP:
+        asyncio.create_task(sync_platform_docs_at_startup())
 
     # Lancement des workers
     health_task = asyncio.create_task(run_health_worker(settings.CLUSTER_HEALTH_INTERVAL))

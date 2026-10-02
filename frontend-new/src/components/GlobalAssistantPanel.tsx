@@ -1,7 +1,17 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { IconX, IconSend } from '@tabler/icons-react';
-import { assistantApi } from '@/api/assistant';
+import { assistantApi, toChatHistory } from '@/api/assistant';
+import { ChatTurn } from '@/types';
+import {
+  ASSISTANT_ASK_EVENT,
+  AssistantAskDetail,
+  docSources,
+  pageContextFrom,
+  suggestionsFor,
+  waitHint,
+} from '@/utils/assistantContext';
 import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown';
 import { cn } from '@/utils/cn';
 
@@ -20,8 +30,6 @@ interface Props {
 
 const GREETING =
   "Salut 👋 Je suis l'assistant Plat4k. Pose-moi une question sur tes applications ou la plateforme.";
-
-const SUGGESTIONS = ['État des apps', 'Voir les métriques', 'Membres du groupe'];
 
 /** La mascotte fait signe toutes les X ms quand le tiroir est fermé. */
 const ATTENTION_INTERVAL_MS = 60_000;
@@ -89,6 +97,9 @@ function TypingDots({ className }: { className?: string }) {
 }
 
 export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
+  const { pathname } = useLocation();
+  const page = useMemo(() => pageContextFrom(pathname), [pathname]);
+  const suggestions = useMemo(() => suggestionsFor(page), [page]);
   const conversationId = useRef<string | undefined>(undefined);
   const msgRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
@@ -196,17 +207,17 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
   }, [open, graphicalBotEnabled]);
 
   const chatMutation = useMutation({
-    mutationFn: (message: string) =>
-      assistantApi.chatGlobal({ message, agent: 'platform', conversation_id: conversationId.current }),
+    mutationFn: ({ message, history }: { message: string; history: ChatTurn[] }) =>
+      assistantApi.chatGlobal({
+        message,
+        agent: 'platform',
+        conversation_id: conversationId.current,
+        history,
+        page,
+      }),
     onSuccess: (data) => {
       conversationId.current = data.conversation_id;
-      const citations = Array.from(
-        new Set(
-          (data.citations as { type?: string; ref?: string }[] | undefined)
-            ?.filter((c) => c?.type === 'doc' && c.ref)
-            .map((c) => c.ref as string) ?? []
-        )
-      );
+      const citations = docSources(data.citations);
       setMessages((prev) => [
         ...prev,
         {
@@ -237,19 +248,46 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     },
   });
 
+  // Message d'attente progressif tant que la réponse n'est pas arrivée
+  const [pendingSince, setPendingSince] = useState<number | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
+  useEffect(() => {
+    if (!chatMutation.isPending) {
+      setPendingSince(null);
+      setHint(null);
+      return;
+    }
+    const start = Date.now();
+    setPendingSince(start);
+    const timer = setInterval(() => setHint(waitHint(Date.now() - start)), 1_000);
+    return () => clearInterval(timer);
+  }, [chatMutation.isPending]);
+
   // Défilement auto vers le dernier message
   useEffect(() => {
     const el = msgRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, chatMutation.isPending]);
+  }, [messages, chatMutation.isPending, hint]);
 
   function ask(text: string) {
     const msg = text.trim();
     if (!msg || chatMutation.isPending) return;
     setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'user', content: msg }]);
     setInput('');
-    chatMutation.mutate(msg);
+    chatMutation.mutate({ message: msg, history: toChatHistory(messages) });
   }
+
+  // Questions posées depuis un bouton « Expliquer avec l'IA » ailleurs dans l'UI.
+  const askRef = useRef(ask);
+  askRef.current = ask;
+  useEffect(() => {
+    const onAsk = (e: Event) => {
+      const question = (e as CustomEvent<AssistantAskDetail>).detail?.question;
+      if (question) askRef.current(question);
+    };
+    window.addEventListener(ASSISTANT_ASK_EVENT, onAsk);
+    return () => window.removeEventListener(ASSISTANT_ASK_EVENT, onAsk);
+  }, []);
 
   return (
     <div
@@ -360,8 +398,14 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
                   )}
                 >
                   {graphicalBotEnabled && <BotAvatar />}
-                  <div className="flex gap-[5px] rounded-[4px_15px_15px_15px] bg-muted px-[15px] py-[13px]">
-                    <TypingDots className="bg-muted-foreground/60" />
+                  <div className="rounded-[4px_15px_15px_15px] bg-muted px-[15px] py-[13px]">
+                    {/* Pas de modificateur d'opacité : les couleurs sont des var() CSS */}
+                    <div className="flex gap-[5px]" aria-label="L'assistant réfléchit">
+                      <TypingDots className="bg-muted-foreground" />
+                    </div>
+                    {pendingSince !== null && hint && (
+                      <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -369,10 +413,10 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
 
             {/* Puces de suggestions */}
             <div className="flex flex-wrap gap-2 px-[18px] pb-0.5 pt-1.5">
-              {SUGGESTIONS.map((label) => (
+              {suggestions.map(({ label, question }) => (
                 <button
                   key={label}
-                  onClick={() => ask(`${label} ?`)}
+                  onClick={() => ask(question)}
                   className="rounded-[20px] border border-border bg-card px-3 py-[7px] text-xs font-medium text-muted-foreground hover:border-primary hover:bg-primary-50 hover:text-primary"
                 >
                   {label}

@@ -59,6 +59,8 @@ nav:
       - Quickstart: quickstart.md
       - Premiers pas: frontend-export/premiers-pas.md
   - Utiliser CNP:
+      - Guide de l'interface: guides/ui-guide.md
+      - Vue d'ensemble des capacités: guides/platform-overview.md
       - Scaffolder une application: frontend-export/scaffolder.md
       - Déployer sur AKS: frontend-export/deployer.md
       - Importer un repo existant: frontend-export/importer.md

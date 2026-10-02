@@ -112,7 +112,11 @@ class Settings(BaseSettings):
     # Limits and governance
     AI_MAX_INPUT_TOKENS: int = 120000
     AI_MAX_OUTPUT_TOKENS: int = 4096
-    AI_DAILY_BUDGET_USD: float = 5.0
+    AI_DAILY_BUDGET_USD: float = 5.0           # coût estimé max/jour (toute la plateforme), 0 = off
+    AI_USER_REQUESTS_PER_MINUTE: int = 6       # questions/min par utilisateur, 0 = off
+    AI_USER_REQUESTS_PER_DAY: int = 200        # questions/jour par utilisateur, 0 = off
+    # Masque les emails envoyés à un provider hors UE (Gemini, DeepSeek…) — RGPD.
+    AI_MASK_PII_FOR_NON_EU_PROVIDERS: bool = True
     AI_PROVIDER_TIMEOUT_SECONDS: int = 60
     # Scan and context defaults
     AI_SECURITY_SCAN_ENABLED: bool = True
@@ -127,7 +131,9 @@ class Settings(BaseSettings):
     # Curated capabilities/UI page(s) always injected into the platform agent
     # context (comma-separated repo-relative paths), so it reliably knows the
     # menus, Settings options and capabilities regardless of lexical retrieval.
-    AI_PLATFORM_KB_PRIMER_PATHS: str = "guides/platform-overview.md"
+    AI_PLATFORM_KB_PRIMER_PATHS: str = "guides/platform-overview.md,guides/ui-guide.md"
+    # Re-ingest docs/ at backend startup (idempotent: unchanged files are skipped).
+    AI_PLATFORM_KB_SYNC_ON_STARTUP: bool = True
 
     # Logging
     LOG_LEVEL: str = "INFO"

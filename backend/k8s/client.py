@@ -129,6 +129,58 @@ class KubernetesClient:
             "replicas_available": available,
         }
 
+    def get_pod_diagnostics(self, namespace: str, deployment_name: str, max_events: int = 10) -> dict:
+        """Read-only diagnosis of a deployment's pods: restarts, waiting/crash reasons
+        and recent Warning events (used by the AI assistant)."""
+        dep = self.apps_v1.read_namespaced_deployment(name=deployment_name, namespace=namespace)
+        selector = dep.spec.selector.match_labels or {}
+        label_selector = ",".join(f"{k}={v}" for k, v in selector.items())
+        pods = self.core_v1.list_namespaced_pod(namespace=namespace, label_selector=label_selector)
+
+        pod_rows: list[dict] = []
+        for pod in pods.items:
+            containers = []
+            for cs in pod.status.container_statuses or []:
+                waiting = cs.state.waiting if cs.state else None
+                last = cs.last_state.terminated if cs.last_state else None
+                containers.append({
+                    "name": cs.name,
+                    "ready": bool(cs.ready),
+                    "restarts": cs.restart_count or 0,
+                    "waiting_reason": waiting.reason if waiting else None,
+                    "waiting_message": waiting.message if waiting else None,
+                    "last_terminated_reason": last.reason if last else None,
+                    "last_exit_code": last.exit_code if last else None,
+                    "last_finished_at": last.finished_at.isoformat() if last and last.finished_at else None,
+                })
+            pod_rows.append({
+                "name": pod.metadata.name,
+                "phase": pod.status.phase,
+                "containers": containers,
+            })
+
+        pod_names = {row["name"] for row in pod_rows}
+        events = self.core_v1.list_namespaced_event(namespace=namespace, field_selector="type=Warning")
+        warnings = [
+            e for e in events.items
+            if e.involved_object and (
+                e.involved_object.name in pod_names
+                or e.involved_object.name.startswith(deployment_name)
+            )
+        ]
+        warnings.sort(key=lambda e: (e.last_timestamp or e.event_time or e.metadata.creation_timestamp), reverse=True)
+
+        return {
+            "replicas_desired": dep.spec.replicas or 0,
+            "replicas_ready": dep.status.ready_replicas or 0,
+            "pods": pod_rows,
+            "warnings": [
+                {"reason": e.reason, "message": e.message, "count": e.count or 1,
+                 "object": e.involved_object.name}
+                for e in warnings[:max_events]
+            ],
+        }
+
     def list_namespace_deployments(self, namespace: str) -> list[client.V1Deployment]:
         return self.apps_v1.list_namespaced_deployment(namespace=namespace).items
 

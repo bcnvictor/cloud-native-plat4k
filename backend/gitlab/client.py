@@ -1,4 +1,5 @@
 import logging
+import re
 
 import yaml
 from gitlab.exceptions import GitlabAuthenticationError, GitlabCreateError, GitlabGetError
@@ -185,6 +186,37 @@ class GitLabClient:
         except Exception as e:
             logger.warning("Failed to trigger security scan pipeline for project %s: %s", gitlab_project_id, e)
             return None
+
+    def get_last_pipeline_failure(self, project_id: int, trace_lines: int = 60) -> dict | None:
+        """Latest pipeline of a project and, if it failed, its failed jobs with the
+        tail of their log (read-only, used by the AI assistant)."""
+        project = self._gl.projects.get(project_id)
+        pipelines = project.pipelines.list(per_page=1, get_all=False)
+        if not pipelines:
+            return None
+        pipeline = pipelines[0]
+        info = {
+            "id": pipeline.id,
+            "status": pipeline.status,
+            "ref": pipeline.ref,
+            "sha": (pipeline.sha or "")[:8],
+            "web_url": pipeline.web_url,
+            "created_at": pipeline.created_at,
+            "failed_jobs": [],
+        }
+        if pipeline.status != "failed":
+            return info
+        for job in pipeline.jobs.list(scope="failed", per_page=5, get_all=False):
+            trace = project.jobs.get(job.id).trace()
+            text = trace.decode("utf-8", "replace") if isinstance(trace, bytes) else str(trace)
+            info["failed_jobs"].append({
+                "name": job.name,
+                "stage": job.stage,
+                "failure_reason": getattr(job, "failure_reason", None),
+                "web_url": job.web_url,
+                "log_tail": _clean_job_log(text, trace_lines),
+            })
+        return info
 
     def register_webhook(self, project_path: str, webhook_url: str, secret_token: str = "") -> None:
         """Register a pipeline webhook on the project. No-op if already registered."""
@@ -469,3 +501,15 @@ class GitLabClient:
             "commit_message": commit_message,
             "actions": actions,
         })
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_SECTION_RE = re.compile(r"section_(?:start|end):\d+:[\w.-]+(?:\[[^\]]*\])?\r?")
+
+
+def _clean_job_log(text: str, max_lines: int) -> str:
+    """Strip ANSI colours and GitLab section markers, keep the last *max_lines*."""
+    text = _SECTION_RE.sub("", _ANSI_RE.sub("", text))
+    lines = [line.rstrip() for line in text.replace("\r\n", "\n").split("\n")]
+    lines = [line for line in lines if line.strip()]
+    return "\n".join(lines[-max_lines:])
