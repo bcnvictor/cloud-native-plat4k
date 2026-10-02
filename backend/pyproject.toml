@@ -27,6 +27,7 @@ dependencies = [
     "pyyaml",   # _validate_kubeconfig dans cluster_service
     "hvac",
     "anyio>=4.0",  # anyio.move_on_after + anyio.to_thread dans cluster_service
+    "anthropic>=1.0",  # SDK officiel Claude — conseiller FinOps IA (4K-46)
 ]
 
 [tool.setuptools]
