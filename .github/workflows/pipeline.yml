@@ -19,7 +19,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements-dev.lock
 
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
 
       - name: Check lockfiles are up to date
         run: |
