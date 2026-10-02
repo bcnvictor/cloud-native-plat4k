@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 def sanitize_k8s_label_value(value: str) -> str:
@@ -291,6 +291,25 @@ class ApplicationBase(BaseModel):
     framework: Optional[str] = None
 
 
+# Whitelist of backing services that can be requested at scaffold time. Keep in sync
+# with ONBOARD_SUPPORTED_SERVICES below and with ScaffoldingService/KeycloakService.
+SCAFFOLD_SUPPORTED_SERVICES = {"postgresql", "keycloak"}
+
+# Onboarded apps keep their own chart — CNP never rewrites chart/values.yaml for them,
+# so "postgresql" (which requires patching values.yaml) isn't offered. Keycloak only
+# needs Vault + a realm, no chart change, so it works the same for both origins.
+ONBOARD_SUPPORTED_SERVICES = {"keycloak"}
+
+
+def _validate_services(services: List[str], allowed: set[str]) -> List[str]:
+    unknown = sorted(set(services) - allowed)
+    if unknown:
+        raise ValueError(
+            f"Unsupported service(s): {', '.join(unknown)}. Allowed: {', '.join(sorted(allowed))}"
+        )
+    return services
+
+
 class ScaffoldingParams(BaseModel):
     """Settings for generating the values.yaml file during scaffolding."""
     port: int = 8000
@@ -300,6 +319,11 @@ class ScaffoldingParams(BaseModel):
     env: Dict[str, str] = {}
     services: List[str] = []  # backing services to provision (e.g., ["postgresql"])
     pg_size: str = "1Gi"  # PVC size for PostgreSQL (e.g., "1Gi", "5Gi", "20Gi")
+
+    @field_validator("services")
+    @classmethod
+    def _validate_scaffold_services(cls, v: List[str]) -> List[str]:
+        return _validate_services(v, SCAFFOLD_SUPPORTED_SERVICES)
 
 
 class PostgreSQLCredentials(BaseModel):
@@ -336,6 +360,12 @@ class ApplicationOnboardRequest(BaseModel):
     target_cluster_id: Optional[int] = None
     owning_gitlab_group_id: Optional[int] = None
     expose: bool = False
+    services: List[str] = []  # backing services to provision (only "keycloak" for onboard — see ONBOARD_SUPPORTED_SERVICES)
+
+    @field_validator("services")
+    @classmethod
+    def _validate_onboard_services(cls, v: List[str]) -> List[str]:
+        return _validate_services(v, ONBOARD_SUPPORTED_SERVICES)
 
 
 class ApplicationExternalImportRequest(BaseModel):
@@ -392,9 +422,43 @@ class ApplicationResponse(ApplicationBase):
     owning_gitlab_group_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    # Keycloak app-auth service (4K-15/ADR-0026)
+    auth_enabled: bool = False
+    auth_provisioned: Optional[bool] = None  # None = n/a, True/False = last provisioning attempt's outcome
+    auth_warnings: Optional[List[str]] = None  # e.g. ["chart_missing_envfrom"] — onboarded apps only
 
     class Config:
         from_attributes = True
+
+
+# ── Keycloak app-auth (4K-15/ADR-0026) ──────────────────────────────────────────
+
+class KeycloakEnvState(str, Enum):
+    ACTIVE = "active"      # realm exists and was created by CNP for this app
+    MISSING = "missing"    # realm deleted -> "Recreate" is offered
+    FOREIGN = "foreign"    # a realm with that name exists but isn't this app's
+    UNKNOWN = "unknown"    # Keycloak unreachable or disabled — never offer "Recreate"
+
+
+class KeycloakEnvStatus(BaseModel):
+    enabled: bool
+    realm: str
+    exists: bool
+    state: KeycloakEnvState = KeycloakEnvState.UNKNOWN
+    console_url: Optional[str] = None
+    issuer_url: Optional[str] = None
+
+
+class KeycloakStatusResponse(BaseModel):
+    dev: KeycloakEnvStatus
+    prod: KeycloakEnvStatus
+    auth_warnings: List[str] = []
+
+
+class KeycloakConsoleAccessResponse(BaseModel):
+    console_url: str
+    username: str
+    temporary_password: str
 
 
 class ClusterConnectionBase(BaseModel):

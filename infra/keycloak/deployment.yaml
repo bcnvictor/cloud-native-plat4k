@@ -1,0 +1,128 @@
+# Shared Keycloak instance backing the app-auth service (4K-15/ADR-0026).
+# Single replica: Keycloak's default cache config (distributed via JGroups/DNS_PING)
+# needs more setup to run safely with >1 replica; not needed at this platform's
+# scale. Revisit if Keycloak availability becomes a real concern.
+#
+# kubectl apply -f infra/keycloak/deployment.yaml --context cnp-aks
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.0
+          # `start` (not start-dev): production mode, requires KC_HOSTNAME and a
+          # real database — see https://www.keycloak.org/server/configuration
+          # No `--optimized`: it requires an image pre-built with `kc.sh build`, and
+          # KC_DB / KC_HEALTH_ENABLED are build-time options — the stock image is not
+          # built with them, so `--optimized` would ignore/reject them. Plain `start`
+          # runs the build step at boot (slower start, same result).
+          args: ["start"]
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: "jdbc:postgresql://keycloak-postgres.keycloak.svc.cluster.local:5432/keycloak"
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-db
+                  key: username
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-db
+                  key: password
+            - name: KEYCLOAK_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: username
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: password
+            # Public URL — must match the Ingress host and KEYCLOAK_PUBLIC_URL in the
+            # backend's config (README.md §7). Full URL WITH scheme on purpose:
+            # with a bare hostname Keycloak derives the scheme (and port) from each
+            # request, so behind Cloudflare/ingress-nginx (X-Forwarded-Proto: http)
+            # or via the ClusterIP (backend over Tailscale) it issues tokens with
+            # iss=http://auth...(:8080) — mismatching OIDC_ISSUER_URL (https) and
+            # failing every token validation. Verified on Keycloak 26.
+            - name: KC_HOSTNAME
+              value: "https://auth.cloud-native-plat4k.me"
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            # TLS terminates at the Ingress (see README.md "TLS" section for why
+            # this deviates from a literal cert-manager setup) — Keycloak itself
+            # serves plain HTTP behind it.
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_PROXY_HEADERS
+              value: "xforwarded"
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+          # Keycloak serves /health/* on the management interface (port 9000 by
+          # default in KC 26 quarkus), NOT the main HTTP port — confirmed against a
+          # real local container during the 4K-15 Lot 7 smoke test. Probing 8080
+          # here would 404 and the pod would never go Ready.
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  # The CNP backend runs on the cnp-control VM, not in AKS: it reaches the Admin
+  # API through the Tailscale subnet router (AKS Service CIDR advertised, see
+  # infra/aks/tailscale/connector.yaml) at http://<this ClusterIP>:8080 — the
+  # public Ingress blocks the master realm. Pin the IP so KEYCLOAK_URL stays valid
+  # if the Service is ever recreated (same approach as Prometheus/Loki,
+  # infra/scripts/pin-clusterips.sh): after the first apply, copy
+  #   kubectl -n keycloak get svc keycloak -o jsonpath='{.spec.clusterIP}'
+  # into the line below and uncomment it.
+  # clusterIP: "10.0.x.y"
+  selector:
+    app: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

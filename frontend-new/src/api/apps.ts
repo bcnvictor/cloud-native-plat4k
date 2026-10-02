@@ -1,5 +1,16 @@
 import { api } from './client';
-import { Application, AppHistory, AppRuntimeStatus, AppScaleStateResponse, AppMember, AppTemplate, EnvVarListResponse, MyAccessResponse } from '@/types';
+import {
+  Application,
+  AppHistory,
+  AppRuntimeStatus,
+  AppScaleStateResponse,
+  AppMember,
+  AppTemplate,
+  EnvVarListResponse,
+  MyAccessResponse,
+  KeycloakStatusResponse,
+  KeycloakConsoleAccessResponse,
+} from '@/types';
 
 export type ScaleEnv = 'dev' | 'prod' | 'both';
 export type EnvName = 'dev' | 'prod';
@@ -35,6 +46,7 @@ export const appsApi = {
     owning_gitlab_group_id?: number;
     expose?: boolean;
     target_cluster_id?: number | null;
+    scaffolding?: { services: string[]; pg_size?: string };
   }): Promise<Application> {
     const res = await api.post<Application>('/apps/scaffold', payload);
     return res.data;
@@ -46,6 +58,7 @@ export const appsApi = {
     repo_url: string;
     owning_gitlab_group_id?: number;
     expose?: boolean;
+    services?: string[];
   }): Promise<Application> {
     const res = await api.post<Application>('/apps/onboard', payload);
     return res.data;
@@ -130,5 +143,25 @@ export const appsApi = {
 
   async deleteEnvVar(appId: number, env: EnvName, key: string): Promise<void> {
     await api.delete(`/apps/${appId}/env/${env}/${encodeURIComponent(key)}`);
+  },
+
+  async getAuthStatus(appId: number): Promise<KeycloakStatusResponse> {
+    const res = await api.get<KeycloakStatusResponse>(`/apps/${appId}/auth`);
+    return res.data;
+  },
+
+  async enableAuth(appId: number): Promise<KeycloakStatusResponse> {
+    const res = await api.post<KeycloakStatusResponse>(`/apps/${appId}/auth`);
+    return res.data;
+  },
+
+  async getAuthConsoleAccess(appId: number, env: EnvName): Promise<KeycloakConsoleAccessResponse> {
+    const res = await api.post<KeycloakConsoleAccessResponse>(`/apps/${appId}/auth/${env}/console-access`);
+    return res.data;
+  },
+
+  async reprovisionAuth(appId: number, env: EnvName): Promise<KeycloakStatusResponse> {
+    const res = await api.post<KeycloakStatusResponse>(`/apps/${appId}/auth/${env}/reprovision`);
+    return res.data;
   },
 };

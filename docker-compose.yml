@@ -58,6 +58,11 @@ services:
       - LOKI_URL=${LOKI_URL:-http://loki.monitoring.svc.cluster.local:3100}
       - VAULT_ADDR=${VAULT_ADDR:-http://vault:8200}
       - VAULT_TOKEN=${VAULT_TOKEN:-cnp-dev-token}
+      - KEYCLOAK_ENABLED=${KEYCLOAK_ENABLED:-false}
+      - KEYCLOAK_URL=${KEYCLOAK_URL:-http://keycloak:8080}
+      - KEYCLOAK_PUBLIC_URL=${KEYCLOAK_PUBLIC_URL:-http://localhost:8081}
+      - KEYCLOAK_ADMIN_CLIENT_ID=${KEYCLOAK_ADMIN_CLIENT_ID:-cnp-provisioner}
+      - KEYCLOAK_ADMIN_CLIENT_SECRET=${KEYCLOAK_ADMIN_CLIENT_SECRET:-}
       - GRAFANA_URL=${GRAFANA_URL:-}
       # Assistant IA — désactivé par défaut (comportement CNP inchangé si false)
       - AI_ASSISTANT_ENABLED=${AI_ASSISTANT_ENABLED:-false}
@@ -76,6 +81,36 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - cnp_net
+
+  keycloak:
+    # Shared Keycloak instance backing the app-auth service (4K-15/ADR-0026).
+    # Optional like vault/grafana below — start it explicitly:
+    #   docker compose up -d keycloak
+    # start-dev uses Keycloak's embedded H2 database (simplest for local dev — the
+    # AKS deployment in infra/keycloak/ uses a dedicated Postgres database instead,
+    # see infra/keycloak/README.md).
+    profiles:
+      - production
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev
+    environment:
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      - KC_HEALTH_ENABLED=true
+    ports:
+      - "8081:8080"
+    healthcheck:
+      # Keycloak's health endpoints are served on the management interface (port
+      # 9000 by default in KC 26 quarkus, NOT the main HTTP port 8080) — confirmed
+      # against a real local container during the Lot 7 smoke test; the image has
+      # neither curl nor wget, hence the /dev/tcp raw socket.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'UP' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     networks:
       - cnp_net
 

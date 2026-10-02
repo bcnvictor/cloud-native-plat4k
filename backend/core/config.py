@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     # POST /apps/{id}/ci-status so the CI runner can report pipeline status (see ADR-0011).
     CNP_CALLBACK_TOKEN: Optional[str] = None
 
+    # Keycloak — shared instance backing the app-auth service (4K-15/ADR-0026).
+    # Disabled by default: if false, every /apps/{id}/auth/* route returns 503 and
+    # the rest of the platform is unaffected.
+    KEYCLOAK_ENABLED: bool = False
+    KEYCLOAK_URL: str = "http://keycloak:8080"  # Admin REST API URL, backend-internal
+    KEYCLOAK_PUBLIC_URL: str = "http://localhost:8081"  # Issuer URL seen by browsers/pods
+    KEYCLOAK_ADMIN_CLIENT_ID: str = "cnp-provisioner"
+    KEYCLOAK_ADMIN_CLIENT_SECRET: Optional[str] = None
+
     # Kubernetes
     KUBECONFIG_PATH: Optional[str] = None
     K8S_TARGET_NAMESPACE: str = "default"

@@ -15,6 +15,9 @@ interface Props {
   onChange: (d: Partial<ServiceConfig>) => void;
   onNext: () => void;
   onBack: () => void;
+  /** CNP only rewrites the chart of apps it scaffolds — onboarded apps keep their own
+   * chart, so the PostgreSQL injection (which needs to patch values.yaml) isn't offered. */
+  origin?: 'scaffold' | 'onboard';
 }
 
 const SERVICES = [
@@ -29,8 +32,8 @@ const SERVICES = [
     key: 'auth' as const,
     icon: <IconLock size={18} />,
     label: 'Authentication',
-    desc: 'Keycloak — SSO & account management',
-    soon: true,
+    desc: 'Keycloak — dedicated realm per env, delegated admin console',
+    soon: false,
   },
   {
     key: 'cache' as const,
@@ -41,7 +44,7 @@ const SERVICES = [
   },
 ];
 
-export function Step2Services({ data, onChange, onNext, onBack }: Props) {
+export function Step2Services({ data, onChange, onNext, onBack, origin = 'scaffold' }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
@@ -49,6 +52,8 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
       </p>
 
       {SERVICES.map((svc) => {
+        const disabledForOnboard = svc.key === 'database' && origin === 'onboard';
+        const disabled = svc.soon || disabledForOnboard;
         const enabled =
           svc.key === 'database'
             ? data.database.enabled
@@ -61,7 +66,7 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
             key={svc.key}
             className={cn(
               'border-2 rounded-md transition-colors bg-card',
-              svc.soon
+              disabled
                 ? 'border-border opacity-60'
                 : enabled
                 ? 'border-foreground'
@@ -70,13 +75,13 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
           >
             <button
               type="button"
-              disabled={svc.soon}
+              disabled={disabled}
               className={cn(
                 'w-full flex items-center gap-3 p-4 text-left',
-                svc.soon ? 'cursor-not-allowed' : 'cursor-pointer'
+                disabled ? 'cursor-not-allowed' : 'cursor-pointer'
               )}
               onClick={() => {
-                if (svc.soon) return;
+                if (disabled) return;
                 if (svc.key === 'database') {
                   onChange({ database: { ...data.database, enabled: !data.database.enabled } });
                 } else if (svc.key === 'auth') {
@@ -89,7 +94,11 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
               <span className="text-muted-foreground">{svc.icon}</span>
               <div className="flex-1">
                 <p className="text-sm font-medium text-foreground">{svc.label}</p>
-                <p className="text-xs text-muted-foreground">{svc.desc}</p>
+                <p className="text-xs text-muted-foreground">
+                  {disabledForOnboard
+                    ? 'Not available for onboarded repos — CNP does not rewrite their chart'
+                    : svc.desc}
+                </p>
               </div>
               {svc.soon ? (
                 <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full">

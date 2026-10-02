@@ -63,6 +63,10 @@ export interface Application {
   target_cluster_id?: number | null;
   created_at: string;
   updated_at: string | null;
+  // Keycloak app-auth service (4K-15/ADR-0026)
+  auth_enabled?: boolean;
+  auth_provisioned?: boolean | null;
+  auth_warnings?: string[] | null;
 }
 
 export interface ArgoEnvStatus {
@@ -173,6 +177,7 @@ export interface EnvVar {
 export interface EnvVarKeyStatus {
   key: string;
   is_set: boolean;
+  managed: boolean;
 }
 
 export interface EnvVarListResponse {
@@ -183,6 +188,33 @@ export interface EnvVarListResponse {
 export interface MyAccessResponse {
   tier: CnpTier;
   is_admin: boolean;
+}
+
+// ── Keycloak app-auth (4K-15/ADR-0026) ──────────────────────────────────────────
+
+/** active: realm OK · missing: deleted (Recreate offered) · foreign: name taken by a
+ *  realm CNP didn't create for this app · unknown: Keycloak unreachable/disabled. */
+export type KeycloakEnvState = 'active' | 'missing' | 'foreign' | 'unknown';
+
+export interface KeycloakEnvStatus {
+  enabled: boolean;
+  realm: string;
+  exists: boolean;
+  state: KeycloakEnvState;
+  console_url: string | null;
+  issuer_url: string | null;
+}
+
+export interface KeycloakStatusResponse {
+  dev: KeycloakEnvStatus;
+  prod: KeycloakEnvStatus;
+  auth_warnings: string[];
+}
+
+export interface KeycloakConsoleAccessResponse {
+  console_url: string;
+  username: string;
+  temporary_password: string;
 }
 
 export interface AppTemplate {
@@ -232,6 +264,12 @@ export interface ServiceConfig {
   database: { enabled: boolean; dbName: string; pgSize: '1Gi' | '5Gi' | '20Gi' };
   auth: { enabled: boolean };
   cache: { enabled: boolean };
+}
+
+/** Backing services requested at scaffold/onboard time (shared/models.py ScaffoldingParams.services). */
+export interface ScaffoldingServicesPayload {
+  services: string[];
+  pg_size?: string;
 }
 
 export interface CiDeployConfig {
