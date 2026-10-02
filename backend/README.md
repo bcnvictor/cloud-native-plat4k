@@ -52,6 +52,10 @@ Les modèles partagés entre le backend et le CLI se trouvent dans `shared/model
 
 ---
 
+## Dépendances
+
+Déclarées dans `pyproject.toml`, versions figées dans `requirements.lock` (image Docker) et `requirements-dev.lock` (CI, dev local). Après toute modification des dépendances : `./scripts/lock-deps.sh` depuis la racine, puis committer les locks avec le `pyproject.toml`. Détails : [CONTRIBUTING.md](../CONTRIBUTING.md#dépendances-python-backend--shared).
+
 ## Architecture en couches
 
 ```
