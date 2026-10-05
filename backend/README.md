@@ -218,11 +218,13 @@ La documentation interactive est disponible sur `http://localhost:8000/docs` (Sw
 
 | Méthode  | Route   | Auth    | Description                                               |
 | -------- | ------- | ------- | --------------------------------------------------------- |
-| `GET`    | `/`     | Viewer+ | Liste les clusters enregistrés                            |
-| `GET`    | `/{id}` | Viewer+ | Détail d'un cluster                                       |
-| `POST`   | `/`     | Admin   | Enregistre un cluster (endpoint + référence kubeconfig)   |
-| `PUT`    | `/{id}` | Admin   | Met à jour un cluster                                     |
-| `DELETE` | `/{id}` | Admin   | Supprime un cluster (bloqué si déploiements actifs)       |
+| `GET`    | `/`          | Viewer+ | Liste les clusters enregistrés (avec `app_count`)            |
+| `GET`    | `/{id}`      | Viewer+ | Détail d'un cluster                                          |
+| `POST`   | `/`          | Admin   | Enregistre un cluster (kubeconfig stocké dans Vault)         |
+| `PUT`    | `/{id}`      | Admin   | Met à jour un cluster (audit : noms des champs modifiés)     |
+| `DELETE` | `/{id}`      | Admin   | Supprime un cluster (409 si des applications le ciblent)     |
+| `POST`   | `/{id}/test` | Admin   | Teste la connexion (latence, nombre de namespaces), audité   |
+| `POST`   | `/test`      | Admin   | Teste un kubeconfig avant enregistrement (rien n'est stocké) |
 
 ### Deployments — `/api/v1/deployments`
 
@@ -240,7 +242,7 @@ en base avec le statut `failed`.
 
 | Méthode | Route | Description                                                        |
 | ------- | ----- | ------------------------------------------------------------------ |
-| `GET`   | `/`   | Liste les 100 derniers logs d'audit (paramètres `limit`, `offset`) |
+| `GET`   | `/`   | Liste les 100 derniers logs d'audit (paramètres `limit`, `offset`, `since`, `until`, `action_prefix` répétable) |
 
 ---
 

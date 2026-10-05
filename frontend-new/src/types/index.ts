@@ -137,6 +137,31 @@ export interface ClusterConnection {
   last_seen_at?: string;
   created_at: string;
   updated_at?: string;
+  app_count: number;
+}
+
+export interface ClusterConnectionPayload {
+  name?: string;
+  endpoint?: string;
+  kubeconfig?: string;
+  prometheus_url?: string | null;
+  loki_url?: string | null;
+  argocd_url?: string | null;
+  argocd_token?: string;
+}
+
+export interface ClusterTestResult {
+  reachable: boolean;
+  latency_ms: number | null;
+  namespace_count: number | null;
+  error: string | null;
+}
+
+export interface GitLabGroupAdmin {
+  gitlab_group_id: number;
+  name: string;
+  full_path: string;
+  synced_at: string | null;
 }
 
 export interface LogEntry {
