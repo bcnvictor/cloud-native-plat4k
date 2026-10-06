@@ -21,12 +21,14 @@ def list_clusters(
         if output == "json":
             print_json(data)
         else:
-            columns = ["ID", "Name", "Endpoint", "Vault Secret Ref", "Created At"]
+            columns = ["ID", "Name", "Endpoint", "Status", "Apps", "Vault Secret Ref", "Created At"]
             rows = [
                 [
                     r["id"],
                     r["name"],
                     r["endpoint"],
+                    _STATUS_LABEL.get(r.get("status"), r.get("status", "")),
+                    r.get("app_count", 0),
                     r["kubeconfig_secret_ref"],
                     r["created_at"]
                 ]
@@ -99,6 +101,36 @@ def update_cluster(
         print_success(f"Cluster connection {id} updated successfully.")
     except Exception as e:
         print_error(str(e))
+
+@app.command("test")
+def test_cluster(
+    id: int = typer.Argument(None, help="ID of a registered cluster to test"),
+    kubeconfig: str = typer.Option(None, help="Path to a kubeconfig to test before registering it"),
+):
+    """Test connectivity to a cluster (lists its namespaces)."""
+    if (id is None) == (kubeconfig is None):
+        print_error("Specify either a cluster ID or --kubeconfig.")
+        raise typer.Exit(1)
+    try:
+        if kubeconfig is not None:
+            if not os.path.exists(kubeconfig):
+                print_error(f"Kubeconfig file not found at path: {kubeconfig}")
+                raise typer.Exit(1)
+            with open(kubeconfig, "r") as f:
+                data = client.post("/clusters/test", json={"kubeconfig": f.read()})
+        else:
+            data = client.post(f"/clusters/{id}/test")
+    except typer.Exit:
+        raise
+    except Exception as e:
+        print_error(str(e))
+        raise typer.Exit(1)
+
+    if data["reachable"]:
+        print_success(f"Reachable — {data['latency_ms']} ms, {data['namespace_count']} namespaces.")
+    else:
+        print_error(f"Unreachable — {data.get('error') or 'unknown error'}")
+        raise typer.Exit(1)
 
 @app.command("delete")
 def delete_cluster(

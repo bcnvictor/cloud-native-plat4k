@@ -66,6 +66,7 @@ export const router = createBrowserRouter([
           { path: '/admin/users', element: <AdminUsers /> },
           { path: '/admin/audit', element: <AdminAudit /> },
           { path: '/admin/settings', element: <AdminSettings /> },
+          { path: '/admin/settings/:panel', element: <AdminSettings /> },
         ],
       },
     ],

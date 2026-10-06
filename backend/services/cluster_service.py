@@ -1,19 +1,32 @@
 import logging
+import time
+from datetime import datetime, timezone
 
 import anyio
 from fastapi import HTTPException, status
-from shared.models import ClusterConnectionCreate, ClusterConnectionUpdate
-from sqlalchemy import select
+from shared.models import (
+    ClusterConnectionCreate,
+    ClusterConnectionUpdate,
+    ClusterStatus,
+    ClusterTestResult,
+)
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import ClusterConnection
+from backend.db.models import Application, ClusterConnection
 
 logger = logging.getLogger(__name__)
 
 # Timeout (secondes) accordé à chaque opération Vault dans ce service.
 # Au-delà, la requête est annulée et une 504 est renvoyée au client.
 _VAULT_TIMEOUT = 15
+
+# Timeout (secondes) d'un test de connexion manuel au cluster.
+_PROBE_TIMEOUT = 10
+
+_FORBIDDEN_USER_KEYS = ("exec", "auth-provider", "client-certificate", "client-key", "tokenFile")
+_FORBIDDEN_CLUSTER_KEYS = ("certificate-authority",)
 
 
 def _validate_kubeconfig(kubeconfig_yaml: str) -> None:
@@ -46,20 +59,51 @@ def _validate_kubeconfig(kubeconfig_yaml: str) -> None:
             detail=f"Kubeconfig invalide : champs requis manquants : {', '.join(missing)}",
         )
 
+    # Le client Kubernetes exécute `exec` / `auth-provider` et lit les chemins de
+    # fichiers locaux : on n'accepte que des credentials inline (token, *-data).
+    forbidden = []
+    for section, inner, keys in (("users", "user", _FORBIDDEN_USER_KEYS),
+                                 ("clusters", "cluster", _FORBIDDEN_CLUSTER_KEYS)):
+        for entry in data.get(section) or []:
+            body = (entry or {}).get(inner) if isinstance(entry, dict) else None
+            if isinstance(body, dict):
+                forbidden += [f"{section}.{inner}.{k}" for k in keys if k in body]
+    if forbidden:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Kubeconfig invalide : champs non autorisés : {', '.join(sorted(set(forbidden)))} "
+                   "(utiliser un token ou des champs *-data inline)",
+        )
+
 
 class ClusterService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def _app_counts(self, cluster_ids: list[int]) -> dict[int, int]:
+        if not cluster_ids:
+            return {}
+        result = await self.db.execute(
+            select(Application.target_cluster_id, func.count(Application.id))
+            .where(Application.target_cluster_id.in_(cluster_ids))
+            .group_by(Application.target_cluster_id)
+        )
+        return {cluster_id: count for cluster_id, count in result.all()}
+
     async def list_clusters(self) -> list[ClusterConnection]:
         result = await self.db.execute(select(ClusterConnection).order_by(ClusterConnection.name))
-        return list(result.scalars().all())
+        clusters = list(result.scalars().all())
+        counts = await self._app_counts([c.id for c in clusters])
+        for cluster in clusters:
+            cluster.app_count = counts.get(cluster.id, 0)
+        return clusters
 
     async def get_cluster(self, cluster_id: int) -> ClusterConnection:
         result = await self.db.execute(select(ClusterConnection).where(ClusterConnection.id == cluster_id))
         cluster = result.scalar_one_or_none()
         if cluster is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster connection not found")
+        cluster.app_count = (await self._app_counts([cluster.id])).get(cluster.id, 0)
         return cluster
 
     async def create_cluster(self, payload: ClusterConnectionCreate) -> ClusterConnection:
@@ -92,7 +136,7 @@ class ClusterService:
             with anyio.move_on_after(_VAULT_TIMEOUT) as cancel_scope:
                 await anyio.to_thread.run_sync(
                     lambda: vault_client.put_secret(path=vault_path, secret={"kubeconfig": kubeconfig_data}),
-                    cancellable=True,
+                    abandon_on_cancel=True,
                 )
             if cancel_scope.cancelled_caught:
                 await self.db.delete(cluster)
@@ -122,7 +166,7 @@ class ClusterService:
                 with anyio.move_on_after(_VAULT_TIMEOUT) as cancel_scope:
                     await anyio.to_thread.run_sync(
                         lambda: vault_client.put_secret(path=f"argocd/{cluster.id}", secret={"token": argocd_token}),
-                        cancellable=True,
+                        abandon_on_cancel=True,
                     )
                 if cancel_scope.cancelled_caught:
                     logger.error("Vault timeout lors du stockage du token ArgoCD pour le cluster %s", cluster.id)
@@ -150,7 +194,7 @@ class ClusterService:
                             path=f"clusters/{cluster.id}",
                             secret={"kubeconfig": kubeconfig_data},
                         ),
-                        cancellable=True,
+                        abandon_on_cancel=True,
                     )
                 if cancel_scope.cancelled_caught:
                     raise HTTPException(
@@ -186,7 +230,7 @@ class ClusterService:
                 with anyio.move_on_after(_VAULT_TIMEOUT) as cancel_scope:
                     await anyio.to_thread.run_sync(
                         lambda: _vc.put_secret(path=f"argocd/{cluster.id}", secret={"token": argocd_token}),
-                        cancellable=True,
+                        abandon_on_cancel=True,
                     )
                 if cancel_scope.cancelled_caught:
                     logger.error("Vault timeout lors de la mise à jour du token ArgoCD pour le cluster %s", cluster.id)
@@ -198,6 +242,13 @@ class ClusterService:
 
     async def delete_cluster(self, cluster_id: int) -> None:
         cluster = await self.get_cluster(cluster_id)
+        # La FK applications.target_cluster_id est en SET NULL : sans ce garde-fou,
+        # la suppression orphelinerait silencieusement les apps du cluster.
+        if cluster.app_count:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot delete cluster: {cluster.app_count} application(s) target it",
+            )
         try:
             await self.db.delete(cluster)
             await self.db.commit()
@@ -217,7 +268,7 @@ class ClusterService:
             with anyio.move_on_after(_VAULT_TIMEOUT) as cancel_scope:
                 await anyio.to_thread.run_sync(
                     lambda: vault_client.delete_secret(path=f"clusters/{cluster_id}"),
-                    cancellable=True,
+                    abandon_on_cancel=True,
                 )
             if cancel_scope.cancelled_caught:
                 logger.error(
@@ -243,7 +294,7 @@ class ClusterService:
             with anyio.move_on_after(_VAULT_TIMEOUT) as cancel_scope:
                 await anyio.to_thread.run_sync(
                     lambda: vault_client.delete_secret(path=f"argocd/{cluster_id}"),
-                    cancellable=True,
+                    abandon_on_cancel=True,
                 )
             if cancel_scope.cancelled_caught:
                 logger.error(
@@ -256,3 +307,48 @@ class ClusterService:
                 "Échec de la suppression du token ArgoCD dans Vault pour le cluster %s : %s",
                 cluster_id, e,
             )
+
+    async def test_cluster(self, cluster: ClusterConnection) -> ClusterTestResult:
+        """Sonde un cluster enregistré avec le kubeconfig stocké dans Vault."""
+        from backend.vault.client import vault_client
+        try:
+            with anyio.move_on_after(_VAULT_TIMEOUT) as cancel_scope:
+                secret = await anyio.to_thread.run_sync(
+                    lambda: vault_client.get_secret(f"clusters/{cluster.id}"),
+                    abandon_on_cancel=True,
+                )
+            if cancel_scope.cancelled_caught:
+                return ClusterTestResult(reachable=False, error="Vault timeout while reading kubeconfig")
+            kubeconfig_yaml = secret["kubeconfig"]
+        except Exception as e:
+            return ClusterTestResult(reachable=False, error=f"Cannot read kubeconfig from Vault: {e}")
+        result = await self.test_kubeconfig(kubeconfig_yaml)
+        # Les transitions ONLINE <-> OFFLINE (et leur cascade sur les apps) restent au
+        # health worker ; un test réussi ne fait que rafraîchir last_seen_at et sortir d'UNKNOWN.
+        if result.reachable:
+            cluster.last_seen_at = datetime.now(tz=timezone.utc)
+            if cluster.status == ClusterStatus.UNKNOWN:
+                cluster.status = ClusterStatus.ONLINE
+        return result
+
+    async def test_kubeconfig(self, kubeconfig_yaml: str) -> ClusterTestResult:
+        """Liste les namespaces avec ce kubeconfig, sans rien persister."""
+        _validate_kubeconfig(kubeconfig_yaml)
+        from backend.k8s.client import KubernetesClient
+
+        def _probe() -> tuple[int, int]:
+            k8s = KubernetesClient(kubeconfig_yaml=kubeconfig_yaml)
+            if not k8s.is_configured():
+                raise RuntimeError("Kubeconfig could not be loaded")
+            started = time.monotonic()
+            namespaces = k8s.healthcheck(timeout=_PROBE_TIMEOUT)
+            return int((time.monotonic() - started) * 1000), len(namespaces)
+
+        try:
+            with anyio.move_on_after(_PROBE_TIMEOUT) as cancel_scope:
+                latency_ms, namespace_count = await anyio.to_thread.run_sync(_probe, abandon_on_cancel=True)
+            if cancel_scope.cancelled_caught:
+                return ClusterTestResult(reachable=False, error=f"Timed out after {_PROBE_TIMEOUT}s")
+        except Exception as e:
+            return ClusterTestResult(reachable=False, error=str(e))
+        return ClusterTestResult(reachable=True, latency_ms=latency_ms, namespace_count=namespace_count)

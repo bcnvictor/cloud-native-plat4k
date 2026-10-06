@@ -65,10 +65,10 @@ class KubernetesClient:
     def is_configured(self) -> bool:
         return self._core_v1 is not None
 
-    def healthcheck(self) -> list[str]:
+    def healthcheck(self, timeout: Optional[float] = None) -> list[str]:
         """Lists namespaces to validate cluster connectivity. Returns namespace names."""
         try:
-            namespaces = self.core_v1.list_namespace()
+            namespaces = self.core_v1.list_namespace(_request_timeout=timeout)
             return [ns.metadata.name for ns in namespaces.items]
         except ApiException as e:
             raise RuntimeError(f"Kubernetes healthcheck failed: {e.status} {e.reason}") from e

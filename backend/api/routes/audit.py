@@ -7,7 +7,7 @@ from backend.api.deps import require_role
 from backend.db.models import User
 from backend.db.session import get_db
 from backend.services.audit_service import AuditService
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from shared.models import AuditLogResponse, UserRole
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,11 +21,12 @@ async def list_audit_logs(
     offset: int = 0,
     since: Optional[datetime] = None,
     until: Optional[datetime] = None,
+    action_prefix: Optional[List[str]] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN))
 ):
     service = AuditService(db)
-    return await service.list_logs(limit, offset, since, until)
+    return await service.list_logs(limit, offset, since, until, action_prefix)
 
 
 @router.get("/export")
