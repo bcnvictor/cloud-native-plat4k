@@ -26,7 +26,8 @@ const UPCOMING = [
 ];
 
 export function AdminSettings() {
-  const { panel = 'overview' } = useParams<{ panel?: string }>();
+  const params = useParams<{ panel?: string }>();
+  const panel = params.panel ?? 'overview';
   const { setScope } = useScopeStore();
   const { setBreadcrumb } = useBreadcrumb();
   const active = PANELS.find((p) => p.key === panel);
@@ -42,7 +43,8 @@ export function AdminSettings() {
     return () => setBreadcrumb([]);
   }, [setBreadcrumb, active]);
 
-  if (!active) return <Navigate to="/admin/settings" replace />;
+  // /admin/settings/overview → URL canonique, pour que le lien Overview soit actif.
+  if (!active || params.panel === 'overview') return <Navigate to="/admin/settings" replace />;
 
   let lastGroup: string | null = null;
 

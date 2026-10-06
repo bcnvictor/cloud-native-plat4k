@@ -81,8 +81,9 @@ async def test_cluster(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    cluster = await ClusterService(db).get_cluster(cluster_id)
-    result = await ClusterService(db).test_cluster(cluster_id)
+    service = ClusterService(db)
+    cluster = await service.get_cluster(cluster_id)
+    result = await service.test_cluster(cluster)
     await AuditService(db).log_action(current_user.id, "cluster.tested",
                                       extra={"cluster_id": cluster.id, "name": cluster.name,
                                              "reachable": result.reachable})

@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
+from shared.models import ClusterStatus
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -200,3 +201,58 @@ async def test_audit_filters_by_action_prefix(client: AsyncClient, admin_token: 
 
     assert resp.status_code == 200
     assert sorted(log["action"] for log in resp.json()) == ["ai_global_settings.updated", "cluster.updated"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("user_body", [
+    '{exec: {apiVersion: client.authentication.k8s.io/v1, command: sh, args: ["-c", "id"]}}',
+    "{auth-provider: {name: oidc}}",
+    "{client-certificate: /etc/passwd, client-key: /etc/shadow}",
+    "{tokenFile: /var/run/secrets/token}",
+])
+async def test_test_rejects_unsafe_kubeconfig(client: AsyncClient, admin_token: str, user_body: str):
+    kubeconfig = KUBECONFIG.replace('{token: "super-secret-token"}', user_body)
+    with patch("backend.k8s.client.KubernetesClient") as k8s_cls:
+        resp = await client.post("/api/v1/clusters/test", json={"kubeconfig": kubeconfig},
+                                 headers=_auth(admin_token))
+
+    assert resp.status_code == 422
+    assert "non autorisés" in resp.json()["detail"]
+    k8s_cls.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_create_rejects_local_ca_path(client: AsyncClient, admin_token: str):
+    kubeconfig = KUBECONFIG.replace('{server: "https://k8s.example:6443"}',
+                                    '{server: "https://k8s.example:6443", certificate-authority: /tmp/ca.crt}')
+    resp = await client.post("/api/v1/clusters/", headers=_auth(admin_token),
+                             json={"name": "c", "endpoint": "https://k8s.example:6443", "kubeconfig": kubeconfig})
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("before, reachable, after", [
+    (ClusterStatus.UNKNOWN, True, ClusterStatus.ONLINE),
+    # OFFLINE -> ONLINE reste au health worker (cascade de recovery des apps).
+    (ClusterStatus.OFFLINE, True, ClusterStatus.OFFLINE),
+    (ClusterStatus.ONLINE, False, ClusterStatus.ONLINE),
+])
+async def test_test_cluster_status_update(
+    client: AsyncClient, admin_token: str, db_session: AsyncSession,
+    before: ClusterStatus, reachable: bool, after: ClusterStatus,
+):
+    cluster = await _cluster(db_session)
+    cluster.status = before
+    await db_session.commit()
+    fake = _fake_k8s(["default"]) if reachable else _fake_k8s(error=RuntimeError("down"))
+
+    with patch.object(vault_client, "get_secret", return_value={"kubeconfig": KUBECONFIG}), \
+         patch("backend.k8s.client.KubernetesClient", return_value=fake):
+        resp = await client.post(f"/api/v1/clusters/{cluster.id}/test", headers=_auth(admin_token))
+
+    assert resp.status_code == 200
+    await db_session.refresh(cluster)
+    assert cluster.status == after
+    assert (cluster.last_seen_at is not None) is reachable
+    if reachable:
+        fake.healthcheck.assert_called_once_with(timeout=10)

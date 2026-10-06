@@ -67,7 +67,7 @@ export function ClusterConnectionsPanel() {
                 <tr className="text-left text-xs text-muted-foreground border-b border-border">
                   <th className="font-medium px-3 py-2.5">Cluster</th>
                   <th className="font-medium px-3 py-2.5">Status</th>
-                  <th className="font-medium px-3 py-2.5 hidden 2xl:table-cell whitespace-nowrap">Last seen</th>
+                  <th className="font-medium px-3 py-2.5 hidden xl:table-cell whitespace-nowrap">Last seen</th>
                   <th className="font-medium px-3 py-2.5 hidden md:table-cell">Apps</th>
                   <th className="font-medium px-3 py-2.5 hidden 2xl:table-cell">Monitoring</th>
                   <th className="px-3 py-2.5" />
@@ -92,7 +92,7 @@ export function ClusterConnectionsPanel() {
                         </div>
                       </td>
                       <td className="px-3 py-3"><ClusterStatusBadge status={c.status} /></td>
-                      <td className="px-3 py-3 text-xs text-muted-foreground hidden 2xl:table-cell whitespace-nowrap">
+                      <td className="px-3 py-3 text-xs text-muted-foreground hidden xl:table-cell whitespace-nowrap">
                         {c.last_seen_at ? timeAgo(c.last_seen_at) : 'never'}
                       </td>
                       <td className="px-3 py-3 tabular-nums hidden md:table-cell">{c.app_count}</td>
