@@ -1,6 +1,8 @@
 # Keycloak sur AKS et k3s : déploiement reproductible et reprise après sinistre
 
-Date : 8 octobre 2026. Statut : conception proposée, à relire avant le plan d'implémentation.
+Date : 8 octobre 2026. Statut : proposition initiale, remplacée par la [conception limitée au déploiement et au raccordement CNP](2026-10-08-keycloak-portable-cnp-design.md).
+
+Le besoin a été précisé : livrer un déploiement simple de Keycloak intégré à CNP. Les mécanismes de sauvegarde/restauration et leur interface opérateur décrits ci-dessous ne font pas partie du périmètre retenu. Ce document conserve la proposition initiale ; il ne constitue pas le contrat d'implémentation.
 
 ## Besoin et décisions retenues
 
