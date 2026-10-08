@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
+import { AskAIButton } from '@/components/AskAIButton';
 import { cn } from '@/utils/cn';
 
 const LEVEL_COLORS: Record<string, string> = {
@@ -95,6 +96,12 @@ export function LogsTab() {
             <IconExternalLink size={13} />
             Open in Loki
           </a>
+        )}
+        {logs.some((l) => l.level === 'ERROR') && (
+          <AskAIButton
+            label="Expliquer les erreurs"
+            question={`Analyse les erreurs récentes des logs ${env} de ${appSlug} : quelle est la cause probable et comment corriger ?`}
+          />
         )}
         <Button
           variant="ghost"

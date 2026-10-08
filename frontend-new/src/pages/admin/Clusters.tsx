@@ -1,41 +1,16 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { IconServer2, IconExternalLink, IconWifiOff } from '@tabler/icons-react';
+import { useNavigate } from 'react-router-dom';
+import { IconServer2, IconExternalLink, IconWifiOff, IconSettings } from '@tabler/icons-react';
 import { useScopeStore } from '@/store/scope';
 import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { clustersApi } from '@/api/clusters';
 import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { ClusterStatusBadge } from '@/components/ClusterStatusBadge';
 import { Spinner } from '@/components/ui/Spinner';
 import { timeAgo } from '@/utils/timeAgo';
 import type { ClusterConnection } from '@/types';
-
-const STATUS_BADGE: Record<ClusterConnection['status'], {
-  variant: 'success' | 'danger' | 'muted';
-  label: string;
-  pulse: boolean;
-  border: string;
-  dot: string;
-}> = {
-  online:  { variant: 'success', label: 'Online',  pulse: true,  border: 'border-success-border', dot: 'bg-success' },
-  offline: { variant: 'danger',  label: 'Offline', pulse: false, border: 'border-danger-border',  dot: 'bg-danger' },
-  unknown: { variant: 'muted',   label: 'Unknown', pulse: false, border: 'border-border',          dot: 'bg-zinc-400' },
-};
-
-function StatusBadge({ status }: { status: ClusterConnection['status'] }) {
-  const s = STATUS_BADGE[status] ?? STATUS_BADGE.unknown;
-  return (
-    <Badge variant={s.variant} className={`border ${s.border} gap-1.5`}>
-      <span className="relative flex h-1.5 w-1.5 shrink-0">
-        {s.pulse && (
-          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${s.dot} opacity-60`} />
-        )}
-        <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${s.dot}`} />
-      </span>
-      {s.label}
-    </Badge>
-  );
-}
 
 const MONITORING_LINKS: Array<{ key: keyof ClusterConnection; label: string }> = [
   { key: 'prometheus_url', label: 'Prometheus' },
@@ -46,6 +21,7 @@ const MONITORING_LINKS: Array<{ key: keyof ClusterConnection; label: string }> =
 export function Clusters() {
   const { setScope } = useScopeStore();
   const { setBreadcrumb } = useBreadcrumb();
+  const navigate = useNavigate();
   useEffect(() => { setScope('admin'); }, [setScope]);
 
   useEffect(() => {
@@ -60,9 +36,14 @@ export function Clusters() {
 
   return (
     <div className="max-w-[1440px] mx-auto px-8 py-6">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-foreground">Clusters</h1>
-        <p className="text-sm text-muted-foreground">{clusters.length} cluster{clusters.length !== 1 ? 's' : ''}</p>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Clusters</h1>
+          <p className="text-sm text-muted-foreground">{clusters.length} cluster{clusters.length !== 1 ? 's' : ''}</p>
+        </div>
+        <Button icon={<IconSettings size={14} />} onClick={() => navigate('/admin/settings/clusters')}>
+          Manage connections
+        </Button>
       </div>
 
       {isLoading ? (
@@ -85,7 +66,7 @@ export function Clusters() {
                   <p className="text-sm font-medium font-mono text-foreground">{cluster.name}</p>
                   <p className="text-xs text-muted-foreground truncate">{cluster.endpoint}</p>
                 </div>
-                <StatusBadge status={cluster.status} />
+                <ClusterStatusBadge status={cluster.status} />
               </div>
 
               {/* Info */}
@@ -99,6 +80,10 @@ export function Clusters() {
                 <span>
                   Registered{' '}
                   <span className="text-foreground">{timeAgo(cluster.created_at)}</span>
+                </span>
+                <span>
+                  Apps{' '}
+                  <span className="text-foreground tabular-nums">{cluster.app_count}</span>
                 </span>
               </div>
 

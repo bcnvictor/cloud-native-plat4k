@@ -6,6 +6,7 @@ import { TopNav } from '@/components/nav/TopNav';
 import { BreadcrumbProvider } from '@/components/nav/BreadcrumbContext';
 import { Toaster } from '@/components/ui/toast';
 import { GlobalAssistantPanel } from '@/components/GlobalAssistantPanel';
+import { ASSISTANT_ASK_EVENT } from '@/utils/assistantContext';
 
 export function RootLayout() {
   const [expanded, setExpanded] = useState(
@@ -16,6 +17,13 @@ export function RootLayout() {
   useEffect(() => {
     localStorage.setItem('cnp_sidebar_expanded', String(expanded));
   }, [expanded]);
+
+  // « Expliquer avec l'IA » : ouvre le tiroir (le panneau pose la question).
+  useEffect(() => {
+    const open = () => setAssistantOpen(true);
+    window.addEventListener(ASSISTANT_ASK_EVENT, open);
+    return () => window.removeEventListener(ASSISTANT_ASK_EVENT, open);
+  }, []);
 
   // Group-scoped queries are keyed by groupId so a switch always fetches
   // fresh data — this only forces it immediately instead of waiting on

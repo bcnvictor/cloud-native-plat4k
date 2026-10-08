@@ -52,6 +52,10 @@ Les modèles partagés entre le backend et le CLI se trouvent dans `shared/model
 
 ---
 
+## Dépendances
+
+Déclarées dans `pyproject.toml`, versions figées dans `requirements.lock` (image Docker) et `requirements-dev.lock` (CI, dev local). Après toute modification des dépendances : `./scripts/lock-deps.sh` depuis la racine, puis committer les locks avec le `pyproject.toml`. Détails : [CONTRIBUTING.md](../CONTRIBUTING.md#dépendances-python-backend--shared).
+
 ## Architecture en couches
 
 ```
@@ -214,11 +218,13 @@ La documentation interactive est disponible sur `http://localhost:8000/docs` (Sw
 
 | Méthode  | Route   | Auth    | Description                                               |
 | -------- | ------- | ------- | --------------------------------------------------------- |
-| `GET`    | `/`     | Viewer+ | Liste les clusters enregistrés                            |
-| `GET`    | `/{id}` | Viewer+ | Détail d'un cluster                                       |
-| `POST`   | `/`     | Admin   | Enregistre un cluster (endpoint + référence kubeconfig)   |
-| `PUT`    | `/{id}` | Admin   | Met à jour un cluster                                     |
-| `DELETE` | `/{id}` | Admin   | Supprime un cluster (bloqué si déploiements actifs)       |
+| `GET`    | `/`          | Viewer+ | Liste les clusters enregistrés (avec `app_count`)            |
+| `GET`    | `/{id}`      | Viewer+ | Détail d'un cluster                                          |
+| `POST`   | `/`          | Admin   | Enregistre un cluster (kubeconfig stocké dans Vault)         |
+| `PUT`    | `/{id}`      | Admin   | Met à jour un cluster (audit : noms des champs modifiés)     |
+| `DELETE` | `/{id}`      | Admin   | Supprime un cluster (409 si des applications le ciblent)     |
+| `POST`   | `/{id}/test` | Admin   | Teste la connexion (latence, nombre de namespaces), audité   |
+| `POST`   | `/test`      | Admin   | Teste un kubeconfig avant enregistrement (rien n'est stocké) |
 
 ### Deployments — `/api/v1/deployments`
 
@@ -236,7 +242,7 @@ en base avec le statut `failed`.
 
 | Méthode | Route | Description                                                        |
 | ------- | ----- | ------------------------------------------------------------------ |
-| `GET`   | `/`   | Liste les 100 derniers logs d'audit (paramètres `limit`, `offset`) |
+| `GET`   | `/`   | Liste les 100 derniers logs d'audit (paramètres `limit`, `offset`, `since`, `until`, `action_prefix` répétable) |
 
 ---
 

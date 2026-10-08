@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 
 from shared.models import CloudType
-from sqlalchemy import desc, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import Application, AuditLog, User
@@ -53,8 +53,12 @@ class AuditService:
         offset: int = 0,
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
+        action_prefixes: Optional[list[str]] = None,
     ):
-        query = self._query(since, until).limit(limit).offset(offset)
+        query = self._query(since, until)
+        if action_prefixes:
+            query = query.where(or_(*(AuditLog.action.startswith(p, autoescape=True) for p in action_prefixes)))
+        query = query.limit(limit).offset(offset)
         result = await self.db.execute(query)
         return [self._annotate(log, email, app_name) for log, email, app_name in result.all()]
 

@@ -220,3 +220,56 @@ async def test_openai_provider_raises_after_exhausting_retries():
         with pytest.raises(httpx.HTTPStatusError):
             await p.complete([LLMMessage(role="user", content="q")], model="m")
     assert fake.calls == 3  # initial + 2 retries
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_honours_429_retry_delay():
+    from unittest.mock import AsyncMock, patch
+
+    from backend.ai.provider import OpenAICompatibleProvider
+
+    quota = [{"error": {"code": 429, "details": [{"retryDelay": "7s"}]}}]
+    ok = {"choices": [{"message": {"content": "hi"}}], "model": "m", "usage": {}}
+    fake = _FakeAsyncClient([_resp(429, quota), _resp(200, ok)])
+    sleep = AsyncMock()
+    p = OpenAICompatibleProvider(api_key="k", base_url="https://x", retry_backoff=0)
+    with (
+        patch("backend.ai.provider.httpx.AsyncClient", lambda **_k: fake),
+        patch("backend.ai.provider.asyncio.sleep", new=sleep),
+    ):
+        resp = await p.complete([LLMMessage(role="user", content="q")], model="m")
+    assert resp.content == "hi"
+    sleep.assert_awaited_once_with(7.5)
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_gives_up_on_long_429_delay():
+    from unittest.mock import AsyncMock, patch
+
+    import httpx
+
+    from backend.ai.provider import OpenAICompatibleProvider
+
+    daily = {"error": {"code": 429, "details": [{"retryDelay": "3600s"}]}}
+    fake = _FakeAsyncClient([_resp(429, daily)])
+    p = OpenAICompatibleProvider(api_key="k", base_url="https://x", retry_backoff=0)
+    with (
+        patch("backend.ai.provider.httpx.AsyncClient", lambda **_k: fake),
+        patch("backend.ai.provider.asyncio.sleep", new=AsyncMock()),
+    ):
+        with pytest.raises(httpx.HTTPStatusError):
+            await p.complete([LLMMessage(role="user", content="q")], model="m")
+    assert fake.calls == 1  # no quota burned on pointless retries
+
+
+def test_daily_quota_is_never_retried():
+    import httpx
+
+    from backend.ai.provider import _hinted_retry_delay
+
+    body = [{"error": {"code": 429, "details": [
+        {"violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]},
+        {"retryDelay": "4s"},
+    ]}}]
+    resp = httpx.Response(429, json=body, request=httpx.Request("POST", "https://x"))
+    assert _hinted_retry_delay(resp) == float("inf")

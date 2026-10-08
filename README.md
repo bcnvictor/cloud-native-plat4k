@@ -39,9 +39,19 @@ Le `package-lock.json` est versionné, donc `npm install` suffit pour synchronis
 
 Le backend est packagé en mode editable pour que les imports `backend.*` fonctionnent correctement en local et dans l'image Docker.
 
+Les versions des dépendances Python sont figées dans `backend/requirements.lock` (runtime, image Docker) et `backend/requirements-dev.lock` (runtime + test + lint, CI). On installe d'abord le lock, puis les paquets locaux sans résolution de dépendances :
+
 ```bash
-python3 -m pip install -e ./shared
-python3 -m pip install -e ./backend
+python3 -m pip install -r backend/requirements-dev.lock
+python3 -m pip install --no-deps -e ./shared -e ./backend
+```
+
+**Ajouter, retirer ou monter une dépendance** : modifier `backend/pyproject.toml` (ou `shared/pyproject.toml`), puis régénérer les locks avec [uv](https://docs.astral.sh/uv/) et committer le tout ensemble. La CI échoue si les locks ne sont pas synchronisés avec les `pyproject.toml`. Règles complètes : [CONTRIBUTING.md](CONTRIBUTING.md#dépendances-python-backend--shared).
+
+```bash
+./scripts/lock-deps.sh                              # après ajout/retrait d'une dépendance
+./scripts/lock-deps.sh --upgrade-package sqlalchemy # monter un paquet précis
+./scripts/lock-deps.sh --upgrade                    # tout monter (à tester avant merge)
 ```
 
 ### CLI
@@ -88,8 +98,8 @@ Le script :
    ```bash
    cd frontend && npm install
    cd ..
-   python3 -m pip install -e ./shared
-   python3 -m pip install -e ./backend
+   python3 -m pip install -r backend/requirements-dev.lock
+   python3 -m pip install --no-deps -e ./shared -e ./backend
    ```
 
 4. Lancez les conteneurs :

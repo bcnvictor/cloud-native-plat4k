@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # independently of source changes.
 COPY ./shared/pyproject.toml /app/shared/pyproject.toml
 COPY ./backend/pyproject.toml /app/backend/pyproject.toml
+COPY ./backend/requirements.lock /app/backend/requirements.lock
 
 # Stub __init__.py so editable installs can resolve package metadata.
 # The real source is copied below and takes over at runtime.
@@ -33,8 +34,10 @@ RUN mkdir -p /app/shared/shared \
           /app/backend/services/__init__.py \
           /app/backend/vault/__init__.py
 
-RUN pip install --no-cache-dir -e /app/shared && \
-    pip install --no-cache-dir -e /app/backend
+# Versions figées par requirements.lock (cf. scripts/lock-deps.sh) ;
+# --no-deps garantit que pip ne résout rien d'autre que le lock.
+RUN pip install --no-cache-dir -r /app/backend/requirements.lock && \
+    pip install --no-cache-dir --no-deps -e /app/shared -e /app/backend
 
 # Copy actual source (overwrites stubs; editable installs already wired).
 COPY --chown=cnpuser:cnpuser ./backend /app/backend

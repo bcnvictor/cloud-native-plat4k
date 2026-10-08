@@ -56,6 +56,7 @@ export interface Application {
   origin: AppOrigin | null;
   source_url: string | null;
   last_known_status: ApplicationStatus;
+  last_pipeline_status?: string | null;
   framework?: string | null;
   gitlab_project_id?: number | null;
   owning_gitlab_group_id?: number | null;
@@ -136,6 +137,31 @@ export interface ClusterConnection {
   last_seen_at?: string;
   created_at: string;
   updated_at?: string;
+  app_count: number;
+}
+
+export interface ClusterConnectionPayload {
+  name?: string;
+  endpoint?: string;
+  kubeconfig?: string;
+  prometheus_url?: string | null;
+  loki_url?: string | null;
+  argocd_url?: string | null;
+  argocd_token?: string;
+}
+
+export interface ClusterTestResult {
+  reachable: boolean;
+  latency_ms: number | null;
+  namespace_count: number | null;
+  error: string | null;
+}
+
+export interface GitLabGroupAdmin {
+  gitlab_group_id: number;
+  name: string;
+  full_path: string;
+  synced_at: string | null;
 }
 
 export interface LogEntry {
@@ -327,12 +353,27 @@ export interface AIAppSettingsPatch {
   accept_code_access_warning?: boolean;
 }
 
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/** Où se trouve l'utilisateur : le backend s'en sert pour cibler groupe/app. */
+export interface ChatPageContext {
+  path?: string;
+  group_slug?: string;
+  app_slug?: string;
+}
+
 export interface ChatPayload {
   message: string;
   mode?: string;
   agent?: string;
   requested_context_mode?: AIContextMode;
   conversation_id?: string;
+  /** Tours précédents (le serveur ne conserve pas l'historique). */
+  history?: ChatTurn[];
+  page?: ChatPageContext;
 }
 
 export interface DocCitation {

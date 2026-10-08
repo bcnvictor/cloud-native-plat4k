@@ -20,6 +20,8 @@ from backend.db.models import AIGlobalSettings
 
 # Providers pilotables depuis les réglages globaux admin
 ALLOWED_PROVIDERS = ("mock", "mistral", "gemini", "deepseek")
+# Providers où les données restent dans l'UE (ou ne sortent pas de la CNP).
+SOVEREIGN_PROVIDERS = ("mock", "mistral")
 
 
 @dataclass
@@ -37,6 +39,14 @@ class EffectiveAIConfig:
     app_data_access_enabled: Optional[bool] = None
     allowed_app_ids: list[int] = field(default_factory=list)
     from_db: bool = False
+
+    @property
+    def mask_pii(self) -> bool:
+        """True when personal data (emails) must be masked before reaching the provider."""
+        return (
+            settings.AI_MASK_PII_FOR_NON_EU_PROVIDERS
+            and self.provider_name not in SOVEREIGN_PROVIDERS
+        )
 
     def app_allowed(self, app_id: int) -> bool:
         """Deny-by-default once admin settings exist: the app must be selected."""

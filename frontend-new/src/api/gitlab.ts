@@ -2,19 +2,21 @@ import { api } from './client';
 import { GitLabProject } from '@/types';
 
 interface GitLabHealthcheck {
-  connected: boolean;
-  url: string;
-  last_checked: string;
-  scopes: string[];
+  status: 'ok' | 'error' | 'not_configured';
+  detail?: string;
 }
 
 interface GitLabCredential {
-  token_masked: string;
   namespace: string;
-  created_at: string;
+  configured: boolean;
 }
 
 export const gitlabApi = {
+  async getCredentials(): Promise<GitLabCredential> {
+    const res = await api.get<GitLabCredential>('/gitlab/credentials');
+    return res.data;
+  },
+
   async healthcheck(): Promise<GitLabHealthcheck> {
     const res = await api.get<GitLabHealthcheck>('/gitlab/healthcheck');
     return res.data;

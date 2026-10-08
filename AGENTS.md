@@ -33,6 +33,7 @@ This repository is a multi-component monorepo:
 ## Useful entry points
 
 - Root setup and local bootstrapping: [README.md](README.md)
+- Contribution workflow and dependency rules: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Backend-specific architecture and API details: [backend/README.md](backend/README.md)
 - Project architecture docs: [docs/architecture/](docs/architecture/)
 - Architecture decisions: [docs/adr/](docs/adr/)
@@ -42,9 +43,20 @@ This repository is a multi-component monorepo:
 - Full local stack: `./start.sh`
 - Frontend dev: `cd frontend && npm run dev`
 - Frontend validation: `cd frontend && npm run build` and `cd frontend && npm run lint`
-- Backend and shared packages install in editable mode: `python3 -m pip install -e ./shared` and `python3 -m pip install -e ./backend`
+- Backend and shared install from the lockfile, then in editable mode without deps: `python3 -m pip install -r backend/requirements-dev.lock` then `python3 -m pip install --no-deps -e ./shared -e ./backend`
+- Python dependency versions are pinned in `backend/requirements.lock` / `backend/requirements-dev.lock`. After editing dependencies in a `pyproject.toml`, run `./scripts/lock-deps.sh` (needs uv) and commit the lockfiles; CI fails if they are out of sync
 - CLI install in editable mode: `python3 -m pip install -e ./cli`
 - Alembic migrations in containers must use the backend config file, for example `alembic -c backend/alembic.ini upgrade head`
+
+## Dependencies (mandatory)
+
+Python dependency versions are pinned in lockfiles. Full rules: [CONTRIBUTING.md](CONTRIBUTING.md#dépendances-python-backend--shared).
+
+- Adding, removing or changing a Python dependency = edit `backend/pyproject.toml` (or `shared/pyproject.toml`), run `./scripts/lock-deps.sh`, and commit the `pyproject.toml` together with `backend/requirements.lock` and `backend/requirements-dev.lock`.
+- Never edit `*.lock` files by hand; never "fix" a missing import with a bare `pip install <pkg>` without declaring it in a `pyproject.toml` and relocking.
+- Never run `./scripts/lock-deps.sh --upgrade` as a side effect of another task; version bumps go in a dedicated PR.
+- On a merge conflict in a `*.lock`, do not hand-merge: resolve `pyproject.toml`, then rerun `./scripts/lock-deps.sh`.
+- If `./scripts/lock-deps.sh` cannot run (uv missing), say so explicitly instead of committing a `pyproject.toml` change without its lockfiles — CI will reject it.
 
 ## Conventions and pitfalls
 
