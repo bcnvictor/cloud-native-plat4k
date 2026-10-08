@@ -176,7 +176,10 @@ curl -X PUT https://cnp.cloud-native-plat4k.me/api/v1/clusters/<ID_DE_cnp-gke> \
   ```bash
   gcloud container clusters update cnp-gke --zone europe-west1-b --node-pool system --no-enable-autoscaling
   gcloud container clusters resize cnp-gke --zone europe-west1-b --node-pool system --num-nodes 0
+  gcloud compute instances list   # doit rester vide
   ```
+  La désactivation de l'autoscaler n'est pas instantanée : s'il recrée un node juste après
+  le resize (pods en attente), relancer le `resize --num-nodes 0`.
   Reprise : `terraform apply` (réactive l'autoscaling et remet 2 nodes).
 - **Ne pas arrêter les VMs à la main** (console Compute Engine → Stop) : dans un groupe géré,
   elles passent en pool de secours arrêté (`targetStoppedSize`), restent des nodes `NotReady`
