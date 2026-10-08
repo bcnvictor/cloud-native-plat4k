@@ -3,19 +3,38 @@
 Runs the migration against a throwaway git repo created in a pytest tmp_path — never
 touches a real cnp-gitops clone.
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "migrate_externalsecrets_platform_dir.py"
+
+
+@pytest.fixture(autouse=True)
+def isolated_git_config(monkeypatch):
+    """Exercise real Git without borrowing the developer's commit identity."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "user.useConfigOnly")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "true")
+    for name in (
+        "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 def _make_fixture_repo(root: Path) -> None:
     (root / "apps" / "aks" / "my-app").mkdir(parents=True)
     (root / "argocd" / "aks" / "my-app").mkdir(parents=True)
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "CNP Test"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=root, check=True)
     subprocess.run(
         ["git", "remote", "add", "origin", "https://gitlab.com/g/cnp-gitops.git"],
         cwd=root, check=True,
