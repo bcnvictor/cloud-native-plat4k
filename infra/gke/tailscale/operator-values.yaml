@@ -1,0 +1,19 @@
+# helm repo add tailscale https://pkgs.tailscale.com/helmcharts
+# helm repo update
+# helm install tailscale-operator tailscale/tailscale-operator \
+#   --namespace tailscale --create-namespace \
+#   --values infra/gke/tailscale/operator-values.yaml \
+#   --set oauth.clientId=$TS_OAUTH_CLIENT_ID \
+#   --set oauth.clientSecret=$TS_OAUTH_CLIENT_SECRET \
+#   --kubeconfig infra/gke/cnp-gke.yaml
+#
+# Comme sur k3s : installé pour le mécanisme d'egress (pods ESO -> Vault sur
+# cnp-control, ADR-0024), via infra/eso/vault-egress-service.yaml.
+
+operatorConfig:
+  hostname: gke-cnp-operator
+  defaultTags:
+    - tag:k8s
+
+proxyConfig:
+  defaultTags: "tag:k8s"
