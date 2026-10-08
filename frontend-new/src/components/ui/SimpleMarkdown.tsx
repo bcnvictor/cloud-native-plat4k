@@ -2,12 +2,13 @@ import { ReactNode } from 'react';
 
 /**
  * Minimal, dependency-free markdown renderer for chat answers.
- * Supports: paragraphs, `#` headings, `-`/`*` and `1.` lists, **bold**, `code`.
+ * Supports: paragraphs, `#` headings, `-`/`*` and `1.` lists, **bold**, *italic*, `code`.
  * Renders to React elements only (no dangerouslySetInnerHTML) — safe by design.
  */
 function renderInline(text: string): ReactNode[] {
   const nodes: ReactNode[] = [];
-  const re = /(\*\*([^*]+)\*\*|`([^`]+)`)/g;
+  // *italic* must not start/end with a space, so « 2 * 3 * 4 » stays literal.
+  const re = /(\*\*([^*]+)\*\*|`([^`]+)`|\*([^*\s](?:[^*]*[^*\s])?)\*)/g;
   let last = 0;
   let key = 0;
   let m: RegExpExecArray | null;
@@ -19,11 +20,13 @@ function renderInline(text: string): ReactNode[] {
       nodes.push(
         <code
           key={key++}
-          className="px-1 py-0.5 rounded bg-background/60 font-mono text-[0.85em]"
+          className="px-1 py-0.5 rounded bg-background font-mono text-[0.85em]"
         >
           {m[3]}
         </code>
       );
+    } else if (m[4] !== undefined) {
+      nodes.push(<em key={key++}>{m[4]}</em>);
     }
     last = m.index + m[0].length;
   }

@@ -6,10 +6,13 @@ import {
   IconTrash,
   IconCheck,
   IconRefresh,
+  IconEye,
+  IconEyeOff,
 } from '@tabler/icons-react';
 import { useAuthStore } from '@/store/auth';
 import { authApi } from '@/api/auth';
 import { groupsApi } from '@/api/groups';
+import { gitlabApi } from '@/api/gitlab';
 import { notificationsApi } from '@/api/notifications';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -76,6 +79,95 @@ function NotificationPreferences() {
           ))}
         </ul>
       )}
+    </Card>
+  );
+}
+
+// Token GitLab personnel (PAT) : réglage propre à l'utilisateur, pas de la plateforme.
+function GitLabTokenCard() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: cred } = useQuery({ queryKey: ['gitlab-credentials'], queryFn: gitlabApi.getCredentials });
+  const [namespace, setNamespace] = useState<string | null>(null);
+  const [token, setToken] = useState('');
+  const [tokenVisible, setTokenVisible] = useState(false);
+  const [health, setHealth] = useState<{ ok: boolean; detail?: string } | null>(null);
+
+  const ns = namespace ?? cred?.namespace ?? '';
+
+  const healthMutation = useMutation({
+    mutationFn: gitlabApi.healthcheck,
+    onSuccess: (data) => setHealth({ ok: data.status === 'ok', detail: data.detail }),
+    onError: () => setHealth({ ok: false }),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () => gitlabApi.saveCredentials(token, ns),
+    onSuccess: () => {
+      setToken('');
+      setHealth(null);
+      qc.invalidateQueries({ queryKey: ['gitlab-credentials'] });
+      toast({ title: 'GitLab token saved' });
+    },
+  });
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-medium text-foreground">My GitLab token</h2>
+        {health ? (
+          <Badge variant={health.ok ? 'success' : 'danger'}>{health.ok ? 'Connected' : 'Error'}</Badge>
+        ) : (
+          <Badge variant="muted">{cred?.configured ? 'Configured' : 'Not configured'}</Badge>
+        )}
+      </div>
+      <div className="flex flex-col gap-3">
+        <Input
+          id="gitlab-namespace"
+          label="Namespace"
+          value={ns}
+          onChange={(e) => setNamespace(e.target.value)}
+          placeholder="cnp-apps"
+        />
+        <Input
+          id="gitlab-token"
+          label="Personal access token"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          type={tokenVisible ? 'text' : 'password'}
+          mono
+          placeholder={cred?.configured ? 'Token saved — paste a new one to replace it' : 'glpat-…'}
+          suffix={
+            <button type="button" onClick={() => setTokenVisible((v) => !v)} className="text-muted-foreground">
+              {tokenVisible ? <IconEyeOff size={13} /> : <IconEye size={13} />}
+            </button>
+          }
+        />
+        {health && !health.ok && health.detail && (
+          <p className="text-xs text-danger-text">{health.detail}</p>
+        )}
+        <div className="flex gap-2 justify-end">
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<IconRefresh size={13} />}
+            loading={healthMutation.isPending}
+            disabled={!cred?.configured}
+            onClick={() => healthMutation.mutate()}
+          >
+            Test connection
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            loading={saveMutation.isPending}
+            disabled={!token || !ns}
+            onClick={() => saveMutation.mutate()}
+          >
+            Save
+          </Button>
+        </div>
+      </div>
     </Card>
   );
 }
@@ -191,6 +283,8 @@ export function Profile() {
             </ul>
           )}
         </Card>
+
+        <GitLabTokenCard />
 
         {/* Notification preferences */}
         <NotificationPreferences />

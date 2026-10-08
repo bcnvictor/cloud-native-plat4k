@@ -491,9 +491,22 @@ class ClusterConnectionResponse(ClusterConnectionBase):
     last_seen_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    # Nombre d'applications qui ciblent ce cluster (bloque la suppression si > 0).
+    app_count: int = 0
 
     class Config:
         from_attributes = True
+
+
+class ClusterTestRequest(BaseModel):
+    kubeconfig: str
+
+
+class ClusterTestResult(BaseModel):
+    reachable: bool
+    latency_ms: Optional[int] = None
+    namespace_count: Optional[int] = None
+    error: Optional[str] = None
 
 
 # ── Security scans ────────────────────────────────────────────────────────────

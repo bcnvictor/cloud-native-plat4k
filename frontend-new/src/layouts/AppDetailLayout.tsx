@@ -8,6 +8,7 @@ import { Application } from '@/types';
 import { AppStatusBadge } from '@/components/AppStatusBadge';
 import { AppScaleBadge } from '@/components/AppScaleBadge';
 import { Button } from '@/components/ui/Button';
+import { AskAIButton } from '@/components/AskAIButton';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAppScaleState } from '@/hooks/useAppScaleState';
 import { getAppHealth } from '@/utils/appHealth';
@@ -117,9 +118,27 @@ export function AppDetailLayout() {
             <div className="flex items-center gap-2 py-2 mb-1 px-3 bg-danger-subtle rounded-md text-xs text-danger-text">
               <span>⚠</span>
               <span>The application is in error.</span>
-              <button className="underline ml-auto" onClick={() => navigateTo('logs')}>
-                View logs
-              </button>
+              <span className="ml-auto flex items-center gap-2">
+                <AskAIButton
+                  question={`L'application ${app?.name ?? appSlug} est en erreur : diagnostique la cause (état, logs d'erreur, pods, dernier pipeline) et dis-moi comment corriger.`}
+                />
+                <button className="underline" onClick={() => navigateTo('logs')}>
+                  View logs
+                </button>
+              </span>
+            </div>
+          )}
+
+          {/* Failed CI pipeline */}
+          {app?.last_pipeline_status === 'failed' && (
+            <div className="flex items-center gap-2 py-2 mb-1 px-3 bg-warning-subtle rounded-md text-xs text-warning-text">
+              <span>⚠</span>
+              <span>The last CI pipeline failed.</span>
+              <span className="ml-auto">
+                <AskAIButton
+                  question={`Pourquoi le dernier pipeline CI de ${app.name} a-t-il échoué et comment le corriger ?`}
+                />
+              </span>
             </div>
           )}
 

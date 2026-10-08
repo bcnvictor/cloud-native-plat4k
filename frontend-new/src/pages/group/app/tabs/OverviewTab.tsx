@@ -18,6 +18,7 @@ import { appUrl } from '@/utils/appUrls';
 import { clustersApi } from '@/api/clusters';
 import { isPrivateCluster } from '@/utils/clusterUtils';
 import { cn } from '@/utils/cn';
+import { AskAIButton } from '@/components/AskAIButton';
 import type { ArgoEnvStatus, AppScaleStateItem } from '@/types';
 
 function SyncBadge({ status }: { status: string | null | undefined }) {
@@ -48,11 +49,12 @@ interface EnvCardProps {
   title: string;
   envKey: 'dev' | 'prod';
   appId: number;
+  appName: string;
   argo: ArgoEnvStatus | null | undefined;
   scaleState: AppScaleStateItem | null | undefined;
 }
 
-function EnvCard({ title, envKey, appId, argo, scaleState }: EnvCardProps) {
+function EnvCard({ title, envKey, appId, appName, argo, scaleState }: EnvCardProps) {
   const [confirming, setConfirming] = useState(false);
   const queryClient = useQueryClient();
   const isStopped = scaleState?.is_stopped ?? false;
@@ -90,13 +92,23 @@ function EnvCard({ title, envKey, appId, argo, scaleState }: EnvCardProps) {
     ? `Stopped${scaleState?.stop_reason ? ` (${scaleState.stop_reason})` : ''}${scaleState?.stopped_at ? ` · ${timeAgo(scaleState.stopped_at)}` : ''}`
     : 'Running';
 
+  // Santé ArgoCD anormale (hors arrêt volontaire) : proposer un diagnostic IA.
+  const unhealthy =
+    !isStopped && !!argo?.health_status && ['Degraded', 'Missing'].includes(argo.health_status);
+
   return (
     <Card>
-      <h2 className="text-sm font-medium text-foreground mb-3">
+      <h2 className="text-sm font-medium text-foreground mb-3 flex items-center justify-between">
         <span className="flex items-center gap-1.5">
           <IconRefresh size={14} />
           {title}
         </span>
+        {unhealthy && (
+          <AskAIButton
+            label="Expliquer"
+            question={`Pourquoi l'environnement ${envKey} de ${appName} est-il ${argo?.health_status} ? Diagnostique avec les logs et les pods.`}
+          />
+        )}
       </h2>
       {!argo || (argo.error && !argo.sync_status) ? (
         <p className="text-xs text-muted-foreground flex items-center gap-1.5 mb-3">
@@ -228,8 +240,8 @@ export function OverviewTab() {
         </Card>
       ) : (
         <div className="grid grid-cols-2 gap-4">
-          <EnvCard title="Production environment" envKey="prod" appId={app.id} argo={runtimeStatus?.argocd_prod} scaleState={scale?.prod} />
-          <EnvCard title="Dev environment" envKey="dev" appId={app.id} argo={runtimeStatus?.argocd_dev} scaleState={scale?.dev} />
+          <EnvCard title="Production environment" envKey="prod" appId={app.id} appName={app.name} argo={runtimeStatus?.argocd_prod} scaleState={scale?.prod} />
+          <EnvCard title="Dev environment" envKey="dev" appId={app.id} appName={app.name} argo={runtimeStatus?.argocd_dev} scaleState={scale?.dev} />
         </div>
       )}
 

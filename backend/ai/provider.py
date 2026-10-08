@@ -11,8 +11,21 @@ import httpx
 
 @dataclasses.dataclass
 class LLMMessage:
-    role: str  # "system" | "user" | "assistant"
-    content: str
+    role: str  # "system" | "user" | "assistant" | "tool"
+    content: Optional[str]
+    # Function calling (format OpenAI) : appels d'outils émis par l'assistant,
+    # conservés tels quels (Gemini y attache des métadonnées à renvoyer), et
+    # identifiant de l'appel auquel répond un message "tool".
+    tool_calls: Optional[list[dict]] = None
+    tool_call_id: Optional[str] = None
+
+    def to_openai(self) -> dict:
+        msg: dict = {"role": self.role, "content": self.content}
+        if self.tool_calls:
+            msg["tool_calls"] = self.tool_calls
+        if self.tool_call_id:
+            msg["tool_call_id"] = self.tool_call_id
+        return msg
 
 
 @dataclasses.dataclass
@@ -21,6 +34,7 @@ class LLMResponse:
     model: str
     input_tokens: int = 0
     output_tokens: int = 0
+    tool_calls: list[dict] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass
@@ -45,7 +59,10 @@ class LLMProvider(ABC):
         model: str,
         max_tokens: int = 4096,
         temperature: float = 0.3,
-    ) -> LLMResponse: ...
+        tools: Optional[list[dict]] = None,
+    ) -> LLMResponse:
+        """*tools* : définitions JSON-schema (format OpenAI). Un provider qui
+        ne sait pas appeler d'outils les ignore et répond directement."""
 
     @abstractmethod
     def supports_streaming(self) -> bool: ...
@@ -68,6 +85,7 @@ class MockProvider(LLMProvider):
         model: str = "mock",
         max_tokens: int = 4096,
         temperature: float = 0.3,
+        tools: Optional[list[dict]] = None,
     ) -> LLMResponse:
         last_user = next(
             (m.content for m in reversed(messages) if m.role == "user"), ""
@@ -84,11 +102,44 @@ class MockProvider(LLMProvider):
         return False
 
 
+def _hinted_retry_delay(response: httpx.Response) -> Optional[float]:
+    """Retry delay advertised by a 429: `Retry-After` header or Google-style
+    ``error.details[].retryDelay`` ("7s") in the body."""
+    header = response.headers.get("retry-after")
+    if header:
+        try:
+            return float(header)
+        except ValueError:
+            pass
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    if isinstance(body, list) and body:
+        body = body[0]
+    details = (body.get("error") or {}).get("details") if isinstance(body, dict) else None
+    for detail in details or []:
+        # A daily quota won't reset in seconds, whatever retryDelay says.
+        for violation in (detail.get("violations") or []) if isinstance(detail, dict) else []:
+            if "PerDay" in str(violation.get("quotaId", "")):
+                return float("inf")
+    for detail in details or []:
+        raw = detail.get("retryDelay") if isinstance(detail, dict) else None
+        if isinstance(raw, str) and raw.endswith("s"):
+            try:
+                return float(raw[:-1])
+            except ValueError:
+                continue
+    return None
+
+
 class OpenAICompatibleProvider(LLMProvider):
     """Generic OpenAI-compatible provider (Ollama, LM Studio, Gemini, etc.)."""
 
     # Transient upstream statuses worth retrying (rate limit / temporary outage).
     _RETRY_STATUSES = {429, 500, 502, 503, 529}
+    # Longest provider-requested wait we accept before retrying a 429.
+    _MAX_RETRY_DELAY = 20.0
 
     def __init__(
         self,
@@ -115,14 +166,18 @@ class OpenAICompatibleProvider(LLMProvider):
         model: str,
         max_tokens: int = 4096,
         temperature: float = 0.3,
+        tools: Optional[list[dict]] = None,
     ) -> LLMResponse:
         payload = {
             "model": model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "messages": [m.to_openai() for m in messages],
             "max_tokens": max_tokens,
             "temperature": temperature,
             "stream": False,
         }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
         data = None
         for attempt in range(self._max_retries + 1):
             try:
@@ -143,18 +198,39 @@ class OpenAICompatibleProvider(LLMProvider):
                 )
                 retryable = status in self._RETRY_STATUSES or status is None
                 if retryable and attempt < self._max_retries:
-                    await asyncio.sleep(self._retry_backoff * (2 ** attempt))
-                    continue
+                    delay = self._retry_delay(exc, attempt)
+                    if delay is not None:
+                        await asyncio.sleep(delay)
+                        continue
                 raise
 
         choice = data["choices"][0]
         usage = data.get("usage", {})
+        message = choice.get("message") or {}
         return LLMResponse(
-            content=choice["message"]["content"],
+            content=message.get("content") or "",
             model=data.get("model", model),
             input_tokens=usage.get("prompt_tokens", 0),
             output_tokens=usage.get("completion_tokens", 0),
+            tool_calls=list(message.get("tool_calls") or []),
         )
+
+    def _retry_delay(self, exc: Exception, attempt: int) -> Optional[float]:
+        """Seconds to wait before retrying, or None to give up now.
+
+        On 429 the provider usually says how long to wait (free tiers are
+        per-minute quotas): honour it instead of burning more quota with a
+        short backoff, but give up if the wait is too long (daily quota).
+        """
+        default = self._retry_backoff * (2 ** attempt)
+        if not (isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429):
+            return default
+        hinted = _hinted_retry_delay(exc.response)
+        if hinted is None:
+            return default
+        if hinted > self._MAX_RETRY_DELAY:
+            return None
+        return hinted + 0.5
 
     def supports_streaming(self) -> bool:
         return True
