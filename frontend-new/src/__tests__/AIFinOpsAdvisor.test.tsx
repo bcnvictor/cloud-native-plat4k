@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AIFinOpsAdvisor } from '@/components/AIFinOpsAdvisor';
 import { assistantApi } from '@/api/assistant';
+import { ASSISTANT_ASK_EVENT, AssistantAskDetail } from '@/utils/assistantContext';
 import type { AIFinOpsAdvice } from '@/types';
 
 const ADVICE: AIFinOpsAdvice = {
@@ -23,7 +24,7 @@ const ADVICE: AIFinOpsAdvice = {
     current: '100 mCPU', proposed: '10 mCPU', monthly_savings_usd: 3.11,
     risk: 'bas', confidence: 'haute', rationale: 'p95 à 0,03 mCPU',
   }],
-  raw_text: null, provider: 'anthropic', model: 'claude-haiku-4-5', notice: null,
+  raw_text: null, provider: 'gemini', model: 'gemini-flash-latest',
   input_tokens: 900, output_tokens: 300, estimated_cost_usd: 0.0024,
 };
 
@@ -34,7 +35,7 @@ function renderAdvisor(enabled = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <AIFinOpsAdvisor appId={1} />
+      <AIFinOpsAdvisor appId={1} appName="my-app" />
     </QueryClientProvider>
   );
 }
@@ -59,11 +60,23 @@ describe('AIFinOpsAdvisor', () => {
 
   it("affiche le message d'erreur de l'API", async () => {
     vi.spyOn(assistantApi, 'getAiAdvice').mockRejectedValue({
-      response: { data: { detail: "Quota de l'API Anthropic atteint. Réessayez dans une minute." } },
+      response: { data: { detail: 'Quota du fournisseur IA atteint. Réessayez dans une minute.' } },
     });
     renderAdvisor();
     fireEvent.click(await screen.findByRole('button', { name: /Analyser la consommation/ }));
-    expect(await screen.findByText(/Quota de l'API Anthropic atteint/)).toBeTruthy();
+    expect(await screen.findByText(/Quota du fournisseur IA atteint/)).toBeTruthy();
+  });
+
+  it("ouvre l'assistant sur une question FinOps de l'app", async () => {
+    const received: string[] = [];
+    const listener = (e: Event) =>
+      received.push((e as CustomEvent<AssistantAskDetail>).detail.question);
+    window.addEventListener(ASSISTANT_ASK_EVENT, listener);
+    renderAdvisor();
+    fireEvent.click(await screen.findByRole('button', { name: /Approfondir avec l’assistant/ }));
+    window.removeEventListener(ASSISTANT_ASK_EVENT, listener);
+    expect(received).toHaveLength(1);
+    expect(received[0]).toContain('my-app');
   });
 
   it("reste masqué quand l'assistant IA est désactivé", async () => {

@@ -474,7 +474,6 @@ export interface AIFinOpsAdvice {
   raw_text: string | null;
   provider: string | null;
   model: string | null;
-  notice: string | null;
   input_tokens: number;
   output_tokens: number;
   estimated_cost_usd: number | null;

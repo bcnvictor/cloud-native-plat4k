@@ -3,13 +3,13 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Optional
 
-import anthropic
 import httpx
 from backend.api.deps import require_tier
 from backend.db.models import Application, User
 from backend.db.session import get_db
+from backend.services.ai_limits_service import AILimitExceeded, AILimitsService
 from backend.services.ai_settings_service import AISettingsService
-from backend.services.finops_advisor_service import AdvisorUnavailable, FinOpsAdvisorService
+from backend.services.finops_advisor_service import FinOpsAdvisorService
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from shared.models import CnpTier
@@ -66,7 +66,6 @@ class AIAdviceResponse(BaseModel):
     raw_text: Optional[str] = None
     provider: Optional[str] = None
     model: Optional[str] = None
-    notice: Optional[str] = None
     input_tokens: int
     output_tokens: int
     estimated_cost_usd: Optional[float] = None
@@ -92,23 +91,27 @@ async def get_ai_advice(
             detail="AI access to this application is not allowed by platform settings.",
         )
 
+    # Same guard-rails as the assistant: per-user rate limit and daily AI budget.
+    try:
+        await AILimitsService(db).check(current_user)
+    except AILimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+
     try:
         result = await FinOpsAdvisorService(db, cfg).advise(app, current_user)
-    except AdvisorUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except anthropic.RateLimitError as exc:
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Quota du fournisseur IA atteint. Réessayez dans une minute ; si cela "
+                    "persiste, un administrateur peut changer de provider dans Réglages "
+                    "plateforme → Assistant IA."
+                ),
+            ) from exc
         raise HTTPException(
-            status_code=429, detail="Quota de l'API Anthropic atteint. Réessayez dans une minute."
-        ) from exc
-    except (anthropic.APIStatusError, anthropic.APIConnectionError) as exc:
-        raise HTTPException(
-            status_code=502, detail="L'API Anthropic n'a pas pu répondre. Réessayez."
-        ) from exc
-    except httpx.HTTPStatusError as exc:  # provider IA de la plateforme (repli)
-        status = 429 if exc.response.status_code == 429 else 502
-        raise HTTPException(
-            status_code=status,
-            detail="Le fournisseur IA n'a pas pu répondre (quota ou indisponibilité). Réessayez.",
+            status_code=502,
+            detail=f"Le fournisseur IA a renvoyé une erreur ({exc.response.status_code}). Réessayez.",
         ) from exc
     except httpx.TransportError as exc:
         raise HTTPException(status_code=502, detail="Le fournisseur IA est injoignable.") from exc

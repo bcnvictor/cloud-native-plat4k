@@ -1,11 +1,15 @@
 """AI FinOps advisor (4K-46): right-sizing recommendations from Prometheus metrics.
 
 Flow: Prometheus (24 h of CPU/RAM per environment + requests/limits) → reference
-sizing computed here (deterministic, LLMs are poor at arithmetic) → Claude Haiku
-via the Anthropic API writes the recommendations as JSON → validated and returned.
+sizing computed here (deterministic, LLMs are poor at arithmetic) → the platform AI
+provider (Réglages plateforme → Assistant IA) writes the recommendations.
 
-Proof of concept: no cache, one LLM call per request. Advice only — nothing is
-ever applied automatically.
+The analysis (analyze_usage / describe_analysis) is shared by two consumers:
+- GET /apps/{id}/ai-advice: one LLM call, JSON answer, validated and returned;
+- the global assistant tool get_finops_advice: the figures are handed to the
+  chat model, which writes the recommendations in the conversation.
+
+Proof of concept: no cache. Advice only — nothing is ever applied automatically.
 
 No imports from backend.api.*.
 """
@@ -22,10 +26,9 @@ from typing import Optional
 from shared.models import AIPurpose
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.ai.anthropic_provider import AnthropicProvider
 from backend.ai.factory import get_provider
 from backend.ai.pricing import estimate_cost
-from backend.ai.provider import LLMMessage, LLMProvider
+from backend.ai.provider import LLMMessage
 from backend.core.config import settings
 from backend.db.models import AIUsageRecord, Application, User
 from backend.services.ai_settings_service import EffectiveAIConfig
@@ -84,10 +87,6 @@ _LEVELS = {"bas", "moyen", "élevé"}
 _CONFIDENCE = {"haute", "moyenne", "faible"}
 
 
-class AdvisorUnavailable(Exception):
-    """The advisor cannot run (no LLM configured)."""
-
-
 @dataclass
 class EnvSnapshot:
     env: str
@@ -110,6 +109,14 @@ class EnvSnapshot:
     proposed_ram_request_mib: int
     proposed_cost_month_usd: float
     potential_savings_month_usd: Optional[float]
+
+
+@dataclass
+class UsageAnalysis:
+    status: str                      # "ok" | "no_data" | "metrics_unavailable"
+    window_hours: int
+    snapshots: list[EnvSnapshot] = field(default_factory=list)
+    message: str = ""                # why there is nothing to analyse (status != "ok")
 
 
 @dataclass
@@ -138,7 +145,6 @@ class AdviceResult:
     raw_text: Optional[str] = None   # LLM answer when it could not be parsed as JSON
     provider: Optional[str] = None
     model: Optional[str] = None
-    notice: Optional[str] = None
     input_tokens: int = 0
     output_tokens: int = 0
     estimated_cost_usd: Optional[float] = None
@@ -226,6 +232,60 @@ def build_user_prompt(app: Application, snapshots: list[EnvSnapshot], window_hou
     return "\n".join(lines)
 
 
+# Rules handed to the global assistant with the figures (get_finops_advice).
+_ASSISTANT_GUIDANCE = """\
+Consignes pour rédiger les recommandations FinOps :
+- Reprends les chiffres de la « proposition de référence » ; ne refais pas les calculs.
+- Mémoire : ne propose jamais une request inférieure au maximum observé (risque d'OOMKill).
+- Couverture < 24 h ou redémarrages : baisse le niveau de confiance et dis-le.
+- App déjà bien dimensionnée : dis-le, sans forcer de recommandation.
+- Pour chaque recommandation : environnement, valeur actuelle → proposée, économie mensuelle,
+  risque (bas / moyen / élevé) et confiance (haute / moyenne / faible).
+- Les changements se font dans le chart Helm de l'app (resources.requests / resources.limits) ;
+  rien n'est appliqué automatiquement, l'équipe valide."""
+
+
+async def analyze_usage(app: Application) -> UsageAnalysis:
+    """Prometheus usage over the advisor window + reference sizing, per environment."""
+    window = settings.AI_FINOPS_WINDOW_HOURS
+    step = 900 if window >= 6 else 60
+    try:
+        raw = await get_app_resource_usage(settings.PROMETHEUS_URL, app.slug, window, step)
+    except Exception as exc:
+        logger.warning("FinOps advisor: Prometheus query failed for %s", app.slug, exc_info=True)
+        return UsageAnalysis(
+            status="metrics_unavailable", window_hours=window,
+            message=f"Métriques indisponibles : Prometheus injoignable ({type(exc).__name__}).",
+        )
+
+    snapshots = [
+        build_snapshot(env, data, step)
+        for env, data in sorted(raw.items())
+        if data["cpu_mcpu"]["points"] or data["ram_mib"]["points"]
+    ]
+    if not snapshots:
+        return UsageAnalysis(
+            status="no_data", window_hours=window,
+            message=(
+                f"Aucune métrique pour {app.name} sur les {window} dernières heures : l'app "
+                "n'est pas déployée, est arrêtée, ou ses pods n'ont pas le label "
+                "app.kubernetes.io/managed-by=cnp."
+            ),
+        )
+    return UsageAnalysis(status="ok", window_hours=window, snapshots=snapshots)
+
+
+def describe_analysis(app: Application, analysis: UsageAnalysis) -> str:
+    """Plain-text analysis for the global assistant (figures + writing rules)."""
+    if analysis.status != "ok":
+        return analysis.message
+    return (
+        f"Analyse FinOps de {app.name} (Prometheus, {analysis.window_hours} dernières heures) :\n"
+        f"{build_user_prompt(app, analysis.snapshots, analysis.window_hours)}\n\n"
+        f"{_ASSISTANT_GUIDANCE}"
+    )
+
+
 # ── LLM answer parsing ───────────────────────────────────────────────────────
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
@@ -277,69 +337,33 @@ class FinOpsAdvisorService:
         self.db = db
         self.cfg = cfg
 
-    def _provider(self) -> tuple[LLMProvider, str, str, Optional[str]]:
-        """(provider, model, provider label, notice). Claude first, platform provider as fallback."""
-        if settings.ANTHROPIC_API_KEY:
-            provider = AnthropicProvider(
-                api_key=settings.ANTHROPIC_API_KEY,
-                timeout=settings.AI_PROVIDER_TIMEOUT_SECONDS,
-            )
-            return provider, settings.AI_FINOPS_MODEL, "anthropic", None
-        if settings.AI_FINOPS_FALLBACK_TO_PLATFORM_PROVIDER:
-            provider = get_provider(self.cfg.provider_name, self.cfg.api_key)
-            label = type(provider).__name__.replace("Provider", "").lower()
-            return provider, self.cfg.model, label, (
-                "Clé Anthropic non configurée : analyse faite avec le provider IA de la "
-                f"plateforme ({self.cfg.provider_name}). Définir ANTHROPIC_API_KEY pour utiliser Claude."
-            )
-        raise AdvisorUnavailable(
-            "Conseiller FinOps indisponible : ANTHROPIC_API_KEY n'est pas configurée."
-        )
-
     async def advise(self, app: Application, user: User) -> AdviceResult:
-        window = settings.AI_FINOPS_WINDOW_HOURS
-        step = 900 if window >= 6 else 60
+        analysis = await analyze_usage(app)
         result = AdviceResult(
-            app_id=app.id, app_name=app.name, status="ok", window_hours=window,
-            generated_at=datetime.now(timezone.utc),
+            app_id=app.id, app_name=app.name, status=analysis.status,
+            window_hours=analysis.window_hours, generated_at=datetime.now(timezone.utc),
+            metrics=analysis.snapshots, summary=analysis.message,
         )
-
-        try:
-            raw = await get_app_resource_usage(settings.PROMETHEUS_URL, app.slug, window, step)
-        except Exception as exc:
-            logger.warning("FinOps advisor: Prometheus query failed for %s", app.slug, exc_info=True)
-            result.status = "metrics_unavailable"
-            result.summary = f"Métriques indisponibles : Prometheus injoignable ({type(exc).__name__})."
-            return result
-
-        snapshots = [
-            build_snapshot(env, data, step)
-            for env, data in sorted(raw.items())
-            if data["cpu_mcpu"]["points"] or data["ram_mib"]["points"]
-        ]
-        result.metrics = snapshots
-        if not snapshots:
+        if analysis.status != "ok":
             # No LLM call when there is nothing to analyse (cost + no hallucination).
-            result.status = "no_data"
-            result.summary = (
-                f"Aucune métrique pour {app.name} sur les {window} dernières heures : l'app "
-                "n'est pas déployée, est arrêtée, ou ses pods n'ont pas le label "
-                "app.kubernetes.io/managed-by=cnp."
-            )
             return result
 
-        provider, model, label, notice = self._provider()
-        result.provider, result.notice = label, notice
+        # Same provider and model as the assistant (Réglages plateforme → Assistant IA).
+        provider = get_provider(self.cfg.provider_name, self.cfg.api_key)
+        label = type(provider).__name__.replace("Provider", "").lower()
         llm = await provider.complete(
             messages=[
                 LLMMessage(role="system", content=_SYSTEM_PROMPT),
-                LLMMessage(role="user", content=build_user_prompt(app, snapshots, window)),
+                LLMMessage(
+                    role="user",
+                    content=build_user_prompt(app, analysis.snapshots, analysis.window_hours),
+                ),
             ],
-            model=model,
+            model=self.cfg.model,
             max_tokens=_MAX_OUTPUT_TOKENS,
             temperature=0.2,
         )
-        result.model = llm.model
+        result.provider, result.model = label, llm.model
         result.input_tokens, result.output_tokens = llm.input_tokens, llm.output_tokens
         result.estimated_cost_usd = estimate_cost(llm.model, llm.input_tokens, llm.output_tokens)
 

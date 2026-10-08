@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { IconArrowRight, IconCoin, IconRefresh, IconSparkles } from '@tabler/icons-react';
 import { assistantApi } from '@/api/assistant';
+import { AskAIButton } from '@/components/AskAIButton';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -95,9 +96,6 @@ function AdviceBody({ advice }: { advice: AIFinOpsAdvice }) {
   }
   return (
     <div className="flex flex-col gap-3">
-      {advice.notice && (
-        <p className="rounded-md bg-warning-subtle px-3 py-2 text-xs text-warning-text">{advice.notice}</p>
-      )}
       {advice.summary && <p className="text-sm text-foreground">{advice.summary}</p>}
       <div className="grid gap-2 md:grid-cols-2">
         {advice.metrics.map((s) => (
@@ -125,8 +123,11 @@ function AdviceBody({ advice }: { advice: AIFinOpsAdvice }) {
   );
 }
 
-/** Conseiller FinOps IA (4K-46) : right-sizing à partir des 24 dernières heures de métriques. */
-export function AIFinOpsAdvisor({ appId }: { appId: number }) {
+/**
+ * Conseiller FinOps IA (4K-46) : right-sizing à partir des 24 dernières heures de métriques.
+ * « Approfondir avec l’assistant » poursuit l'analyse dans le chatbot (outil get_finops_advice).
+ */
+export function AIFinOpsAdvisor({ appId, appName }: { appId: number; appName: string }) {
   const { data: uiSettings } = useQuery({
     queryKey: ['ai-ui-settings'],
     queryFn: assistantApi.getUiSettings,
@@ -143,11 +144,17 @@ export function AIFinOpsAdvisor({ appId }: { appId: number }) {
           <IconCoin size={14} />
           Conseiller FinOps IA
         </h2>
-        {advice.data && !advice.isPending && (
-          <Button variant="ghost" size="sm" icon={<IconRefresh size={13} />} onClick={() => advice.mutate()}>
-            Relancer
-          </Button>
-        )}
+        <div className="flex items-center gap-1">
+          <AskAIButton
+            label="Approfondir avec l’assistant"
+            question={`L'application ${appName} est-elle bien dimensionnée ? Propose des économies de ressources.`}
+          />
+          {advice.data && !advice.isPending && (
+            <Button variant="ghost" size="sm" icon={<IconRefresh size={13} />} onClick={() => advice.mutate()}>
+              Relancer
+            </Button>
+          )}
+        </div>
       </div>
 
       {advice.isPending ? (

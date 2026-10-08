@@ -274,7 +274,7 @@ export function OverviewTab() {
       )}
 
       {/* Conseiller FinOps IA (4K-46) */}
-      {app?.id && <AIFinOpsAdvisor appId={app.id} />}
+      {app?.id && <AIFinOpsAdvisor appId={app.id} appName={app.name} />}
 
       {/* Quick access */}
       <Card>

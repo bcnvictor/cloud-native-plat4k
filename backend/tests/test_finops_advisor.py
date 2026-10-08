@@ -1,9 +1,7 @@
-"""AI FinOps advisor (4K-46): GET /apps/{id}/ai-advice, sizing math, Claude provider."""
+"""AI FinOps advisor (4K-46): GET /apps/{id}/ai-advice, sizing math, usage analysis."""
 import json
-from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, patch
 
-import anthropic
 import httpx
 import pytest
 from httpx import AsyncClient
@@ -11,11 +9,15 @@ from shared.models import AIPurpose
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.ai.anthropic_provider import AnthropicProvider
-from backend.ai.provider import LLMMessage, LLMResponse
+from backend.ai.provider import LLMMessage, LLMResponse, MockProvider
 from backend.core.config import settings
 from backend.db.models import AIGlobalSettings, AIUsageRecord, Application, ApplicationStatus
-from backend.services.finops_advisor_service import build_snapshot, parse_advice
+from backend.services.finops_advisor_service import (
+    analyze_usage,
+    build_snapshot,
+    describe_analysis,
+    parse_advice,
+)
 
 
 def _stats(avg, p95, mx, points=96):
@@ -50,14 +52,15 @@ async def _app(db: AsyncSession) -> Application:
     return app
 
 
-class _Provider:
+class StubProvider(MockProvider):
     def __init__(self, content: str):
+        super().__init__()
         self.content = content
         self.calls: list[list[LLMMessage]] = []
 
     async def complete(self, messages, model, max_tokens=4096, temperature=0.3):
         self.calls.append(messages)
-        return LLMResponse(content=self.content, model="claude-haiku-4-5",
+        return LLMResponse(content=self.content, model="gemini-flash-latest",
                            input_tokens=900, output_tokens=300)
 
 
@@ -99,50 +102,80 @@ def test_parse_advice_rejects_non_json():
     assert parse_advice("Je recommande de réduire le CPU.") is None
 
 
+# ── usage analysis (shared with the assistant tool) ───────────────────────────
+
+
+@pytest.mark.anyio
+async def test_analyze_usage_ok_and_description():
+    app = Application(name="my-app", slug="my-app", owner="t")
+    with patch("backend.services.finops_advisor_service.get_app_resource_usage",
+               new=AsyncMock(return_value=_USAGE)) as usage:
+        analysis = await analyze_usage(app)
+    assert analysis.status == "ok" and analysis.window_hours == 24
+    assert [s.env for s in analysis.snapshots] == ["prod"]
+    assert usage.await_args.args[1:3] == ("my-app", 24)
+    text = describe_analysis(app, analysis)
+    assert "Proposition de référence" in text and "Requests : CPU 100 mCPU" in text
+
+
+@pytest.mark.anyio
+async def test_analyze_usage_without_metrics_or_prometheus():
+    app = Application(name="my-app", slug="my-app", owner="t")
+    with patch("backend.services.finops_advisor_service.get_app_resource_usage",
+               new=AsyncMock(return_value={})):
+        empty = await analyze_usage(app)
+    assert empty.status == "no_data" and "Aucune métrique" in empty.message
+    assert describe_analysis(app, empty) == empty.message
+    with patch("backend.services.finops_advisor_service.get_app_resource_usage",
+               new=AsyncMock(side_effect=httpx.ConnectError("down"))):
+        down = await analyze_usage(app)
+    assert down.status == "metrics_unavailable" and "ConnectError" in down.message
+
+
 # ── endpoint ──────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.anyio
 async def test_ai_advice_nominal(client: AsyncClient, admin_token: str, db_session: AsyncSession):
     app = await _app(db_session)
-    provider = _Provider(json.dumps(_ADVICE))
+    provider = StubProvider(json.dumps(_ADVICE))
     with (
         patch.object(settings, "AI_ASSISTANT_ENABLED", True),
-        patch.object(settings, "ANTHROPIC_API_KEY", "sk-ant-test"),
         patch("backend.services.finops_advisor_service.get_app_resource_usage",
               new=AsyncMock(return_value=_USAGE)) as usage,
-        patch("backend.services.finops_advisor_service.AnthropicProvider",
-              return_value=provider) as anthropic_cls,
+        patch("backend.services.finops_advisor_service.get_provider",
+              return_value=provider) as get_provider,
     ):
         resp = await client.get(f"/api/v1/apps/{app.id}/ai-advice",
                                 headers={"Authorization": f"Bearer {admin_token}"})
 
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert data["status"] == "ok" and data["provider"] == "anthropic"
+    # Platform AI provider (Réglages plateforme → Assistant IA), no dedicated LLM.
+    assert data["status"] == "ok" and data["provider"] == "stub"
+    assert data["model"] == "gemini-flash-latest"
     assert data["recommendations"][0]["title"] == "Réduire les requests CPU"
     assert data["metrics"][0]["proposed_cpu_request_mcpu"] == 10
-    assert data["notice"] is None
-    anthropic_cls.assert_called_once()
+    get_provider.assert_called_once()
     assert usage.await_args.args[1] == "my-app"  # queried by slug, 24 h window
     # Prompt carries app name, observed usage and the reference sizing.
     prompt = provider.calls[0][1].content
     assert "my-app" in prompt and "Requests : CPU 100 mCPU" in prompt
     assert "Proposition de référence" in prompt
     record = (await db_session.execute(select(AIUsageRecord))).scalar_one()
-    assert record.purpose == AIPurpose.FINOPS and record.estimated_cost_usd > 0
+    assert record.purpose == AIPurpose.FINOPS
 
 
 @pytest.mark.anyio
 async def test_no_metrics_means_no_llm_call(client: AsyncClient, admin_token: str,
                                             db_session: AsyncSession):
     app = await _app(db_session)
-    provider = _Provider("{}")
+    provider = StubProvider("{}")
     with (
         patch.object(settings, "AI_ASSISTANT_ENABLED", True),
         patch("backend.services.finops_advisor_service.get_app_resource_usage",
               new=AsyncMock(return_value={})),
-        patch("backend.services.finops_advisor_service.AnthropicProvider", return_value=provider),
+        patch("backend.services.finops_advisor_service.get_provider", return_value=provider),
     ):
         resp = await client.get(f"/api/v1/apps/{app.id}/ai-advice",
                                 headers={"Authorization": f"Bearer {admin_token}"})
@@ -165,13 +198,12 @@ async def test_prometheus_down(client: AsyncClient, admin_token: str, db_session
 
 
 @pytest.mark.anyio
-async def test_falls_back_to_platform_provider_without_anthropic_key(
+async def test_non_json_answer_is_returned_as_raw_text(
     client: AsyncClient, admin_token: str, db_session: AsyncSession
 ):
     app = await _app(db_session)
     with (
         patch.object(settings, "AI_ASSISTANT_ENABLED", True),
-        patch.object(settings, "ANTHROPIC_API_KEY", None),
         patch("backend.services.finops_advisor_service.get_app_resource_usage",
               new=AsyncMock(return_value=_USAGE)),
     ):
@@ -179,43 +211,25 @@ async def test_falls_back_to_platform_provider_without_anthropic_key(
                                 headers={"Authorization": f"Bearer {admin_token}"})
     data = resp.json()
     assert resp.status_code == 200
-    assert data["provider"] == "mock" and "ANTHROPIC_API_KEY" in data["notice"]
-    assert data["raw_text"]  # the mock answer is not JSON → shown as raw text
+    assert data["provider"] == "mock" and data["raw_text"]  # mock answer is not JSON
 
 
 @pytest.mark.anyio
-async def test_no_key_and_no_fallback_returns_503(client: AsyncClient, admin_token: str,
-                                                  db_session: AsyncSession):
-    app = await _app(db_session)
-    with (
-        patch.object(settings, "AI_ASSISTANT_ENABLED", True),
-        patch.object(settings, "ANTHROPIC_API_KEY", None),
-        patch.object(settings, "AI_FINOPS_FALLBACK_TO_PLATFORM_PROVIDER", False),
-        patch("backend.services.finops_advisor_service.get_app_resource_usage",
-              new=AsyncMock(return_value=_USAGE)),
-    ):
-        resp = await client.get(f"/api/v1/apps/{app.id}/ai-advice",
-                                headers={"Authorization": f"Bearer {admin_token}"})
-    assert resp.status_code == 503 and "ANTHROPIC_API_KEY" in resp.json()["detail"]
-
-
-@pytest.mark.anyio
-async def test_anthropic_rate_limit_maps_to_429(client: AsyncClient, admin_token: str,
+async def test_provider_rate_limit_maps_to_429(client: AsyncClient, admin_token: str,
                                                db_session: AsyncSession):
     app = await _app(db_session)
 
-    class _Limited:
+    class _Limited(MockProvider):
         async def complete(self, *a, **k):
-            request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
-            raise anthropic.RateLimitError(
-                "rate limited", response=httpx.Response(429, request=request), body=None)
+            request = httpx.Request("POST", "https://api.mistral.ai/v1/chat/completions")
+            raise httpx.HTTPStatusError(
+                "rate limited", request=request, response=httpx.Response(429, request=request))
 
     with (
         patch.object(settings, "AI_ASSISTANT_ENABLED", True),
-        patch.object(settings, "ANTHROPIC_API_KEY", "sk-ant-test"),
         patch("backend.services.finops_advisor_service.get_app_resource_usage",
               new=AsyncMock(return_value=_USAGE)),
-        patch("backend.services.finops_advisor_service.AnthropicProvider", return_value=_Limited()),
+        patch("backend.services.finops_advisor_service.get_provider", return_value=_Limited()),
     ):
         resp = await client.get(f"/api/v1/apps/{app.id}/ai-advice",
                                 headers={"Authorization": f"Bearer {admin_token}"})
@@ -235,30 +249,3 @@ async def test_guards(client: AsyncClient, admin_token: str, db_session: AsyncSe
         await db_session.commit()
         assert (await client.get(f"/api/v1/apps/{app.id}/ai-advice", headers=headers)).status_code == 403
     assert (await client.get(f"/api/v1/apps/{app.id}/ai-advice")).status_code == 401
-
-
-# ── Claude provider ───────────────────────────────────────────────────────────
-
-
-@pytest.mark.anyio
-async def test_anthropic_provider_maps_messages_and_usage():
-    fake = NS(messages=NS(create=AsyncMock(return_value=NS(
-        model="claude-haiku-4-5",
-        content=[NS(type="text", text="Bonjour "), NS(type="text", text="FinOps")],
-        usage=NS(input_tokens=12, output_tokens=3),
-    ))))
-    provider = AnthropicProvider(api_key="", client=fake)
-    resp = await provider.complete(
-        [LLMMessage(role="system", content="Règles"), LLMMessage(role="user", content="Analyse")],
-        model="claude-haiku-4-5", max_tokens=512, temperature=0.2,
-    )
-    fake.messages.create.assert_awaited_once_with(
-        model="claude-haiku-4-5", max_tokens=512, temperature=0.2,
-        messages=[{"role": "user", "content": "Analyse"}], system="Règles",
-    )
-    assert (resp.content, resp.input_tokens, resp.output_tokens) == ("Bonjour FinOps", 12, 3)
-
-
-def test_anthropic_provider_requires_a_key():
-    with pytest.raises(ValueError):
-        AnthropicProvider(api_key="")
