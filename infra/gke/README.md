@@ -171,7 +171,9 @@ curl -X PUT https://cnp.cloud-native-plat4k.me/api/v1/clusters/<ID_DE_cnp-gke> \
 
 - Management fee du cluster zonal couvert par le free tier GKE ; restent les VMs, les
   disques et le load balancer, imputés sur les crédits d'essai.
-- Mettre en pause sans détruire (le health-worker passera alors le cluster OFFLINE) —
+- Mettre en pause sans détruire. **Le cluster reste ONLINE dans CNP** : le control plane GKE
+  continue de répondre avec 0 node et la sonde ne fait que lister les namespaces — mais
+  tout déploiement resterait `Pending`. Relancer les nodes avant une démo —
   désactiver l'autoscaler d'abord, sinon il remonte à `node_min_count` :
   ```bash
   gcloud container clusters update cnp-gke --zone europe-west1-b --node-pool system --no-enable-autoscaling
