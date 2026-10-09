@@ -57,12 +57,34 @@ Alternatives évaluées :
 
 ## Décision
 
-Nous avons décidé de provisionner **une instance Keycloak partagée** par la plateforme, avec
+Nous avons décidé de provisionner **une instance Keycloak partagée par cluster**, avec
 **un realm par app et par environnement** (`{app_slug}-dev`, `{app_slug}-prod`), et de livrer
 les credentials aux apps exclusivement via le pipeline Vault → ESO → Secret K8s déjà en place
 pour les variables d'environnement applicatives (ADR-0024, ADR-0025).
 
 ### 1. Architecture réseau et realms
+
+La plateforme garde un registre `keycloak_instances`, associé aux clusters CNP.
+Chaque activation lie durablement l'app à `auth_instance_key` avant le premier appel
+Keycloak. Changer ensuite le cluster cible de l'app ne change pas son issuer.
+Les apps historiques activées sans association conservent la configuration globale.
+Une nouvelle activation privilégie l'instance du cluster ; une instance configurée
+mais indisponible ne déclenche pas de repli vers une autre instance.
+
+Le domaine commun utilise des préfixes :
+`https://auth.cloud-native-plat4k.me/clusters/public-01` et
+`https://auth.cloud-native-plat4k.me/clusters/private-01`.
+NGINX sur la VM CNP conserve ce préfixe vers le service privé Tailscale de l'instance.
+`master` et le management sont bloqués publiquement. Les consoles des realms apps
+restent accessibles. Ce routage distribue des instances indépendantes ; aucune
+bascule ou réplication entre clouds n'est prévue.
+
+Le chart commun et la commande de bootstrap sont décrits dans
+[`infra/keycloak/README.md`](../../infra/keycloak/README.md). Les profils public/privé
+ne fixent pas de fournisseur. Le PVC et les secrets sont conservés à la relance.
+Les résultats effectivement vérifiés figurent dans le
+[guide de validation](../guides/keycloak-deployment-validation.md).
+
 
 - `realm master` : réservé aux admins plateforme et au service account backend
   `cnp-provisioner` (client confidential, service account activé, rôle `admin` du realm

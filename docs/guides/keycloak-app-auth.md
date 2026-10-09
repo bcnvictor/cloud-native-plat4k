@@ -9,8 +9,8 @@ valider un token côté code.
 ## Fonctionnement
 
 - **Un realm Keycloak par app et par environnement** : `{app_slug}-dev` et
-  `{app_slug}-prod`, sur l'instance Keycloak partagée de la plateforme
-  (`{KEYCLOAK_PUBLIC_URL}`). Réaliser une action en dev (créer un user de test,
+  `{app_slug}-prod`, sur l'instance Keycloak du cluster choisie à l'activation. Son URL de base est
+  `https://auth.cloud-native-plat4k.me/clusters/{instance_key}`. Réaliser une action en dev (créer un user de test,
   changer un rôle) n'a aucun impact sur le realm prod, et inversement.
 - **Un client par app** dans chaque realm, portant le nom du `slug` de l'app :
   *public* + PKCE si votre app est une SPA (template `react-vite`), *confidential*
@@ -19,6 +19,10 @@ valider un token côté code.
   Un membre Owner/Maintainer de l'app peut s'y connecter pour administrer *ce realm
   uniquement* (créer des users, ajuster des rôles, personnaliser le thème de login…)
   — jamais les autres realms de la plateforme.
+- **Profil console** : à la première connexion, Keycloak peut demander une adresse
+  email et les champs de profil obligatoires du realm. CNP ne recopie pas votre
+  email automatiquement pour éviter de prendre l’adresse d’un compte utilisateur
+  déjà présent dans l’app. Choisir une adresse non utilisée dans ce realm.
 - **Accès console V1** : compte local au realm, mot de passe temporaire à usage
   unique (`UPDATE_PASSWORD` requis à la première connexion). Le login fédéré via
   GitLab (SSO) est une évolution future, pas encore disponible.
@@ -37,6 +41,11 @@ valider un token côté code.
 - **Après coup** sur une app existante : bouton "Activate Keycloak" dans l'onglet
   Settings du portail, ou `cnp keycloak enable --app <slug>` (Owner/Maintainer).
   Provisionne dev **et** prod en une fois.
+
+L'onglet Settings et `cnp keycloak status` affichent l'instance associée, le cluster
+et l'URL publique. Cette association est conservée pendant les reprises et les
+changements de cluster cible. Les apps historiques peuvent afficher `legacy`.
+Les variables OIDC des templates gardent leur format et leur rôle.
 
 ## Variables injectées
 

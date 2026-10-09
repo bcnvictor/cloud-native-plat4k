@@ -68,8 +68,8 @@ class Settings(BaseSettings):
     CNP_CALLBACK_TOKEN: Optional[str] = None
 
     # Keycloak — shared instance backing the app-auth service (4K-15/ADR-0026).
-    # Disabled by default: if false, every /apps/{id}/auth/* route returns 503 and
-    # the rest of the platform is unaffected.
+    # Legacy global instance is disabled by default. Registered per-cluster
+    # instances are resolved independently of this compatibility switch.
     KEYCLOAK_ENABLED: bool = False
     KEYCLOAK_URL: str = "http://keycloak:8080"  # Admin REST API URL, backend-internal
     KEYCLOAK_PUBLIC_URL: str = "http://localhost:8081"  # Issuer URL seen by browsers/pods

@@ -1,6 +1,8 @@
 server {
     listen 443 ssl;
     server_name ${AUTH_DOMAIN};
+    # Login queries contain short-lived codes; do not record them.
+    access_log off;
     ssl_certificate /etc/letsencrypt/live/${AUTH_DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${AUTH_DOMAIN}/privkey.pem;
     resolver 127.0.0.11 valid=30s ipv6=off;
