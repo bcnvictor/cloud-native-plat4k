@@ -145,6 +145,7 @@ class Application(Base):
     expose = Column(Boolean, nullable=True, default=False)
     # Keycloak app-auth service (4K-15/ADR-0026).
     auth_enabled = Column(Boolean, nullable=False, default=False, server_default="false")
+    auth_instance_key = Column(String(63), ForeignKey("keycloak_instances.instance_key", ondelete="RESTRICT"), nullable=True, index=True)
     auth_provisioned = Column(Boolean, nullable=True)  # like ci_injected: None = n/a, True/False = last attempt's outcome
     auth_warnings = Column(JSON, nullable=True)  # e.g. ["chart_missing_envfrom"] — onboarded apps only
     last_pipeline_status = Column(String, nullable=True)
@@ -450,3 +451,17 @@ class PlatformDocChunk(Base):
     __table_args__ = (
         UniqueConstraint("source", "path", "ordinal", name="uq_platform_doc_chunk"),
     )
+
+
+class KeycloakInstance(Base):
+    __tablename__ = "keycloak_instances"
+
+    instance_key = Column(String(63), primary_key=True)
+    cluster_id = Column(Integer, ForeignKey("cluster_connections.id", ondelete="SET NULL"), unique=True, nullable=True)
+    public_url = Column(String, nullable=False)
+    admin_url = Column(String, nullable=False)
+    admin_client_id = Column(String, nullable=False)
+    provisioner_secret_ref = Column(String, nullable=False)
+    enabled = Column(Boolean, nullable=False, default=False, server_default="false")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)

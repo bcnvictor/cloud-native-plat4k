@@ -6,9 +6,10 @@ This avoids duplicating code between the client and server.
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 def sanitize_k8s_label_value(value: str) -> str:
@@ -447,6 +448,71 @@ class KeycloakEnvStatus(BaseModel):
     state: KeycloakEnvState = KeycloakEnvState.UNKNOWN
     console_url: Optional[str] = None
     issuer_url: Optional[str] = None
+
+
+def validate_keycloak_instance_key(key: str) -> str:
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,57}[a-z0-9])?", key):
+        raise ValueError("Invalid Keycloak instance key")
+    return key
+
+
+class KeycloakInstanceUpsert(BaseModel):
+    cluster_id: int | None = None
+    public_url: str
+    admin_url: str
+    admin_client_id: str = "cnp-provisioner"
+    provisioner_secret_ref: str
+    enabled: bool = False
+
+    @field_validator("public_url", "admin_url")
+    @classmethod
+    def validate_url(cls, value: str, info):
+        parsed = urlsplit(value)
+        schemes = ("https",) if info.field_name == "public_url" else ("http", "https")
+        if (parsed.scheme not in schemes or not parsed.hostname or parsed.username is not None
+                or parsed.password is not None or parsed.query or parsed.fragment
+                or any(c.isspace() or ord(c) < 32 for c in value)):
+            raise ValueError("Invalid Keycloak URL")
+        try:
+            parsed.port
+        except ValueError:
+            raise ValueError("Invalid URL port") from None
+        return value.rstrip("/")
+
+    @field_validator("admin_client_id")
+    @classmethod
+    def validate_client_id(cls, value: str):
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", value):
+            raise ValueError("Invalid provisioning client ID")
+        return value
+
+    def validate_for_key(self, key: str) -> None:
+        validate_keycloak_instance_key(key)
+        if any(urlsplit(url).path != f"/clusters/{key}" for url in (self.public_url, self.admin_url)):
+            raise ValueError("Keycloak URL must use the instance prefix")
+        if self.provisioner_secret_ref != f"cnp/keycloak/{key}/provisioner":
+            raise ValueError("Invalid provisioning secret reference")
+
+
+class KeycloakInstanceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    instance_key: str
+    cluster_id: int | None
+    public_url: str
+    admin_url: str
+    admin_client_id: str
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class KeycloakInstanceSummary(BaseModel):
+    instance_key: str | None
+    cluster_id: int | None
+    cluster_name: str | None
+    public_url: str
+    enabled: bool
+    source: Literal["cluster", "legacy"]
 
 
 class KeycloakStatusResponse(BaseModel):
