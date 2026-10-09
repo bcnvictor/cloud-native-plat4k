@@ -1,6 +1,8 @@
 # Déployer Keycloak sur les clusters publics et privés et le raccorder à CNP
 
-Date : 8 octobre 2026. Statut : conception proposée à la revue ; aucun déploiement livré par ce document.
+Date : 8 octobre 2026. Statut : conception approuvée le 9 octobre 2026 ; aucun déploiement livré par ce document.
+
+Plan associé : [implémentation Keycloak portable et CNP](../plans/2026-10-09-keycloak-portable-cnp.md), à revoir avant exécution.
 
 Précision du 9 octobre : une app est déployée sur un seul cluster. Le multi-cloud permet de choisir son hébergement et n'a pas pour fonction de répliquer l'app ou son Keycloak pour assurer une résilience entre clouds.
 
