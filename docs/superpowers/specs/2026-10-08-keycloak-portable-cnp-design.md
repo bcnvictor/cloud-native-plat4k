@@ -1,10 +1,12 @@
-# Déployer Keycloak sur AKS et k3s et le raccorder à CNP
+# Déployer Keycloak sur les clusters publics et privés et le raccorder à CNP
 
 Date : 8 octobre 2026. Statut : conception proposée à la revue ; aucun déploiement livré par ce document.
 
+Précision du 9 octobre : une app est déployée sur un seul cluster. Le multi-cloud permet de choisir son hébergement et n'a pas pour fonction de répliquer l'app ou son Keycloak pour assurer une résilience entre clouds.
+
 ## Résultat attendu
 
-Une configuration versionnée par cible et une commande déploient Keycloak et le rendent utilisable par le provisioning CNP. AKS et k3s utilisent le même chart Helm. Une nouvelle cible change ses paramètres d'infrastructure, sans réécrire les manifests communs ni modifier les templates applicatifs.
+Une configuration versionnée par cible et une commande déploient Keycloak et le rendent utilisable par le provisioning CNP. Les clusters des clouds publics et privés utilisent le même chart Helm. AKS et le k3s privé sont les premières cibles concrètes, pas les deux seuls types de cluster possibles. Une nouvelle cible change ses paramètres d'infrastructure, sans réécrire les manifests communs ni modifier les templates applicatifs.
 
 La commande configure aussi le client technique `cnp-provisioner`, conserve ses secrets dans Vault et enregistre l'instance auprès de CNP. L'opérateur n'a pas à recopier un secret dans un `.env`, à configurer chaque app ou à redémarrer le backend pour enregistrer une nouvelle instance.
 
@@ -28,7 +30,7 @@ Les tests CI de la PR plateforme ont réussi ; ni l'installation du chart ni ce 
 | Élément | Fonction |
 |---|---|
 | `infra/keycloak/chart/` | Ressources communes : Keycloak en production, stockage dédié, services, ingress, probes et références aux secrets |
-| Profils AKS et k3s | Domaine public, accès admin privé, IngressClass, TLS, StorageClass, ressources et nom logique d'instance |
+| Profils public et privé, avec valeurs propres à chaque cluster | Adresse OIDC, accès admin privé, IngressClass, TLS, StorageClass, ressources et nom logique d'instance |
 | Commande de déploiement | Vérifier les prérequis, déployer, attendre la disponibilité, effectuer le bootstrap et enregistrer l'instance dans CNP |
 | Applications ArgoCD | Utiliser le même chart et les mêmes valeurs dans les arborescences GitOps actuelles |
 | Adaptation CNP ciblée | Résoudre l'instance depuis le cluster, conserver l'association de l'app et afficher l'instance dans le statut existant |
@@ -36,8 +38,8 @@ Les tests CI de la PR plateforme ont réussi ; ni l'installation du chart ni ce 
 Exemple d'interface à livrer, et non commande disponible aujourd'hui :
 
 ```bash
-./infra/keycloak/deploy.sh --config infra/keycloak/targets/aks.yaml
-./infra/keycloak/deploy.sh --config infra/keycloak/targets/k3s.yaml
+./infra/keycloak/deploy.sh --config infra/keycloak/targets/public-aks.yaml
+./infra/keycloak/deploy.sh --config infra/keycloak/targets/private-k3s.yaml
 ```
 
 Chaque fichier cible identifie explicitement son contexte Kubernetes, son cluster CNP, son namespace, sa release et son mode de gestion (`helm` ou `argocd`). La commande ne s'appuie pas sur le contexte Kubernetes courant implicite. Elle ne gère pas la même release simultanément avec Helm direct et ArgoCD.
@@ -45,6 +47,12 @@ Chaque fichier cible identifie explicitement son contexte Kubernetes, son cluste
 En mode Helm, elle installe ou met à jour le chart. En mode ArgoCD, elle synchronise l'Application configurée puis attend sa disponibilité. Les Applications proposées dans `cnp-gitops` fixent la révision Git du chart et des valeurs ; publier un nouveau registre OCI n'est pas nécessaire pour cette première livraison. L'accès ArgoCD au dépôt du chart est un prérequis configuré avec les credentials de lecture existants ou fournis à l'installation.
 
 Le chart inclut la base persistante nécessaire à Keycloak ; l'opérateur n'effectue pas une installation de base séparée. La première version utilise un replica Keycloak et PostgreSQL dédié avec PVC. Aucune infrastructure HA, base externe optionnelle ou Keycloak Operator n'est ajoutée.
+
+### Classification des cibles
+
+« Public » et « privé » décrivent le cloud d'hébergement ; « AKS » et « k3s » décrivent une offre ou distribution Kubernetes. Ces deux dimensions ne sont pas confondues. Le chart ne contient aucune branche métier `si AKS / sinon k3s`. Des valeurs par cluster fournissent ses capacités réelles, et le backend utilise son identifiant CNP. Plusieurs clusters publics ou privés peuvent chacun avoir leur propre Keycloak.
+
+La qualification d'un cloud comme privé ne rend pas automatiquement l'URL OIDC privée. Sa visibilité dépend des utilisateurs et des apps qui doivent la joindre. Les StorageClass et paramètres ingress restent spécifiques au cluster : `local-path` est un choix pour le k3s actuel, pas une propriété de tous les clouds privés.
 
 ## Raccordement automatique à CNP
 
@@ -90,6 +98,16 @@ Les différences entre AKS et k3s sont explicites : StorageClass, ressources, in
 
 L'URL publique doit être accessible depuis les navigateurs et les pods qui utilisent OIDC. L'URL admin privée doit être accessible depuis `cnp-control` par le réseau Tailscale actuel ; la configuration évite une ClusterIP codée en dur. Le déploiement vérifie cette accessibilité depuis CNP, pas seulement depuis un pod Keycloak.
 
+### Domaine commun à plusieurs instances
+
+Une instance par cluster n'impose pas un domaine par cloud. Un domaine commun, par exemple `auth.cloud-native-plat4k.me`, peut exposer plusieurs instances si une passerelle route systématiquement chaque requête vers la bonne instance. Deux adresses DNS vers deux instances indépendantes ne constituent pas ce routage : le navigateur contacte le domaine d'authentification indépendamment du domaine de l'app.
+
+La variante proposée pour un domaine commun utilise un préfixe stable par instance, par exemple `/clusters/public-01` et `/clusters/private-01`. Chaque Keycloak déclare ce chemin dans son hostname et/ou son contexte HTTP, conformément à la [configuration officielle du proxy](https://www.keycloak.org/server/reverseproxy). La passerelle n'a qu'une route par instance. L'issuer injecté dans l'app contient ce préfixe, suivi de `/realms/{app}-{env}`. Les templates conservent leur contrat de variables OIDC.
+
+Une autre variante conserve une base identique sans préfixe et route `/realms/{app}-{env}/...` vers le cluster propriétaire. Les slugs d'app sont déjà uniques dans CNP, mais cette variante ajoute une table de routage par realm à réconcilier pendant le provisioning et la suppression. Les ressources de connexion, les consoles et autres chemins Keycloak doivent aussi être servis correctement. Elle ne consiste donc pas à installer le même ingress dans chaque cluster. Le choix d'une passerelle et de cette variante reste une proposition de conception, sans composant de routage livré à ce stade.
+
+Dans les deux variantes, l'Admin API utilisée par CNP conserve un accès privé distinct par instance. Le même domaine public ne supprime pas la nécessité de choisir le Keycloak du cluster pour créer un realm. Aucun basculement automatique vers un autre Keycloak n'est prévu.
+
 Keycloak utilise `start`, un hostname explicite et les proxy headers appropriés. L'ingress est HTTPS avec une chaîne TLS valide ; le port de management et `master` ne sont pas exposés publiquement. La console des realms applicatifs reste utilisable. Voir les recommandations officielles de [configuration](https://www.keycloak.org/server/configuration) et de [reverse proxy](https://www.keycloak.org/server/reverseproxy).
 
 DNS, certificat, accès Kubernetes, Vault, ESO et réseau privé restent des paramètres ou prérequis d'infrastructure. La commande les contrôle et signale précisément un manque. Elle ne prétend pas créer un cloud vierge avec seulement les manifests Keycloak.
@@ -103,6 +121,42 @@ DNS, certificat, accès Kubernetes, Vault, ESO et réseau privé restent des par
 5. Effectuer les essais sur les deux clusters pour valider le stockage, HTTPS, Vault et l'accès privé depuis le backend. Un rendu Helm ou une CI réussie ne remplace pas ces essais.
 
 La correction du profil Docker Compose fait partie de cette livraison : le déploiement de production actuel ne doit plus démarrer le Keycloak local en `start-dev` avec ses identifiants par défaut. Ce point doit être résolu avant une fusion qui déclenche la pipeline de déploiement.
+
+## Parcours d'un utilisateur
+
+Avant la visite, CNP a créé le realm et le client dans le Keycloak du cluster de l'app et injecté la configuration par Vault → ESO → Secret → app. CNP ne relaie pas les identifiants ou les connexions ordinaires des utilisateurs.
+
+Ce schéma décrit une app web utilisant Authorization Code + PKCE, comme le template React actuel. Une éventuelle API appartient au même contrat OIDC et vérifie le token avant de retourner ses données protégées.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Utilisateur / navigateur
+    participant A as App via ingress du cluster
+    participant K as Keycloak de ce cluster
+    U->>A: HTTPS vers l'URL de l'app
+    A-->>U: HTML, JavaScript et configuration OIDC
+    Note over U: Session absente, clic sur Connexion
+    U->>K: Requête OIDC : client, callback, state et PKCE
+    K-->>U: Page de connexion
+    U->>K: Identifiants et MFA si configuré
+    K-->>U: Redirection vers le callback avec un code
+    U->>A: GET /auth/callback?code=...&state=...
+    A-->>U: Frontend qui traite le callback
+    U->>K: Échange du code avec le vérificateur PKCE
+    K-->>U: ID token et access token
+    Note over U: Validation OIDC et affichage connecté
+    opt L'app possède une API protégée
+        U->>A: Requête API avec access token Bearer
+        A->>K: Clés publiques de signature, mises en cache
+        A->>A: Vérifier signature, issuer, audience, expiration et droits
+        A-->>U: Données autorisées, ou refus
+    end
+```
+
+Avec un domaine d'auth commun, la passerelle envoie les requêtes vers `K` en utilisant le préfixe d'instance ou la route de realm. Un autre cluster ne doit pas recevoir l'échange du code ou la récupération des clés.
+
+Les templates actuels illustrent ce raccordement sans protéger automatiquement toutes les pages : React propose un bouton de connexion ; les templates API protègent notamment `/me`, tandis que `/` et `/health` restent publics. Une API seule répond `401` à une requête sans token sur une route protégée, sans afficher automatiquement une page de connexion. L'autorisation des fonctionnalités reste définie par l'app.
 
 ## Limite de cette conception
 
