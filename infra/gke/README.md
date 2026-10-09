@@ -171,10 +171,8 @@ curl -X PUT https://cnp.cloud-native-plat4k.me/api/v1/clusters/<ID_DE_cnp-gke> \
 
 - Management fee du cluster zonal couvert par le free tier GKE ; restent les VMs, les
   disques et le load balancer, imputés sur les crédits d'essai.
-- Mettre en pause sans détruire. **Le cluster reste ONLINE dans CNP** : le control plane GKE
-  continue de répondre avec 0 node et la sonde ne fait que lister les namespaces — mais
-  tout déploiement resterait `Pending`. Relancer les nodes avant une démo —
-  désactiver l'autoscaler d'abord, sinon il remonte à `node_min_count` :
+- Mettre en pause sans détruire : passer le node pool à 0 node. Désactiver l'autoscaler
+  d'abord, sinon il remonte à `node_min_count` :
   ```bash
   gcloud container clusters update cnp-gke --zone europe-west1-b --node-pool system --no-enable-autoscaling
   gcloud container clusters resize cnp-gke --zone europe-west1-b --node-pool system --num-nodes 0
@@ -183,6 +181,10 @@ curl -X PUT https://cnp.cloud-native-plat4k.me/api/v1/clusters/<ID_DE_cnp-gke> \
   La désactivation de l'autoscaler n'est pas instantanée : s'il recrée un node juste après
   le resize (pods en attente), relancer le `resize --num-nodes 0`.
   Reprise : `terraform apply` (réactive l'autoscaling et remet 2 nodes).
+
+  **En pause, le cluster reste ONLINE dans CNP** : le control plane GKE répond toujours avec
+  0 node, et la sonde ne fait que lister les namespaces. Aucun pod ne peut pourtant tourner
+  (un déploiement resterait `Pending`) : relancer les nodes avant une démo ou un test.
 - **Ne pas arrêter les VMs à la main** (console Compute Engine → Stop) : dans un groupe géré,
   elles passent en pool de secours arrêté (`targetStoppedSize`), restent des nodes `NotReady`
   et bloquent les StatefulSets (Tailscale, Prometheus, Loki) en `Terminating`. Réparation :
