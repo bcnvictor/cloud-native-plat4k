@@ -173,7 +173,7 @@ async def _maybe_revoke_keycloak_access(db: AsyncSession, app: Application, cnp_
     enabled/provisioned for this app, or the member never had a linked CNP account
     (console accounts are tagged with the CNP user id — see KeycloakService).
     """
-    if not cnp_user_id or not app.auth_enabled or not settings.KEYCLOAK_ENABLED:
+    if not cnp_user_id or not app.auth_enabled:
         return
     try:
         from backend.services.keycloak_service import KeycloakService

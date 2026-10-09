@@ -425,6 +425,7 @@ class ApplicationResponse(ApplicationBase):
     updated_at: Optional[datetime] = None
     # Keycloak app-auth service (4K-15/ADR-0026)
     auth_enabled: bool = False
+    auth_instance_key: str | None = None
     auth_provisioned: Optional[bool] = None  # None = n/a, True/False = last provisioning attempt's outcome
     auth_warnings: Optional[List[str]] = None  # e.g. ["chart_missing_envfrom"] — onboarded apps only
 
@@ -516,6 +517,8 @@ class KeycloakInstanceSummary(BaseModel):
 
 
 class KeycloakStatusResponse(BaseModel):
+    instance: KeycloakInstanceSummary | None = None
+    auth_provisioned: bool | None = None
     dev: KeycloakEnvStatus
     prod: KeycloakEnvStatus
     auth_warnings: List[str] = []

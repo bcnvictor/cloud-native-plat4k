@@ -22,7 +22,9 @@ class FakeKeycloak:
     a real Keycloak realm always has.
     """
 
-    def __init__(self):
+    def __init__(self, base_path: str = ""):
+        self.base_path = base_path
+        self.requests = []
         self.realms: dict[str, dict] = {}
         self.token_calls = 0
 
@@ -47,7 +49,10 @@ class FakeKeycloak:
         }
 
     def handler(self, request: httpx.Request) -> httpx.Response:
-        method, path = request.method, request.url.path
+        self.requests.append(request)
+        if self.base_path and not request.url.path.startswith(self.base_path + "/"):
+            return httpx.Response(404)
+        method, path = request.method, request.url.path[len(self.base_path):]
 
         if method == "POST" and path == "/realms/master/protocol/openid-connect/token":
             self.token_calls += 1
@@ -412,3 +417,17 @@ def test_not_found_and_conflict_are_distinct_exception_types():
     assert issubclass(KeycloakNotFound, Exception)
     assert issubclass(KeycloakConflict, Exception)
     assert KeycloakNotFound is not KeycloakConflict
+
+
+async def test_upstream_error_does_not_echo_body():
+    from backend.keycloak.client import KeycloakError
+
+    def handle(request):
+        if request.url.path.endswith('/token'):
+            return httpx.Response(200, json={'access_token': 'safe', 'expires_in': 60})
+        return httpx.Response(500, text='reflected-provisioner-secret')
+
+    client = KeycloakClient('http://keycloak.test', 'cnp-provisioner', 'private', transport=httpx.MockTransport(handle))
+    with pytest.raises(KeycloakError) as caught:
+        await client.get_realm('demo-prod')
+    assert 'reflected-provisioner-secret' not in str(caught.value)

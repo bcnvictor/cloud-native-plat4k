@@ -34,7 +34,7 @@ def keycloak_enabled(monkeypatch):
 def fake_keycloak(monkeypatch):
     fake = FakeKeycloak()
 
-    def _client(self):
+    def _client(self, connection):
         from backend.keycloak.client import KeycloakClient
         return KeycloakClient(
             base_url=settings.KEYCLOAK_URL,
@@ -154,7 +154,7 @@ class TestStatus:
     async def test_status_unknown_when_keycloak_unreachable(self, monkeypatch, fake_vault):
         """Unreachable Keycloak must not look like a deleted realm (which would offer a
         destructive Recreate)."""
-        def _client(self):
+        def _client(self, connection):
             from backend.keycloak.client import KeycloakClient
 
             def _boom(request):

@@ -29,11 +29,11 @@ from shared.models import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.config import settings
 from backend.db.models import Application, User
 from backend.gitlab.client import GitLabClient
 from backend.keycloak.client import KeycloakClient, KeycloakConflict, KeycloakError
 from backend.services.env_var_service import MANAGED_ENV_KEYS, resolve_group_slug, vault_env_path
+from backend.services.keycloak_instance_service import KeycloakInstanceService, ResolvedKeycloak
 from backend.vault.client import vault_client
 
 logger = logging.getLogger(__name__)
@@ -130,22 +130,47 @@ class KeycloakService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    def _client(self) -> KeycloakClient:
-        if not settings.KEYCLOAK_ENABLED:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Keycloak is not enabled on this platform (KEYCLOAK_ENABLED=false)",
-            )
-        if not settings.KEYCLOAK_ADMIN_CLIENT_SECRET:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="KEYCLOAK_ADMIN_CLIENT_SECRET not configured",
-            )
+    def _client(self, connection: ResolvedKeycloak) -> KeycloakClient:
         return KeycloakClient(
-            base_url=settings.KEYCLOAK_URL,
-            admin_client_id=settings.KEYCLOAK_ADMIN_CLIENT_ID,
-            admin_client_secret=settings.KEYCLOAK_ADMIN_CLIENT_SECRET,
+            base_url=connection.admin_url,
+            admin_client_id=connection.client_id,
+            admin_client_secret=connection.client_secret,
         )
+
+    async def activate(self, app: Application) -> KeycloakStatusResponse:
+        if app.auth_enabled and app.auth_provisioned is not False:
+            raise HTTPException(409, "Keycloak is already enabled for this app")
+        if not app.auth_enabled:
+            try:
+                await self.assert_no_foreign_oidc_keys(app)
+            except HTTPException:
+                raise
+            except Exception:
+                return await self._activation_failed(app, "keycloak_instance_unavailable")
+        try:
+            await KeycloakInstanceService(self.db).bind_for_activation(app)
+        except Exception:
+            return await self._activation_failed(app, "keycloak_instance_unavailable")
+        app.auth_enabled = True
+        try:
+            await self.provision(app, "dev")
+            await self.provision(app, "prod")
+            app.auth_provisioned = True
+            app.auth_warnings = [warning for warning in (app.auth_warnings or [])
+                                 if warning not in ("keycloak_instance_unavailable", "keycloak_provisioning_failed")]
+        except Exception:
+            return await self._activation_failed(app, "keycloak_provisioning_failed")
+        await self.db.commit()
+        await self.db.refresh(app)
+        return await self.status(app)
+
+    async def _activation_failed(self, app: Application, warning: str) -> KeycloakStatusResponse:
+        app.auth_provisioned = False
+        app.auth_warnings = list(dict.fromkeys([*(app.auth_warnings or []), warning]))
+        logger.warning("Keycloak activation failed for app %s (%s)", app.slug, warning)
+        await self.db.commit()
+        await self.db.refresh(app)
+        return await self.status(app)
 
     async def _vault_path(self, app: Application, env: str) -> str:
         group_slug = await resolve_group_slug(self.db, app.owning_gitlab_group_id)
@@ -195,7 +220,8 @@ class KeycloakService:
         Never touches anything else in an existing realm (users, roles, settings).
         """
         _validate_env(env)
-        client = self._client()
+        connection = await KeycloakInstanceService(self.db).resolve_for_app(app)
+        client = self._client(connection)
         realm = realm_name(app.slug, env)
 
         if await self._get_owned_realm(client, app, env) is None:
@@ -211,7 +237,7 @@ class KeycloakService:
             extra_web_origins=LOCAL_DEV_WEB_ORIGINS if env == "dev" else None,
         )
         oidc_vars = {
-            "OIDC_ISSUER_URL": f"{settings.KEYCLOAK_PUBLIC_URL}/realms/{realm}",
+            "OIDC_ISSUER_URL": f"{connection.public_url}/realms/{realm}",
             "OIDC_CLIENT_ID": app.slug,
         }
         if not public:
@@ -220,24 +246,26 @@ class KeycloakService:
         # already set for this app/env (ADR-0025).
         vault_client.patch_secret(await self._vault_path(app, env), oidc_vars)
 
-        return await self._status_for_env(app, env, client)
+        return await self._status_for_env(app, env, client, connection.public_url)
 
     async def status(self, app: Application) -> KeycloakStatusResponse:
-        if not settings.KEYCLOAK_ENABLED or not settings.KEYCLOAK_ADMIN_CLIENT_SECRET:
-            def _unknown(env: str) -> KeycloakEnvStatus:
-                return KeycloakEnvStatus(
-                    enabled=bool(app.auth_enabled), realm=realm_name(app.slug, env),
-                    exists=False, state=KeycloakEnvState.UNKNOWN,
-                )
-            return KeycloakStatusResponse(
-                dev=_unknown("dev"), prod=_unknown("prod"), auth_warnings=app.auth_warnings or [],
-            )
-        client = self._client()
-        dev = await self._status_for_env(app, "dev", client)
-        prod = await self._status_for_env(app, "prod", client)
-        return KeycloakStatusResponse(dev=dev, prod=prod, auth_warnings=app.auth_warnings or [])
+        instances = KeycloakInstanceService(self.db)
+        summary = await instances.summary_for_app(app)
+        try:
+            connection = await instances.resolve_for_app(app)
+        except HTTPException:
+            def unknown(env):
+                return KeycloakEnvStatus(enabled=bool(app.auth_enabled), realm=realm_name(app.slug, env),
+                                         exists=False, state=KeycloakEnvState.UNKNOWN)
+            return KeycloakStatusResponse(dev=unknown("dev"), prod=unknown("prod"),
+                auth_warnings=app.auth_warnings or [], instance=summary, auth_provisioned=app.auth_provisioned)
+        client = self._client(connection)
+        dev = await self._status_for_env(app, "dev", client, connection.public_url)
+        prod = await self._status_for_env(app, "prod", client, connection.public_url)
+        return KeycloakStatusResponse(dev=dev, prod=prod, auth_warnings=app.auth_warnings or [],
+                                      instance=summary, auth_provisioned=app.auth_provisioned)
 
-    async def _status_for_env(self, app: Application, env: str, client: KeycloakClient) -> KeycloakEnvStatus:
+    async def _status_for_env(self, app: Application, env: str, client: KeycloakClient, public_url: str) -> KeycloakEnvStatus:
         realm = realm_name(app.slug, env)
         base = {"enabled": bool(app.auth_enabled), "realm": realm}
         try:
@@ -245,7 +273,7 @@ class KeycloakService:
         except KeycloakError:
             # Unreachable / erroring Keycloak is NOT "realm deleted": reporting it as
             # missing would offer a destructive "Recreate" for a realm that is fine.
-            logger.warning("Keycloak unreachable while reading realm %s", realm, exc_info=True)
+            logger.warning("Keycloak unreachable while reading realm %s", realm)
             return KeycloakEnvStatus(**base, exists=False, state=KeycloakEnvState.UNKNOWN)
         if repr_ is None:
             return KeycloakEnvStatus(**base, exists=False, state=KeycloakEnvState.MISSING)
@@ -255,8 +283,8 @@ class KeycloakService:
             **base,
             exists=True,
             state=KeycloakEnvState.ACTIVE,
-            console_url=f"{settings.KEYCLOAK_PUBLIC_URL}/admin/{realm}/console/",
-            issuer_url=f"{settings.KEYCLOAK_PUBLIC_URL}/realms/{realm}",
+            console_url=f"{public_url}/admin/{realm}/console/",
+            issuer_url=f"{public_url}/realms/{realm}",
         )
 
     async def reprovision(self, app: Application, env: str) -> KeycloakEnvStatus:
@@ -265,7 +293,8 @@ class KeycloakService:
         using. Callers (routes) are responsible for the Owner-only gate on prod.
         """
         _validate_env(env)
-        client = self._client()
+        connection = await KeycloakInstanceService(self.db).resolve_for_app(app)
+        client = self._client(connection)
         realm = realm_name(app.slug, env)
         if await self._get_owned_realm(client, app, env) is not None:
             raise HTTPException(
@@ -276,7 +305,8 @@ class KeycloakService:
 
     async def grant_console_access(self, app: Application, env: str, user: User) -> KeycloakConsoleAccessResponse:
         _validate_env(env)
-        client = self._client()
+        connection = await KeycloakInstanceService(self.db).resolve_for_app(app)
+        client = self._client(connection)
         realm = realm_name(app.slug, env)
         if await self._get_owned_realm(client, app, env) is None:
             raise HTTPException(
@@ -304,7 +334,7 @@ class KeycloakService:
 
         # Never logged, never persisted — returned to the caller exactly once.
         return KeycloakConsoleAccessResponse(
-            console_url=f"{settings.KEYCLOAK_PUBLIC_URL}/admin/{realm}/console/",
+            console_url=f"{connection.public_url}/admin/{realm}/console/",
             username=username,
             temporary_password=temporary_password,
         )
@@ -315,10 +345,9 @@ class KeycloakService:
         Never raises — called from member-removal code paths that must still succeed
         even if Keycloak is down or the user never had console access.
         """
-        if not settings.KEYCLOAK_ENABLED:
-            return
         try:
-            client = self._client()
+            connection = await KeycloakInstanceService(self.db).resolve_for_app(app)
+            client = self._client(connection)
         except HTTPException:
             return
         for env in VALID_ENVS:
@@ -328,17 +357,16 @@ class KeycloakService:
                 if repr_ is not None and _owned_by(repr_, app):
                     await client.delete_users_by_attribute(realm, USER_OWNER_ATTRIBUTE, str(cnp_user_id))
             except Exception:
-                logger.exception("Failed to revoke Keycloak console access for user %s in %s", cnp_user_id, realm)
+                logger.warning("Failed to revoke Keycloak console access for user %s in %s", cnp_user_id, realm)
 
     async def deprovision(self, app: Application) -> None:
         """Best-effort: delete both realms — only if CNP created them for this app.
         Never raises — called from AppService.delete_app's cleanup sequence, which
         must not fail the app deletion because Keycloak is unreachable.
         """
-        if not settings.KEYCLOAK_ENABLED:
-            return
         try:
-            client = self._client()
+            connection = await KeycloakInstanceService(self.db).resolve_for_app(app)
+            client = self._client(connection)
         except HTTPException:
             return
         for env in VALID_ENVS:
@@ -352,4 +380,4 @@ class KeycloakService:
                     continue
                 await client.delete_realm(realm)
             except Exception:
-                logger.exception("Failed to delete Keycloak realm %s", realm)
+                logger.warning("Failed to delete Keycloak realm %s", realm)

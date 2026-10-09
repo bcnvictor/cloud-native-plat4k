@@ -425,16 +425,7 @@ class AppService:
             await self.db.refresh(app)
             return
 
-        app.auth_enabled = True
-        try:
-            await service.provision(app, "dev")
-            await service.provision(app, "prod")
-            app.auth_provisioned = True
-        except Exception:
-            logger.exception("Keycloak provisioning failed for app %s", app.slug)
-            app.auth_provisioned = False
-        await self.db.commit()
-        await self.db.refresh(app)
+        await service.activate(app)
 
     async def _check_envfrom_warning(self, app: Application, bot: "GitLabClient") -> None:
         """Onboarded-app-only (mode A, ADR-0026 §6): best-effort check that the

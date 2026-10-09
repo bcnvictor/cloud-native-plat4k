@@ -32,7 +32,7 @@ def keycloak_enabled(monkeypatch):
 def fake_keycloak(monkeypatch):
     fake = FakeKeycloak()
 
-    def _client(self):
+    def _client(self, connection):
         from backend.keycloak.client import KeycloakClient
         return KeycloakClient(
             base_url=settings.KEYCLOAK_URL, admin_client_id="cnp-provisioner",
@@ -260,7 +260,7 @@ class TestEnableAndErrorsRoutes:
 
         monkeypatch.setattr(
             KeycloakService, "_client",
-            lambda self: KeycloakClient(
+            lambda self, connection: KeycloakClient(
                 base_url="http://keycloak.test", admin_client_id="x", admin_client_secret="y",
                 transport=httpx.MockTransport(_boom),
             ),

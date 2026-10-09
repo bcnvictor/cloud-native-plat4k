@@ -88,7 +88,7 @@ class KeycloakClient:
         if resp.status_code == 409:
             raise KeycloakConflict(f"{method} {path} -> 409")
         if resp.status_code >= 400:
-            raise KeycloakError(f"{method} {path} -> {resp.status_code}: {resp.text}")
+            raise KeycloakError(f"{method} {path} -> {resp.status_code}")
         return resp
 
     # ---- Realms ----

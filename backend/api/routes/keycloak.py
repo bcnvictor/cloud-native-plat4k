@@ -62,24 +62,13 @@ async def enable_auth(
     if app.auth_enabled and app.auth_provisioned is not False:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Keycloak is already enabled for this app")
     service = KeycloakService(db)
-    if not app.auth_enabled:
-        await service.assert_no_foreign_oidc_keys(app)
-    app.auth_enabled = True
-    try:
-        await service.provision(app, "dev")
-        await service.provision(app, "prod")
-        app.auth_provisioned = True
-    except Exception:
-        logger.exception("Keycloak provisioning failed for app %s", app.slug)
-        app.auth_provisioned = False
-    await db.commit()
-    await db.refresh(app)
+    result = await service.activate(app)
 
     audit = AuditService(db)
     await audit.log_action(current_user.id, "app.auth.enabled", app_id=app.id)
     await db.commit()
 
-    return await service.status(app)
+    return result
 
 
 @router.post("/{app_id}/auth/{env}/console-access", response_model=KeycloakConsoleAccessResponse)

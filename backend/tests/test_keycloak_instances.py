@@ -110,3 +110,18 @@ async def test_invalid_instance_key_is_rejected(client, admin_token, key):
         json=payload(),
     )
     assert response.status_code in (404, 422)
+
+
+async def test_vault_read_failure_does_not_leak_body(db_session, monkeypatch, caplog):
+    import logging
+
+    from backend.services.keycloak_instance_service import KeycloakInstanceService
+    from backend.vault.client import vault_client
+    _, _, app = await seed(db_session)
+    def fail(**kwargs):
+        raise RuntimeError('reflected-vault-secret')
+    monkeypatch.setattr(vault_client.client.secrets.kv.v2, 'read_secret_version', fail)
+    caplog.set_level(logging.DEBUG, logger='backend.vault.client')
+    with pytest.raises(HTTPException):
+        await KeycloakInstanceService(db_session).resolve_for_app(app)
+    assert 'reflected-vault-secret' not in caplog.text

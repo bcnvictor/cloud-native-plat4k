@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from fastapi import HTTPException
 from shared.models import (
     KeycloakInstanceResponse,
+    KeycloakInstanceSummary,
     KeycloakInstanceUpsert,
     validate_keycloak_instance_key,
 )
@@ -105,16 +106,54 @@ class KeycloakInstanceService:
     async def bind_for_activation(self, app: Application) -> ResolvedKeycloak:
         # Serialize activation against another activation or administrator issuer update.
         if app.id is not None:
-            await self.db.execute(
+            result = await self.db.execute(
                 select(Application)
                 .where(Application.id == app.id)
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
+            result.scalar_one_or_none()
         resolved = await self._resolve(app, lock=True)
         app.auth_instance_key = resolved.instance_key
         await self.db.commit()
         return resolved
+
+    async def summary_for_app(self, app: Application) -> KeycloakInstanceSummary | None:
+        row = None
+        if app.auth_instance_key:
+            row = await self.db.get(KeycloakInstance, app.auth_instance_key)
+        elif not app.auth_enabled and app.target_cluster_id is not None:
+            row = (
+                await self.db.execute(
+                    select(KeycloakInstance).where(
+                        KeycloakInstance.cluster_id == app.target_cluster_id
+                    )
+                )
+            ).scalar_one_or_none()
+        if row:
+            cluster = (
+                await self.db.get(ClusterConnection, row.cluster_id)
+                if row.cluster_id is not None
+                else None
+            )
+            return KeycloakInstanceSummary(
+                instance_key=row.instance_key,
+                cluster_id=row.cluster_id,
+                cluster_name=cluster.name if cluster else None,
+                public_url=row.public_url,
+                enabled=row.enabled,
+                source="cluster",
+            )
+        if not app.auth_instance_key and (app.auth_enabled or settings.KEYCLOAK_ENABLED):
+            return KeycloakInstanceSummary(
+                instance_key=None,
+                cluster_id=None,
+                cluster_name=None,
+                public_url=settings.KEYCLOAK_PUBLIC_URL.rstrip("/"),
+                enabled=bool(settings.KEYCLOAK_ENABLED and settings.KEYCLOAK_ADMIN_CLIENT_SECRET),
+                source="legacy",
+            )
+        return None
 
     async def upsert(self, key: str, payload: KeycloakInstanceUpsert) -> KeycloakInstanceResponse:
         try:
