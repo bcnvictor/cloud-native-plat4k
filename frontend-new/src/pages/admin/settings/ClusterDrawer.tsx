@@ -4,9 +4,11 @@ import { IconPlugConnected, IconX } from '@tabler/icons-react';
 import { clustersApi } from '@/api/clusters';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
 import { toast } from '@/components/ui/toast';
 import { apiError } from '@/utils/apiError';
-import type { ClusterConnection, ClusterConnectionPayload, ClusterTestResult } from '@/types';
+import { PROVIDER_LABELS } from '@/utils/clusterUtils';
+import type { ClusterConnection, ClusterConnectionPayload, ClusterProvider, ClusterTestResult } from '@/types';
 import { TestResultLine } from './TestResultLine';
 
 interface ClusterDrawerProps {
@@ -17,12 +19,19 @@ interface ClusterDrawerProps {
 
 const URL_FIELDS = ['prometheus_url', 'loki_url', 'argocd_url'] as const;
 
+const PROVIDER_OPTIONS = (Object.keys(PROVIDER_LABELS) as ClusterProvider[]).map((value) => ({
+  value,
+  label: PROVIDER_LABELS[value],
+}));
+
 export function ClusterDrawer({ cluster, onClose }: ClusterDrawerProps) {
   const qc = useQueryClient();
   const editing = cluster !== null;
 
   const [name, setName] = useState(cluster?.name ?? '');
   const [endpoint, setEndpoint] = useState(cluster?.endpoint ?? '');
+  // Pas de valeur par défaut à la création : l'admin doit choisir le cloud explicitement.
+  const [provider, setProvider] = useState<ClusterProvider | ''>(cluster?.provider ?? '');
   const [urls, setUrls] = useState<Record<(typeof URL_FIELDS)[number], string>>({
     prometheus_url: cluster?.prometheus_url ?? '',
     loki_url: cluster?.loki_url ?? '',
@@ -38,6 +47,7 @@ export function ClusterDrawer({ cluster, onClose }: ClusterDrawerProps) {
       return {
         name: name.trim(),
         endpoint: endpoint.trim(),
+        ...(provider ? { provider } : {}),
         kubeconfig,
         ...Object.fromEntries(URL_FIELDS.map((f) => [f, urls[f].trim() || null])),
         ...(argocdToken ? { argocd_token: argocdToken } : {}),
@@ -47,6 +57,7 @@ export function ClusterDrawer({ cluster, onClose }: ClusterDrawerProps) {
     const payload: ClusterConnectionPayload = {};
     if (name.trim() !== cluster.name) payload.name = name.trim();
     if (endpoint.trim() !== cluster.endpoint) payload.endpoint = endpoint.trim();
+    if (provider && provider !== cluster.provider) payload.provider = provider;
     for (const f of URL_FIELDS) {
       const value = urls[f].trim() || null;
       if (value !== (cluster[f] ?? null)) payload[f] = value;
@@ -78,7 +89,7 @@ export function ClusterDrawer({ cluster, onClose }: ClusterDrawerProps) {
   });
 
   const unchanged = editing && Object.keys(buildPayload()).length === 0;
-  const canSave = name.trim() && endpoint.trim() && (editing || kubeconfig) && !unchanged;
+  const canSave = name.trim() && endpoint.trim() && provider && (editing || kubeconfig) && !unchanged;
   const canTest = Boolean(kubeconfig) || editing;
 
   return (
@@ -102,6 +113,13 @@ export function ClusterDrawer({ cluster, onClose }: ClusterDrawerProps) {
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Connection</p>
           <Input id="cluster-name" label="Name" mono value={name} onChange={(e) => setName(e.target.value)} placeholder="cnp-prod" />
           <Input id="cluster-endpoint" label="API endpoint" mono value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="https://k8s.example.com:6443" />
+          <Select
+            label="Cloud provider"
+            options={PROVIDER_OPTIONS}
+            value={provider}
+            onChange={(v) => setProvider(v as ClusterProvider)}
+            placeholder="Select a provider…"
+          />
 
           <div className="flex flex-col gap-1">
             <label htmlFor="cluster-kubeconfig" className="text-sm font-medium text-foreground">Kubeconfig</label>
