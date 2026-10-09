@@ -1,3 +1,4 @@
+import { AuthInstanceInfo } from './AuthInstanceInfo';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -400,12 +401,16 @@ export function SettingsTab() {
           admin console access is granted per member (Owner/Maintainer only).
         </p>
 
+        <AuthInstanceInfo instance={authStatus?.instance ?? null} />
+
         {!app.auth_enabled ? (
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
               {(app.auth_warnings ?? []).includes('oidc_keys_conflict')
                 ? 'Not activated: this app already defines OIDC_* variables (its own identity provider?). Remove them to enable Keycloak.'
-                : 'Not activated for this app.'}
+                : app.auth_provisioned === false
+                  ? 'Provisioning did not complete. Retry activation to finish the setup.'
+                  : 'Not activated for this app.'}
             </p>
             <Button
               variant="primary"
@@ -414,7 +419,7 @@ export function SettingsTab() {
               disabled={!canManageApp}
               onClick={() => enableAuthMutation.mutate()}
             >
-              Activate Keycloak
+              {app.auth_provisioned === false ? 'Retry activation' : 'Activate Keycloak'}
             </Button>
           </div>
         ) : (

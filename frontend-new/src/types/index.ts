@@ -67,6 +67,7 @@ export interface Application {
   // Keycloak app-auth service (4K-15/ADR-0026)
   auth_enabled?: boolean;
   auth_provisioned?: boolean | null;
+  auth_instance_key?: string | null;
   auth_warnings?: string[] | null;
 }
 
@@ -231,7 +232,18 @@ export interface KeycloakEnvStatus {
   issuer_url: string | null;
 }
 
+export interface KeycloakInstanceSummary {
+  instance_key: string | null;
+  cluster_id: number | null;
+  cluster_name: string | null;
+  public_url: string;
+  enabled: boolean;
+  source: 'cluster' | 'legacy';
+}
+
 export interface KeycloakStatusResponse {
+  instance?: KeycloakInstanceSummary | null;
+  auth_provisioned?: boolean | null;
   dev: KeycloakEnvStatus;
   prod: KeycloakEnvStatus;
   auth_warnings: string[];

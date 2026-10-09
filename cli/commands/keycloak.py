@@ -56,6 +56,14 @@ def status(
         print_json(data)
         return
 
+    instance = data.get("instance")
+    if instance:
+        label = "Legacy configuration" if instance.get("source") == "legacy" else instance.get("instance_key")
+        console.print("Instance:", label, "—", instance.get("cluster_name") or "—", markup=False)
+        console.print(instance["public_url"], markup=False)
+        if not instance.get("enabled"):
+            print_error("Keycloak instance is unavailable")
+
     rows = [
         [
             env,
@@ -80,6 +88,11 @@ def enable(
         data = client.post(f"/apps/{app_id}/auth")
     except Exception as e:
         print_error(str(e))
+        raise typer.Exit(1)
+    if data.get("auth_provisioned") is False or any(
+        not data[env]["enabled"] or data[env].get("state") != "active" for env in _VALID_ENVS
+    ):
+        print_error("Keycloak provisioning did not complete. Retry activation after resolving the reported issue.")
         raise typer.Exit(1)
     print_success(f"Keycloak activated on '{app_slug}'")
     print_table(

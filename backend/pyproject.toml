@@ -44,6 +44,9 @@ ignore = ["E501", "E712"]   # E501: line length géré par le formateur
 
 [project.optional-dependencies]
 test = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "toml>=0.10.2",
     "pytest",
     "pytest-asyncio",
     "aiosqlite",
