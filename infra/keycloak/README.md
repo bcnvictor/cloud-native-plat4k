@@ -242,3 +242,15 @@ kubectl delete ns keycloak --context cnp-aks
   développeur d'app (variables injectées, snippets de validation JWT par stack).
 - `scripts/keycloak-bootstrap-local.sh` — équivalent de l'étape 6 pour l'instance locale
   docker-compose.
+## Développement local
+
+Le Keycloak Compose utilise le profil `keycloak-local`, séparé de `production`.
+Pour le lancer et amorcer son client technique :
+
+```bash
+docker compose --profile keycloak-local up -d db vault keycloak
+./scripts/keycloak-bootstrap-local.sh
+```
+
+Cette instance en `start-dev` est réservée au développement ; l'installation
+sur les clusters utilise la configuration de production décrite ci-dessous.

@@ -90,14 +90,13 @@ services:
       - cnp_net
 
   keycloak:
-    # Shared Keycloak instance backing the app-auth service (4K-15/ADR-0026).
-    # Optional like vault/grafana below — start it explicitly:
-    #   docker compose up -d keycloak
+    # Local development instance (4K-15/ADR-0026), excluded from production.
+    # Start explicitly: docker compose --profile keycloak-local up -d keycloak
     # start-dev uses Keycloak's embedded H2 database (simplest for local dev — the
-    # AKS deployment in infra/keycloak/ uses a dedicated Postgres database instead,
+    # cluster deployment in infra/keycloak/ uses a dedicated Postgres database instead,
     # see infra/keycloak/README.md).
     profiles:
-      - production
+      - keycloak-local
     image: quay.io/keycloak/keycloak:26.0
     command: start-dev
     environment:

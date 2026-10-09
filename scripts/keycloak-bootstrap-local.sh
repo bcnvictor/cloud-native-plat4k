@@ -10,7 +10,7 @@
 # Idempotent: re-running it updates the existing client instead of failing.
 #
 # Usage:
-#   docker compose up -d keycloak
+#   docker compose --profile keycloak-local up -d db vault keycloak
 #   ./scripts/keycloak-bootstrap-local.sh
 set -euo pipefail
 
@@ -26,9 +26,9 @@ command -v docker >/dev/null 2>&1 || error "Docker is not installed."
 
 dc() {
   if docker compose version >/dev/null 2>&1; then
-    docker compose --profile production "$@"
+    docker compose --profile keycloak-local "$@"
   else
-    docker-compose --profile production "$@"
+    docker-compose --profile keycloak-local "$@"
   fi
 }
 
@@ -44,7 +44,7 @@ until dc exec -T keycloak "$KCADM" config credentials \
   --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1; do
   tries=$((tries + 1))
   if [ "$tries" -ge 30 ]; then
-    error "Keycloak did not become ready in time. Is 'docker compose up -d keycloak' running?"
+    error "Keycloak did not become ready in time. Start 'docker compose --profile keycloak-local up -d db vault keycloak'."
   fi
   sleep 2
 done
