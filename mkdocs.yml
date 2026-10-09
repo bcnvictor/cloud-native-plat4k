@@ -79,6 +79,7 @@ nav:
       - Opérations cluster AKS: guides/operations.md
       - Runbook Vault: guides/vault-runbook.md
       - Test CI Injector: guides/test-ci-injector.md
+      - Authentification Keycloak dans une app: guides/keycloak-app-auth.md
   - Décisions d'architecture (ADR):
       - ADR-0001 — Architecture initiale: adr/0001-architecture-initiale.md
       - ADR-0002 — Pivot vers une IDP: adr/0002-pivot-idp.md
@@ -103,3 +104,6 @@ nav:
       - ADR-0021 — Grafana HTTPS: adr/0021-grafana-https-letsencrypt.md
       - ADR-0022 — Cloud privé k3s multi-cluster: adr/0022-cloud-prive-k3s-multi-cluster.md
       - ADR-0023 — Alerting et notifications: adr/0023-alerting-notifications-centre-notif.md
+      - ADR-0024 — External Secrets Operator: adr/0024-external-secrets-operator.md
+      - ADR-0025 — Variables d'environnement applicatives: adr/0025-env-vars-applicatives.md
+      - ADR-0026 — Service d'authentification Keycloak: adr/0026-keycloak-app-auth.md

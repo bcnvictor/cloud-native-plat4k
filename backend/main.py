@@ -5,6 +5,7 @@ from functools import partial
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -21,6 +22,8 @@ from backend.api.routes import (
     gitlab,
     groups,
     health,
+    keycloak,
+    keycloak_instances,
     monitoring,
     notifications,
     resources,
@@ -33,6 +36,7 @@ from backend.k8s.client import k8s_client
 from backend.k8s.dashboards import FINOPS_DASHBOARD_JSON
 from backend.k8s.discovery import discover_clusters
 from backend.k8s.health_worker import run_health_worker
+from backend.keycloak.client import KeycloakError, KeycloakUnavailable
 from backend.services.gitlab_sync_service import run_gitlab_sync_worker
 from backend.services.platform_knowledge_service import sync_platform_docs_at_startup
 from backend.services.scale_worker import run_scale_worker
@@ -117,6 +121,15 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+@app.exception_handler(KeycloakError)
+async def _keycloak_error_handler(request: Request, exc: KeycloakError) -> JSONResponse:
+    # Keycloak is an upstream dependency (4K-15/ADR-0026): surface its failures as a
+    # gateway error with a stable message instead of a bare 500 with a stack trace.
+    logger.error("Keycloak error on %s %s: %s", request.method, request.url.path, exc)
+    status_code = 503 if isinstance(exc, KeycloakUnavailable) else 502
+    return JSONResponse(status_code=status_code, content={"detail": "Keycloak is unavailable or returned an error"})
+
 # CORS configuration
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
@@ -134,6 +147,8 @@ app.include_router(apps.router, prefix=f"{settings.API_V1_STR}/apps", tags=["app
 app.include_router(assistant.router, prefix=f"{settings.API_V1_STR}/apps", tags=["assistant"])
 app.include_router(assistant.global_router, prefix=f"{settings.API_V1_STR}", tags=["assistant"])
 app.include_router(env_vars.router, prefix=f"{settings.API_V1_STR}/apps", tags=["env-vars"])
+app.include_router(keycloak_instances.router, prefix=f"{settings.API_V1_STR}/keycloak/instances", tags=["keycloak-instances"])
+app.include_router(keycloak.router, prefix=f"{settings.API_V1_STR}/apps", tags=["keycloak"])
 app.include_router(clusters.router, prefix=f"{settings.API_V1_STR}/clusters", tags=["clusters"])
 app.include_router(resources.router, prefix=f"{settings.API_V1_STR}/resources", tags=["resources"])
 app.include_router(credentials.router, prefix=f"{settings.API_V1_STR}/credentials", tags=["credentials"])

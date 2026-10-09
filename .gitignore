@@ -332,3 +332,9 @@ secret-tailscale.txt
 frontend/playwright-report/
 frontend/test-results/
 frontend/blob-report/
+
+# Track portable operator modules despite the generic lib/ exclusion.
+!infra/keycloak/lib/
+!infra/keycloak/lib/*.py
+
+infra/keycloak/gateway/generated/

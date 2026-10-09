@@ -198,3 +198,18 @@ que d'affaiblir la règle générale :
 Le risque résiduel (un token CLI volé peut lire les secrets dev d'une app) est jugé
 acceptable : c'est le même niveau d'exposition qu'un développeur qui aurait de toute façon
 un accès `Developer` en écriture sur ces mêmes variables.
+
+## Addendum (4K-15 / ADR-0026 Lot 1b) : `envFrom` réellement implémenté dans les charts
+
+§6 affirmait que "le Helm chart scaffoldé injecte ce secret dans le pod via
+`envFrom.secretRef`" — ce n'était pas le cas : `chart/templates/deployment.yaml` des 4
+templates (`python-fastapi`, `node-express`, `go`, `react-vite`) ne rendait que `.Values.env`
+(valeurs en clair de `values.yaml`), sans aucun `envFrom` ni annotation Reloader. Combiné à
+l'absence de déploiement des `ExternalSecret` (addendum ADR-0024), aucune variable gérée par
+cette feature n'atteignait jamais un pod, quel que soit ce qui était écrit dans Vault.
+
+Corrigé dans les 4 templates : `envFrom: [{secretRef: {name: {{ include "app.name" . }}-env,
+optional: true}}]` sur le conteneur, et `reloader.stakater.com/auto: "true"` en annotation du
+`Deployment`. Les apps déjà scaffoldées avant ce correctif gardent leur ancien chart (le
+template n'est copié qu'une fois au scaffold) — non rétro-appliqué automatiquement, dette
+notée dans ADR-0026.

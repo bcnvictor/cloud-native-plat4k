@@ -1,0 +1,6 @@
+# Dedicated namespace for the shared Keycloak instance (4K-15/ADR-0026).
+# kubectl apply -f infra/keycloak/namespace.yaml --context cnp-aks
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak

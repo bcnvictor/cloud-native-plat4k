@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: keycloak-vault-token-renewal
+spec:
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 60
+      backoffLimit: 2
+      template:
+        metadata:
+          labels: {app: keycloak-vault-token-renewal}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext: {runAsNonRoot: true, runAsUser: 101, seccompProfile: {type: RuntimeDefault}}
+          containers:
+            - name: renew
+              image: {{ .Values.images.nginx | quote }}
+              command: [sh, -ec]
+              args:
+                - |
+                  token=$(cat /vault/token)
+                  printf 'header = "X-Vault-Token: %s"\n' "$token" |
+                    curl --config - --fail --silent --output /dev/null --max-time 30 \
+                    --request POST --data '{}' "$VAULT_ADDR/v1/auth/token/renew-self"
+              env: [{name: VAULT_ADDR, value: {{ .Values.vault.server | quote }}}]
+              securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+              resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 64Mi}}
+              volumeMounts: [{name: token, mountPath: /vault, readOnly: true}]
+          volumes:
+            - name: token
+              secret: {secretName: keycloak-eso-token}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-vault-token-renewal
+spec:
+  podSelector: {matchLabels: {app: keycloak-vault-token-renewal}}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ .Values.tailscale.namespace }}}}
+          podSelector: {matchLabels: {tailscale.com/managed: "true"}}
+      ports: [{protocol: TCP, port: 8200}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}}]
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]

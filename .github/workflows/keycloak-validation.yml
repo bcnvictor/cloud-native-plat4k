@@ -1,0 +1,37 @@
+name: Keycloak validation
+on:
+  pull_request:
+    paths: ['backend/**', 'shared/**', 'infra/keycloak/**', 'infra/grafana/**', 'docker-compose.yml', 'frontend-new/**', '.github/workflows/keycloak-validation.yml']
+  workflow_dispatch:
+jobs:
+  keycloak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/setup-node@v4
+        with: {node-version: '20', cache: npm, cache-dependency-path: frontend-new/package-lock.json}
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements-dev.lock -r infra/keycloak/requirements.lock
+          pip install --no-deps -e shared -e backend
+          npm ci --prefix frontend-new
+          cd frontend-new
+          npx playwright install --with-deps chromium
+      - name: Install verified Helm 3.17.3
+        run: |
+          curl --fail --silent --show-error -o /tmp/helm.tar.gz https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz
+          curl --fail --silent --show-error -o /tmp/helm.tar.gz.sha256sum https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz.sha256sum
+          cd /tmp
+          sed 's/helm-v3.17.3-linux-amd64.tar.gz/helm.tar.gz/' helm.tar.gz.sha256sum | sha256sum -c -
+          tar -xzf helm.tar.gz
+          sudo install linux-amd64/helm /usr/local/bin/helm
+      - name: Lint and operator infrastructure tests
+        run: |
+          ruff check backend/ shared/ infra/keycloak/lib/ infra/keycloak/tests/ infra/keycloak/argocd/
+          pytest backend/tests/ -m keycloak_infra -q
+      - name: Real isolated OIDC and CNP integration
+        run: ./infra/keycloak/verify.sh --local

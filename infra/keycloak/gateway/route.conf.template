@@ -1,0 +1,17 @@
+# Stable logical instance: @KEY@
+location ~ ^/clusters/@KEY@/(?:admin/master|admin/realms/master|realms/master)(?:/|$) { return 403; }
+location ~ ^/clusters/@KEY@/(?:health|metrics)(?:/|$) { return 403; }
+location ~ ^/clusters/@KEY@(?:/|$) {
+    set $keycloak_upstream kc-@KEY@.@TAILNET@:8080;
+    proxy_pass http://$keycloak_upstream$request_uri;
+    proxy_set_header Host @DOMAIN@;
+    proxy_set_header X-Forwarded-Host @DOMAIN@;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Port 443;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header Forwarded "";
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 60s;
+    proxy_intercept_errors on;
+    error_page 502 504 =503 @keycloak_unavailable;
+}

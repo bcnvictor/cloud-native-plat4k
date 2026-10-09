@@ -44,6 +44,9 @@ ignore = ["E501", "E712"]   # E501: line length géré par le formateur
 
 [project.optional-dependencies]
 test = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "toml>=0.10.2",
     "pytest",
     "pytest-asyncio",
     "aiosqlite",
@@ -55,5 +58,6 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
+markers = ["keycloak_infra: Helm/Docker operator tests", "keycloak_integration: real Keycloak integration"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
