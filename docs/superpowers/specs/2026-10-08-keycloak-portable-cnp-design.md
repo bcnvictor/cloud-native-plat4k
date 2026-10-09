@@ -4,6 +4,8 @@ Date : 8 octobre 2026. Statut : conception proposée à la revue ; aucun déploi
 
 Précision du 9 octobre : une app est déployée sur un seul cluster. Le multi-cloud permet de choisir son hébergement et n'a pas pour fonction de répliquer l'app ou son Keycloak pour assurer une résilience entre clouds.
 
+Décision du 9 octobre : l'utilisateur retient un domaine commun avec un préfixe stable par instance Keycloak. Les choix d'une URL par instance ou d'un routage par realm sont retirés de cette conception.
+
 ## Résultat attendu
 
 Une configuration versionnée par cible et une commande déploient Keycloak et le rendent utilisable par le provisioning CNP. Les clusters des clouds publics et privés utilisent le même chart Helm. AKS et le k3s privé sont les premières cibles concrètes, pas les deux seuls types de cluster possibles. Une nouvelle cible change ses paramètres d'infrastructure, sans réécrire les manifests communs ni modifier les templates applicatifs.
@@ -11,6 +13,8 @@ Une configuration versionnée par cible et une commande déploient Keycloak et l
 La commande configure aussi le client technique `cnp-provisioner`, conserve ses secrets dans Vault et enregistre l'instance auprès de CNP. L'opérateur n'a pas à recopier un secret dans un `.env`, à configurer chaque app ou à redémarrer le backend pour enregistrer une nouvelle instance.
 
 Le choix proposé reste une instance partagée par cluster, avec un realm par app et environnement (`dev`, `prod`). Les apps n'ont pas à choisir une URL Keycloak : CNP déduit l'instance de leur cluster cible.
+
+Le domaine commun initial est `auth.cloud-native-plat4k.me`. Les premières instances utilisent `/clusters/public-01` et `/clusters/private-01`. Ces clés identifient les instances ; elles ne codent pas le provider ou la distribution Kubernetes et restent stables pendant leur durée de vie.
 
 Réinstaller sur un cluster neuf recrée une installation utilisable. Retrouver les comptes et identités d'une installation perdue demande ses données sauvegardées ; l'automatisation de sauvegarde et de restauration est un chantier séparé. La création des clusters et de la plateforme CNP complète reste également hors périmètre.
 
@@ -29,8 +33,9 @@ Les tests CI de la PR plateforme ont réussi ; ni l'installation du chart ni ce 
 
 | Élément | Fonction |
 |---|---|
-| `infra/keycloak/chart/` | Ressources communes : Keycloak en production, stockage dédié, services, ingress, probes et références aux secrets |
-| Profils public et privé, avec valeurs propres à chaque cluster | Adresse OIDC, accès admin privé, IngressClass, TLS, StorageClass, ressources et nom logique d'instance |
+| `infra/keycloak/chart/` | Ressources communes : Keycloak en production, stockage dédié, service privé accessible via Tailscale, probes et références aux secrets |
+| Profils public et privé, avec valeurs propres à chaque cluster | Préfixe OIDC, accès admin privé, StorageClass, ressources et nom logique d'instance |
+| Passerelle NGINX commune | Exposer le domaine HTTPS et transmettre chaque préfixe à son instance via Tailscale |
 | Commande de déploiement | Vérifier les prérequis, déployer, attendre la disponibilité, effectuer le bootstrap et enregistrer l'instance dans CNP |
 | Applications ArgoCD | Utiliser le même chart et les mêmes valeurs dans les arborescences GitOps actuelles |
 | Adaptation CNP ciblée | Résoudre l'instance depuis le cluster, conserver l'association de l'app et afficher l'instance dans le statut existant |
@@ -44,13 +49,15 @@ Exemple d'interface à livrer, et non commande disponible aujourd'hui :
 
 Chaque fichier cible identifie explicitement son contexte Kubernetes, son cluster CNP, son namespace, sa release et son mode de gestion (`helm` ou `argocd`). La commande ne s'appuie pas sur le contexte Kubernetes courant implicite. Elle ne gère pas la même release simultanément avec Helm direct et ArgoCD.
 
+Il identifie également la VM de passerelle et le nom privé Tailscale de l'instance. La commande met à jour la route de cette instance avant d'activer son enregistrement CNP ; aucune édition manuelle du proxy n'est demandée à l'opérateur.
+
 En mode Helm, elle installe ou met à jour le chart. En mode ArgoCD, elle synchronise l'Application configurée puis attend sa disponibilité. Les Applications proposées dans `cnp-gitops` fixent la révision Git du chart et des valeurs ; publier un nouveau registre OCI n'est pas nécessaire pour cette première livraison. L'accès ArgoCD au dépôt du chart est un prérequis configuré avec les credentials de lecture existants ou fournis à l'installation.
 
 Le chart inclut la base persistante nécessaire à Keycloak ; l'opérateur n'effectue pas une installation de base séparée. La première version utilise un replica Keycloak et PostgreSQL dédié avec PVC. Aucune infrastructure HA, base externe optionnelle ou Keycloak Operator n'est ajoutée.
 
 ### Classification des cibles
 
-« Public » et « privé » décrivent le cloud d'hébergement ; « AKS » et « k3s » décrivent une offre ou distribution Kubernetes. Ces deux dimensions ne sont pas confondues. Le chart ne contient aucune branche métier `si AKS / sinon k3s`. Des valeurs par cluster fournissent ses capacités réelles, et le backend utilise son identifiant CNP. Plusieurs clusters publics ou privés peuvent chacun avoir leur propre Keycloak.
+« Public » et « privé » décrivent le cloud d'hébergement ; « AKS » et « k3s » décrivent une offre ou distribution Kubernetes. Ces deux dimensions ne sont pas confondues. Le chart ne contient aucune branche métier `si AKS / sinon k3s`. Des valeurs par cluster fournissent ses capacités réelles, et le backend utilise son identifiant CNP. Plusieurs clusters publics ou privés peuvent chacun avoir leur propre Keycloak et leur propre préfixe sur le domaine commun.
 
 La qualification d'un cloud comme privé ne rend pas automatiquement l'URL OIDC privée. Sa visibilité dépend des utilisateurs et des apps qui doivent la joindre. Les StorageClass et paramètres ingress restent spécifiques au cluster : `local-path` est un choix pour le k3s actuel, pas une propriété de tous les clouds privés.
 
@@ -58,7 +65,7 @@ La qualification d'un cloud comme privé ne rend pas automatiquement l'URL OIDC 
 
 ### Configuration de l'instance
 
-Un petit registre interne CNP conserve : clé logique stable, cluster cible par défaut, URL publique, URL admin privée, identifiant du client technique, référence Vault de son secret et état d'activation. Un endpoint administrateur idempotent permet à la commande de déploiement d'enregistrer cette configuration. Il vérifie le client technique depuis le backend avant d'activer l'instance et journalise l'opération sans exposer les credentials.
+Un petit registre interne CNP conserve : clé logique stable, cluster cible par défaut, URL publique avec préfixe, URL admin privée avec le même préfixe, identifiant du client technique, référence Vault de son secret et état d'activation. Un endpoint administrateur idempotent permet à la commande de déploiement d'enregistrer cette configuration. Il vérifie le client technique depuis le backend avant d'activer l'instance et journalise l'opération sans exposer les credentials.
 
 La commande reçoit l'URL CNP et une authentification administrateur CNP par l'environnement, en réutilisant l'authentification API existante. Elle écrit d'abord le secret du client dans Vault, puis transmet uniquement sa référence à CNP. La configuration est lue par le service au moment de ses opérations : enregistrer une instance ne nécessite pas de recharger la configuration globale du processus.
 
@@ -78,7 +85,7 @@ La clé logique et l'URL publique d'une instance liée à des apps restent stabl
 
 Les paramètres globaux `KEYCLOAK_*` continuent de fonctionner pour la configuration historique et locale. La migration de schéma n'active aucun service et ne recrée aucun realm.
 
-Les apps déjà activées sans association explicite restent sur l'instance globale historique, même si une nouvelle instance est enregistrée pour leur cluster. Les nouvelles activations choisissent l'instance du cluster lorsqu'elle existe ; sinon elles conservent le comportement historique si celui-ci est configuré. Une fois liée à une instance explicite, une app n'utilise jamais ce repli historique.
+Les apps déjà activées sans association explicite restent sur l'instance globale historique, même si une nouvelle instance est enregistrée pour leur cluster. Les nouvelles activations choisissent l'instance du cluster lorsqu'elle est configurée. Si cette instance est désactivée ou indisponible, elles échouent explicitement. Le comportement historique est conservé uniquement en l'absence de configuration d'instance pour le cluster et si la configuration globale est utilisable. Une fois liée à une instance explicite, une app n'utilise jamais ce repli historique.
 
 Une instance enregistrée et activée peut être utilisée sans modifier le flag global destiné à l'installation historique. Les contrôles du service et de la synchronisation GitLab doivent donc vérifier la disponibilité de l'instance de l'app, et pas seulement `KEYCLOAK_ENABLED`.
 
@@ -94,23 +101,46 @@ Les valeurs versionnées contiennent des références, jamais les secrets. Les c
 
 ESO utilise une identité et un SecretStore limités aux secrets nécessaires au namespace Keycloak. La politique applicative actuelle, limitée à `secret/apps/*`, n'est pas élargie. La livraison inclut les politiques et la procédure d'amorçage de cette identité d'infrastructure, ainsi que les droits backend nécessaires. Les credentials d'installation sont fournis par l'environnement et ne figurent pas dans Git ou les logs.
 
-Les différences entre AKS et k3s sont explicites : StorageClass, ressources, ingress et connectivité. Les images sont fixées et compatibles AMD64 et ARM64. Les PVC ne sont pas supprimés par une désinstallation ou un prune ArgoCD ordinaire.
+Les différences entre les cibles sont explicites : StorageClass, ressources et connectivité. Les images sont fixées et compatibles AMD64 et ARM64. Les PVC ne sont pas supprimés par une désinstallation ou un prune ArgoCD ordinaire.
 
 L'URL publique doit être accessible depuis les navigateurs et les pods qui utilisent OIDC. L'URL admin privée doit être accessible depuis `cnp-control` par le réseau Tailscale actuel ; la configuration évite une ClusterIP codée en dur. Le déploiement vérifie cette accessibilité depuis CNP, pas seulement depuis un pod Keycloak.
 
-### Domaine commun à plusieurs instances
+### Domaine commun et préfixes retenus
 
-Une instance par cluster n'impose pas un domaine par cloud. Un domaine commun, par exemple `auth.cloud-native-plat4k.me`, peut exposer plusieurs instances si une passerelle route systématiquement chaque requête vers la bonne instance. Deux adresses DNS vers deux instances indépendantes ne constituent pas ce routage : le navigateur contacte le domaine d'authentification indépendamment du domaine de l'app.
+Le domaine pointe vers une passerelle NGINX sur la VM de contrôle CNP. La proposition réutilise le proxy HTTPS déjà défini par le service Compose `nginx-grafana`, en ajoutant un virtual host pour l'authentification. Les routes et leur génération vivent sous `infra/keycloak/gateway/`. L'ajout de Keycloak ne prend pas un second port 443 et ne modifie pas le routage Grafana.
 
-La variante proposée pour un domaine commun utilise un préfixe stable par instance, par exemple `/clusters/public-01` et `/clusters/private-01`. Chaque Keycloak déclare ce chemin dans son hostname et/ou son contexte HTTP, conformément à la [configuration officielle du proxy](https://www.keycloak.org/server/reverseproxy). La passerelle n'a qu'une route par instance. L'issuer injecté dans l'app contient ce préfixe, suivi de `/realms/{app}-{env}`. Les templates conservent leur contrat de variables OIDC.
+| Préfixe public | Destination privée | Premier hébergement |
+|---|---|---|
+| `/clusters/public-01/` | Service Keycloak Tailscale de `public-01` | AKS actuel |
+| `/clusters/private-01/` | Service Keycloak Tailscale de `private-01` | k3s privé actuel |
 
-Une autre variante conserve une base identique sans préfixe et route `/realms/{app}-{env}/...` vers le cluster propriétaire. Les slugs d'app sont déjà uniques dans CNP, mais cette variante ajoute une table de routage par realm à réconcilier pendant le provisioning et la suppression. Les ressources de connexion, les consoles et autres chemins Keycloak doivent aussi être servis correctement. Elle ne consiste donc pas à installer le même ingress dans chaque cluster. Le choix d'une passerelle et de cette variante reste une proposition de conception, sans composant de routage livré à ce stade.
+Le chart expose son service HTTP sur le tailnet via l'opérateur Tailscale, avec un hostname stable par instance et des ACL limitées à la VM CNP et aux administrateurs nécessaires. L'opérateur et MagicDNS sont des prérequis contrôlés, déjà représentés dans les configurations d'infrastructure des deux cibles. Les noms sont résolus et testés depuis les conteneurs backend et proxy ; on ne suppose pas que la résolution sur l'hôte garantit celle des conteneurs. Le port de management n'est pas exposé par ce service.
 
-Dans les deux variantes, l'Admin API utilisée par CNP conserve un accès privé distinct par instance. Le même domaine public ne supprime pas la nécessité de choisir le Keycloak du cluster pour créer un realm. Aucun basculement automatique vers un autre Keycloak n'est prévu.
+Une instance de clé `{key}` utilise `KC_HTTP_RELATIVE_PATH=/clusters/{key}` et `KC_HOSTNAME=https://auth.cloud-native-plat4k.me/clusters/{key}`. Le proxy transmet ce chemin sans supprimer le préfixe et fixe les en-têtes de proxy de confiance. Les ressources statiques, redirections et cookies restent dans le contexte de l'instance. Voir la [configuration officielle des chemins Keycloak](https://www.keycloak.org/server/reverseproxy).
 
-Keycloak utilise `start`, un hostname explicite et les proxy headers appropriés. L'ingress est HTTPS avec une chaîne TLS valide ; le port de management et `master` ne sont pas exposés publiquement. La console des realms applicatifs reste utilisable. Voir les recommandations officielles de [configuration](https://www.keycloak.org/server/configuration) et de [reverse proxy](https://www.keycloak.org/server/reverseproxy).
+Le contexte de management est fixé séparément à `/` avec `KC_HTTP_MANAGEMENT_RELATIVE_PATH=/`. Les probes restent sur le port 9000, aux chemins `/health/ready` et `/health/live`. Ce réglage évite que le management hérite du préfixe public et rende les probes incorrectes ; voir l'[interface de management Keycloak](https://www.keycloak.org/server/management-interface).
 
-DNS, certificat, accès Kubernetes, Vault, ESO et réseau privé restent des paramètres ou prérequis d'infrastructure. La commande les contrôle et signale précisément un manque. Elle ne prétend pas créer un cloud vierge avec seulement les manifests Keycloak.
+Pour l'app `commande` en production sur `public-01`, CNP injecte :
+
+```text
+OIDC_ISSUER_URL=https://auth.cloud-native-plat4k.me/clusters/public-01/realms/commande-prod
+```
+
+La passerelle a une route par instance, indépendamment du nombre d'apps ou de realms. Le provisioning et la suppression d'une app ne modifient pas sa configuration. Un préfixe inconnu est refusé ; une instance indisponible retourne une erreur sur sa route, sans transmettre la requête à une autre instance ni empêcher le démarrage du proxy.
+
+L'Admin API conserve un accès privé distinct par instance, dont l'URL inclut `/clusters/{key}`. Le backend l'utilise pour créer les realms ; les utilisateurs accèdent à l'URL publique. La passerelle bloque `master` et le management sous chaque préfixe, tout en laissant fonctionner les consoles des realms applicatifs selon leurs droits. Les données et les sessions des instances restent indépendantes.
+
+### Configuration et relance de la passerelle
+
+La commande de déploiement utilise l'accès administrateur à la VM de contrôle, localement ou par SSH, fourni par l'environnement. Elle installe la route à partir du fichier cible, avec une clé d'instance validée et sans interpolation libre de commandes. Le backend CNP n'obtient ni clé SSH d'administration de la VM ni accès au socket Docker.
+
+La configuration est testée par NGINX avant son activation, remplacée atomiquement puis rechargée. Une erreur conserve la dernière configuration valide et les routes des autres instances. Une deuxième exécution produit la même route. Le DNS et le certificat du domaine sont amorcés une fois dans l'infrastructure commune ; le renouvellement est repris par le mécanisme Certbot existant. Une absence de configuration ou de certificat Keycloak ne bloque pas le service Grafana déjà présent.
+
+Le navigateur utilise HTTPS jusqu'à la passerelle. Un éventuel proxy Cloudflare utilise également HTTPS avec validation du certificat d'origine. Le transport vers les services privés est chiffré par Tailscale ; le HTTP Keycloak reste limité au réseau interne de confiance. Les instances utilisent `start` et une URL publique explicite. Voir les recommandations officielles de [configuration](https://www.keycloak.org/server/configuration) et de [reverse proxy](https://www.keycloak.org/server/reverseproxy).
+
+Une nouvelle instance est activée dans CNP après la disponibilité de Keycloak, le bootstrap du client technique, l'installation de la route et un contrôle du parcours public. Un realm temporaire marqué comme test permet de vérifier discovery et issuer sans exposer `master` ; il est ensuite nettoyé. Un échec du premier raccordement garde cette nouvelle instance désactivée et permet une relance sans perte de données. Lors d'une mise à jour d'une instance existante, la route et l'enregistrement précédents sont conservés si la nouvelle configuration ne peut pas être validée ; le script ne désactive pas préventivement une instance opérationnelle.
+
+DNS, certificat initial, accès Kubernetes et VM, Vault, ESO et réseau privé restent des paramètres ou prérequis d'infrastructure. La commande les contrôle et signale précisément un manque. Elle ne prétend pas créer un cloud vierge avec seulement les manifests Keycloak.
 
 ## Vérifications requises
 
@@ -119,6 +149,8 @@ DNS, certificat, accès Kubernetes, Vault, ESO et réseau privé restent des par
 3. Tester le routage CNP pour AKS et k3s, la compatibilité globale, les retries, les conflits de propriété et la révocation GitLab, sans fuite entre instances.
 4. Tester une app template et une app onboardée compatible : variables injectées, issuer correct, authentification et accès console effectifs.
 5. Effectuer les essais sur les deux clusters pour valider le stockage, HTTPS, Vault et l'accès privé depuis le backend. Un rendu Helm ou une CI réussie ne remplace pas ces essais.
+6. Tester les deux préfixes via la passerelle : discovery, redirections, PKCE, rafraîchissement, déconnexion, ressources et console ; vérifier que `master` et le management sont inaccessibles publiquement.
+7. Vérifier le rechargement idempotent et le refus d'une configuration invalide, l'isolation des routes et le fonctionnement des services existants lorsque l'une des instances est indisponible.
 
 La correction du profil Docker Compose fait partie de cette livraison : le déploiement de production actuel ne doit plus démarrer le Keycloak local en `start-dev` avec ses identifiants par défaut. Ce point doit être résolu avant une fusion qui déclenche la pipeline de déploiement.
 
@@ -154,10 +186,10 @@ sequenceDiagram
     end
 ```
 
-Avec un domaine d'auth commun, la passerelle envoie les requêtes vers `K` en utilisant le préfixe d'instance ou la route de realm. Un autre cluster ne doit pas recevoir l'échange du code ou la récupération des clés.
+La passerelle envoie les requêtes vers `K` en utilisant le préfixe d'instance injecté dans la configuration OIDC. Un autre cluster ne doit pas recevoir l'échange du code ou la récupération des clés.
 
 Les templates actuels illustrent ce raccordement sans protéger automatiquement toutes les pages : React propose un bouton de connexion ; les templates API protègent notamment `/me`, tandis que `/` et `/health` restent publics. Une API seule répond `401` à une requête sans token sur une route protégée, sans afficher automatiquement une page de connexion. L'autorisation des fonctionnalités reste définie par l'app.
 
 ## Limite de cette conception
 
-Le chart commun, la commande et l'adaptation multi-instance décrits ici sont à implémenter. Ce document précise le résultat à livrer et ne déclare ni l'intégration ni les déploiements opérationnels.
+Le chart commun, la passerelle, la commande et l'adaptation multi-instance décrits ici sont à implémenter. Le choix du domaine commun avec préfixes est retenu ; ce document précise le résultat à livrer et ne déclare ni l'intégration ni les déploiements opérationnels.
