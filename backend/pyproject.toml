@@ -58,5 +58,6 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
+markers = ["keycloak_infra: Helm/Docker operator tests", "keycloak_integration: real Keycloak integration"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
