@@ -125,10 +125,14 @@ export interface DeploymentExtended {
   isCurrent: boolean;
 }
 
+// Miroir de shared.models.ClusterProvider
+export type ClusterProvider = 'azure' | 'aws' | 'gcp' | 'openstack' | 'oracle' | 'other';
+
 export interface ClusterConnection {
   id: number;
   name: string;
   endpoint: string;
+  provider: ClusterProvider;
   kubeconfig_secret_ref: string;
   prometheus_url?: string | null;
   loki_url?: string | null;
@@ -143,6 +147,7 @@ export interface ClusterConnection {
 export interface ClusterConnectionPayload {
   name?: string;
   endpoint?: string;
+  provider?: ClusterProvider;
   kubeconfig?: string;
   prometheus_url?: string | null;
   loki_url?: string | null;

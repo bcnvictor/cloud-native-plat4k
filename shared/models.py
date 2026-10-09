@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 def sanitize_k8s_label_value(value: str) -> str:
@@ -268,6 +268,16 @@ class ClusterStatus(str, Enum):
     UNKNOWN = "unknown"
 
 
+class ClusterProvider(str, Enum):
+    """Cloud hébergeant un cluster. Stocké en String en base : ajouter une valeur ici ne demande pas de migration."""
+    AZURE = "azure"
+    AWS = "aws"
+    GCP = "gcp"
+    OPENSTACK = "openstack"
+    ORACLE = "oracle"
+    OTHER = "other"
+
+
 class ApplicationStatus(str, Enum):
     ONBOARDING = "onboarding"
     READY = "ready"
@@ -400,6 +410,7 @@ class ApplicationResponse(ApplicationBase):
 class ClusterConnectionBase(BaseModel):
     name: str
     endpoint: str
+    provider: ClusterProvider = ClusterProvider.OTHER
     prometheus_url: Optional[str] = None
     loki_url: Optional[str] = None
     argocd_url: Optional[str] = None
@@ -413,6 +424,7 @@ class ClusterConnectionCreate(ClusterConnectionBase):
 class ClusterConnectionUpdate(BaseModel):
     name: Optional[str] = None
     endpoint: Optional[str] = None
+    provider: Optional[ClusterProvider] = None
     kubeconfig: Optional[str] = None
     prometheus_url: Optional[str] = None
     loki_url: Optional[str] = None
@@ -429,6 +441,14 @@ class ClusterConnectionResponse(ClusterConnectionBase):
     updated_at: Optional[datetime] = None
     # Nombre d'applications qui ciblent ce cluster (bloque la suppression si > 0).
     app_count: int = 0
+
+    @field_validator("provider", mode="before")
+    @classmethod
+    def _unknown_provider_as_other(cls, value: Any) -> Any:
+        # Lecture tolérante : une valeur en base inconnue de cette version de l'enum ne doit pas casser la réponse.
+        if value is None or value not in {p.value for p in ClusterProvider}:
+            return ClusterProvider.OTHER
+        return value
 
     class Config:
         from_attributes = True
