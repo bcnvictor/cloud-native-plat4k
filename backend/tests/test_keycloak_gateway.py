@@ -185,8 +185,62 @@ def test_grafana_works_without_auth_certificate(gateway):
             except httpx.HTTPError as exc:
                 last_error = str(exc)
             time.sleep(0.2)
-        assert response is not None, (last_error, docker("logs", "nginx-grafana"), docker("port", "nginx-grafana", "443"))
+        assert response is not None, (
+            last_error,
+            docker("logs", "nginx-grafana"),
+            docker("port", "nginx-grafana", "443"),
+        )
         assert response.text == "grafana"
     finally:
         cert.write_bytes(saved)
         docker("restart", "nginx-grafana")
+        port = docker("port", "nginx-grafana", "443").strip().rsplit(":", 1)[1]
+        client.base_url = f"https://127.0.0.1:{port}"
+
+
+def test_failed_activation_restores_last_working_route(gateway):
+    from infra.keycloak.lib.config import TargetConfig
+    from infra.keycloak.lib.gateway import render_route
+
+    client, folder, docker, compose = gateway
+    original = (folder / "routes/private-01.conf").read_bytes()
+    config = TargetConfig(
+        "private-01", "private", "test", "test", "auth.test", "unreachable.test", "test", "test"
+    )
+    env = os.environ | {
+        "CNP_GATEWAY_COMPOSE": str(compose),
+        "CNP_GATEWAY_PROJECT": f"kc-gateway-{os.getpid()}",
+        "CNP_GATEWAY_ROUTES": str(folder / "routes"),
+    }
+    script = str(ROOT / "infra/keycloak/gateway/apply-route.sh")
+    token = "a" * 32
+    subprocess.run(
+        ["bash", script, "private-01", "stage", token],
+        input=render_route(config).encode(),
+        env=env,
+        check=True,
+        capture_output=True,
+    )
+    try:
+        for attempt in range(30):
+            response = client.get("/clusters/private-01/realms/demo-prod")
+            if response.status_code == 503:
+                break
+            time.sleep(0.1)
+        assert response.status_code == 503
+        assert client.get("/clusters/public-01/realms/demo-prod").status_code == 200
+    finally:
+        subprocess.run(
+            ["bash", script, "private-01", "rollback", token],
+            input=b"",
+            env=env,
+            check=True,
+            capture_output=True,
+        )
+    assert (folder / "routes/private-01.conf").read_bytes() == original
+    for attempt in range(30):
+        response = client.get("/clusters/private-01/realms/demo-prod")
+        if response.status_code == 200:
+            break
+        time.sleep(0.1)
+    assert response.status_code == 200

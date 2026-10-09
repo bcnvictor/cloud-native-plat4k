@@ -46,7 +46,10 @@ export TAILNET_DOMAIN=tail-example.ts.net
 Le contrôle `--check` ne modifie ni Vault, ni Kubernetes, ni NGINX, ni le registre.
 Le déploiement crée les secrets avec CAS=0, un token ESO par instance, et étend
 uniquement la policy backend nommée en conservant ses règles. Il ne modifie pas
-la policy de lecture applicative. Le token ESO ne lit que `database/bootstrap` ;
+la policy de lecture applicative. La règle backend commune lit seulement
+`secret/data/cnp/keycloak/+/provisioner` : deux bootstraps parallèles ajoutent la
+même règle, sans perdre la permission d'une instance. Ne pas éditer cette policy
+manuellement pendant un bootstrap. Le token ESO ne lit que `database/bootstrap` ;
 le provisioner est lu par le backend. Un CronJob quotidien renouvelle le token
 périodique sans l'inclure dans ses arguments. Surveiller les Jobs en échec :
 une interruption de plus de 30 jours nécessite un remplacement contrôlé du
@@ -56,7 +59,26 @@ Ordre : prérequis → secrets → nouvelle instance inactive → installation �
 client technique → Vault → route NGINX validée → issuer public → activation CNP.
 Une instance déjà active reste active pendant la relance. Une erreur est
 reprenable : relancer après correction. Les mots de passe et le secret du
-client technique sont conservés ; une divergence est refusée.
+client technique sont conservés ; une divergence est refusée. Une nouvelle ligne
+inactive est créée conditionnellement, sans désactiver une instance qu'une autre
+exécution vient d'activer. Sur une base Keycloak neuve, le client technique est
+créé avec son secret Vault conservé.
+
+La passerelle conserve une sauvegarde de la route jusqu'à la preuve publique et
+l'activation CNP. Une erreur à ces étapes restaure la route précédente. Les
+transactions de routes sont sérialisées sur la passerelle. Après un arrêt brutal
+de l'opérateur, vérifier qu'aucun déploiement n'est encore en cours, puis restaurer
+la transaction depuis le dépôt de la VM avant de relancer :
+
+```bash
+route_lock=infra/keycloak/gateway/generated/routes/.update-lock
+instance_key=$(cat "$route_lock/key")
+transaction=$(cat "$route_lock/owner")
+bash infra/keycloak/gateway/apply-route.sh "$instance_key" rollback "$transaction"
+```
+
+Ne pas supprimer le verrou ni sa sauvegarde : le rollback vérifie son propriétaire
+et garde les fichiers si le rechargement NGINX échoue, pour permettre une reprise.
 
 Les données du PVC survivent à Helm uninstall et au prune ArgoCD. L'installation
 sur un cluster neuf avec des secrets cohérents fonctionne, mais elle ne restaure
@@ -70,7 +92,10 @@ Depuis la VM ayant le kubeconfig k3s, employer `private-k3s.yaml`. Remplacer le
 contexte, le nom CNP, les paramètres SSH/tailnet et StorageClass selon le site.
 Pour un nouveau cloud, copier une cible et garder le profil public ou privé.
 La clé d'instance reste la même lors d'un changement de cloud : son issuer ne
-change pas. Un changement d'association d'une app déjà liée n'est pas implicite.
+change pas. Après preuve de l'issuer public, l'installation réassocie l'instance
+au nouveau cluster CNP, y compris si l'ancien cluster a été supprimé du registre.
+Les apps déjà liées conservent leur clé d'instance ; déplacer une app vers une
+autre instance d'authentification reste une décision distincte.
 
 ## ArgoCD
 

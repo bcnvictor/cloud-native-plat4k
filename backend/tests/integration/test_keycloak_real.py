@@ -50,3 +50,9 @@ async def test_team_console_and_master_boundaries(real_stack, monkeypatch):
     from infra.keycloak.tests.smoke import verify_console
 
     await verify_console(real_stack, monkeypatch)
+
+
+def test_real_recovery_reuses_retained_credentials(real_stack, monkeypatch):
+    from infra.keycloak.tests.smoke import verify_recovery
+
+    verify_recovery(real_stack, monkeypatch)

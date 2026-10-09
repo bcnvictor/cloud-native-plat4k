@@ -20,7 +20,7 @@ import yaml
 from .commands import run
 from .config import ROOT, TargetConfig, load_target
 from .gateway import install_route, render_route
-from .http_api import JSONAPI
+from .http_api import JSONAPI, APIError
 from .keycloak_api import KeycloakAdmin
 from .vault_api import VaultAPI
 
@@ -67,7 +67,12 @@ def preflight(target: TargetConfig) -> Runtime:
     if len(matches) != 1:
         raise RuntimeError("Exactly one matching registered CNP cluster is required")
     # Prove registry API availability and administrator permission before mutation.
-    cnp.request("GET", "/api/v1/keycloak/instances")
+    instances = cnp.request("GET", "/api/v1/keycloak/instances")
+    if any(
+        item.get("cluster_id") == matches[0]["id"] and item["instance_key"] != target.instance_key
+        for item in instances
+    ):
+        raise RuntimeError("Target CNP cluster already belongs to another Keycloak instance")
     kubectl(target, "get", "storageclass", target.storage_class, "-o", "name")
     crds = json.loads(
         kubectl(
@@ -295,7 +300,13 @@ def admin_connection(target, credentials):
 
 def bootstrap(target, vault, credentials):
     with admin_connection(target, credentials) as admin:
-        vault.store_provisioner(target.instance_key, admin.ensure_provisioner())
+        stored = vault.request(
+            "GET", "/v1/secret/data/" + target.vault_prefix + "/provisioner", missing_ok=True
+        )
+        retained = stored["data"]["data"]["client_secret"] if stored else None
+        vault.store_provisioner(
+            target.instance_key, admin.ensure_provisioner(existing_secret=retained)
+        )
 
 
 def verify_public(target, credentials):
@@ -312,10 +323,8 @@ def deploy(target: TargetConfig, *, check_only: bool = False) -> DeployResult:
         )
     path = f"/api/v1/keycloak/instances/{target.instance_key}"
     current = runtime.cnp.request("GET", path, missing_ok=True)
-    if current and (
-        current["public_url"] != target.public_url or current["cluster_id"] != runtime.cluster_id
-    ):
-        raise RuntimeError("Existing instance identity differs; refusing reassignment")
+    if current and current["public_url"] != target.public_url:
+        raise RuntimeError("Existing public issuer differs; refusing reassignment")
     credentials = configure_secrets(target, runtime.vault)
     payload = {
         "cluster_id": runtime.cluster_id,
@@ -326,18 +335,27 @@ def deploy(target: TargetConfig, *, check_only: bool = False) -> DeployResult:
         "enabled": False,
     }
     if current is None:
-        runtime.cnp.request("PUT", path, payload)
+        try:
+            runtime.cnp.request("PUT", path, payload, headers={"If-None-Match": "*"})
+        except APIError as error:
+            if error.status != 412:
+                raise
+            winner = runtime.cnp.request("GET", path)
+            if winner["public_url"] != target.public_url:
+                raise RuntimeError(
+                    "Concurrent instance registration has a different issuer"
+                ) from None
     steps.append("secrets_and_registry")
     install(target)
     steps.append("installation")
     bootstrap(target, runtime.vault, credentials)
     steps.append("provisioner")
-    install_route(target, render_route(target).encode())
-    steps.append("gateway")
-    verify_public(target, credentials)
-    steps.append("public_issuer_verified")
-    runtime.cnp.request("PUT", path, payload | {"enabled": True})
-    steps.append("cnp_instance_enabled")
+    with install_route(target, render_route(target).encode()):
+        steps.append("gateway")
+        verify_public(target, credentials)
+        steps.append("public_issuer_verified")
+        runtime.cnp.request("PUT", path, payload | {"enabled": True})
+        steps.append("cnp_instance_enabled")
     return DeployResult(target.instance_key, runtime.cluster_id, target.public_url, tuple(steps))
 
 

@@ -63,13 +63,13 @@ class VaultAPI(JSONAPI):
     def extend_backend_policy(self, instance_key: str, name="cnp-backend"):
         existing = self.request("GET", f"/v1/sys/policies/acl/{quote(name, safe='')}")
         original = existing["data"]["policy"]
-        path = f"secret/data/cnp/keycloak/{instance_key}/provisioner"
+        path = "secret/data/cnp/keycloak/+/provisioner"
         # Preserve every existing rule. Read additions do not grant app-token access.
         if f'path "{path}"' not in original:
             addition = (
                 (Path(__file__).resolve().parents[1] / "vault/cnp-keycloak-reader.hcl.template")
                 .read_text()
-                .replace("{{instance_key}}", instance_key)
+                .replace("{{instance_key}}", "+")
             )
             self.request(
                 "PUT",

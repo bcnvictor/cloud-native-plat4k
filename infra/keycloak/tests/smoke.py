@@ -122,6 +122,7 @@ def local_stack():
             "ports": ports,
             "credentials": credentials,
             "project": project,
+            "compose_env": {k: v for k, v in env.items() if k.startswith("TEST_")},
             "database_url": f"postgresql+asyncpg://cnp:{credentials['database']}@127.0.0.1:{ports['cnp_db']}/cnp_keycloak_test",
             "vault_url": f"http://127.0.0.1:{ports['vault']}",
             "public_base": f"https://localhost:{ports['gateway']}",
@@ -507,6 +508,82 @@ async def verify_console(state, monkeypatch):
                 "/health/ready",
             ):
                 assert client.get(base + suffix).status_code == 403
+
+
+def verify_recovery(state, monkeypatch):
+    """Destroy only the disposable public Keycloak schema; retain real Vault/CNP."""
+    from infra.keycloak.lib import deploy as installer
+
+    vault = VaultAPI(state["vault_url"], state["credentials"]["vault"])
+    retained = vault.request("GET", "/v1/secret/data/cnp/keycloak/public-01/provisioner")["data"][
+        "data"
+    ]["client_secret"]
+    base = [
+        "docker",
+        "compose",
+        "--env-file",
+        "/dev/null",
+        "-p",
+        state["project"],
+        "-f",
+        str(ROOT / "tests/compose.yaml"),
+    ]
+    env = os.environ | state["compose_env"]
+    checked([*base, "stop", "public"], env=env)
+    checked(
+        [
+            *base,
+            "exec",
+            "-T",
+            "database-public",
+            "psql",
+            "-U",
+            "keycloak",
+            "-d",
+            "keycloak",
+            "-c",
+            "DROP SCHEMA public CASCADE; CREATE SCHEMA public;",
+        ],
+        env=env,
+    )
+    checked([*base, "start", "public"], env=env)
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline:
+        try:
+            recovered = admin(state, "public")
+            break
+        except RuntimeError:
+            time.sleep(1)
+    else:
+        raise RuntimeError("Fresh Keycloak recovery readiness timed out")
+    assert recovered.request("GET", "/admin/realms/integration-public-dev", missing_ok=True) is None
+
+    @contextmanager
+    def connection(target, credentials):
+        yield admin(state, "public")
+
+    monkeypatch.setattr(installer, "admin_connection", connection)
+    target = TargetConfig(
+        "public-01",
+        "public",
+        "recovery-test",
+        "recovery-test",
+        "localhost",
+        "integration.test",
+        "local-path",
+        "recovery-test",
+    )
+    installer.bootstrap(
+        target, vault, {"username": "cnp-bootstrap", "password": state["credentials"]["bootstrap"]}
+    )
+    assert admin(state, "public").ensure_provisioner() == retained
+    assert (
+        vault.request("GET", "/v1/secret/data/cnp/keycloak/public-01/provisioner")["data"]["data"][
+            "client_secret"
+        ]
+        == retained
+    )
+    admin(state, "public").verify_public_issuer(state["public"]["public_url"])
 
 
 def main():

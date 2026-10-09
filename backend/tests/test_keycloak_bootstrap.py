@@ -95,3 +95,56 @@ def test_upstream_error_does_not_leak_secret(vault_server, capsys):
     with pytest.raises(RuntimeError) as caught:
         vault.request("POST", "/v1/reflect", {"secret": "operator-secret"})
     assert "operator-secret" not in str(caught.value) + str(capsys.readouterr())
+
+
+def test_parallel_backend_policy_updates_keep_both_instances(monkeypatch):
+    from infra.keycloak.lib.vault_api import VaultAPI
+
+    barrier = threading.Barrier(2)
+    original = 'path "secret/data/cnp/platform" { capabilities = ["read"] }'
+    policy = {"value": original}
+    vault = VaultAPI("http://vault.test", "operator")
+
+    def request(method, path, body=None, **kwargs):
+        if method == "GET":
+            snapshot = policy["value"]
+            barrier.wait()
+            return {"data": {"policy": snapshot}}
+        policy["value"] = body["policy"]
+
+    monkeypatch.setattr(vault, "request", request)
+    with ThreadPoolExecutor(2) as pool:
+        futures = [
+            pool.submit(vault.extend_backend_policy, key) for key in ("public-01", "private-01")
+        ]
+        for future in futures:
+            future.result()
+    assert original in policy["value"]
+    # One shared read grant covers each instance's provisioner only. Both writers
+    # produce the same policy instead of two conflicting per-instance additions.
+    assert 'path "secret/data/cnp/keycloak/+/provisioner"' in policy["value"]
+    assert "apps/" not in policy["value"] and "/bootstrap" not in policy["value"]
+
+
+def test_missing_provisioner_is_seeded_from_retained_secret(monkeypatch):
+    from infra.keycloak.lib.keycloak_api import KeycloakAdmin
+
+    monkeypatch.setattr(KeycloakAdmin, "login", lambda _: None)
+    admin = KeycloakAdmin("http://kc.test", "admin", "password")
+    clients, secret = [], {}
+
+    def request(method, path, body=None, **kwargs):
+        if path.endswith("/client-secret"):
+            return {"value": secret["value"]}
+        if path.endswith("/service-account-user"):
+            return {"id": "sa"}
+        if path.endswith("/roles/admin"):
+            return {"id": "admin-role", "name": "admin"}
+        if method == "GET":
+            return clients
+        if path == "/admin/realms/master/clients":
+            clients.append({"id": "client", "publicClient": False, "serviceAccountsEnabled": True})
+            secret["value"] = body.get("secret", "new-random-secret")
+
+    monkeypatch.setattr(admin, "request", request)
+    assert admin.ensure_provisioner(existing_secret="retained-secret") == "retained-secret"

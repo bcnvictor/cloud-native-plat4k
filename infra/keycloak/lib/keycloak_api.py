@@ -28,7 +28,9 @@ class KeycloakAdmin(JSONAPI):
         )
         self.headers = {"Authorization": "Bearer " + token["access_token"]}
 
-    def ensure_provisioner(self, client_id: str = "cnp-provisioner") -> str:
+    def ensure_provisioner(
+        self, client_id: str = "cnp-provisioner", *, existing_secret: str | None = None
+    ) -> str:
         clients = self.request(
             "GET", "/admin/realms/master/clients?clientId=" + quote(client_id, safe="")
         )
@@ -45,6 +47,7 @@ class KeycloakAdmin(JSONAPI):
                         "standardFlowEnabled": False,
                         "directAccessGrantsEnabled": False,
                         "enabled": True,
+                        **({"secret": existing_secret} if existing_secret else {}),
                     },
                 )
             except APIError as exc:

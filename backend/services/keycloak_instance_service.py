@@ -155,7 +155,7 @@ class KeycloakInstanceService:
             )
         return None
 
-    async def upsert(self, key: str, payload: KeycloakInstanceUpsert) -> KeycloakInstanceResponse:
+    async def upsert(self, key: str, payload: KeycloakInstanceUpsert, *, create_only: bool = False) -> KeycloakInstanceResponse:
         try:
             payload.validate_for_key(key)
         except ValueError:
@@ -167,6 +167,8 @@ class KeycloakInstanceService:
                 .with_for_update()
             )
         ).scalar_one_or_none()
+        if row is not None and create_only:
+            raise HTTPException(412, "Keycloak instance already exists")
         if (
             payload.cluster_id is not None
             and await self.db.get(ClusterConnection, payload.cluster_id) is None
@@ -203,7 +205,8 @@ class KeycloakInstanceService:
         except IntegrityError:
             await self.db.rollback()
             raise HTTPException(
-                409, "Cluster already has a Keycloak instance or registry changed concurrently"
+                412 if create_only else 409,
+                "Keycloak registry changed concurrently or cluster is already assigned"
             ) from None
         await self.db.refresh(row)
         return KeycloakInstanceResponse.model_validate(row)

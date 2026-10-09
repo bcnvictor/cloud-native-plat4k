@@ -8,25 +8,30 @@ Aucune fusion main ou migration de la base CNP de production n'a été effectué
 
 - Chart commun : Helm 3.17.3, lint strict et rendu des cibles public AKS et privé
   k3s, PVC conservé, probes management, exposition privée, secrets ESO isolés.
-- Passerelle : 12 tests sur NGINX réel avec deux amonts isolés ; préfixes conservés,
+- Passerelle : 13 tests sur NGINX réel avec deux amonts isolés ; préfixes conservés,
   voisins inconnus 404, master/management 403, encodages bloqués, amont absent 503,
-  rollback de configuration invalide, Grafana disponible sans certificat auth.
-- Banc local réel : **5 tests réussis**, deux Keycloak 26.8.0, PostgreSQL 16,
+  rollback de configuration invalide et d'une route valide mais inaccessible,
+  Grafana disponible sans certificat auth.
+- Banc local réel : **6 tests réussis**, deux Keycloak 26.8.0, PostgreSQL 16,
   Vault 1.21, NGINX, base CNP dédiée ; bootstrap répété sans rotation, token ESO
   renouvelé et scopes interdits refusés, preuve d'issuer avec un certificat local
   approuvé, migration historique, provisioning CNP sur deux instances, association
   conservée après retarget, suppression d'un realm possédé, client confidential,
   SPA PKCE S256, JWT avec mauvaise audience/issuer refusé, login/refresh/logout,
-  401 anonyme/invalide, console d'équipe et révocation réelle. Les services et
+  401 anonyme/invalide, console d'équipe et révocation réelle, réinstallation
+  après remise à zéro de la seule base Keycloak de test avec secret conservé.
+  Les services et
   volumes sont supprimés en fin de test ; aucune donnée personnelle partagée.
-- Suite backend ordinaire : **455 réussis**, 2 tests hors sujet ignorés ;
-  suite opérateur : **27 réussis**.
+- Suite backend ordinaire : **456 réussis**, 2 tests hors sujet ignorés ;
+  suite opérateur : **34 réussis**. Exécution finale combinée : **490 réussis**,
+  2 ignorés, 6 tests d'intégration exécutés séparément.
 - Frontend sous Node **20.20.2** : **49 tests réussis**, lint et build réussis.
 - Locks backend runtime/dev et opérateur : régénération sans différences.
 - Migration : un seul head Alembic, `c2d3e4f5a6b7`.
 
-Les 5 tests du banc forment un parcours ordonné : migration avant lifecycle,
-puis navigateur et console. Pour les rejouer, utiliser le runner complet.
+Les 6 tests du banc forment un parcours ordonné : migration avant lifecycle,
+puis navigateur et console, enfin remise à zéro de la base de test et reprise.
+Pour les rejouer, utiliser le runner complet.
 Le navigateur de test utilise le port localhost 5173, déjà autorisé dans les
 clients dev CNP ; libérer ce port avant l'essai. Il ne prend pas un serveur existant.
 
@@ -40,6 +45,14 @@ pytest backend/tests/ -m keycloak_infra -q
 
 La CI dédiée exécute les mêmes contrôles et ne déploie sur aucun cloud.
 Les sorties d'erreur et le fichier d'état éphémère masquent les credentials.
+
+La revue indépendante de l'ensemble a identifié cinq problèmes importants,
+corrigés avec un test observé rouge puis vert pour chaque cas : restauration
+de la route après échec d'activation, réassociation à un nouveau cluster,
+réutilisation du secret après perte de la base Keycloak, grant Vault commun
+pour les bootstraps parallèles et création conditionnelle du registre CNP.
+Les [décisions de mise en œuvre](keycloak-implementation-decisions.md) consignent
+les compromis et les sujets que cette revue ne pouvait pas valider.
 
 ## Images vérifiées
 

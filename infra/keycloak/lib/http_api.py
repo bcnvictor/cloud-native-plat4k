@@ -32,7 +32,9 @@ class JSONAPI:
         self.headers = headers or {}
         self.opener = build_opener(NoRedirect())
 
-    def request(self, method: str, path: str, body=None, *, missing_ok=False, form=False):
+    def request(
+        self, method: str, path: str, body=None, *, missing_ok=False, form=False, headers=None
+    ):
         if not path.startswith("/") or path.startswith("//"):
             raise ValueError("API path must be relative")
         if form:
@@ -44,6 +46,7 @@ class JSONAPI:
         headers = {
             "Content-Type": "application/x-www-form-urlencoded" if form else "application/json",
             **self.headers,
+            **(headers or {}),
         }
         try:
             with self.opener.open(

@@ -254,6 +254,14 @@ Sur AKS et k3s, utiliser des apps de test isolées issues de `react-vite` et `py
 
 ## Revue du plan et exécution
 
+**État d'exécution au 9 octobre 2026 :** les huit tâches de mise en œuvre, le banc
+réel local et la revue indépendante sont réalisés. Les cinq corrections de revue
+ont leurs tests de régression ; la suite finale compte 490 tests réussis et le
+banc réel 6. La validation live de Task 8 reste ouverte : AKS nécessite l'accès
+à la VM CNP, et l'opérateur réalise lui-même les essais k3s depuis sa VM. La
+publication des Applications GitOps attend un SHA publié et l'accès ArgoCD.
+Voir `docs/guides/keycloak-deployment-validation.md` pour les preuves détaillées.
+
 Relecture effectuée par l'auteur : les huit tâches couvrent la conception approuvée ; les cinq conditions de Review Focus ont leurs tests. Les contrats du registre, du statut, du chart et de la commande sont utilisés sous les mêmes noms. Aucun produit n'a été modifié pour écrire ce plan.
 
 **Recommandation : exécution native dans cette session**, suivie d'une revue indépendante de l'ensemble. Le chart, le bootstrap, la passerelle et le registre partagent plusieurs interfaces ; conserver leur contexte dans la même session limite les reprises. Le mode avec sous-agents reste possible si l'utilisateur préfère une revue indépendante après chaque tâche.

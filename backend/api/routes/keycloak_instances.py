@@ -5,7 +5,7 @@ from backend.db.models import KeycloakInstance, User
 from backend.db.session import get_db
 from backend.services.audit_service import AuditService
 from backend.services.keycloak_instance_service import KeycloakInstanceService
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from shared.models import KeycloakInstanceResponse, KeycloakInstanceUpsert
@@ -50,10 +50,14 @@ async def get_instance(
 async def upsert_instance(
     instance_key: str,
     payload: KeycloakInstanceUpsert,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_admin),
 ):
-    result = await KeycloakInstanceService(db).upsert(instance_key, payload)
+    precondition = request.headers.get("If-None-Match")
+    if precondition not in (None, "*"):
+        raise HTTPException(422, "Unsupported registry precondition")
+    result = await KeycloakInstanceService(db).upsert(instance_key, payload, create_only=precondition == "*")
     await AuditService(db).log_action(
         user.id,
         "keycloak.instance.upsert",

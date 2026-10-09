@@ -144,3 +144,28 @@ async def test_duplicate_cluster_is_rejected(client, admin_token, cluster):
         for key, value in payload(cluster.id).items()
     }
     assert (await client.put(f"{BASE}/other-01", headers=headers, json=body)).status_code == 409
+
+
+async def test_create_only_registration_preserves_existing_active_row(
+    client, admin_token, db_session
+):
+    from backend.db.models import KeycloakInstance
+
+    row = KeycloakInstance(
+        instance_key="public-01",
+        public_url="https://auth.example.com/clusters/public-01",
+        admin_url="http://kc.test/clusters/public-01",
+        admin_client_id="cnp-provisioner",
+        provisioner_secret_ref="cnp/keycloak/public-01/provisioner",
+        enabled=True,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    response = await client.put(
+        "/api/v1/keycloak/instances/public-01",
+        headers={"Authorization": f"Bearer {admin_token}", "If-None-Match": "*"},
+        json=payload(),
+    )
+    assert response.status_code == 412
+    await db_session.refresh(row)
+    assert row.enabled is True
