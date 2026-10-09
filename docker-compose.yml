@@ -184,16 +184,20 @@ services:
   nginx-grafana:
     profiles:
       - production
-    image: nginx:alpine
+    image: nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
     ports:
       - "443:443"
     volumes:
+      - ./infra/keycloak/gateway/auth.conf.template:/etc/nginx/auth.conf.template:ro
+      - ./infra/keycloak/gateway/generated/routes:/etc/nginx/keycloak-routes:ro
       - ./infra/grafana/nginx-grafana.conf.template:/etc/nginx/grafana.conf.template:ro
       - ./infra/grafana/docker-entrypoint-grafana-nginx.sh:/docker-entrypoint-grafana-nginx.sh:ro
       - letsencrypt:/etc/letsencrypt
       - certbot_webroot:/var/www/certbot:ro
     environment:
       - GRAFANA_DOMAIN=${GRAFANA_DOMAIN}
+      - AUTH_DOMAIN=${AUTH_DOMAIN:-}
+    dns: [100.100.100.100]
     entrypoint: ["/bin/sh", "/docker-entrypoint-grafana-nginx.sh"]
     depends_on:
       - grafana

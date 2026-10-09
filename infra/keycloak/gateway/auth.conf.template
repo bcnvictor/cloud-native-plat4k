@@ -1,0 +1,14 @@
+server {
+    listen 443 ssl;
+    server_name ${AUTH_DOMAIN};
+    ssl_certificate /etc/letsencrypt/live/${AUTH_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${AUTH_DOMAIN}/privkey.pem;
+    resolver 127.0.0.11 valid=30s ipv6=off;
+    resolver_timeout 5s;
+    # NGINX normalizes URL escapes once. Reject a remaining escape to prevent
+    # a second decoder upstream from turning it into a protected master path.
+    if ($uri ~ "%") { return 403; }
+    include /etc/nginx/keycloak-routes/*.conf;
+    location @keycloak_unavailable { return 503; }
+    location / { return 404; }
+}
