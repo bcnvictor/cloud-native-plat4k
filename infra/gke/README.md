@@ -11,8 +11,9 @@ préinstallés), avec ce repo cloné.
 - Projet GCP avec facturation active et API Kubernetes Engine activée :
   ```bash
   gcloud config set project <ID_DU_PROJET_GCP>
-  gcloud services enable container.googleapis.com
+  gcloud services enable container.googleapis.com iam.googleapis.com cloudresourcemanager.googleapis.com
   ```
+  (`iam` et `cloudresourcemanager` : création du compte de service des nodes et de son rôle.)
 - Quota d'un compte d'essai : 2–3 `e2-standard-2` (2 vCPU chacun) tiennent dans la limite de 12 vCPU.
 
 ## 1. Provisionner le cluster  *(critère « 2ᵉ cluster provisionné »)*
@@ -26,6 +27,8 @@ terraform apply
 
 Crée le cluster `cnp-gke` (zone `europe-west1-b`, 2 nodes `e2-standard-2`, autoscaling 2→3) et
 `ingress-nginx` derrière un Network Load Balancer GCP (`terraform output nginx_lb_ip`).
+Les nodes utilisent un compte de service dédié à droits minimaux (`cnp-gke-nodes`) et le mode
+`GKE_METADATA` : un pod ne peut pas récupérer de jeton GCP via le serveur de métadonnées.
 
 > Optionnel : restreindre l'API server via `authorized_networks` (IP publique de
 > `cnp-control` + ton poste). Sans ça, l'API est publique comme sur AKS.
@@ -180,7 +183,11 @@ curl -X PUT https://cnp.cloud-native-plat4k.me/api/v1/clusters/<ID_DE_cnp-gke> \
   ```
   La désactivation de l'autoscaler n'est pas instantanée : s'il recrée un node juste après
   le resize (pods en attente), relancer le `resize --num-nodes 0`.
-  Reprise : `terraform apply` (réactive l'autoscaling et remet 2 nodes).
+  Reprise : remettre 2 nodes, puis `terraform apply` pour réactiver l'autoscaling :
+  ```bash
+  gcloud container clusters resize cnp-gke --zone europe-west1-b --node-pool system --num-nodes 2
+  terraform apply
+  ```
 
   **En pause, le cluster reste ONLINE dans CNP** : le control plane GKE répond toujours avec
   0 node, et la sonde ne fait que lister les namespaces. Aucun pod ne peut pourtant tourner

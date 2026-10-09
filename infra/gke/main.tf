@@ -41,6 +41,27 @@ provider "helm" {
 }
 
 # ---------------------------------------------------------------------------
+# Compte de service des nodes (moindre privilège)
+# ---------------------------------------------------------------------------
+# Sans compte dédié, les nodes tournent avec le compte Compute Engine par défaut,
+# Editor sur le projet : n'importe quel pod pourrait en récupérer un jeton via le
+# serveur de métadonnées et prendre la main sur tout le projet GCP.
+
+resource "google_service_account" "gke_nodes" {
+  account_id   = "${var.cluster_name}-nodes"
+  display_name = "Nodes GKE ${var.cluster_name}"
+}
+
+# Rôle prédéfini minimal pour un node GKE (écriture des logs et métriques).
+# Pas de artifactregistry.reader : les images CNP viennent du registry GitLab
+# (pull secret), pas d'Artifact Registry.
+resource "google_project_iam_member" "gke_nodes" {
+  project = var.project_id
+  role    = "roles/container.defaultNodeServiceAccount"
+  member  = "serviceAccount:${google_service_account.gke_nodes.email}"
+}
+
+# ---------------------------------------------------------------------------
 # GKE Cluster (Standard, zonal)
 # ---------------------------------------------------------------------------
 
@@ -65,6 +86,12 @@ resource "google_container_cluster" "cnp" {
   # VPC-native : requis par GKE pour les IP de pods/services routables
   networking_mode = "VPC_NATIVE"
   ip_allocation_policy {}
+
+  # Workload Identity : prérequis du mode GKE_METADATA des nodes (cf. node_config),
+  # qui masque aux pods le compte de service du node
+  workload_identity_config {
+    workload_pool = "${var.project_id}.svc.id.goog"
+  }
 
   # Restreindre l'API server aux IP connues (ex. cnp-control). Vide = API publique,
   # comme AKS aujourd'hui (authorizedIpRanges: null)
@@ -98,6 +125,12 @@ resource "google_container_node_pool" "system" {
 
   initial_node_count = var.node_count
 
+  # La taille courante est pilotée par l'autoscaler et par la mise en pause
+  # (resize à 0, cf. README) : sans ça, une reprise recréerait tout le node pool
+  lifecycle {
+    ignore_changes = [initial_node_count]
+  }
+
   autoscaling {
     min_node_count = var.node_min_count
     max_node_count = var.node_max_count
@@ -116,7 +149,17 @@ resource "google_container_node_pool" "system" {
     disk_size_gb = 50
     disk_type    = "pd-standard"
 
-    oauth_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+    # Compte dédié au lieu du compte Compute Engine par défaut (Editor). Le scope
+    # cloud-platform ne donne alors que les droits IAM de ce compte.
+    # Changer service_account force la recréation du node pool.
+    service_account = google_service_account.gke_nodes.email
+    oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    # Les pods n'atteignent plus le serveur de métadonnées du node (donc pas son jeton) ;
+    # exception : les pods hostNetwork (node-exporter), à réserver aux composants plateforme
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
 
     labels = {
       project = "cnp"

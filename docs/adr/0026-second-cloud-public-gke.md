@@ -35,6 +35,12 @@ Nous avons décidé de :
 L'infrastructure est décrite en Terraform dans [`infra/gke/`](../../infra/gke/README.md),
 sur le modèle d'`infra/aks/` (cluster + `ingress-nginx`).
 
+Les nodes tournent avec un **compte de service dédié** (`cnp-gke-nodes`, rôle
+`roles/container.defaultNodeServiceAccount`) et en mode `GKE_METADATA` (Workload Identity
+activé). Avec le compte Compute Engine par défaut — Editor sur le projet — n'importe quel pod
+aurait pu obtenir un jeton Editor via le serveur de métadonnées : inacceptable sur une
+plateforme où les utilisateurs déploient leurs propres applications.
+
 ### 2. Enregistrer GKE avec un kubeconfig **statique** (token de ServiceAccount)
 
 Le kubeconfig standard GKE s'authentifie via le plugin exec `gke-gcloud-auth-plugin`, absent
@@ -64,7 +70,15 @@ Négatif / Dette :
   restreindre à `cnp-control`.
 - Crédits d'essai limités dans le temps (90 jours) : prévoir la pause du node pool hors démo
   (cf. README) ou un relais de financement.
-- `root-app-gke.yaml` / `argocd/cnp-gke/` sont à créer dans le repo `cnp-gitops`.
+- Bootstrap GitOps (`bootstrap/root-app-gke.yaml`, `argocd/cnp-gke/`) porté par la MR
+  [cnp-gitops!3](https://gitlab.com/4k-cnp-2027/cnp-gitops/-/merge_requests/3) ; le root-app
+  reste à appliquer sur le cluster après merge.
+- ACL Tailscale (`infra/tailscale/main.tf`) : `tag:k8s` est propriétaire de lui-même, pour que
+  l'opérateur (client OAuth) puisse tagger les proxys egress ESO → Vault (ADR-0024). Conséquence
+  assumée : tout device `tag:k8s` peut en enrôler d'autres avec ce tag, et `tag:k8s` atteint
+  `cnp-control` sur 443 / 8000 / 8200. La compromission d'un device `tag:k8s` ouvre donc l'accès
+  réseau à Vault (pas à ses secrets, qui exigent un token). À durcir avec un tag dédié aux
+  proxys egress.
 
 Neutre :
 - Un cluster zonal n'a pas de HA du control plane, comme AKS en tier gratuit.
