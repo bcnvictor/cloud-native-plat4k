@@ -1,0 +1,24 @@
+# Tailscale Connector — annonce le Service CIDR de cnp-gke à cnp-control (ADR-0019),
+# pour joindre ArgoCD / Prometheus / Loki en ClusterIP depuis le backend CNP.
+#
+# Contrairement au StatefulSet subnet-router d'AKS (authkey dédiée), le Connector est
+# géré par l'opérateur et s'authentifie avec ses identifiants OAuth.
+#
+# Service CIDR :
+#   gcloud container clusters describe cnp-gke --zone europe-west1-b --format="value(servicesIpv4Cidr)"
+#
+# kubectl apply -f infra/gke/tailscale/connector.yaml --kubeconfig infra/gke/cnp-gke.yaml
+# Puis approuver la route dans la console Tailscale (Machines > gke-subnet-router)
+# si aucun autoApprover ne couvre tag:k8s.
+apiVersion: tailscale.com/v1alpha1
+kind: Connector
+metadata:
+  name: gke-subnet-router
+spec:
+  hostname: gke-subnet-router
+  tags:
+    - tag:k8s
+  subnetRouter:
+    advertiseRoutes:
+      # Service CIDR GKE uniquement (pas le Pod CIDR 10.112.0.0/14 ni le subnet des nodes)
+      - "34.118.224.0/20"
