@@ -16,8 +16,7 @@ def _dns(value):
         isinstance(value, str)
         and len(value) <= 253
         and all(
-            re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", part)
-            for part in value.split(".")
+            re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", part) for part in value.split(".")
         )
     )
 
@@ -37,9 +36,7 @@ class TargetConfig:
     mode: str = "helm"
     argo_application: str | None = None
     gateway_repo_path: str = "/home/ubuntu/cloud-native-plat4k"
-    vault_server: str = (
-        "http://vault-cnp-control.external-secrets.svc.cluster.local:8200"
-    )
+    vault_server: str = "http://vault-cnp-control.external-secrets.svc.cluster.local:8200"
     storage_size: str = "5Gi"
     tailscale_namespace: str = "tailscale"
     keycloak_resources: dict = field(
@@ -63,14 +60,8 @@ class TargetConfig:
             "argocd",
         ):
             raise ValueError("Invalid cloud kind or management mode")
-        if (
-            not self.context
-            or not self.cnp_cluster_name
-            or any(c.isspace() for c in self.context)
-        ):
-            raise ValueError(
-                "Explicit Kubernetes context and CNP cluster name are required"
-            )
+        if not self.context or not self.cnp_cluster_name or any(c.isspace() for c in self.context):
+            raise ValueError("Explicit Kubernetes context and CNP cluster name are required")
         for value in (
             self.public_domain,
             self.tailnet_domain,
@@ -81,9 +72,7 @@ class TargetConfig:
         ):
             if not _dns(value):
                 raise ValueError("Invalid hostname or Kubernetes name")
-        if not re.fullmatch(
-            r"(?:[a-zA-Z0-9_.-]+@)?[a-zA-Z0-9][a-zA-Z0-9_.-]*", self.gateway_host
-        ):
+        if not re.fullmatch(r"(?:[a-zA-Z0-9_.-]+@)?[a-zA-Z0-9][a-zA-Z0-9_.-]*", self.gateway_host):
             raise ValueError("Invalid gateway SSH host")
         if not re.fullmatch(
             r"/[a-zA-Z0-9_./-]+", self.gateway_repo_path
@@ -98,9 +87,7 @@ class TargetConfig:
             or parsed.fragment
         ):
             raise ValueError("Invalid cluster Vault endpoint")
-        if self.mode == "argocd" and (
-            not self.argo_application or not _dns(self.argo_application)
-        ):
+        if self.mode == "argocd" and (not self.argo_application or not _dns(self.argo_application)):
             raise ValueError("ArgoCD Application name is required")
         if not re.fullmatch(r"[1-9][0-9]*(?:Gi|Mi)", self.storage_size):
             raise ValueError("Invalid persistent storage size")
@@ -111,7 +98,9 @@ class TargetConfig:
 
     @property
     def admin_url(self):
-        return f"http://kc-{self.instance_key}.{self.tailnet_domain}:8080/clusters/{self.instance_key}"
+        return (
+            f"http://kc-{self.instance_key}.{self.tailnet_domain}:8080/clusters/{self.instance_key}"
+        )
 
     @property
     def vault_prefix(self):
@@ -119,9 +108,7 @@ class TargetConfig:
 
     def helm_values(self, image_lock: dict[str, str]) -> dict[str, object]:
         if any(
-            not re.fullmatch(
-                r"[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}", image_lock.get(key, "")
-            )
+            not re.fullmatch(r"[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}", image_lock.get(key, ""))
             for key in ("keycloak", "postgresql", "nginx")
         ):
             raise ValueError("All images require locked SHA256 references")
@@ -152,10 +139,7 @@ def load_target(path: Path) -> TargetConfig:
         if profile:
             if profile not in ("public", "private"):
                 raise ValueError("Unknown cloud profile")
-            raw = (
-                yaml.safe_load((ROOT / "profiles" / f"{profile}.yaml").read_text())
-                | raw
-            )
+            raw = yaml.safe_load((ROOT / "profiles" / f"{profile}.yaml").read_text()) | raw
         # Environment interpolation is for non-secret deployment parameters only.
         raw = {
             key: os.path.expandvars(value) if isinstance(value, str) else value

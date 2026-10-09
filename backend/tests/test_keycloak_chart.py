@@ -73,3 +73,22 @@ def test_chart_preserves_pvc(tmp_path, monkeypatch):
     test_target_chart_has_private_service_and_correct_paths(
         "private-k3s", "private-01", tmp_path, monkeypatch
     )
+
+
+def test_chart_renews_eso_identity_without_token_in_arguments(tmp_path, monkeypatch):
+    from infra.keycloak.lib.config import load_target
+    monkeypatch.setenv("TAILNET_DOMAIN", "tail-example.ts.net")
+    config = load_target(ROOT / "infra/keycloak/targets/public-aks.yaml")
+    images = yaml.safe_load((ROOT / "infra/keycloak/images.lock.yaml").read_text())
+    values = tmp_path / "values.yaml"
+    values.write_text(yaml.safe_dump(config.helm_values(images)))
+    rendered = subprocess.check_output([os.environ.get("CNP_HELM", "helm"), "template", config.release, str(ROOT / "infra/keycloak/chart"), "-f", str(values)], text=True)
+    job = next((doc for doc in yaml.safe_load_all(rendered) if doc["kind"] == "CronJob"), None)
+    assert job is not None
+    pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+    assert pod["volumes"][0]["secret"]["secretName"] == "keycloak-eso-token"
+    assert pod["containers"][0]["image"] == images["nginx"]
+    command = pod["containers"][0]["args"][0]
+    assert 'curl --config -' in command
+    assert 'cat /vault/token' in command
+    assert 'auth/token/renew-self' in command

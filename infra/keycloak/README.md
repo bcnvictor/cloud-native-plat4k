@@ -1,256 +1,100 @@
-# Keycloak — instance partagée pour l'auth des apps (4K-15)
+# Keycloak portable pour CNP
 
-Runbook d'installation manuelle du service Keycloak partagé qui fournit un realm OIDC par
-app et par environnement ([ADR-0026](../../docs/adr/0026-keycloak-app-auth.md)), sur le
-modèle des runbooks `infra/eso/README.md` et `infra/aks/tailscale/`.
-
-**Statut : non déployé.** Ce dossier contient les manifests et la procédure, mais rien n'a
-été appliqué sur un cluster réel — cet agent n'a ni les credentials ni le mandat pour le
-faire (voir règles d'exécution du plan). Ce README est donc écrit comme un plan d'action à
-suivre par un humain, pas comme un compte-rendu de déploiement (contrairement à
-`infra/eso/README.md`, qui documente un déploiement déjà fait).
-
-## Composants
-
-| Namespace  | Contenu |
-|---|---|
-| `keycloak` | `Deployment keycloak` (mode `start`, prod), `StatefulSet keycloak-postgres` (base dédiée), `Ingress keycloak` (`auth.cloud-native-plat4k.me`) |
-
-Une seule instance, partagée par toutes les apps de la plateforme (décision §0.1 du plan
-d'exécution / ADR-0026) — pas une instance par app.
+Une instance par cluster, un domaine HTTPS commun, un préfixe stable par instance.
+Les profils `public` et `private` sont indépendants du fournisseur. Les cibles
+`public-aks.yaml` et `private-k3s.yaml` sont des exemples concrets à adapter.
+Le chart installe Keycloak et son stockage PostgreSQL dédié. Il réutilise
+Vault, ESO, Tailscale et la passerelle NGINX de la CNP.
 
 ## Prérequis
 
-- Cluster AKS (`cnp-aks`) avec `ingress-nginx` déjà installé (utilisé par les apps
-  exposées, cf. `chart/templates/ingress.yaml` de `cnp-templates/*`).
-- DNS : un enregistrement `auth.cloud-native-plat4k.me` pointant vers l'IP publique de
-  l'ingress-nginx (même zone Cloudflare que le reste de `cloud-native-plat4k.me`).
+- kubectl avec le contexte explicite de la cible ; Helm **3.17.3**, uv, SSH ;
+- cluster déjà enregistré dans CNP sous `cnp_cluster_name` ; backend avec la
+  migration du registre d'instances et l'API administrateur ;
+- ESO avec les CRD `external-secrets.io/v1` ; opérateur Tailscale dans `tailscale` ;
+- egress Vault déjà installé (`infra/eso/README.md`) et connectivité ESO→Vault ;
+- ACL Tailscale autorisant la VM CNP vers les proxies `tag:k8s` sur 8080,
+  et proxies vers Vault 8200 ; identifiants OAuth de l'opérateur déjà autorisés ;
+- StorageClass de la cible disponible ; DNS public auth vers la VM CNP ;
+- VM joignable en SSH par `gateway_host`, dépôt à `gateway_repo_path`, montage
+  des routes et template auth dans le service existant `nginx-grafana` ;
+- certificat auth dans les volumes Certbot existants. Sur la VM, définir
+  `AUTH_DOMAIN=auth.cloud-native-plat4k.me`, `CERTBOT_EMAIL`, puis exécuter
+  `infra/keycloak/gateway/init-tls.sh`. Le frontend HTTP existant doit servir
+  `/.well-known/acme-challenge/` depuis le volume `certbot_webroot`.
 
-## 1. Namespace
+L'absence du certificat auth n'empêche pas Grafana de démarrer. La commande de
+bootstrap refuse de poursuivre tant que le certificat n'est pas disponible.
+Les conteneurs backend et passerelle doivent résoudre MagicDNS et joindre le
+tailnet. La passerelle utilise le DNS Tailscale ; vérifier aussi le backend.
 
-```bash
-kubectl apply -f infra/keycloak/namespace.yaml --context cnp-aks
-```
+## Installation ou relance
 
-## 2. Secret de la base Postgres dédiée
-
-Base dédiée à Keycloak — **pas** partagée avec la base du backend CNP. Générer un mot de
-passe aléatoire, ne jamais le committer (voir `keycloak-db-secret.example.yaml` pour la
-forme attendue, à ne pas appliquer tel quel) :
-
-```bash
-kubectl create secret generic keycloak-db \
-  --namespace keycloak \
-  --from-literal=username=keycloak \
-  --from-literal=password="$(openssl rand -base64 32)" \
-  --context cnp-aks
-```
-
-```bash
-kubectl apply -f infra/keycloak/postgres.yaml --context cnp-aks
-kubectl -n keycloak get pods --context cnp-aks   # attendre keycloak-postgres-0 Running/1/1
-```
-
-## 3. Secret admin Keycloak (bootstrap `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD`)
-
-Ce compte administre le realm `master` (toute la plateforme). Générer un mot de passe fort,
-le stocker dans un password manager (pas seulement dans le Secret K8s) :
+Les secrets opérateur viennent de l'environnement ou du gestionnaire de secrets,
+sans fichier `.env` supplémentaire. Ne pas les passer sur la ligne de commande.
 
 ```bash
-kubectl create secret generic keycloak-admin \
-  --namespace keycloak \
-  --from-literal=username=admin \
-  --from-literal=password="$(openssl rand -base64 24)" \
-  --context cnp-aks
+export TAILNET_DOMAIN=tail-example.ts.net
+# VAULT_ADDR, VAULT_TOKEN : Vault opérateur avec droits bootstrap/policies/token.
+# CNP_API_URL, CNP_API_KEY : API CNP de validation, clé d'un administrateur.
+# CNP_BACKEND_VAULT_POLICY : optionnel, défaut cnp-backend.
+# CNP_HELM : optionnel, chemin du binaire Helm 3.17.3.
+./infra/keycloak/deploy.sh --config infra/keycloak/targets/public-aks.yaml --check
+./infra/keycloak/deploy.sh --config infra/keycloak/targets/public-aks.yaml
 ```
 
-## 4. Déployer Keycloak
+Le contrôle `--check` ne modifie ni Vault, ni Kubernetes, ni NGINX, ni le registre.
+Le déploiement crée les secrets avec CAS=0, un token ESO par instance, et étend
+uniquement la policy backend nommée en conservant ses règles. Il ne modifie pas
+la policy de lecture applicative. Le token ESO ne lit que `database/bootstrap` ;
+le provisioner est lu par le backend. Un CronJob quotidien renouvelle le token
+périodique sans l'inclure dans ses arguments. Surveiller les Jobs en échec :
+une interruption de plus de 30 jours nécessite un remplacement contrôlé du
+token ESO, pas des mots de passe DB/bootstrap.
+
+Ordre : prérequis → secrets → nouvelle instance inactive → installation →
+client technique → Vault → route NGINX validée → issuer public → activation CNP.
+Une instance déjà active reste active pendant la relance. Une erreur est
+reprenable : relancer après correction. Les mots de passe et le secret du
+client technique sont conservés ; une divergence est refusée.
+
+Les données du PVC survivent à Helm uninstall et au prune ArgoCD. L'installation
+sur un cluster neuf avec des secrets cohérents fonctionne, mais elle ne restaure
+pas les utilisateurs et sessions d'un ancien PVC. Une reprise avec identités
+requiert une sauvegarde/restauration de la base Keycloak, hors de cette procédure.
+La commande ne recrée pas automatiquement les realms des applications existantes.
+
+## Cloud privé et nouvelle cible
+
+Depuis la VM ayant le kubeconfig k3s, employer `private-k3s.yaml`. Remplacer le
+contexte, le nom CNP, les paramètres SSH/tailnet et StorageClass selon le site.
+Pour un nouveau cloud, copier une cible et garder le profil public ou privé.
+La clé d'instance reste la même lors d'un changement de cloud : son issuer ne
+change pas. Un changement d'association d'une app déjà liée n'est pas implicite.
+
+## ArgoCD
+
+Passer la cible en `mode: argocd` avec `argo_application`. Publier d'abord le
+commit plateforme contenant le chart. Générer ensuite l'Application avec son SHA
+complet, jamais `HEAD` :
 
 ```bash
-kubectl apply -f infra/keycloak/deployment.yaml --context cnp-aks
-kubectl -n keycloak get pods --context cnp-aks   # attendre keycloak-xxxx Running/1/1 (readiness ~20-30s)
+uv run --no-project --python 3.11 --with-requirements infra/keycloak/requirements.lock \
+  python -m infra.keycloak.argocd.render --config infra/keycloak/targets/public-aks.yaml \
+  --revision <SHA_COMPLET_PUBLIE> > /tmp/keycloak-public-01.yaml
 ```
 
-> **Découvert en local (smoke test Lot 7)** : Keycloak 26 sert `/health/ready` et
-> `/health/live` sur l'**interface de management (port 9000)**, pas sur le port HTTP
-> principal (8080) — confirmé sur un vrai conteneur (`curl`/`wget` absents de
-> l'image, testé via `/dev/tcp`). `deployment.yaml` expose déjà le port 9000 et y
-> pointe les probes ; si vous repartez d'un manifest custom, ne les mettez pas sur
-> 8080.
+Le générateur vérifie que le commit existe sur GitHub. Fournir `GITHUB_TOKEN`
+uniquement si nécessaire à cette lecture. L'accès de lecture ArgoCD au dépôt
+utilise un Secret repository existant ; aucun token dans les Applications.
+Après vérification de cet accès, intégrer les fichiers générés dans
+`cnp-gitops/argocd/cnp-aks/keycloak.yaml` et `cnp-k3s/keycloak.yaml`.
+Le déploiement demande alors une sync et observe la disponibilité pendant au
+plus 10 minutes. Il refuse un Helm concurrent sur une installation ArgoCD.
+Aucune Application n'est publiée avec une révision fictive.
 
-## 5. Ingress public
+## État de validation
 
-```bash
-kubectl apply -f infra/keycloak/ingress.yaml --context cnp-aks
-```
-
-Vérifier :
-
-```bash
-curl -I http://auth.cloud-native-plat4k.me/health/ready
-```
-
-### TLS — écart assumé par rapport à une lecture stricte d'ADR-0021
-
-Le plan d'exécution demandait "TLS comme ADR-0021", mais ADR-0021 documente un mécanisme
-spécifique à Grafana sur la VM OCI (nginx + Certbot HTTP-01, hors cluster Kubernetes) — il ne
-s'applique pas tel quel à un service tournant sur AKS derrière `ingress-nginx`. Il n'existe
-par ailleurs aucun cert-manager/ClusterIssuer dans ce repo (vérifié : absent de `infra/`), et
-le pattern **déjà en place pour toutes les apps exposées** (`ingress.tls: false` par défaut,
-généré par `ScaffoldingService._build_ingress_values`) indique que la plateforme s'appuie sur
-Cloudflare pour terminer le TLS côté visiteur (probablement en mode "Flexible SSL", HTTP en
-clair entre Cloudflare et l'ingress-nginx du cluster — la même tension que celle documentée en
-détail dans ADR-0021 §"Contrainte mixed-content" pour Grafana, mais tranchée différemment ici
-faute d'alternative déjà en place pour les apps).
-
-Décision autonome (la plus simple compatible avec l'existant, à documenter/challenger) :
-`infra/keycloak/ingress.yaml` suit ce même pattern (`tls` absent) plutôt que d'introduire un
-mécanisme TLS end-to-end inédit sur ce repo pour ce seul service. **Conséquence de sécurité à
-noter** : le trafic Cloudflare → ingress-nginx (incluant les échanges avec la console Keycloak
-et les tokens OIDC) n'est chiffré qu'en Flexible SSL si c'est bien le mode actif sur la zone —
-à vérifier avant mise en prod, et à durcir (cert-manager + Let's Encrypt DNS-01, ou passage en
-Full/Full Strict côté Cloudflare) si ce n'est pas déjà le cas pour le reste du trafic
-applicatif exposé.
-
-## 6. Bootstrap du client `cnp-provisioner`
-
-Le backend a besoin d'un client confidential avec service account dans le realm `master`
-pour piloter l'Admin REST API (ADR-0026 §1). Depuis un pod temporaire ou `kubectl exec` dans
-le pod Keycloak :
-
-```bash
-KC_POD=$(kubectl -n keycloak get pod -l app=keycloak -o jsonpath='{.items[0].metadata.name}' --context cnp-aks)
-
-kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh config credentials \
-  --server http://localhost:8080 --realm master --user admin --password <mot de passe du Secret keycloak-admin>
-
-kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh create clients -r master \
-  -s clientId=cnp-provisioner -s enabled=true -s serviceAccountsEnabled=true \
-  -s publicClient=false -s standardFlowEnabled=false -s directAccessGrantsEnabled=false
-
-# Récupérer l'id interne du client puis son secret :
-kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh get clients -r master -q clientId=cnp-provisioner --fields id
-kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh get clients/<id>/client-secret -r master
-```
-
-Rôle du service account — **tranché par le smoke test local (Lot 7, 2026-09-24)** :
-`admin` (rôle realm `master`). `create-realm` seul n'a pas été retenu : il permet de créer
-un realm mais, empiriquement, ne suffit à rien d'autre sans passer par le même mécanisme
-de token que ci-dessous de toute façon — `admin` reste le choix le plus simple et le seul
-testé de bout en bout.
-
-```bash
-kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh add-roles \
-  --uusername service-account-cnp-provisioner --rolename admin -r master
-```
-
-Le script `scripts/keycloak-bootstrap-local.sh` du repo automatise toute cette procédure
-pour l'instance **locale** (`docker compose --profile production up -d db vault keycloak`) ;
-adapter pour la prod (namespace `keycloak` au lieu de `docker compose exec`).
-
-> **Piège découvert pendant le smoke test (important si vous scriptez l'Admin API
-> vous-même, en dehors de `KeycloakService`)** : Keycloak matérialise chaque realm par un
-> client `{realm}-realm` dans `master`, qui porte les rôles fins (`manage-clients`,
-> `manage-realm`, …) que le rôle composite `admin` référence. Un token admin déjà émis
-> **avant** la création d'un realm ne contient pas encore l'entrée `resource_access` de ce
-> nouveau realm — l'utiliser pour créer un client dans ce realm juste après échoue en
-> `403`, alors que la création du realm lui-même (`POST /admin/realms`) avait réussi avec
-> ce même token. Il faut réémettre un token **après** la création du realm. C'est un bug
-> réel rencontré et corrigé pendant ce lot : `KeycloakClient.create_realm` invalide
-> désormais son token en cache après un succès, forçant le prochain appel à en récupérer un
-> frais (voir `backend/keycloak/client.py` et le test de non-régression
-> `test_create_realm_invalidates_cached_token` dans `backend/tests/test_keycloak_client.py`).
-> Si vous pilotez `kcadm.sh`/l'API en dehors de `KeycloakService`, refaites un
-> `config credentials` (ou récupérez un nouveau token) après chaque création de realm, avant
-> d'agir dessus.
-
-## 7. Stocker le secret du client dans Vault
-
-```bash
-docker compose exec -T -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault \
-  vault kv patch secret/cnp/platform \
-    KEYCLOAK_ENABLED=true \
-    KEYCLOAK_URL=http://<ClusterIP du Service keycloak>:8080 \
-    KEYCLOAK_PUBLIC_URL=https://auth.cloud-native-plat4k.me \
-    KEYCLOAK_ADMIN_CLIENT_ID=cnp-provisioner \
-    KEYCLOAK_ADMIN_CLIENT_SECRET=<secret récupéré à l'étape 6>
-```
-
-`KEYCLOAK_URL` : le backend tourne sur la VM `cnp-control`, **pas dans AKS** — le DNS
-`*.svc.cluster.local` n'y est pas résolu, et l'Ingress public bloque le realm `master`
-(§8). Il joint l'Admin API par la ClusterIP du Service, routée via Tailscale (subnet router
-AKS, `infra/aks/tailscale/connector.yaml`), comme Prometheus/Loki. Récupérer l'IP et la
-figer dans `deployment.yaml` (champ `clusterIP` commenté du Service) :
-
-```bash
-kubectl -n keycloak get svc keycloak -o jsonpath='{.spec.clusterIP}' --context cnp-aks
-# depuis cnp-control, vérifier la route Tailscale + que l'issuer est bien en https :
-curl -s http://<ClusterIP>:8080/realms/master/.well-known/openid-configuration | grep -o '"issuer":"[^"]*"'
-# attendu : "issuer":"https://auth.cloud-native-plat4k.me/realms/master"
-```
-
-Le backend relit `secret/cnp/platform` au démarrage (`bootstrap_from_vault`,
-`backend/core/config.py`) — un redémarrage du pod backend suffit à charger ces valeurs, pas
-besoin de toucher `.env` en prod.
-
-## 8. Durcissement du realm `master`
-
-- Activer la MFA (OTP) pour tous les comptes admin humains du realm `master` (console →
-  Authentication → bind `mfa` flow, ou via l'API admin).
-- Vérifier `registrationAllowed: false` sur le realm `master` (auto-inscription publique
-  désactivée — c'est déjà la valeur par défaut de Keycloak, à re-vérifier explicitement).
-- Le realm `master` **n'est pas joignable depuis Internet** : `ingress.yaml` route
-  `/admin/master`, `/admin/realms/master` et `/realms/master` vers un Service sans pod
-  (`keycloak-blocked`, réponse 503). Les consoles d'équipe (`/admin/{realm}/console/`) et
-  les endpoints OIDC des realms d'app restent publics. Le backend passe par l'URL interne
-  (`KEYCLOAK_URL`, non concernée). Administration plateforme du realm `master` :
-  **en CLI uniquement**, via `kcadm.sh` dans le pod :
-
-  ```bash
-  KC_POD=$(kubectl -n keycloak get pod -l app=keycloak -o name --context cnp-aks | head -1)
-  kubectl -n keycloak exec -it "$KC_POD" --context cnp-aks -- /opt/keycloak/bin/kcadm.sh \
-    config credentials --server http://localhost:8080 --realm master --user admin
-  ```
-
-  La console web `master` n'est pas utilisable, même via `kubectl port-forward` :
-  `KC_HOSTNAME` étant une URL publique fixe, la console renvoie le login vers
-  `https://auth.cloud-native-plat4k.me/realms/master/...`, bloqué (vérifié sur Keycloak 26).
-  Si un besoin ponctuel d'UI survient, retirer temporairement les 3 chemins `master` de
-  l'Ingress, puis les remettre.
-
-  Vérification après déploiement : `curl -s -o /dev/null -w '%{http_code}'
-  https://auth.cloud-native-plat4k.me/admin/master/console/` doit renvoyer `503`.
-- Aucun compte d'équipe (app) ne doit jamais être créé dans `master` — seuls
-  `KeycloakService` (via `cnp-provisioner`) et les humains administrant la plateforme y ont
-  un compte.
-
-## Cleanup / désinstallation
-
-```bash
-kubectl delete ingress keycloak -n keycloak --context cnp-aks
-kubectl delete service keycloak-blocked -n keycloak --context cnp-aks
-kubectl delete deployment,svc keycloak -n keycloak --context cnp-aks
-kubectl delete statefulset,svc keycloak-postgres -n keycloak --context cnp-aks
-kubectl delete secret keycloak-db keycloak-admin -n keycloak --context cnp-aks
-kubectl delete ns keycloak --context cnp-aks
-```
-
-## Voir aussi
-
-- [ADR-0026](../../docs/adr/0026-keycloak-app-auth.md) — décisions produit/architecture.
-- [`docs/guides/keycloak-app-auth.md`](../../docs/guides/keycloak-app-auth.md) — guide côté
-  développeur d'app (variables injectées, snippets de validation JWT par stack).
-- `scripts/keycloak-bootstrap-local.sh` — équivalent de l'étape 6 pour l'instance locale
-  docker-compose.
-## Développement local
-
-Le Keycloak Compose utilise le profil `keycloak-local`, séparé de `production`.
-Pour le lancer et amorcer son client technique :
-
-```bash
-docker compose --profile keycloak-local up -d db vault keycloak
-./scripts/keycloak-bootstrap-local.sh
-```
-
-Cette instance en `start-dev` est réservée au développement ; l'installation
-sur les clusters utilise la configuration de production décrite ci-dessous.
+Consulter `docs/guides/keycloak-deployment-validation.md` pour les résultats
+réels et les contrôles restant ouverts. Les tests de rendu ne prouvent pas un
+login navigateur ni la disponibilité du stockage sur un cluster réel.
