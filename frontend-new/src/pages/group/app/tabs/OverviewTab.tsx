@@ -165,7 +165,7 @@ function EnvCard({ title, envKey, appId, appName, argo, scaleState }: EnvCardPro
 
 export function OverviewTab() {
   const { app, isLoading } = useAppDetail();
-  const metrics = useAppMetrics(app?.slug ?? '');
+  const metrics = useAppMetrics(app?.slug ?? '', app?.target_cluster_id);
   const cpuUrl = useMetricUrl(app?.slug ?? '', 'cpu');
   const ramUrl = useMetricUrl(app?.slug ?? '', 'ram');
   const { data: runtimeStatus } = useAppStatus(app?.id);
