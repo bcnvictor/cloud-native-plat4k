@@ -64,7 +64,7 @@ Deux clusters, deux situations de départ différentes :
   (`infra/oracle/k3s/tailscale/operator-values.yaml`), avec le même client OAuth que sur AKS
   (mêmes credentials, deux devices tailnet distincts).
 
-### Deux blocages ACL Tailscale rencontrés (comptes larges, hors de ce repo)
+### Deux blocages ACL Tailscale rencontrés
 
 La policy ACL Tailscale (console, ou API `GET/POST /api/v2/tailnet/-/acl`) a dû être corrigée
 deux fois avant que l'egress fonctionne :
@@ -79,7 +79,12 @@ deux fois avant que l'egress fonctionne :
    et `8000` (ArgoCD/backend CNP existants), pas `8200` (Vault). Fix : ajouter `8200` à cette
    règle.
 
-Policy ACL finale (pour référence, gérée dans la console Tailscale — **pas dans ce repo**) :
+> **Source de vérité : [`infra/tailscale/main.tf`](../tailscale/main.tf)** (Terraform, avec
+> `overwrite_existing_content = true`). Ne plus modifier l'ACL dans la console : toute
+> modification manuelle est écrasée au prochain `terraform apply`. Les deux correctifs
+> ci-dessous y sont intégrés.
+
+Policy ACL au moment de ces correctifs (historique, avant l'ajout de GKE) :
 
 ```json
 {

@@ -85,7 +85,11 @@ resource "google_container_cluster" "cnp" {
 
   # VPC-native : requis par GKE pour les IP de pods/services routables
   networking_mode = "VPC_NATIVE"
-  ip_allocation_policy {}
+  # Service CIDR fixé explicitement : il est codé en dur dans tailscale/connector.yaml
+  # et dans les ACL de infra/tailscale/main.tf (route annoncée à cnp-control)
+  ip_allocation_policy {
+    services_ipv4_cidr_block = var.services_cidr
+  }
 
   # Workload Identity : prérequis du mode GKE_METADATA des nodes (cf. node_config),
   # qui masque aux pods le compte de service du node

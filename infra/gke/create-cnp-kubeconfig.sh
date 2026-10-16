@@ -11,11 +11,11 @@
 # Prérequis : kubectl pointant sur le cluster GKE (après get-credentials, cf. README).
 #   CONTEXT=<contexte gke> ./create-cnp-kubeconfig.sh   (défaut : contexte courant)
 #
-# Sortie : ./cnp-gke.yaml  (NE PAS committer — ajouté au .gitignore du dossier)
+# Sortie : infra/gke/cnp-gke.yaml quel que soit le répertoire courant (NE PAS committer — ajouté au .gitignore du dossier)
 set -euo pipefail
 
 CONTEXT="${CONTEXT:-$(kubectl config current-context)}"
-OUT="${OUT:-cnp-gke.yaml}"
+OUT="${OUT:-$(dirname "$0")/cnp-gke.yaml}"
 NAME="cnp-gke"
 SA="cnp-backend"
 NS="kube-system"

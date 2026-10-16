@@ -64,8 +64,7 @@ curl -X POST https://cnp.cloud-native-plat4k.me/api/v1/clusters/ \
 ```
 
 Le health-worker le sonde au cycle suivant (≤ `CLUSTER_HEALTH_INTERVAL`, 300 s par
-défaut) : il doit passer **ONLINE** dans l'UI admin. Supprimer ensuite le fichier local :
-`rm cnp-gke.yaml`.
+défaut) : il doit passer **ONLINE** dans l'UI admin.
 
 ## 4. Déploiement de test  *(critère « déploiement de test réussi »)*
 
@@ -77,6 +76,8 @@ kubectl --kubeconfig cnp-gke.yaml -n cnp-demo rollout status deploy/nginx-test
 kubectl --kubeconfig cnp-gke.yaml delete -f ../oracle/k3s/nginx-test.yaml
 ```
 
+Le kubeconfig local n'est plus utile (il est dans Vault) : `rm cnp-gke.yaml`.
+
 ### b) Routé par CNP
 
 ```bash
@@ -87,7 +88,7 @@ curl -X POST https://cnp.cloud-native-plat4k.me/api/v1/deployments \
 
 ## 5. Monitoring + Reloader (même stack qu'AKS)
 
-Mêmes releases et mêmes noms de services qu'AKS (`kube-prometheus-stack-prometheus`,
+Toujours depuis `infra/gke`. Mêmes releases et mêmes noms de services qu'AKS (`kube-prometheus-stack-prometheus`,
 `loki` dans `monitoring`) :
 
 ```bash
@@ -100,7 +101,7 @@ helm upgrade --install reloader stakater/reloader --namespace reloader --create-
 
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace monitoring --create-namespace --version 91.8.2 \
-  --values infra/gke/monitoring-values.yaml
+  --values monitoring-values.yaml
 
 helm upgrade --install loki grafana/loki-stack --namespace monitoring --version 2.10.3 \
   --set promtail.enabled=true --set grafana.enabled=false --set loki.isDefault=false
@@ -115,19 +116,19 @@ helm upgrade --install loki grafana/loki-stack --namespace monitoring --version 
 ## 6. Réseau Tailscale + secrets applicatifs (ESO)
 
 Identique à AKS / `cnp-k3s` ([`infra/eso/README.md`](../eso/README.md)), en ciblant le
-cluster GKE :
+cluster GKE (commandes lancées depuis `infra/gke`) :
 
-1. Opérateur Tailscale : `helm upgrade --install … --values infra/gke/tailscale/operator-values.yaml`
+1. Opérateur Tailscale : `helm upgrade --install … --values tailscale/operator-values.yaml`
    (commande en tête du fichier, mêmes identifiants OAuth qu'AKS).
-2. `kubectl apply -f infra/gke/tailscale/connector.yaml` : annonce le Service CIDR GKE
+2. `kubectl apply -f tailscale/connector.yaml` : annonce le Service CIDR GKE
    (`34.118.224.0/20`) à `cnp-control`. **Approuver la route** dans la console Tailscale
    (Machines → `gke-subnet-router` → Edit route settings) ; vérifier depuis la VM :
    `curl http://<ClusterIP prometheus>:9090/-/healthy`.
-3. `kubectl create ns external-secrets && kubectl apply -f infra/eso/vault-egress-service.yaml`
+3. `kubectl create ns external-secrets && kubectl apply -f ../eso/vault-egress-service.yaml`
    → depuis un pod, `http://vault-cnp-control.external-secrets.svc.cluster.local:8200/v1/sys/health`
    doit renvoyer `vault-cluster-ee810103`.
 4. `helm upgrade --install external-secrets external-secrets/external-secrets -n external-secrets`
-   puis `kubectl apply -f infra/eso/cluster-secret-store.yaml`.
+   puis `kubectl apply -f ../eso/cluster-secret-store.yaml`.
 5. Secret `vault-eso-token` (token `eso-reader`) : sur `cnp-control`, `bash ~/fix-vault-tokens.sh`
    le pousse sur **tous** les clusters de `secret/clusters/*`, GKE compris → `vault-backend`
    doit passer `Valid`.

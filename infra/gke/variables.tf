@@ -53,3 +53,9 @@ variable "authorized_networks" {
   }))
   default = []
 }
+
+variable "services_cidr" {
+  description = "Service CIDR du cluster. Doit rester aligné sur tailscale/connector.yaml et les ACL de infra/tailscale. Le changer recrée le cluster"
+  type        = string
+  default     = "34.118.224.0/20"
+}

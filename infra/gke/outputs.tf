@@ -19,6 +19,11 @@ output "get_credentials_command" {
   value       = "gcloud container clusters get-credentials ${google_container_cluster.cnp.name} --zone ${google_container_cluster.cnp.location} --project ${var.project_id}"
 }
 
+output "services_cidr" {
+  description = "Service CIDR du cluster (route annoncée par le Connector Tailscale)"
+  value       = google_container_cluster.cnp.ip_allocation_policy[0].services_ipv4_cidr_block
+}
+
 output "nginx_lb_ip" {
   description = "IP publique du LoadBalancer nginx-ingress"
   value       = data.kubernetes_service.ingress_nginx.status[0].load_balancer[0].ingress[0].ip
