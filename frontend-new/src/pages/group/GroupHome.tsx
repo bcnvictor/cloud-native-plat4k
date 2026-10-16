@@ -102,7 +102,7 @@ export function GroupHome() {
     enabled: !!group?.gitlab_group_id,
   });
 
-  const groupMetrics = useGroupMetrics(apps.map((a) => a.slug));
+  const groupMetrics = useGroupMetrics(apps.map((a) => ({ slug: a.slug, clusterId: a.target_cluster_id })));
 
   const { data: activity = [], isLoading: activityLoading } = useQuery({
     queryKey: ['group-activity', group?.gitlab_group_id],
