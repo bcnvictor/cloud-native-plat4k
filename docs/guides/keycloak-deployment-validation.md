@@ -1,18 +1,25 @@
 # Validation du déploiement Keycloak portable
 
-État au 9 octobre 2026, branche `feature/keycloak-portable-cnp`.
+État au 18 octobre 2026, branche `feature/keycloak-portable-cnp`.
 Ce document distingue les essais réalisés des validations encore ouvertes.
-Aucune fusion main ou migration de la base CNP de production n'a été effectuée.
+origin/main a été fusionné dans la branche (`e01e32d`) ; la branche n'est pas
+encore fusionnée dans main. Aucune installation live AKS ou k3s ni migration de
+la base CNP de production n'a été effectuée. La règle ACL Tailscale
+`tag:cnp-control` → `tag:k8s:8080` est ajoutée dans `infra/tailscale/main.tf`,
+en attente de `terraform apply`.
 
 ## Résultats réalisés
 
 - Chart commun : Helm 3.17.3, lint strict et rendu des cibles public AKS et privé
   k3s, PVC conservé, probes management, exposition privée, secrets ESO isolés.
-- Passerelle : 13 tests sur NGINX réel avec deux amonts isolés ; préfixes conservés,
-  voisins inconnus 404, master/management 403, encodages bloqués, amont absent 503,
-  rollback de configuration invalide et d'une route valide mais inaccessible,
-  Grafana disponible sans certificat auth.
-- Banc local réel : **6 tests réussis**, deux Keycloak 26.8.0, PostgreSQL 16,
+- Passerelle : 28 tests sur NGINX réel (Docker) avec deux amonts isolés ;
+  préfixes conservés, voisins inconnus 404, master/management 403, encodages
+  bloqués, amont absent 503, rollback de configuration invalide et d'une route
+  valide mais inaccessible, Grafana disponible sans certificat auth.
+- Sonde directe sur Keycloak 26.8.0 : `realms/master;x/...` répond 400 en direct
+  et 403 via la passerelle ; `master%3Bx` répond 404 en direct et 403 via la
+  passerelle. Le rejet en bordure reste une défense en profondeur.
+- Banc local réel : **6/6 tests réussis**, deux Keycloak 26.8.0, PostgreSQL 16,
   Vault 1.21, NGINX, base CNP dédiée ; bootstrap répété sans rotation, token ESO
   renouvelé et scopes interdits refusés, preuve d'issuer avec un certificat local
   approuvé, migration historique, provisioning CNP sur deux instances, association
@@ -22,15 +29,20 @@ Aucune fusion main ou migration de la base CNP de production n'a été effectué
   après remise à zéro de la seule base Keycloak de test avec secret conservé.
   Les services et
   volumes sont supprimés en fin de test ; aucune donnée personnelle partagée.
-- Suite backend ordinaire : **456 réussis**, 2 tests hors sujet ignorés ;
-  suite opérateur : **34 réussis**. Exécution finale combinée : **490 réussis**,
-  2 ignorés, 6 tests d'intégration exécutés séparément.
-- Frontend sous Node **20.20.2** : **49 tests réussis**, lint et build réussis.
-- Locks backend runtime/dev et opérateur : régénération sans différences.
+- Suite backend ordinaire (commande CI) : **466 réussis**, 2 ignorés ;
+  suite opérateur `-m keycloak_infra` : **53 réussis**, dont les 28 tests
+  passerelle avec Docker. Les 6 tests d'intégration sont exécutés séparément.
+- Frontend : **59/59 tests vitest**, tsc et eslint sans erreur ; ruff sans erreur.
+- Locks backend runtime/dev et opérateur : régénération sans différences
+  (contrôle du 9 octobre).
 - Migration : un seul head Alembic, `c2d3e4f5a6b7`.
 
-Les 6 tests du banc forment un parcours ordonné : migration avant lifecycle,
-puis navigateur et console, enfin remise à zéro de la base de test et reprise.
+Les 6 tests du banc (`verify.sh --local`) : bootstrap idempotent, migration
+conservant l'auth historique, lifecycle d'app isolé, login/refresh/logout PKCE
+sous préfixe, console d'équipe et frontières master, reprise réutilisant les
+credentials conservés. Ils forment un parcours ordonné : migration avant
+lifecycle, puis navigateur et console, enfin remise à zéro de la base de test
+et reprise.
 Pour les rejouer, utiliser le runner complet.
 Le navigateur de test utilise le port localhost 5173, déjà autorisé dans les
 clients dev CNP ; libérer ce port avant l'essai. Il ne prend pas un serveur existant.

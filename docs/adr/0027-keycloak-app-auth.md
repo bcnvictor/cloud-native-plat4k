@@ -88,7 +88,8 @@ Les résultats effectivement vérifiés figurent dans le
 
 - `realm master` : réservé aux admins plateforme et au service account backend
   `cnp-provisioner` (client confidential, service account activé, rôle `admin` du realm
-  master — tranché par le smoke test local du Lot 7, voir `infra/keycloak/README.md`).
+  master — tranché par le smoke test local du Lot 7 ; le rôle est accordé par
+  `ensure_provisioner` dans `infra/keycloak/lib/keycloak_api.py`, l. 66-69).
   **Aucun compte d'équipe ne vit dans `master`.**
 - `realm {app_slug}-{env}` : créé au provisioning. Contient :
   - un client `{app_slug}` pour l'app elle-même (public + PKCE `S256` si le framework est une
