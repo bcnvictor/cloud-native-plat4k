@@ -210,3 +210,39 @@ def test_failed_public_proof_rolls_back_staged_route(deployment, monkeypatch):
         module.deploy(target)
     assert events[-1] == "route_restored"
     assert records["instance"]["enabled"] is True
+
+
+def test_successful_deploy_completes_every_reported_step(deployment):
+    module, target, *_ = deployment
+    assert module.deploy(target).steps == module.STEPS
+
+
+def _raise(error):
+    def fail(*_):
+        raise error
+
+    return fail
+
+
+@pytest.mark.parametrize(
+    "stage, error, expected",
+    [
+        ("load_target", ValueError("Cannot load target configuration"),
+         "at step configuration: Cannot load target configuration"),
+        ("install", RuntimeError("Operator command failed (exit 1)"),
+         "at step installation: Operator command failed (exit 1)"),
+        # Not an operator error: its text may echo upstream data, only the type is shown.
+        ("bootstrap", KeyError("leaked-provisioner-secret"), "at step provisioner: unexpected KeyError"),
+    ],
+)
+def test_cli_reports_failed_step(deployment, monkeypatch, capsys, stage, error, expected):
+    module, target, *_ = deployment
+    monkeypatch.setattr(module, "load_target", lambda path: target)
+    monkeypatch.setattr(module, stage, _raise(error))
+    monkeypatch.setattr("sys.argv", ["deploy", "--config", "target.yaml"])
+    with pytest.raises(SystemExit) as exit_info:
+        module.main()
+    assert exit_info.value.code == 1
+    output = capsys.readouterr()
+    assert expected in output.err
+    assert "leaked-provisioner-secret" not in output.err + output.out

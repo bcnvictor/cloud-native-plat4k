@@ -9,6 +9,7 @@ import shlex
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 from contextlib import contextmanager
@@ -31,6 +32,18 @@ class DeployResult:
     cluster_id: int
     public_url: str
     steps: tuple[str, ...]
+
+
+# Deploy steps in order; DeployResult.steps lists the completed ones.
+STEPS = (
+    "preflight",
+    "secrets_and_registry",
+    "installation",
+    "provisioner",
+    "gateway",
+    "public_issuer_verified",
+    "cnp_instance_enabled",
+)
 
 
 @dataclass
@@ -314,9 +327,13 @@ def verify_public(target, credentials):
         admin.verify_public_issuer(target.public_url)
 
 
-def deploy(target: TargetConfig, *, check_only: bool = False) -> DeployResult:
+def deploy(
+    target: TargetConfig, *, check_only: bool = False, steps: list[str] | None = None
+) -> DeployResult:
+    # Completed steps are appended to the caller's list, to report a failure's step.
+    steps = [] if steps is None else steps
     runtime = preflight(target)
-    steps = ["preflight"]
+    steps.append("preflight")
     if check_only:
         return DeployResult(
             target.instance_key, runtime.cluster_id, target.public_url, tuple(steps)
@@ -364,14 +381,27 @@ def main():
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
+    target, completed = None, []
     try:
-        result = deploy(load_target(args.config), check_only=args.check)
+        target = load_target(args.config)
+        result = deploy(target, check_only=args.check, steps=completed)
         print(json.dumps(asdict(result), indent=2))
-    except (RuntimeError, ValueError):
-        # Exception chains and upstream responses can contain credential reflection.
+    except Exception as error:
+        if target is None:
+            step = "configuration"
+        else:
+            # Past the last step, only the gateway route commit can still fail.
+            step = (*STEPS, "gateway_commit")[len(completed)]
+        # Exception chains and upstream responses can contain credential reflection:
+        # only operator errors, which carry fixed texts, show their message.
+        if isinstance(error, (RuntimeError, ValueError)):
+            reason = str(error)
+        else:
+            reason = "unexpected " + type(error).__name__
         print(
-            "Keycloak operation failed. Verify prerequisites; rerun safely after correction.",
-            file=__import__("sys").stderr,
+            f"Keycloak operation failed at step {step}: {reason}. "
+            "Verify prerequisites; rerun safely after correction.",
+            file=sys.stderr,
         )
         raise SystemExit(1) from None
 

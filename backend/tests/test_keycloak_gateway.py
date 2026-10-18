@@ -20,6 +20,7 @@ def gateway(tmp_path_factory):
     folder = tmp_path_factory.mktemp("gateway")
     routes = folder / "routes"
     routes.mkdir()
+    (routes / ".gitkeep").touch()  # tracked placeholder, as in the repository
     certs = folder / "certs/live/grafana.test"
     certs.mkdir(parents=True)
     subprocess.run(

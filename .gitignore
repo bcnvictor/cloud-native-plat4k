@@ -337,4 +337,8 @@ frontend/blob-report/
 !infra/keycloak/lib/
 !infra/keycloak/lib/*.py
 
-infra/keycloak/gateway/generated/
+# Generated gateway routes; keep the directory so the bind mount is not root-owned.
+infra/keycloak/gateway/generated/*
+!infra/keycloak/gateway/generated/routes/
+infra/keycloak/gateway/generated/routes/*
+!infra/keycloak/gateway/generated/routes/.gitkeep
