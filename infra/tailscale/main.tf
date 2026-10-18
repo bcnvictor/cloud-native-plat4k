@@ -21,8 +21,9 @@ provider "tailscale" {
 # par les Connectors (AKS : 10.0.0.0/16, GKE : 34.118.224.0/20) dans l'admin console.
 #
 # Ce fichier reflète la policy en place dans la console (corrections ESO 4K-105,
-# cf. infra/eso/README.md) + GKE (4K-244). overwrite_existing_content = true :
-# toute modification faite uniquement dans la console est écrasée au prochain apply.
+# cf. infra/eso/README.md) + GKE (4K-244) + Keycloak 8080 (4K-15, à appliquer).
+# overwrite_existing_content = true : toute modification faite uniquement dans la
+# console est écrasée au prochain apply.
 
 resource "tailscale_acl" "cnp" {
   overwrite_existing_content = true
@@ -75,6 +76,7 @@ resource "tailscale_acl" "cnp" {
           "tag:k8s:3100",
           "tag:k8s:443",
           "tag:k8s:6443",
+          "tag:k8s:8080", # Keycloak (Service tailscale.com/expose, 4K-15 / ADR-0027)
         ]
       },
       # Clusters → cnp-control : webhook ArgoCD → backend CNP, et ESO → Vault (8200)

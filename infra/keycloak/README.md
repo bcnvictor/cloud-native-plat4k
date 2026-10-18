@@ -14,7 +14,9 @@ Vault, ESO, Tailscale et la passerelle NGINX de la CNP.
 - ESO avec les CRD `external-secrets.io/v1` ; opérateur Tailscale dans `tailscale` ;
 - egress Vault déjà installé (`infra/eso/README.md`) et connectivité ESO→Vault ;
 - ACL Tailscale autorisant la VM CNP vers les proxies `tag:k8s` sur 8080,
-  et proxies vers Vault 8200 ; identifiants OAuth de l'opérateur déjà autorisés ;
+  et proxies vers Vault 8200 (règles dans `infra/tailscale/main.tf`, à appliquer
+  par `terraform apply` : une modification faite seulement dans la console est
+  écrasée) ; identifiants OAuth de l'opérateur déjà autorisés ;
 - StorageClass de la cible disponible ; DNS public auth vers la VM CNP ;
 - VM joignable en SSH par `gateway_host`, dépôt à `gateway_repo_path`, montage
   des routes et template auth dans le service existant `nginx-grafana` ;
