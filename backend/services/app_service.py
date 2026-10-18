@@ -419,13 +419,22 @@ class AppService:
         except HTTPException as e:
             # The app defines OIDC_* itself (its own IdP): don't enable Keycloak over it.
             logger.warning("Keycloak not enabled for app %s: %s", app.slug, e.detail)
-            app.auth_provisioned = False
-            app.auth_warnings = [*(app.auth_warnings or []), "oidc_keys_conflict"]
-            await self.db.commit()
-            await self.db.refresh(app)
+            await self._auth_not_provisioned(app, "oidc_keys_conflict")
+            return
+        except Exception as e:
+            # Vault unreachable: same outcome as in KeycloakService.activate, the team
+            # retries activation later. Only the type is logged (no Vault detail).
+            logger.error("Keycloak not enabled for app %s: OIDC_* check failed (%s)", app.slug, type(e).__name__)
+            await self._auth_not_provisioned(app, "keycloak_instance_unavailable")
             return
 
         await service.activate(app)
+
+    async def _auth_not_provisioned(self, app: Application, warning: str) -> None:
+        app.auth_provisioned = False
+        app.auth_warnings = list(dict.fromkeys([*(app.auth_warnings or []), warning]))
+        await self.db.commit()
+        await self.db.refresh(app)
 
     async def _check_envfrom_warning(self, app: Application, bot: "GitLabClient") -> None:
         """Onboarded-app-only (mode A, ADR-0026 §6): best-effort check that the
