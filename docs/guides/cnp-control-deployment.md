@@ -91,6 +91,119 @@ docker compose up -d
 
 > **Note** : Vault démarre automatiquement au boot via le profile `production` (docker compose le gère), mais démarre toujours sealed. Les étapes 1-2 ci-dessus sont donc nécessaires à chaque reboot.
 
+## Sauvegarde / restauration
+
+Deux scripts, lancés **depuis le laptop** (macOS ou Linux) et qui passent par SSH :
+
+- `infra/scripts/cnp-control-backup.sh` : sauvegarde la base CNP et le volume Vault ;
+- `infra/scripts/cnp-control-restore.sh` : restaure une sauvegarde, par défaut dans le docker **local**.
+
+La sauvegarde n'arrête et ne redémarre rien sur la VM, et n'écrit rien sur son disque : les deux flux arrivent directement sur le laptop.
+
+### Prérequis
+
+Un accès SSH à la VM en tant que `ubuntu`. Le plus simple est un alias dans `~/.ssh/config` (nom attendu par défaut : `cnp-control`) :
+
+```
+Host cnp-control
+  HostName <IP_VM>
+  User ubuntu
+  IdentityFile ~/.ssh/oci_a1
+```
+
+Sans alias, passer la cible explicitement : `CNP_CONTROL_SSH=ubuntu@<IP_VM>` (clé chargée dans `ssh-agent`) ou `--host ubuntu@<IP_VM>`. Le script ouvre une seule connexion SSH, partagée par toutes ses commandes.
+
+### Lancer une sauvegarde
+
+```bash
+# 1. Préflight en lecture seule : résout le conteneur db et le volume Vault, puis s'arrête
+infra/scripts/cnp-control-backup.sh --check
+
+# 2. Sauvegarde
+infra/scripts/cnp-control-backup.sh
+```
+
+Résultat dans `~/cnp-backups/<horodatage UTC>/` (dossier en `700`, fichiers en `600`) :
+
+| Fichier | Contenu |
+|---------|---------|
+| `cnp-db.dump` | `pg_dump -Fc` de la base CNP, exécuté dans le conteneur `db` |
+| `vault-data.tar.gz` | contenu du volume `cloud-native-plat4k_vault_data` (stockage `file` de Vault) |
+| `SHA256SUMS` | sommes SHA-256 des deux fichiers |
+
+Avant de valider la sauvegarde, le script vérifie que chaque fichier n'est pas vide, que `pg_restore --list` relit le dump (table `alembic_version` présente), que `tar tzf` relit l'archive (dossier `core/` présent) et que les sommes sont bonnes. Une sauvegarde interrompue ou en échec est supprimée : un dossier horodaté présent est toujours complet.
+
+| Option / variable | Rôle | Défaut |
+|-------------------|------|--------|
+| `--host` / `CNP_CONTROL_SSH` | cible SSH | `cnp-control` |
+| `--dest` / `CNP_BACKUP_DIR` | dossier racine des sauvegardes | `~/cnp-backups` |
+| `--project` / `CNP_COMPOSE_PROJECT` | projet docker compose | `cloud-native-plat4k` |
+| `CNP_VAULT_VOLUME` | volume Vault | `<projet>_vault_data` |
+| `--local` | mêmes commandes sur le docker local, pour tester sans la prod | — |
+
+### Ce qui est sauvegardé, et ce qui ne l'est pas
+
+**Sauvegardé :**
+
+- la base Postgres CNP en entier (utilisateurs, applications, clusters, réglages, credentials chiffrés Fernet…). `pg_dump` lit un instantané transactionnel cohérent sans bloquer le backend. Il tourne avec les variables d'environnement du conteneur `db` : le script ne lit, n'affiche ni n'écrit aucun secret ;
+- le stockage de Vault (`secret/cnp/platform`, kubeconfigs, tokens ArgoCD…), chiffré par la barrière Vault. La clé `ENCRYPTION_KEY` qui déchiffre les colonnes Fernet de la base est dans Vault : restaurez **les deux** fichiers d'une même sauvegarde.
+
+**Non sauvegardé :**
+
+- le `.env` de la VM (`POSTGRES_*`, token applicatif Vault, `COMPOSE_FILE`) : à reconstituer à partir de la section [Gestion des secrets](#gestion-des-secrets) ou d'une copie dans le gestionnaire de mots de passe d'équipe ;
+- les clés de déscellement et le root token Vault : volontairement, voir plus bas ;
+- les certificats Let's Encrypt (volume `letsencrypt`) : regénérables avec `infra/scripts/certbot-init.sh` ;
+- Grafana (volume `grafana_data`) : les dashboards provisionnés viennent de `infra/grafana/` dans le repo, seules les modifications faites à la main dans l'UI sont perdues ;
+- pgAdmin, la configuration et les credentials de `cloudflared`, la deploy key GitHub et la configuration système (UFW, Docker) ;
+- le code, qui est dans git.
+
+### Cohérence de la copie Vault
+
+Vault n'est **jamais** arrêté ni redémarré pour la sauvegarde : il se rescellerait et il faudrait 3 clés sur 5 pour le rouvrir. Le volume est lu à chaud, en lecture seule, par un conteneur jetable (`docker run --rm -v cloud-native-plat4k_vault_data:/data:ro … tar czf -`), sans réseau et sans pull d'image.
+
+Le stockage `file` n'a pas d'instantané atomique. Vault y écrit peu (renouvellements de tokens et de leases, écriture de secrets) et le `tar` dure quelques secondes. Une écriture pendant cette fenêtre peut, au pire, laisser un fichier incohérent dans l'archive ou faire échouer le `tar` (le script échoue alors proprement : relancez). Ce compromis est acceptable pour cnp-control ; gardez plusieurs générations de sauvegardes. Un passage au stockage `raft` permettrait des instantanés atomiques (`vault operator raft snapshot`), c'est un chantier séparé.
+
+### Clés de déscellement et stockage hors VM
+
+- L'archive Vault est **inutilisable sans 3 des 5 clés de déscellement**. Les clés restent dans le gestionnaire de mots de passe d'équipe, **jamais** à côté des sauvegardes : un vol de la sauvegarde ne doit pas suffire à lire les secrets.
+- Le dump Postgres, lui, n'est pas chiffré (emails, hash de mots de passe, métadonnées des clusters). Les credentials y sont chiffrés Fernet, mais la sauvegarde reste sensible.
+- Le laptop n'est qu'une étape : copiez le dossier horodaté vers un stockage chiffré de l'équipe, hors de la VM et hors d'OCI. Faites une sauvegarde avant chaque opération risquée sur cnp-control (migration, phase C de Keycloak, changement de stockage Vault…).
+
+### Restaurer
+
+Le script de restauration vise le docker **local** par défaut. Une cible distante se donne avec `--ssh HOST`, et une cible qui désigne cnp-control exige en plus `--yes-prod`. Si le fichier `SHA256SUMS` est à côté de l'archive, la somme est vérifiée avant toute modification.
+
+```bash
+B=~/cnp-backups/<horodatage>
+
+# Base : dans un conteneur Postgres 15 en cours d'exécution, base vide
+# (refus si la base contient déjà des tables, sauf --force)
+infra/scripts/cnp-control-restore.sh db "$B/cnp-db.dump" --container <conteneur-postgres>
+
+# Vault : dans un volume (créé s'il n'existe pas), qu'aucun Vault en marche ne monte
+# (refus si le volume n'est pas vide, sauf --force)
+infra/scripts/cnp-control-restore.sh vault "$B/vault-data.tar.gz" --volume <volume>
+```
+
+Démarrez ensuite un Vault 1.17 sur ce volume avec le `vault.hcl` du repo. `vault status` doit afficher `Initialized: true` et `Sealed: true` ; descellez avec 3 des 5 clés, puis vérifiez la lecture d'un secret.
+
+Commandes équivalentes, sans les garde-fous du script :
+
+```bash
+docker exec -i <conteneur-postgres> sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --single-transaction' < cnp-db.dump
+docker run --rm -i --network none -v <volume>:/data --entrypoint tar alpine:3.20 --numeric-owner -xzf - -C /data < vault-data.tar.gz
+```
+
+`--numeric-owner` conserve les propriétaires d'origine des fichiers Vault (uid 100 / gid 1000, l'utilisateur `vault` de l'image).
+
+**Reconstruction complète d'une VM** (exemple, alias SSH `cnp-new`) :
+
+1. Cloner le repo dans `~/cloud-native-plat4k` et recréer le `.env`.
+2. `docker compose up -d db` seulement : le backend ne doit pas démarrer avant la restauration, sinon ses migrations Alembic créent un schéma vide.
+3. Depuis le laptop : `infra/scripts/cnp-control-restore.sh db "$B/cnp-db.dump" --container cloud-native-plat4k-db-1 --ssh cnp-new`.
+4. Depuis le laptop : `infra/scripts/cnp-control-restore.sh vault "$B/vault-data.tar.gz" --volume cloud-native-plat4k_vault_data --ssh cnp-new`.
+5. Sur la VM : `docker compose --profile production up -d vault`, desceller (voir [Procédure post-reboot](#procedure-post-reboot)), puis `docker compose --profile production up -d`.
+
 ## Gestion des secrets
 
 Vault est le point de vérité pour tous les secrets de la plateforme. Le `.env` sur la VM ne contient que les variables strictement nécessaires à l'infrastructure Docker :
