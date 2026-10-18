@@ -1,7 +1,7 @@
 """Add Keycloak app-auth columns to applications
 
 Revision ID: b1c2d3e4f5a6
-Revises: 94488e983456
+Revises: efcc9ce95cee
 Create Date: 2026-09-24 00:00:00.000000
 
 """
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = 'b1c2d3e4f5a6'
-down_revision = '94488e983456'
+down_revision = 'efcc9ce95cee'
 branch_labels = None
 depends_on = None
 
