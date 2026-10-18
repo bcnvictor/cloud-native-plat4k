@@ -12,6 +12,7 @@ import { Step1Identity } from './Step1Identity';
 import { Step2Services } from './Step2Services';
 import { Step3CiDeploy } from './Step3CiDeploy';
 import { Step4Recap } from './Step4Recap';
+import { requestedServices } from './services';
 
 const STEP_LABELS = ['Identity', 'Services', 'CI & Deploy', 'Recap'];
 
@@ -60,14 +61,7 @@ export function NewApp() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      // Step 2 ("Services") choices were computed but never sent to the backend —
-      // 4K-15 Lot 1a fix: turn them into the `services` list both endpoints expect.
-      const services: string[] = [];
-      // PostgreSQL injection rewrites chart/values.yaml — only possible for apps CNP
-      // scaffolds itself, never for onboarded (pre-existing) repos.
-      if (step2.database.enabled && step1.origin === 'scaffold') services.push('postgresql');
-      if (step2.auth.enabled) services.push('keycloak');
-      // step2.cache stays disabled — Redis injection is out of scope for now.
+      const services = requestedServices(step2);
 
       if (step1.origin === 'scaffold') {
         return appsApi.scaffoldApp({
@@ -77,9 +71,7 @@ export function NewApp() {
           owning_gitlab_group_id: group?.gitlab_group_id,
           expose: step3.expose,
           target_cluster_id: step3.targetClusterId ?? undefined,
-          scaffolding: services.length
-            ? { services, pg_size: step2.database.pgSize }
-            : undefined,
+          scaffolding: services.length ? { services } : undefined,
         });
       } else {
         return appsApi.onboardApp({
