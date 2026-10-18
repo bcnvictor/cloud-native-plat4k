@@ -20,8 +20,12 @@ export const monitoringApi = {
     return res.data;
   },
 
-  async getMetrics(): Promise<MonitoringMetrics> {
-    const res = await api.get<MonitoringMetrics>('/monitoring/metrics');
+  // Sans clusterId, le backend interroge le Prometheus par défaut (PROMETHEUS_URL) ;
+  // avec, celui de la ClusterConnection (cluster.prometheus_url).
+  async getMetrics(clusterId?: number | null): Promise<MonitoringMetrics> {
+    const res = await api.get<MonitoringMetrics>('/monitoring/metrics', {
+      params: clusterId != null ? { cluster_id: clusterId } : undefined,
+    });
     return res.data;
   },
 
