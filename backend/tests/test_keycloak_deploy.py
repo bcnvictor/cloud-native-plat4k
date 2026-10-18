@@ -87,7 +87,7 @@ def test_failed_update_preserves_active_instance(deployment, monkeypatch):
     assert "cnp_instance_pending" not in events
 
 
-def test_preflight_check_only_uses_read_commands(monkeypatch, tmp_path):
+def _check_only(monkeypatch, store_ready="True"):
     import json
 
     from infra.keycloak.lib import deploy as module
@@ -106,6 +106,9 @@ def test_preflight_check_only_uses_read_commands(monkeypatch, tmp_path):
             output = json.dumps(
                 {"items": [{"spec": {"versions": [{"name": "v1", "served": True}]}}] * 2}
             ).encode()
+        elif "clustersecretstore" in argv:
+            condition = {"type": "Ready", "status": store_ready, "reason": "InvalidProviderConfig"}
+            output = json.dumps({"status": {"conditions": [condition]}}).encode()
         else:
             output = b"{}"
         assert stdin is None
@@ -131,12 +134,24 @@ def test_preflight_check_only_uses_read_commands(monkeypatch, tmp_path):
     for name in ("VAULT_ADDR", "VAULT_TOKEN", "CNP_API_URL", "CNP_API_KEY"):
         monkeypatch.setenv(name, "test-operator-value")
     monkeypatch.delenv("CNP_HELM", raising=False)
+    return module, target, commands
+
+
+def test_preflight_check_only_uses_read_commands(monkeypatch):
+    module, target, commands = _check_only(monkeypatch)
     assert module.deploy(target, check_only=True).cluster_id == 4
     assert all(
         not any(action in command for action in ("apply", "patch", "upgrade", "delete"))
         for command in commands
     )
     assert "test-operator-value" not in repr(commands)
+
+
+def test_preflight_requires_ready_cluster_secret_store(monkeypatch):
+    # cnp-gke on 2026-10-18: ESO installed but vault-eso-token missing, store InvalidProviderConfig.
+    module, target, _ = _check_only(monkeypatch, store_ready="False")
+    with pytest.raises(RuntimeError, match=r"vault-backend is not Ready \(InvalidProviderConfig\)"):
+        module.deploy(target, check_only=True)
 
 
 @pytest.mark.parametrize("previous_cluster", [8, None])

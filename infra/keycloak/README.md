@@ -11,7 +11,8 @@ Vault, ESO, Tailscale et la passerelle NGINX de la CNP.
 - kubectl avec le contexte explicite de la cible ; Helm **3.17.3**, uv, SSH ;
 - cluster déjà enregistré dans CNP sous `cnp_cluster_name` ; backend avec la
   migration du registre d'instances et l'API administrateur ;
-- ESO avec les CRD `external-secrets.io/v1` ; opérateur Tailscale dans `tailscale` ;
+- ESO avec les CRD `external-secrets.io/v1` et `ClusterSecretStore vault-backend`
+  prêt (les apps y lisent leurs `OIDC_*`) ; opérateur Tailscale dans `tailscale` ;
 - egress Vault déjà installé (`infra/eso/README.md`) et connectivité ESO→Vault ;
 - ACL Tailscale autorisant la VM CNP vers les proxies `tag:k8s` sur 8080,
   et proxies vers Vault 8200 (règles dans `infra/tailscale/main.tf`, à appliquer

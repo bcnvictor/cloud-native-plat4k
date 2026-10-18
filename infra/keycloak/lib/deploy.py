@@ -103,6 +103,19 @@ def preflight(target: TargetConfig) -> Runtime:
         for item in crds["items"]
     ):
         raise RuntimeError("ESO v1 CRDs are required")
+    # Keycloak itself reads Vault through its own SecretStore, but apps receive OIDC_*
+    # through the shared ClusterSecretStore: an instance there would be unusable.
+    store = json.loads(
+        kubectl(target, "get", "clustersecretstore", "vault-backend", "-o", "json").stdout
+    )
+    ready = next(
+        (c for c in store.get("status", {}).get("conditions", []) if c.get("type") == "Ready"), {}
+    )
+    if ready.get("status") != "True":
+        raise RuntimeError(
+            f"ClusterSecretStore vault-backend is not Ready ({ready.get('reason', 'no status')}): "
+            "apps could not receive OIDC_* (see infra/eso/README.md)"
+        )
     kubectl(target, "-n", target.tailscale_namespace, "get", "deployment", "operator", "-o", "name")
     kubectl(target, "-n", "external-secrets", "get", "service", "vault-cnp-control", "-o", "name")
     vault = VaultAPI(required_env("VAULT_ADDR"), required_env("VAULT_TOKEN"))

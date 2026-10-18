@@ -96,22 +96,48 @@ conteneurs CNP → apps de test issues de `react-vite`, `python-fastapi`, et un 
 onboardé compatible → login/callback/reconnexion/console et contrôle JWT.
 Nettoyer seulement les apps/realms de test possédés, jamais l'instance ni ses PVC.
 
-## GKE — cible ajoutée, non validée
+## GKE — reporté après AKS et k3s
 
 Cible `infra/keycloak/targets/public-gke.yaml` (instance `public-02`, profil `public`),
-ajoutée après la mise en service de `cnp-gke` (4K-244). Aucun contrôle live : le
-contexte `cnp-gke` n'était pas disponible (`infra/gke/create-cnp-kubeconfig.sh`).
-Le cluster est en mode Standard ; l'opérateur Tailscale y tague ses proxies
-`tag:k8s` (`infra/gke/tailscale/operator-values.yaml`), couvert par la règle ACL
-`tag:k8s:8080`. Aucune politique réseau n'est activée dans `infra/gke/main.tf` :
-comme sur AKS, les NetworkPolicies du chart n'y sont pas appliquées.
+ajoutée après la mise en service de `cnp-gke` (4K-244). Mode Standard ; l'opérateur
+Tailscale y tague ses proxies `tag:k8s` (`infra/gke/tailscale/operator-values.yaml`),
+couvert par la règle ACL `tag:k8s:8080`. Aucune politique réseau n'est activée dans
+`infra/gke/main.tf` : comme sur AKS, les NetworkPolicies du chart n'y sont pas appliquées.
 
-À confirmer par le preflight avant tout déploiement : StorageClass `standard-rwo`
-(défaut GKE supposé), CRD ESO en `v1` et `ClusterSecretStore vault-backend` prêt.
+État relevé le 2026-10-18 (lecture seule) : StorageClass `standard-rwo (default)`, ESO
+v2.11.0 avec CRD `v1`, egress `ts-vault-cnp-control` Running, mais `ClusterSecretStore
+vault-backend` en `InvalidProviderConfig` : le Secret `external-secrets/vault-eso-token`
+n'a jamais été créé (étape 5 de `infra/gke/README.md`). Le preflight refuse la cible tant
+qu'il manque. Indépendamment de Keycloak, les apps GKE créées d'ici là ont une
+ExternalSecret non synchronisée (app Degraded, pods fonctionnels : `envFrom` optionnel).
 
-```bash
-./infra/keycloak/deploy.sh --config infra/keycloak/targets/public-gke.yaml --check
-```
+Procédure, une fois AKS et k3s validés :
+
+1. Contexte opérateur dans un fichier séparé (projet GCP `cnp-cloud-2`, droits IAM GKE) :
+   ```bash
+   gcloud components install gke-gcloud-auth-plugin   # hors PATH avec Homebrew : ajouter
+   # "$(gcloud info --format='value(installation.sdk_root)')/bin" au PATH
+   KUBECONFIG=~/.kube/config-cnp-gke gcloud container clusters get-credentials cnp-gke \
+     --zone europe-west1-b --project cnp-cloud-2
+   kubectl --kubeconfig ~/.kube/config-cnp-gke config rename-context \
+     gke_cnp-cloud-2_europe-west1-b_cnp-gke cnp-gke
+   ```
+2. Token ESO : `bash ~/fix-vault-tokens.sh` sur `cnp-control` (étape 5 du README GKE), ou
+   copie du Secret d'AKS, même token qu'AKS et k3s, sans l'afficher :
+   ```bash
+   kubectl --context cnp-aks -n external-secrets get secret vault-eso-token -o json \
+     | python3 -c 'import json,sys; s=json.load(sys.stdin); print(json.dumps({"apiVersion": "v1", "kind": "Secret", "type": s.get("type", "Opaque"), "metadata": {"name": "vault-eso-token", "namespace": "external-secrets"}, "data": s["data"]}))' \
+     | kubectl --kubeconfig ~/.kube/config-cnp-gke --context cnp-gke apply -f -
+   kubectl --kubeconfig ~/.kube/config-cnp-gke --context cnp-gke get clustersecretstore vault-backend
+   ```
+   Attendu : `Valid`, `READY True`.
+3. Même parcours que les autres cibles :
+   ```bash
+   export KUBECONFIG=~/.kube/config:~/.kube/config-cnp-gke
+   ./infra/keycloak/deploy.sh --config infra/keycloak/targets/public-gke.yaml --check
+   ./infra/keycloak/deploy.sh --config infra/keycloak/targets/public-gke.yaml
+   ./infra/keycloak/verify.sh --target infra/keycloak/targets/public-gke.yaml
+   ```
 
 ## Cloud privé k3s — validation confiée à l'opérateur
 
