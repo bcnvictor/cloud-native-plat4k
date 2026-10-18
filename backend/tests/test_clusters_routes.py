@@ -57,6 +57,16 @@ class TestClusterProvider:
         assert resp.status_code == 200
         assert resp.json()["provider"] == "gcp"
 
+    @pytest.mark.parametrize("field", ["provider", "name", "endpoint"])
+    async def test_update_null_not_nullable_field_rejected(self, client: AsyncClient, admin_token: str, field: str):
+        cluster_id = (await _create(client, admin_token, provider="aws")).json()["id"]
+        resp = await client.put(
+            f"/api/v1/clusters/{cluster_id}",
+            json={field: None},
+            headers=_auth(admin_token),
+        )
+        assert resp.status_code == 422
+
     async def test_create_as_dev_forbidden(self, client: AsyncClient, dev_token: str):
         resp = await _create(client, dev_token, provider="aws")
         assert resp.status_code == 403

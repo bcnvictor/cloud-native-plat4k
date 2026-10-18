@@ -431,6 +431,14 @@ class ClusterConnectionUpdate(BaseModel):
     argocd_url: Optional[str] = None
     argocd_token: Optional[str] = None
 
+    @field_validator("name", "endpoint", "provider")
+    @classmethod
+    def _not_null(cls, value: Any) -> Any:
+        # Colonnes NOT NULL : un `null` explicite doit donner une 422, pas une IntegrityError lue comme un doublon de nom.
+        if value is None:
+            raise ValueError("cannot be null")
+        return value
+
 
 class ClusterConnectionResponse(ClusterConnectionBase):
     id: int
