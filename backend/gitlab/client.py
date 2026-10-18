@@ -427,7 +427,10 @@ class GitLabClient:
             "spec": {
                 "refreshInterval": "5m",
                 "secretStoreRef": {"name": "vault-backend", "kind": "ClusterSecretStore"},
-                "target": {"name": f"{app_slug}-env", "creationPolicy": "Owner"},
+                # Delete, not the default Retain: an app with no env var yet has no Vault path,
+                # and Retain turns that into SecretSyncedError -> ArgoCD Degraded. With Delete,
+                # ESO reports Ready (SecretDeleted) and envFrom is optional in the templates.
+                "target": {"name": f"{app_slug}-env", "creationPolicy": "Owner", "deletionPolicy": "Delete"},
                 "dataFrom": [{"extract": {"key": f"secret/apps/{group_slug}/{app_slug}/{env_name}"}}],
             },
         }

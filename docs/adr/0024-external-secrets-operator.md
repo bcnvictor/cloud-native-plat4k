@@ -112,6 +112,7 @@ spec:
   target:
     name: {app_slug}-env
     creationPolicy: Owner
+    deletionPolicy: Delete  # app sans variable = pas de chemin Vault : Ready, pas SecretSyncedError (4K-15)
   dataFrom:
     - extract:
         key: secret/apps/{group_slug}/{app_slug}/{env}

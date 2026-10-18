@@ -1,3 +1,4 @@
+import yaml
 from gitlab.exceptions import GitlabGetError
 
 from backend.gitlab.client import GitLabClient
@@ -110,3 +111,16 @@ def test_upsert_externalsecret_no_delete_action_when_no_legacy_file():
     actions = project.commits.payload["actions"]
     assert len(actions) == 1
     assert actions[0]["file_path"] == "apps/aks/my-app/platform/prod/externalsecret.yaml"
+
+
+def test_upsert_externalsecret_tolerates_missing_vault_path():
+    """The manifest is deployed for every app, including ones with no env var yet (no
+    Vault path). deletionPolicy Delete makes ESO report Ready instead of SecretSyncedError,
+    which ArgoCD would otherwise surface as a Degraded app."""
+    project = _FakeProjectWithFiles(existing_paths=set())
+    client = _client_for(project)
+
+    client.upsert_externalsecret("group/gitops", "my-app", "my-group", "dev", cluster_name="aks")
+
+    target = yaml.safe_load(project.commits.payload["actions"][0]["content"])["spec"]["target"]
+    assert target == {"name": "my-app-env", "creationPolicy": "Owner", "deletionPolicy": "Delete"}
