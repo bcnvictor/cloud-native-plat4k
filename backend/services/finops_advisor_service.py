@@ -30,7 +30,7 @@ from backend.ai.factory import get_provider
 from backend.ai.pricing import estimate_cost
 from backend.ai.provider import LLMMessage
 from backend.core.config import settings
-from backend.db.models import AIUsageRecord, Application, User
+from backend.db.models import AIUsageRecord, Application, ClusterConnection, User
 from backend.services.ai_settings_service import EffectiveAIConfig
 from backend.services.monitoring_service import (
     CPU_CORE_HOUR_USD,
@@ -245,12 +245,21 @@ Consignes pour rédiger les recommandations FinOps :
   rien n'est appliqué automatiquement, l'équipe valide."""
 
 
-async def analyze_usage(app: Application) -> UsageAnalysis:
+async def _prometheus_url(db: AsyncSession, app: Application) -> str:
+    """Prometheus of the app's target cluster, else the platform one (as routes/monitoring)."""
+    if app.target_cluster_id:
+        cluster = await db.get(ClusterConnection, app.target_cluster_id)
+        if cluster is not None and cluster.prometheus_url:
+            return cluster.prometheus_url
+    return settings.PROMETHEUS_URL
+
+
+async def analyze_usage(db: AsyncSession, app: Application) -> UsageAnalysis:
     """Prometheus usage over the advisor window + reference sizing, per environment."""
     window = settings.AI_FINOPS_WINDOW_HOURS
     step = 900 if window >= 6 else 60
     try:
-        raw = await get_app_resource_usage(settings.PROMETHEUS_URL, app.slug, window, step)
+        raw = await get_app_resource_usage(await _prometheus_url(db, app), app.slug, window, step)
     except Exception as exc:
         logger.warning("FinOps advisor: Prometheus query failed for %s", app.slug, exc_info=True)
         return UsageAnalysis(
@@ -338,7 +347,7 @@ class FinOpsAdvisorService:
         self.cfg = cfg
 
     async def advise(self, app: Application, user: User) -> AdviceResult:
-        analysis = await analyze_usage(app)
+        analysis = await analyze_usage(self.db, app)
         result = AdviceResult(
             app_id=app.id, app_name=app.name, status=analysis.status,
             window_hours=analysis.window_hours, generated_at=datetime.now(timezone.utc),

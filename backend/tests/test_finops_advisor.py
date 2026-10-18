@@ -11,7 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.ai.provider import LLMMessage, LLMResponse, MockProvider
 from backend.core.config import settings
-from backend.db.models import AIGlobalSettings, AIUsageRecord, Application, ApplicationStatus
+from backend.db.models import (
+    AIGlobalSettings,
+    AIUsageRecord,
+    Application,
+    ApplicationStatus,
+    ClusterConnection,
+)
 from backend.services.finops_advisor_service import (
     analyze_usage,
     build_snapshot,
@@ -106,29 +112,49 @@ def test_parse_advice_rejects_non_json():
 
 
 @pytest.mark.anyio
-async def test_analyze_usage_ok_and_description():
-    app = Application(name="my-app", slug="my-app", owner="t")
+async def test_analyze_usage_ok_and_description(db_session: AsyncSession):
+    app = await _app(db_session)
     with patch("backend.services.finops_advisor_service.get_app_resource_usage",
                new=AsyncMock(return_value=_USAGE)) as usage:
-        analysis = await analyze_usage(app)
+        analysis = await analyze_usage(db_session, app)
     assert analysis.status == "ok" and analysis.window_hours == 24
     assert [s.env for s in analysis.snapshots] == ["prod"]
-    assert usage.await_args.args[1:3] == ("my-app", 24)
+    # No target cluster → platform Prometheus.
+    assert usage.await_args.args[:3] == (settings.PROMETHEUS_URL, "my-app", 24)
     text = describe_analysis(app, analysis)
     assert "Proposition de référence" in text and "Requests : CPU 100 mCPU" in text
 
 
 @pytest.mark.anyio
-async def test_analyze_usage_without_metrics_or_prometheus():
-    app = Application(name="my-app", slug="my-app", owner="t")
+async def test_analyze_usage_reads_the_prometheus_of_the_app_cluster(db_session: AsyncSession):
+    gke = ClusterConnection(name="cnp-gke", endpoint="https://gke", kubeconfig_secret_ref="x",
+                            prometheus_url="http://prometheus-gke:9090")
+    bare = ClusterConnection(name="cnp-k3s", endpoint="https://k3s", kubeconfig_secret_ref="y")
+    db_session.add_all([gke, bare])
+    await db_session.commit()
+    app = await _app(db_session)
+    with patch("backend.services.finops_advisor_service.get_app_resource_usage",
+               new=AsyncMock(return_value=_USAGE)) as usage:
+        app.target_cluster_id = gke.id
+        await analyze_usage(db_session, app)
+        assert usage.await_args.args[0] == "http://prometheus-gke:9090"
+        # Cluster without its own Prometheus → platform Prometheus.
+        app.target_cluster_id = bare.id
+        await analyze_usage(db_session, app)
+        assert usage.await_args.args[0] == settings.PROMETHEUS_URL
+
+
+@pytest.mark.anyio
+async def test_analyze_usage_without_metrics_or_prometheus(db_session: AsyncSession):
+    app = await _app(db_session)
     with patch("backend.services.finops_advisor_service.get_app_resource_usage",
                new=AsyncMock(return_value={})):
-        empty = await analyze_usage(app)
+        empty = await analyze_usage(db_session, app)
     assert empty.status == "no_data" and "Aucune métrique" in empty.message
     assert describe_analysis(app, empty) == empty.message
     with patch("backend.services.finops_advisor_service.get_app_resource_usage",
                new=AsyncMock(side_effect=httpx.ConnectError("down"))):
-        down = await analyze_usage(app)
+        down = await analyze_usage(db_session, app)
     assert down.status == "metrics_unavailable" and "ConnectError" in down.message
 
 
@@ -249,3 +275,25 @@ async def test_guards(client: AsyncClient, admin_token: str, db_session: AsyncSe
         await db_session.commit()
         assert (await client.get(f"/api/v1/apps/{app.id}/ai-advice", headers=headers)).status_code == 403
     assert (await client.get(f"/api/v1/apps/{app.id}/ai-advice")).status_code == 401
+
+
+@pytest.mark.anyio
+async def test_daily_ai_budget_blocks_the_advice(client: AsyncClient, admin_token: str,
+                                                 admin_user, db_session: AsyncSession):
+    app = await _app(db_session)
+    db_session.add(AIUsageRecord(user_id=admin_user.id, provider="gemini", model="m",
+                                 purpose=AIPurpose.CHAT, estimated_cost_usd=1.5))
+    await db_session.commit()
+    provider = StubProvider(json.dumps(_ADVICE))
+    with (
+        patch.object(settings, "AI_ASSISTANT_ENABLED", True),
+        patch.object(settings, "AI_DAILY_BUDGET_USD", 1.0),
+        patch("backend.services.finops_advisor_service.get_app_resource_usage",
+              new=AsyncMock(return_value=_USAGE)) as usage,
+        patch("backend.services.finops_advisor_service.get_provider", return_value=provider),
+    ):
+        resp = await client.get(f"/api/v1/apps/{app.id}/ai-advice",
+                                headers={"Authorization": f"Bearer {admin_token}"})
+    assert resp.status_code == 429 and "budget" in resp.json()["detail"].lower()
+    usage.assert_not_awaited()
+    assert provider.calls == []

@@ -33,7 +33,8 @@ Assistant IA), l'app doit faire partie de la sélection.
 
 ```
 analyze_usage(app)   — partagé par la carte et l'assistant, sans LLM
-  ├─ 1. Prometheus (24 h, pas de 15 min, par namespace)
+  ├─ 1. Prometheus du cluster cible de l'app (cluster.prometheus_url, sinon PROMETHEUS_URL)
+  │     24 h, pas de 15 min, par namespace
   │     consommation CPU / RAM · requests / limits (kube-state-metrics) · pods · redémarrages
   │     (jointure kube_pod_labels{app.kubernetes.io/managed-by=cnp, app.kubernetes.io/name=<slug>})
   └─ 2. Proposition de référence calculée par le backend (pas par le LLM)

@@ -810,7 +810,7 @@ class PlatformTools:
             )
         if not self._app_allowed(a):
             return ToolResult(_APP_NOT_ALLOWED.format(name=a.name))
-        analysis = await analyze_usage(a)
+        analysis = await analyze_usage(self.db, a)
         if env:
             analysis.snapshots = [s for s in analysis.snapshots if s.env == env.lower()]
             if analysis.status == "ok" and not analysis.snapshots:
