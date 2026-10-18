@@ -9,8 +9,9 @@ server {
     resolver_timeout 5s;
     # NGINX normalizes URL escapes once. Reject a remaining escape to prevent
     # a second decoder upstream from turning it into a protected master path.
-    # Same for path parameters: Keycloak drops ";x" when routing, so
-    # "realms/master;x" would evade the deny-list. Query strings are not checked.
+    # Same for path parameters: "realms/master;x" does not match the deny-list.
+    # Defence in depth: reject ";" here whatever the upstream version does with
+    # it (Keycloak 26.8.0 itself answers 400). Query strings are not checked.
     if ($uri ~ "[%;]") { return 403; }
     include /etc/nginx/keycloak-routes/*.conf;
     location @keycloak_unavailable { return 503; }

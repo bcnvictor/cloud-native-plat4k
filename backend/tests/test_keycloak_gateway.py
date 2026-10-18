@@ -152,7 +152,7 @@ def test_app_realm_paths_are_proxied_unchanged(gateway, path):
         "realms/%6daster",
         "realms/%256daster",
         "health/ready",
-        # Matrix parameters: the upstream drops ";x" when matching its routes.
+        # Path parameters: rejected at the edge whatever the upstream does.
         "realms/master;x/.well-known/openid-configuration",
         "realms/master;/protocol/openid-connect/certs",
         "realms/master%3Bx/.well-known/openid-configuration",
