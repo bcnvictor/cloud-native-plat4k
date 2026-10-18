@@ -90,7 +90,7 @@ services:
       - cnp_net
 
   keycloak:
-    # Local development instance (4K-15/ADR-0026), excluded from production.
+    # Local development instance (4K-15/ADR-0027), excluded from production.
     # Start explicitly: docker compose --profile keycloak-local up -d keycloak
     # start-dev uses Keycloak's embedded H2 database (simplest for local dev — the
     # cluster deployment in infra/keycloak/ uses a dedicated Postgres database instead,

@@ -1,4 +1,4 @@
-"""Tests for backend/keycloak/client.py (4K-15/ADR-0026) against an in-memory fake
+"""Tests for backend/keycloak/client.py (4K-15/ADR-0027) against an in-memory fake
 Keycloak Admin API (httpx.MockTransport) — no real Keycloak instance involved.
 """
 import uuid

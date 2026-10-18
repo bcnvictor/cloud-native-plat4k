@@ -423,7 +423,7 @@ class ApplicationResponse(ApplicationBase):
     owning_gitlab_group_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
-    # Keycloak app-auth service (4K-15/ADR-0026)
+    # Keycloak app-auth service (4K-15/ADR-0027)
     auth_enabled: bool = False
     auth_instance_key: str | None = None
     auth_provisioned: Optional[bool] = None  # None = n/a, True/False = last provisioning attempt's outcome
@@ -433,7 +433,7 @@ class ApplicationResponse(ApplicationBase):
         from_attributes = True
 
 
-# ── Keycloak app-auth (4K-15/ADR-0026) ──────────────────────────────────────────
+# ── Keycloak app-auth (4K-15/ADR-0027) ──────────────────────────────────────────
 
 class KeycloakEnvState(str, Enum):
     ACTIVE = "active"      # realm exists and was created by CNP for this app

@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     # POST /apps/{id}/ci-status so the CI runner can report pipeline status (see ADR-0011).
     CNP_CALLBACK_TOKEN: Optional[str] = None
 
-    # Keycloak — shared instance backing the app-auth service (4K-15/ADR-0026).
+    # Keycloak — shared instance backing the app-auth service (4K-15/ADR-0027).
     # Legacy global instance is disabled by default. Registered per-cluster
     # instances are resolved independently of this compatibility switch.
     KEYCLOAK_ENABLED: bool = False

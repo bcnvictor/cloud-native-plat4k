@@ -157,7 +157,7 @@ export function SettingsTab() {
     );
   }
 
-  // Authentication (Keycloak) — 4K-15/ADR-0026
+  // Authentication (Keycloak) — 4K-15/ADR-0027
   const { data: authStatus } = useQuery({
     queryKey: ['authStatus', app?.id],
     queryFn: () => appsApi.getAuthStatus(app!.id),

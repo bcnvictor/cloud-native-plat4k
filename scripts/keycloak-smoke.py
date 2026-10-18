@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local smoke test for the Keycloak app-auth service (4K-15/ADR-0026, plan Lot 7).
+"""Local smoke test for the Keycloak app-auth service (4K-15/ADR-0027, plan Lot 7).
 
 Exercises KeycloakService.provision/status/reprovision against a REAL local
 Keycloak + Vault (docker compose, profile production), end to end:

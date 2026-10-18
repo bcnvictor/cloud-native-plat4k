@@ -1,7 +1,7 @@
 # Authentification Keycloak dans une app CNP
 
 Guide développeur du service d'authentification Keycloak injectable dans les apps
-CNP ([ADR-0026](../adr/0026-keycloak-app-auth.md)). S'adresse aux équipes qui
+CNP ([ADR-0027](../adr/0027-keycloak-app-auth.md)). S'adresse aux équipes qui
 activent Keycloak sur leur app — scaffoldée ou importée (onboarded) — et veulent
 savoir quelles variables leur arrivent, comment administrer leur realm, et comment
 valider un token côté code.
@@ -258,7 +258,7 @@ cnp keycloak console --app <slug> --env dev   # accès console temporaire (une f
 cnp keycloak reprovision --app <slug> --env dev --yes  # recréer un realm supprimé
 ```
 
-Voir [la référence CLI](../cli.md#authentification-keycloak-cnp-keycloak-4k-15-adr-0026)
+Voir [la référence CLI](../cli.md#authentification-keycloak-cnp-keycloak-4k-15-adr-0027)
 pour le détail des options.
 
 ## Limites connues (V1)
@@ -268,5 +268,5 @@ pour le détail des options.
   que votre code valide réellement les tokens, seule la présence d'`envFrom` dans le
   chart est vérifiée (best-effort, avertissement seulement).
 - Pas d'instance Keycloak dédiée par app — une instance partagée pour toute la
-  plateforme (voir [ADR-0026](../adr/0026-keycloak-app-auth.md) pour la justification
+  plateforme (voir [ADR-0027](../adr/0027-keycloak-app-auth.md) pour la justification
   et les évolutions envisagées).

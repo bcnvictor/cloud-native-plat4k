@@ -1,10 +1,10 @@
-"""Keycloak app-auth provisioning (4K-15/ADR-0026).
+"""Keycloak app-auth provisioning (4K-15/ADR-0027).
 
 One realm per app and per environment (`{app_slug}-{env}`), a client for the app
 itself, and Vault as the only channel credentials travel through — reusing the
 Vault -> ESO -> Secret K8s pipeline built for application env vars (ADR-0024,
 ADR-0025). Covers both scaffolded and onboarded apps identically (mode A for
-onboarded: same provisioning, no code injection — see ADR-0026 §6).
+onboarded: same provisioning, no code injection — see ADR-0027 §6).
 
 Ownership markers (never trust a name alone):
 - each realm CNP creates carries the realm attribute `cnp_app_id`; a realm with the
@@ -94,7 +94,7 @@ def _redirect_uris(app: Application, env: str) -> list[str]:
 
 
 def detect_envfrom_warning(bot: GitLabClient, project_path: str, app_slug: str) -> list[str]:
-    """Best-effort heuristic (ADR-0026 §6): does the onboarded repo's chart already
+    """Best-effort heuristic (ADR-0027 §6): does the onboarded repo's chart already
     consume the ESO-synced `{app_slug}-env` Secret via `envFrom`? Read-only, never
     raises — any error is treated as "can't verify", not "missing" (no false
     positives nagging a team whose repo CNP simply couldn't read).
@@ -289,7 +289,7 @@ class KeycloakService:
 
     async def reprovision(self, app: Application, env: str) -> KeycloakEnvStatus:
         """409 if the realm still exists — recreation is an explicit, destructive
-        action (ADR-0026 §5): never silently replace a realm a team may still be
+        action (ADR-0027 §5): never silently replace a realm a team may still be
         using. Callers (routes) are responsible for the Owner-only gate on prod.
         """
         _validate_env(env)

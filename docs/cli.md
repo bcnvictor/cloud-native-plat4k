@@ -50,7 +50,7 @@ La configuration est stockée dans `~/.cnp/config.toml` (URL de l'API + clé d'A
 
 Toutes les commandes prennent `--app <slug>` et `--env dev|prod`. Voir ADR-0025.
 
-## Authentification Keycloak — `cnp keycloak` (4K-15 / ADR-0026)
+## Authentification Keycloak — `cnp keycloak` (4K-15 / ADR-0027)
 
 Provisionnement et accès au service d'authentification Keycloak d'une app (un realm
 par app et par environnement). Toutes les commandes prennent `--app <slug>` ; celles

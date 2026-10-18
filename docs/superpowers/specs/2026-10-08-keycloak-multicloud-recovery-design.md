@@ -21,7 +21,7 @@ Le périmètre couvre Keycloak, sa base PostgreSQL dédiée, ses secrets, son ac
 - Le profil Docker Compose `production` démarre actuellement un Keycloak `start-dev`, avec des identifiants par défaut et un port exposé. La pipeline de déploiement active ce profil. Corriger ce point précède toute fusion qui déclencherait ce déploiement.
 - L'accès actuel à AKS échoue sur la résolution DNS de l'endpoint contenu dans le kubeconfig ; aucun kubeconfig k3s local n'est présent. Les StorageClass, IngressClass et ressources réellement disponibles ne sont donc pas confirmées. Un accès fonctionnel aux deux clusters est nécessaire avant les essais.
 
-Références existantes : [ADR-0026](../../adr/0026-keycloak-app-auth.md), [service backend](../../../backend/services/keycloak_service.py), [runbook actuel](../../../infra/keycloak/README.md), [k3s multi-cluster](../../adr/0022-cloud-prive-k3s-multi-cluster.md).
+Références existantes : [ADR-0027](../../adr/0027-keycloak-app-auth.md), [service backend](../../../backend/services/keycloak_service.py), [runbook actuel](../../../infra/keycloak/README.md), [k3s multi-cluster](../../adr/0022-cloud-prive-k3s-multi-cluster.md).
 
 ## Architecture cible
 
@@ -143,7 +143,7 @@ Une entrée de commande documentée fournit les opérations `check`, `plan`, `ap
 
 Un nouveau cluster peut utiliser Helm directement pendant son bootstrap puis être adopté explicitement par ArgoCD avec la même configuration. La procédure décrit le transfert de gestion et les protections de données. Les jobs administratifs ne se relancent pas sur chaque sync et ne sont pas des hooks destructifs.
 
-Les anciennes instructions d'installation manuelle sont remplacées par un runbook unique après validation. ADR-0026 est amendé pour préciser « une instance par défaut par cluster, association durable par app » ; les contrats OIDC des templates restent identiques.
+Les anciennes instructions d'installation manuelle sont remplacées par un runbook unique après validation. ADR-0027 est amendé pour préciser « une instance par défaut par cluster, association durable par app » ; les contrats OIDC des templates restent identiques.
 
 ## Conditions de validation avant mise en service
 

@@ -168,7 +168,7 @@ Neutre :
 - Les `ExternalSecret` générés par le backend sont idempotents : rejouer le provisioning
   GitOps met à jour le manifest sans créer de doublon.
 
-## Addendum (4K-15 / ADR-0026 Lot 1c) : les ExternalSecret n'étaient déployés par personne
+## Addendum (4K-15 / ADR-0027 Lot 1c) : les ExternalSecret n'étaient déployés par personne
 
 Constat après coup (vérifié sur `cnp-gitops` `origin/main`) : le chemin décrit en §3
 (`apps/{app_slug}/externalsecret-{env}.yaml`) n'était scanné par aucune Application ArgoCD.

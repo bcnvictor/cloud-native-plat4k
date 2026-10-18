@@ -373,7 +373,7 @@ class TestValuesEndpoint:
 
 
 class TestManagedKeys:
-    """OIDC_* keys are written exclusively by KeycloakService (4K-15/ADR-0026) —
+    """OIDC_* keys are written exclusively by KeycloakService (4K-15/ADR-0027) —
     the env var CRUD must refuse to touch them, but only for apps where Keycloak is
     enabled: an app without it keeps full control of these names (its own IdP).
     """

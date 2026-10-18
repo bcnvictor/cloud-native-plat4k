@@ -1,4 +1,4 @@
-"""AppService wiring of Keycloak app-auth (4K-15/ADR-0026).
+"""AppService wiring of Keycloak app-auth (4K-15/ADR-0027).
 
 Provisioning at scaffold/onboard time is best-effort: the app and its GitLab repo
 already exist, so a Keycloak or Vault outage must leave a usable app reporting

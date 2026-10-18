@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Bootstraps the local `keycloak` docker-compose service with the cnp-provisioner
-# client the backend uses as its Admin REST API service account (4K-15/ADR-0026).
+# client the backend uses as its Admin REST API service account (4K-15/ADR-0027).
 #
 # Prints KEYCLOAK_ADMIN_CLIENT_ID / KEYCLOAK_ADMIN_CLIENT_SECRET at the end — copy
 # them into your .env (KEYCLOAK_ADMIN_CLIENT_ID / KEYCLOAK_ADMIN_CLIENT_SECRET) and

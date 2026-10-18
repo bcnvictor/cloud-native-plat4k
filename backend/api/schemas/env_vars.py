@@ -7,7 +7,7 @@ class EnvVarKeyStatus(BaseModel):
     key: str
     is_set: bool
     # True for keys written exclusively by CNP itself (Keycloak's OIDC_* — 4K-15 /
-    # ADR-0026) — the UI/CLI show them read-only, and the API refuses edits (409).
+    # ADR-0027) — the UI/CLI show them read-only, and the API refuses edits (409).
     managed: bool = False
 
 

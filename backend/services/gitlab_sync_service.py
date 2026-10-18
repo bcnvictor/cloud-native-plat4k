@@ -168,7 +168,7 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
 
 
 async def _maybe_revoke_keycloak_access(db: AsyncSession, app: Application, cnp_user_id: int | None) -> None:
-    """Best-effort (4K-15/ADR-0026): revoke a member's Keycloak console access when
+    """Best-effort (4K-15/ADR-0027): revoke a member's Keycloak console access when
     they lose Maintainer+ on an app or leave it entirely. No-op if Keycloak isn't
     enabled/provisioned for this app, or the member never had a linked CNP account
     (console accounts are tagged with the CNP user id — see KeycloakService).
@@ -219,7 +219,7 @@ async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
         cnp_user_id = await _resolve_cnp_user_id(db, m.id)
         if m.id in existing_by_gl_id:
             row = existing_by_gl_id[m.id]
-            # 4K-15/ADR-0026: dropping below Maintainer loses Keycloak console access
+            # 4K-15/ADR-0027: dropping below Maintainer loses Keycloak console access
             # (realm-admin is gated on the same tier). Check before overwriting
             # access_level below.
             if row.access_level >= 40 > m.access_level:

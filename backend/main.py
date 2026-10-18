@@ -124,7 +124,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.exception_handler(KeycloakError)
 async def _keycloak_error_handler(request: Request, exc: KeycloakError) -> JSONResponse:
-    # Keycloak is an upstream dependency (4K-15/ADR-0026): surface its failures as a
+    # Keycloak is an upstream dependency (4K-15/ADR-0027): surface its failures as a
     # gateway error with a stable message instead of a bare 500 with a stack trace.
     logger.error("Keycloak error on %s %s: %s", request.method, request.url.path, exc)
     status_code = 503 if isinstance(exc, KeycloakUnavailable) else 502

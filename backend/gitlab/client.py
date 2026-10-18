@@ -400,7 +400,7 @@ class GitLabClient:
         branch: str = "main",
     ) -> None:
         """Create/update apps/{cluster}/{app}/platform/{env}/externalsecret.yaml in the
-        gitops repo (4K-106 / ADR-0024, path fixed in 4K-15/ADR-0026 Lot 1c).
+        gitops repo (4K-106 / ADR-0024, path fixed in 4K-15/ADR-0027 Lot 1c).
 
         Manifests under apps/{cluster}/{app}/ are NOT deployed by ArgoCD on their own
         (that directory also holds values-{env}.yaml, which isn't a K8s manifest, and

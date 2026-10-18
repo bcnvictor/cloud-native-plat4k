@@ -407,7 +407,7 @@ class AppService:
         return app
 
     async def _provision_keycloak(self, app: Application) -> None:
-        """Best-effort (4K-15/ADR-0026): the app is created and usable even if
+        """Best-effort (4K-15/ADR-0027): the app is created and usable even if
         Keycloak provisioning fails — auth_provisioned reports the outcome (mirrors
         ci_injected), never raises so app creation itself never fails because of it.
         """
@@ -437,7 +437,7 @@ class AppService:
         await self.db.refresh(app)
 
     async def _check_envfrom_warning(self, app: Application, bot: "GitLabClient") -> None:
-        """Onboarded-app-only (mode A, ADR-0026 §6): best-effort check that the
+        """Onboarded-app-only (mode A, ADR-0027 §6): best-effort check that the
         repo's own chart actually consumes the {app_slug}-env Secret. Never raises.
         """
         from backend.services.keycloak_service import detect_envfrom_warning
@@ -609,7 +609,7 @@ class AppService:
             try:
                 gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
                 # Recursive delete of the whole apps/{cluster}/{app}/ tree — this
-                # already covers platform/{env}/externalsecret.yaml (4K-15/ADR-0026
+                # already covers platform/{env}/externalsecret.yaml (4K-15/ADR-0027
                 # Lot 1c), no separate cleanup needed for that subdirectory.
                 await anyio.to_thread.run_sync(
                     lambda: bot.delete_directory_contents(
@@ -653,7 +653,7 @@ class AppService:
         except Exception:
             logger.exception("Failed to clean up Vault env vars for app %s", app.name)
 
-        # 3b. Delete the app's Keycloak realms, if any (4K-15/ADR-0026) — best-effort,
+        # 3b. Delete the app's Keycloak realms, if any (4K-15/ADR-0027) — best-effort,
         # like every other step here.
         if app.auth_enabled:
             from backend.services.keycloak_service import KeycloakService

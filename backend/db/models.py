@@ -143,7 +143,7 @@ class Application(Base):
     framework = Column(String, nullable=True)
     ci_injected = Column(Boolean, nullable=True)
     expose = Column(Boolean, nullable=True, default=False)
-    # Keycloak app-auth service (4K-15/ADR-0026).
+    # Keycloak app-auth service (4K-15/ADR-0027).
     auth_enabled = Column(Boolean, nullable=False, default=False, server_default="false")
     auth_instance_key = Column(String(63), ForeignKey("keycloak_instances.instance_key", ondelete="RESTRICT"), nullable=True, index=True)
     auth_provisioned = Column(Boolean, nullable=True)  # like ci_injected: None = n/a, True/False = last attempt's outcome

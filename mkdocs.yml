@@ -106,4 +106,4 @@ nav:
       - ADR-0023 — Alerting et notifications: adr/0023-alerting-notifications-centre-notif.md
       - ADR-0024 — External Secrets Operator: adr/0024-external-secrets-operator.md
       - ADR-0025 — Variables d'environnement applicatives: adr/0025-env-vars-applicatives.md
-      - ADR-0026 — Service d'authentification Keycloak: adr/0026-keycloak-app-auth.md
+      - ADR-0027 — Service d'authentification Keycloak: adr/0027-keycloak-app-auth.md

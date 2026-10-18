@@ -1,6 +1,6 @@
-"""Keycloak app-auth routes (4K-15/ADR-0026), mounted under /api/v1/apps/{app_id}/auth.
+"""Keycloak app-auth routes (4K-15/ADR-0027), mounted under /api/v1/apps/{app_id}/auth.
 
-Tier gates follow ADR-0026 §2: Viewer+ can see status, Maintainer+ can activate /
+Tier gates follow ADR-0027 §2: Viewer+ can see status, Maintainer+ can activate /
 grant console access, reprovisioning in prod requires Owner.
 """
 import logging
@@ -81,7 +81,7 @@ async def get_console_access(
     """Create/reactivate a temporary console admin account for the calling user.
 
     The temporary password is returned exactly once in this response — never
-    logged, never cached, never stored by CNP (ADR-0026 §3).
+    logged, never cached, never stored by CNP (ADR-0027 §3).
     """
     _validate_env(env)
     app = await _get_app(app_id, db)
@@ -103,7 +103,7 @@ async def reprovision_auth(
     current_user: User = Depends(require_tier(CnpTier.MAINTAINER)),
 ):
     """Recreate a deleted realm from scratch — new client, new secret, new console
-    users. dev: Maintainer+. prod: Owner only (ADR-0026 §2/§5).
+    users. dev: Maintainer+. prod: Owner only (ADR-0027 §2/§5).
     """
     _validate_env(env)
     if env == "prod" and not current_user.is_admin:

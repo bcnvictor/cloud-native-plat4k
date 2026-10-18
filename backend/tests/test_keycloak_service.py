@@ -1,4 +1,4 @@
-"""Tests for backend/services/keycloak_service.py (4K-15/ADR-0026).
+"""Tests for backend/services/keycloak_service.py (4K-15/ADR-0027).
 
 Exercises KeycloakService against the same in-memory FakeKeycloak transport as
 test_keycloak_client.py (KeycloakService._client is monkeypatched to return a
@@ -331,7 +331,7 @@ class TestEnvfromDetection:
 
 
 class TestTierGateConsistency:
-    """Sanity check that CnpTier ordering used by the routes matches ADR-0026 §2."""
+    """Sanity check that CnpTier ordering used by the routes matches ADR-0027 §2."""
 
     def test_tier_order(self):
         from backend.api.deps import _TIER_ORDER

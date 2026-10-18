@@ -1,4 +1,4 @@
-# ADR-0026 : Service d'authentification Keycloak injectable dans les apps
+# ADR-0027 : Service d'authentification Keycloak injectable dans les apps
 
 ## Statut
 
@@ -317,4 +317,6 @@ Neutre :
   et corrigé un bug réel indépendant du choix de rôle — un token admin mis en cache avant la
   création d'un realm ne porte pas encore les droits sur ce realm, faisant échouer l'appel
   suivant (`create_client`) en 403 ; `KeycloakClient.create_realm` invalide maintenant son
-  token en cache après un succès (voir `infra/keycloak/README.md` §6 pour le détail).
+  token en cache après un succès (voir le commentaire de `KeycloakClient.create_realm` dans
+  `backend/keycloak/client.py` et le test de non-régression
+  `test_create_realm_invalidates_cached_token` de `backend/tests/test_keycloak_client.py`).

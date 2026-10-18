@@ -3,7 +3,7 @@ import typer
 from cli.core.client import client
 from cli.core.output import console, print_error, print_json, print_success, print_table
 
-app = typer.Typer(help="Manage the Keycloak app-auth service for an application (4K-15/ADR-0026).")
+app = typer.Typer(help="Manage the Keycloak app-auth service for an application (4K-15/ADR-0027).")
 
 _VALID_ENVS = ("dev", "prod")
 

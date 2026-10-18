@@ -1,4 +1,4 @@
-"""Minimal Keycloak Admin REST API client (4K-15/ADR-0026).
+"""Minimal Keycloak Admin REST API client (4K-15/ADR-0027).
 
 Authenticates to the `master` realm via client_credentials as the `cnp-provisioner`
 service account, caches the resulting token in memory until shortly before expiry.
@@ -196,7 +196,7 @@ class KeycloakClient:
 
     async def _ensure_audience_mapper(self, realm: str, internal_id: str, client_id: str) -> None:
         """By default a Keycloak access token's `aud` is `account`, not the client_id —
-        useless for local JWT validation (ADR-0026 §A.6). This mapper fixes that.
+        useless for local JWT validation (ADR-0027 §A.6). This mapper fixes that.
         """
         resp = await self._request(
             "GET", f"/admin/realms/{realm}/clients/{internal_id}/protocol-mappers/models"
@@ -313,7 +313,7 @@ class KeycloakClient:
 
     async def assign_realm_admin(self, realm: str, user_id: str) -> None:
         """Grant the `realm-management` client's `realm-admin` role — full admin of
-        THIS realm only (ADR-0026 §A.6).
+        THIS realm only (ADR-0027 §A.6).
         """
         resp = await self._request(
             "GET", f"/admin/realms/{realm}/clients", params={"clientId": "realm-management"}

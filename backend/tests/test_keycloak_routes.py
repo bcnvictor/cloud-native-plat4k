@@ -1,4 +1,4 @@
-"""Functional tests for /api/v1/apps/{id}/auth routes (4K-15/ADR-0026).
+"""Functional tests for /api/v1/apps/{id}/auth routes (4K-15/ADR-0027).
 
 KeycloakService._client is monkeypatched to the in-memory FakeKeycloak transport
 (see test_keycloak_client.py), Vault to an in-memory fake — these cover the HTTP

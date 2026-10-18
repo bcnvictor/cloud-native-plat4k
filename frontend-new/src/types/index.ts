@@ -64,7 +64,7 @@ export interface Application {
   target_cluster_id?: number | null;
   created_at: string;
   updated_at: string | null;
-  // Keycloak app-auth service (4K-15/ADR-0026)
+  // Keycloak app-auth service (4K-15/ADR-0027)
   auth_enabled?: boolean;
   auth_provisioned?: boolean | null;
   auth_instance_key?: string | null;
@@ -217,7 +217,7 @@ export interface MyAccessResponse {
   is_admin: boolean;
 }
 
-// ── Keycloak app-auth (4K-15/ADR-0026) ──────────────────────────────────────────
+// ── Keycloak app-auth (4K-15/ADR-0027) ──────────────────────────────────────────
 
 /** active: realm OK · missing: deleted (Recreate offered) · foreign: name taken by a
  *  realm CNP didn't create for this app · unknown: Keycloak unreachable/disabled. */

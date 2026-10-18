@@ -4,7 +4,7 @@
 actually deploys, `apps/{cluster}/{app}/platform/{env}/externalsecret.yaml`, and add
 the matching 3rd Helm source to each existing Application manifest under `argocd/`.
 
-Context (4K-15 / ADR-0026 Lot 1c, see also the ADR-0024 addendum): the root-app only
+Context (4K-15 / ADR-0027 Lot 1c, see also the ADR-0024 addendum): the root-app only
 scans `argocd/`, and an Application's `ref: gitops` source only resolves `valueFiles`
 — it deploys no manifest. `cnp-ci-modules/base/pipeline.yml` (`update-gitops`) now
 writes new ExternalSecret manifests under `platform/{env}/` and wires the 3rd source

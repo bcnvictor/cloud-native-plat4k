@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 VALID_ENVS = ("dev", "prod")
 
-# Written exclusively by KeycloakService.provision (4K-15/ADR-0026) — never by this
+# Written exclusively by KeycloakService.provision (4K-15/ADR-0027) — never by this
 # CRUD. Defined here (not in keycloak_service) so keycloak_service can import it
 # without a circular import (it already imports resolve_group_slug/vault_env_path
 # from this module).
