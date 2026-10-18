@@ -453,7 +453,8 @@ class AppService:
             logger.exception("envFrom detection failed for app %s", app.slug)
             return
         if warnings:
-            app.auth_warnings = warnings
+            # Merge: provisioning may already have recorded its own warning.
+            app.auth_warnings = list(dict.fromkeys([*(app.auth_warnings or []), *warnings]))
             await self.db.commit()
             await self.db.refresh(app)
 

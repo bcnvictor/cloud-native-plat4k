@@ -11,6 +11,7 @@ from hvac.exceptions import InvalidPath, VaultDown
 from shared.models import ApplicationScaffoldRequest, ScaffoldingParams
 
 from backend.core.config import settings
+from backend.db.models import Application
 from backend.keycloak.client import KeycloakClient
 from backend.services.app_service import AppService
 from backend.services.keycloak_service import KeycloakService
@@ -70,6 +71,16 @@ def fake_keycloak(monkeypatch):
     return fake
 
 
+class _ChartWithoutEnvFrom:
+    """GitLab bot whose repo chart never consumes the {app_slug}-env Secret."""
+
+    def list_tree_recursive(self, project_path):
+        return [{"type": "blob", "path": "chart/templates/deployment.yaml"}]
+
+    def read_file(self, project_path, path, ref="main"):
+        return "spec:\n  containers:\n    - env: []\n"
+
+
 def _scaffold_request(services: list[str]) -> ApplicationScaffoldRequest:
     return ApplicationScaffoldRequest(
         name="demo", owner="team", template="python-fastapi",
@@ -104,3 +115,21 @@ class TestScaffold:
         assert app.auth_warnings == ["oidc_keys_conflict"]
         assert fake_keycloak.realms == {}
         assert fake_vault["apps/_ungrouped/demo/prod"] == {"OIDC_ISSUER_URL": "https://their-own-idp"}
+
+
+class TestEnvfromWarning:
+    async def test_keeps_earlier_warnings(self, db_session):
+        """Provisioning may already have reported a problem: the envFrom check must
+        add to it, not erase it."""
+        app = Application(
+            name="demo", slug="demo", owner="team", repo_url="https://gitlab.test/g/demo",
+            auth_warnings=["keycloak_provisioning_failed"],
+        )
+        db_session.add(app)
+        await db_session.commit()
+        service = AppService(db_session)
+
+        await service._check_envfrom_warning(app, _ChartWithoutEnvFrom())
+        await service._check_envfrom_warning(app, _ChartWithoutEnvFrom())
+
+        assert app.auth_warnings == ["keycloak_provisioning_failed", "chart_missing_envfrom"]
