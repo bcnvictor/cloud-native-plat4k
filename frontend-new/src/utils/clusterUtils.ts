@@ -1,4 +1,13 @@
-import type { ClusterConnection } from '@/types';
+import type { ClusterConnection, ClusterProvider } from '@/types';
+
+export const PROVIDER_LABELS: Record<ClusterProvider, string> = {
+  azure: 'Azure',
+  aws: 'AWS',
+  gcp: 'GCP',
+  openstack: 'OpenStack',
+  oracle: 'Oracle Cloud',
+  other: 'Other',
+};
 
 /**
  * Returns true if the cluster has nginx-ingress configured and can expose apps on
