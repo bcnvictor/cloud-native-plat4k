@@ -124,6 +124,26 @@ def test_prefix_selects_instance_without_rewrite(gateway):
 @pytest.mark.parametrize(
     "path",
     [
+        "realms/demo-prod/.well-known/openid-configuration",
+        "realms/demo-prod/protocol/openid-connect/auth?redirect_uri=https%3A%2F%2Fapp.test%2Fcb",
+        "realms/demo-prod/protocol/openid-connect/certs",
+        "realms/demo-prod/login-actions/authenticate?session_code=a%2Bb&tab_id=x",
+        "resources/abc12/login/keycloak.v2/css/login.css",
+        "js/keycloak.js",
+        "admin/demo-dev/console/",
+        "admin/realms/demo-dev/users?search=a%40b.test",
+    ],
+)
+def test_app_realm_paths_are_proxied_unchanged(gateway, path):
+    client, *_ = gateway
+    response = client.get(f"/clusters/public-01/{path}")
+    assert response.status_code == 200
+    assert response.text == f"public-01:/clusters/public-01/{path}"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
         "admin/master",
         "admin/realms/master",
         "realms/master",
@@ -131,6 +151,14 @@ def test_prefix_selects_instance_without_rewrite(gateway):
         "realms/%6daster",
         "realms/%256daster",
         "health/ready",
+        # Matrix parameters: the upstream drops ";x" when matching its routes.
+        "realms/master;x/.well-known/openid-configuration",
+        "realms/master;/protocol/openid-connect/certs",
+        "realms/master%3Bx/.well-known/openid-configuration",
+        "admin/master;x/console/",
+        "admin/realms/master;x/users",
+        "health;x/ready",
+        "metrics;x",
     ],
 )
 def test_master_paths_are_blocked(gateway, path):

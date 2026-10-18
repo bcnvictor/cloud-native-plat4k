@@ -505,6 +505,7 @@ async def verify_console(state, monkeypatch):
                 "/realms/master",
                 "/admin/master",
                 "/admin/realms/master",
+                "/realms/master;x/.well-known/openid-configuration",
                 "/health/ready",
             ):
                 assert client.get(base + suffix).status_code == 403
