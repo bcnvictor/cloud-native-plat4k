@@ -4,7 +4,7 @@ Configuration file for the backend. Uses pydantic-settings to parse .env files.
 
 from typing import List, Optional
 
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -134,6 +134,8 @@ class Settings(BaseSettings):
     AI_PLATFORM_KB_PRIMER_PATHS: str = "guides/platform-overview.md,guides/ui-guide.md"
     # Re-ingest docs/ at backend startup (idempotent: unchanged files are skipped).
     AI_PLATFORM_KB_SYNC_ON_STARTUP: bool = True
+    # Conseiller FinOps IA (4K-46) : fenêtre d'analyse Prometheus (heures).
+    AI_FINOPS_WINDOW_HOURS: int = 24
 
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -151,6 +153,15 @@ class Settings(BaseSettings):
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
     model_config = SettingsConfigDict(case_sensitive=True, env_file=".env", extra="ignore")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _strip_urls(cls, value, info: ValidationInfo):
+        # Une URL saisie avec un espace parasite (ex. PROMETHEUS_URL dans Vault) rend
+        # l'hôte introuvable et casse silencieusement les appels sortants.
+        if isinstance(value, str) and info.field_name and info.field_name.endswith("_URL"):
+            return value.strip()
+        return value
 
 settings = Settings()
 

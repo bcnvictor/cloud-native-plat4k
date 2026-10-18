@@ -1,5 +1,6 @@
 import { api } from './client';
 import {
+  AIFinOpsAdvice,
   AIAppSettings,
   AIAppSettingsPatch,
   AIGlobalSettings,
@@ -28,6 +29,12 @@ export function toChatHistory(
 }
 
 export const assistantApi = {
+  /** Conseiller FinOps IA : recommandations depuis 24 h de métriques Prometheus. */
+  async getAiAdvice(appId: number): Promise<AIFinOpsAdvice> {
+    const res = await api.get<AIFinOpsAdvice>(`/apps/${appId}/ai-advice`, { timeout: 120_000 });
+    return res.data;
+  },
+
   async getAppSettings(appId: number): Promise<AIAppSettings> {
     const res = await api.get<AIAppSettings>(`/apps/${appId}/assistant/settings`);
     return res.data;

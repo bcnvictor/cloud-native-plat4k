@@ -69,6 +69,7 @@ Le lot 1 ne répondait qu'à partir de la doc : « État des apps ? », « Voir 
 | `get_app_details` | métadonnées, statut live ArgoCD dev/prod, scale-to-zero, événements | + allow-list admin (`app_allowed`) |
 | `get_metrics` | CPU/RAM courants (Prometheus) | + allow-list admin |
 | `get_costs` | coûts 30 j par app d'un groupe | + allow-list admin (détail masqué sinon) |
+| `get_finops_advice` | analyse FinOps 24 h d'une app : CPU/RAM moyenne/p95/max, requests/limits, coût réservé → proposé, économie (conseiller FinOps, 4K-46) | + allow-list admin |
 | `list_group_members` | membres actifs et rôles (bots exclus) | groupe visible par l'utilisateur |
 | `get_recent_activity` | événements d'un groupe ou d'une app | + allow-list admin |
 | `search_platform_docs` | recherche BM25 dans la doc | — |

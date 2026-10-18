@@ -65,6 +65,7 @@ Onglets : **Overview**, **Logs**, **History**, **Settings**, **Assistant**.
 - **Stop / Resume** par environnement (maintainer+) : **Stop** puis **Confirm** met l'environnement à zéro réplica via un commit GitOps (*scale-to-zero*) ; **Resume** le relance. Les environnements dev peuvent aussi être arrêtés automatiquement la nuit (voir « Arrêt nocturne »).
 - **Cloud target** : cluster cible, endpoint et statut (online/offline).
 - **Quick access** : URLs prod/dev si l'app est exposée, sinon la commande `kubectl port-forward svc/<slug> 8080:80` ; lien **GitLab repository**.
+- **Conseiller FinOps IA** (si l'assistant IA est activé) : bouton **Analyser la consommation** — analyse des 24 dernières heures de CPU/RAM (Prometheus), *requests* proposées, coût mensuel réservé → proposé et recommandations de right-sizing (conseils uniquement, à reporter dans le chart Helm). **Approfondir avec l'assistant** poursuit l'analyse dans l'assistant.
 
 ## Onglet Logs
 
@@ -151,6 +152,7 @@ L'assistant global (mascotte ou bouton AI Assistant) :
 
 - connaît la page ouverte : « État des apps ? » sur la page d'un groupe porte sur ce groupe, « Ses métriques ? » sur une application porte sur cette application ;
 - consulte en direct, avec les droits de l'utilisateur, l'état des applications (statut, pipeline CI, ArgoCD dev/prod, arrêt), les métriques CPU/RAM, les coûts 30 jours, les membres d'un groupe et l'activité récente ;
+- **conseille sur les coûts** d'une application (« mon app est-elle bien dimensionnée ? », « comment réduire ses coûts ? ») : consommation des 24 dernières heures, *requests* proposées et économie mensuelle possible ;
 - **diagnostique** une application en erreur (rôle developer ou plus) : dernières lignes ERROR des logs, état des pods Kubernetes (redémarrages, CrashLoopBackOff, OOMKilled) et dernier pipeline CI en échec avec la fin de son log ;
 - explique où trouver une fonctionnalité et comment l'utiliser, à partir de cette documentation ;
 - ne fait aucune action : il ne déploie pas, n'arrête pas, ne modifie rien — il indique le bouton à utiliser ;
