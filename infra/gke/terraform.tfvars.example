@@ -1,0 +1,16 @@
+# Copier en terraform.tfvars et renseigner project_id
+# Modifier node_count / node_max_count si besoin de plus de capacité
+
+project_id        = "<ID_DU_PROJET_GCP>"
+region            = "europe-west1"
+zone              = "europe-west1-b"
+cluster_name      = "cnp-gke"
+node_machine_type = "e2-standard-2"
+node_count        = 2
+node_min_count    = 2
+node_max_count    = 3
+
+# Restreindre l'API server au backend CNP (cnp-control) + ton poste, par ex. :
+# authorized_networks = [
+#   { name = "cnp-control", cidr = "<IP_CNP_CONTROL>/32" },
+# ]
