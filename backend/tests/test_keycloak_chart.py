@@ -9,7 +9,9 @@ pytestmark = pytest.mark.keycloak_infra
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.parametrize("target,key", [("public-aks", "public-01"), ("private-k3s", "private-01")])
+@pytest.mark.parametrize(
+    "target,key", [("public-aks", "public-01"), ("public-gke", "public-02"), ("private-k3s", "private-01")]
+)
 def test_target_chart_has_private_service_and_correct_paths(target, key, tmp_path, monkeypatch):
     from infra.keycloak.lib.config import load_target
 
@@ -63,9 +65,7 @@ def test_target_chart_has_private_service_and_correct_paths(target, key, tmp_pat
         pvc["metadata"]["annotations"]["argocd.argoproj.io/sync-options"]
         == "Prune=false,Delete=false"
     )
-    assert pvc["spec"]["storageClassName"] == (
-        "managed-csi" if key == "public-01" else "local-path"
-    )
+    assert pvc["spec"]["storageClassName"] == config.storage_class
 
 
 def test_chart_preserves_pvc(tmp_path, monkeypatch):

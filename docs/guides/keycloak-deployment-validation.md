@@ -96,6 +96,23 @@ conteneurs CNP → apps de test issues de `react-vite`, `python-fastapi`, et un 
 onboardé compatible → login/callback/reconnexion/console et contrôle JWT.
 Nettoyer seulement les apps/realms de test possédés, jamais l'instance ni ses PVC.
 
+## GKE — cible ajoutée, non validée
+
+Cible `infra/keycloak/targets/public-gke.yaml` (instance `public-02`, profil `public`),
+ajoutée après la mise en service de `cnp-gke` (4K-244). Aucun contrôle live : le
+contexte `cnp-gke` n'était pas disponible (`infra/gke/create-cnp-kubeconfig.sh`).
+Le cluster est en mode Standard ; l'opérateur Tailscale y tague ses proxies
+`tag:k8s` (`infra/gke/tailscale/operator-values.yaml`), couvert par la règle ACL
+`tag:k8s:8080`. Aucune politique réseau n'est activée dans `infra/gke/main.tf` :
+comme sur AKS, les NetworkPolicies du chart n'y sont pas appliquées.
+
+À confirmer par le preflight avant tout déploiement : StorageClass `standard-rwo`
+(défaut GKE supposé), CRD ESO en `v1` et `ClusterSecretStore vault-backend` prêt.
+
+```bash
+./infra/keycloak/deploy.sh --config infra/keycloak/targets/public-gke.yaml --check
+```
+
 ## Cloud privé k3s — validation confiée à l'opérateur
 
 L'opérateur a demandé à exécuter lui-même les essais depuis la VM ayant le

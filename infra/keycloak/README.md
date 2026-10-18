@@ -2,7 +2,7 @@
 
 Une instance par cluster, un domaine HTTPS commun, un préfixe stable par instance.
 Les profils `public` et `private` sont indépendants du fournisseur. Les cibles
-`public-aks.yaml` et `private-k3s.yaml` sont des exemples concrets à adapter.
+`public-aks.yaml`, `public-gke.yaml` et `private-k3s.yaml` sont des exemples concrets à adapter.
 Le chart installe Keycloak et son stockage PostgreSQL dédié. Il réutilise
 Vault, ESO, Tailscale et la passerelle NGINX de la CNP.
 
