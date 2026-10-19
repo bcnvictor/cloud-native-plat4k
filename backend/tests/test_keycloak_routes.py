@@ -318,6 +318,35 @@ class TestEnableAndErrorsRoutes:
         resp = await client.post(f"/api/v1/apps/{app_with_members.id}/auth", headers=_auth(token))
         assert resp.status_code == 409
 
+    async def test_oidc_conflict_on_retry_is_audited_as_a_failure(
+        self, client: AsyncClient, db_session, maintainer, app_with_members, fake_keycloak, fake_vault
+    ):
+        """A retry refused because the app now defines its own OIDC_* keys replaces the
+        recorded reason: audited like any other failed activation."""
+        app_with_members.auth_provisioned = False
+        app_with_members.auth_warnings = ["keycloak_instance_unavailable"]
+        await db_session.commit()
+        fake_vault[f"apps/_ungrouped/{app_with_members.slug}/dev"] = {"OIDC_CLIENT_ID": "theirs"}
+        _, token = maintainer
+
+        resp = await client.post(f"/api/v1/apps/{app_with_members.id}/auth", headers=_auth(token))
+
+        assert resp.status_code == 409
+        assert await _auth_audit(db_session) == [
+            ("app.auth.enable_failed", app_with_members.id, {"warnings": ["oidc_keys_conflict"]})
+        ]
+
+    async def test_oidc_conflict_on_a_first_activation_is_not_audited(
+        self, client: AsyncClient, db_session, maintainer, app_with_members, fake_keycloak, fake_vault
+    ):
+        fake_vault[f"apps/_ungrouped/{app_with_members.slug}/dev"] = {"OIDC_CLIENT_ID": "theirs"}
+        _, token = maintainer
+
+        resp = await client.post(f"/api/v1/apps/{app_with_members.id}/auth", headers=_auth(token))
+
+        assert resp.status_code == 409
+        assert await _auth_audit(db_session) == []
+
     async def test_keycloak_unreachable_is_503_not_500(
         self, client: AsyncClient, db_session, monkeypatch, maintainer, app_with_members
     ):

@@ -8,6 +8,7 @@ as test_keycloak_service.py; scaffolding and GitLab are stubbed.
 """
 import httpx
 import pytest
+from fastapi import HTTPException
 from hvac.exceptions import InvalidPath, VaultDown
 from shared.models import ApplicationOnboardRequest, ApplicationScaffoldRequest, ScaffoldingParams
 
@@ -245,6 +246,46 @@ class TestScaffold:
 
         assert app.auth_provisioned is False
         assert app.auth_warnings == ["keycloak_provisioning_failed"]
+
+
+    async def test_oidc_conflict_on_retry_replaces_the_previous_reason(
+        self, db_session, monkeypatch, fake_vault, fake_keycloak
+    ):
+        """First attempt: Vault down. Retry: the team has meanwhile defined its own
+        OIDC_* keys. The 409 must leave the conflict as the reason, not the outage."""
+        working_get_secret = vault_client.get_secret
+
+        def vault_down(path, mount_point="secret"):
+            raise VaultDown("sealed")
+
+        monkeypatch.setattr(vault_client, "get_secret", vault_down)
+        app = await AppService(db_session).scaffold_app(_scaffold_request(["keycloak"]))
+        assert app.auth_warnings == ["keycloak_instance_unavailable"]
+        monkeypatch.setattr(vault_client, "get_secret", working_get_secret)
+        fake_vault["apps/_ungrouped/demo/dev"] = {"OIDC_CLIENT_ID": "theirs"}
+
+        with pytest.raises(HTTPException) as exc_info:
+            await KeycloakService(db_session).activate(app)
+
+        assert exc_info.value.status_code == 409
+        await db_session.refresh(app)
+        assert app.auth_provisioned is False
+        assert app.auth_warnings == ["oidc_keys_conflict"]
+
+    async def test_oidc_conflict_on_a_first_activation_records_nothing(self, db_session, fake_vault):
+        """Never attempted before (auth_provisioned None): the request is refused and
+        the app's state stays untouched."""
+        app = Application(name="plain", slug="plain", owner="o", framework="python-fastapi")
+        db_session.add(app)
+        await db_session.commit()
+        fake_vault["apps/_ungrouped/plain/prod"] = {"OIDC_ISSUER_URL": "https://their-own-idp"}
+
+        with pytest.raises(HTTPException):
+            await KeycloakService(db_session).activate(app)
+
+        await db_session.refresh(app)
+        assert app.auth_provisioned is None
+        assert not app.auth_warnings
 
 
 class TestEnvfromWarning:

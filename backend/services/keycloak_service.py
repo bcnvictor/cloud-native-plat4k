@@ -225,6 +225,10 @@ class KeycloakService:
             try:
                 await self.assert_no_foreign_oidc_keys(app)
             except HTTPException:
+                # A retry after a recorded failure: the conflict is now the reason.
+                # A first attempt leaves the app untouched (the request is refused).
+                if app.auth_provisioned is False:
+                    await self.mark_activation_failed(app, KeycloakAuthWarning.OIDC_KEYS_CONFLICT)
                 raise
             except Exception:
                 return await self._activation_failed(app, KeycloakAuthWarning.INSTANCE_UNAVAILABLE)
