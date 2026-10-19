@@ -312,9 +312,10 @@ Neutre :
 - Keycloak est optionnel et désactivé par défaut (`KEYCLOAK_ENABLED=false`) : le reste de la
   plateforme fonctionne sans lui, et une app peut être créée avec ou sans le service Keycloak
   coché, avec le même template.
-- Le rôle `admin` du service account `cnp-provisioner` a été validé de bout en bout par le
-  smoke test local du Lot 7 (`scripts/keycloak-smoke.py`, contre une vraie instance Keycloak
-  en docker compose) : provisioning, vérification realm/client/mapper audience, obtention et
+- Le rôle `admin` du service account `cnp-provisioner` a été validé de bout en bout contre
+  une vraie instance Keycloak en docker compose, d'abord par le smoke test local du Lot 7,
+  aujourd'hui par le banc `infra/keycloak/verify.sh --local` (`infra/keycloak/tests/smoke.py`) :
+  provisioning, vérification realm/client/mapper audience, obtention et
   validation d'un vrai token, suppression puis recréation d'un realm. Ce test a aussi révélé
   et corrigé un bug réel indépendant du choix de rôle — un token admin mis en cache avant la
   création d'un realm ne porte pas encore les droits sur ce realm, faisant échouer l'appel
