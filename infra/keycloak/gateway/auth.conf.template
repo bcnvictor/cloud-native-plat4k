@@ -13,6 +13,10 @@ server {
     # Defence in depth: reject ";" here whatever the upstream version does with
     # it (Keycloak 26.8.0 itself answers 400). Query strings are not checked.
     if ($uri ~ "[%;]") { return 403; }
+    # $uri stops at a raw "#", but routes proxy the raw $request_uri: "realms/x#/../master"
+    # would match no deny rule yet carry a master path upstream. Clients never send a
+    # fragment and a "#" in a query string must be encoded, so reject it outright.
+    if ($request_uri ~ "#") { return 400; }
     include /etc/nginx/keycloak-routes/*.conf;
     location @keycloak_unavailable { return 503; }
     location / { return 404; }

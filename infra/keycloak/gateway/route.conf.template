@@ -2,6 +2,9 @@
 location ~ ^/clusters/@KEY@/(?:admin/master|admin/realms/master|realms/master)(?:/|$) { return 403; }
 location ~ ^/clusters/@KEY@/(?:health|metrics)(?:/|$) { return 403; }
 location ~ ^/clusters/@KEY@(?:/|$) {
+    # The raw $request_uri is forwarded: refuse a "#" here too, whatever server
+    # includes this route (the auth vhost already does).
+    if ($request_uri ~ "#") { return 400; }
     set $keycloak_upstream kc-@KEY@.@TAILNET@:8080;
     proxy_pass http://$keycloak_upstream$request_uri;
     proxy_set_header Host @DOMAIN@;

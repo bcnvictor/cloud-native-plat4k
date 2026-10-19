@@ -30,6 +30,28 @@ def free_port():
         return sock.getsockname()[1]
 
 
+def raw_get(base, target):
+    """Send `target` verbatim over TLS: HTTP clients drop a URL fragment before
+    sending, a raw client does not. Returns (status, body)."""
+    import ssl
+    from urllib.parse import urlsplit
+
+    url = urlsplit(base)
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    with socket.create_connection((url.hostname, url.port), timeout=15) as raw:
+        with context.wrap_socket(raw, server_hostname=url.hostname) as tls:
+            tls.sendall(
+                f"GET {target} HTTP/1.1\r\nHost: {url.hostname}\r\nConnection: close\r\n\r\n".encode()
+            )
+            data = b""
+            while chunk := tls.recv(65536):
+                data += chunk
+    head, _, body = data.partition(b"\r\n\r\n")
+    return int(head.split()[1]), body
+
+
 def checked(argv, *, env=None):
     result = subprocess.run(argv, env=env, capture_output=True)
     if result.returncode:
@@ -513,6 +535,13 @@ async def verify_console(state, monkeypatch):
                 "/health/ready",
             ):
                 assert client.get(base + suffix).status_code == 403
+    for name in ("public", "private"):
+        prefix = state[name]["public_url"][len(state["public_base"]) :]
+        status, body = raw_get(
+            state["public_base"], prefix + "/realms/x#/../master/.well-known/openid-configuration"
+        )
+        # Rejected by the gateway itself, not by Keycloak's own path normalization.
+        assert status == 400 and b"missingNormalization" not in body
 
 
 async def verify_realm_rename(state, monkeypatch):
