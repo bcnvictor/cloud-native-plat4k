@@ -48,6 +48,17 @@ La configuration est stockée dans `~/.cnp/config.toml` (URL de l'API + clé d'A
 | `cnp cluster update`   | Mettre à jour un cluster             |
 | `cnp cluster delete`   | Supprimer un cluster                 |
 
+## Déploiements — `cnp deployments`
+
+Historique récent des déploiements ArgoCD (fenêtre d'historique d'ArgoCD, environ 10 par app et par environnement).
+
+| Commande                                              | Description                                              |
+|-------------------------------------------------------|----------------------------------------------------------|
+| `cnp deployments list [--app ID] [--env dev\|prod] [--limit N]` | Lister les déploiements récents, du plus récent au plus ancien |
+| `cnp deployments get ID`                              | Détailler un déploiement (`ID` = `<app_id>:<env>:<history_id>`) |
+
+`By` vaut `auto` pour un déploiement déclenché par l'auto-sync ArgoCD. Les couples app/environnement qu'ArgoCD n'a pas pu fournir sont signalés en avertissement sous le tableau. Toutes les commandes acceptent `-o json`.
+
 ## Ressources — `cnp resources`
 
 | Commande                  | Description                  |
