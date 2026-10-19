@@ -57,7 +57,7 @@ def _reason(exc: BaseException) -> str:
         return "ArgoCD timeout"
     if isinstance(exc, (KeyError, ValidationError)):
         return "ArgoCD returned a malformed history entry"
-    return f"ArgoCD error: {exc}"
+    return f"ArgoCD error: {type(exc).__name__}"
 
 
 class DeploymentService:
@@ -81,23 +81,42 @@ class DeploymentService:
         )
         return list(result.scalars().all())
 
-    async def _clients_by_cluster(self, cluster_ids: set[int]) -> dict[int, object]:
-        """Un client ArgoCD (ou l'exception qui l'empêche) par cluster ; Vault est synchrone."""
+    async def _client_for(self, cluster: ClusterConnection, timeout: float) -> object:
+        """Client ArgoCD du cluster, ou l'exception à remonter ; la lecture Vault est synchrone."""
+        try:
+            return await asyncio.wait_for(
+                anyio.to_thread.run_sync(
+                    get_argocd_client_for_cluster, cluster, abandon_on_cancel=True
+                ),
+                timeout,
+            )
+        except TimeoutError:
+            return HTTPException(status_code=503, detail="ArgoCD token lookup timeout")
+        except HTTPException as exc:
+            if exc.status_code != 503:
+                return exc
+            error = exc.detail
+        except Exception as exc:
+            error = repr(exc)
+        # Le détail Vault (URL, chemin du secret) reste dans les logs serveur, jamais dans la réponse.
+        logger.warning("deployments: ArgoCD client for cluster %s: %s", cluster.name, error)
+        return HTTPException(
+            status_code=503, detail=f"ArgoCD token unavailable for cluster '{cluster.name}'"
+        )
+
+    async def _clients_by_cluster(self, cluster_ids: set[int], timeout: float) -> dict[int, object]:
+        """Un client ArgoCD (ou l'exception qui l'empêche) par cluster, lookups en parallèle."""
         if not cluster_ids:
             return {}
         result = await self.db.execute(
             select(ClusterConnection).where(ClusterConnection.id.in_(cluster_ids))
         )
+        clusters = list(result.scalars().all())
         clients: dict[int, object] = {
             cid: HTTPException(status_code=404, detail="Cluster not found") for cid in cluster_ids
         }
-        for cluster in result.scalars().all():
-            try:
-                clients[cluster.id] = await anyio.to_thread.run_sync(
-                    get_argocd_client_for_cluster, cluster
-                )
-            except Exception as exc:
-                clients[cluster.id] = exc
+        found = await asyncio.gather(*(self._client_for(c, timeout) for c in clusters))
+        clients.update({cluster.id: client for cluster, client in zip(clusters, found)})
         return clients
 
     async def list_deployments(
@@ -106,8 +125,12 @@ class DeploymentService:
         env: DeploymentEnv | None = None,
         limit: int = 50,
     ) -> DeploymentListResponse:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _LIST_BUDGET  # couvre aussi la phase Vault
         apps = await self._deployed_apps(app_id)
-        clients = await self._clients_by_cluster({app.target_cluster_id for app in apps})
+        clients = await self._clients_by_cluster(
+            {app.target_cluster_id for app in apps}, min(_CALL_TIMEOUT, _LIST_BUDGET)
+        )
         envs = [env] if env else list(_ENVS)
         semaphore = asyncio.Semaphore(_CONCURRENCY)
 
@@ -132,7 +155,7 @@ class DeploymentService:
                     tasks[asyncio.ensure_future(fetch(app, app_env, client))] = (app, app_env)
 
         if tasks:
-            _, pending = await asyncio.wait(tasks, timeout=_LIST_BUDGET)
+            _, pending = await asyncio.wait(tasks, timeout=max(0.0, deadline - loop.time()))
             for task in pending:
                 task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
@@ -159,7 +182,8 @@ class DeploymentService:
         app = await self._get_app(app_id)
         if app is None or not app.target_cluster_id:
             raise HTTPException(status_code=404, detail="Deployment not found")
-        client = (await self._clients_by_cluster({app.target_cluster_id}))[app.target_cluster_id]
+        clients = await self._clients_by_cluster({app.target_cluster_id}, _CALL_TIMEOUT)
+        client = clients[app.target_cluster_id]
         if isinstance(client, HTTPException) and client.status_code == 404:
             raise HTTPException(status_code=404, detail="Deployment not found")
 

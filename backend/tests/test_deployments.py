@@ -50,10 +50,11 @@ class FakeArgoCD:
 @pytest.fixture
 def argocd(monkeypatch):
     """Un FakeArgoCD partagé ; `cluster_errors` simule un ArgoCD non configuré ou Vault en panne."""
-    state = SimpleNamespace(client=FakeArgoCD(), cluster_errors={}, factory_calls=[])
+    state = SimpleNamespace(client=FakeArgoCD(), cluster_errors={}, vault_delays={}, factory_calls=[])
 
     def fake_factory(cluster):
         state.factory_calls.append(cluster.id)
+        time.sleep(state.vault_delays.get(cluster.id, 0))  # lecture Vault synchrone (hvac)
         if cluster.id in state.cluster_errors:
             raise state.cluster_errors[cluster.id]
         return state.client
@@ -281,6 +282,91 @@ async def test_list_requires_auth(client: AsyncClient):
     assert (await client.get("/api/v1/deployments/")).status_code == 401
 
 
+@pytest.mark.anyio
+async def test_list_vault_lookups_run_concurrently(client: AsyncClient, dev_token: str,
+                                                   db_session: AsyncSession, argocd):
+    clusters = [await _cluster(db_session, f"c{i}") for i in range(3)]
+    for c in clusters:
+        await _app(db_session, f"app{c.id}", c.id)
+        argocd.vault_delays[c.id] = 0.5
+
+    started = time.monotonic()
+    resp = await client.get("/api/v1/deployments/", headers=_auth(dev_token))
+
+    assert resp.status_code == 200
+    assert time.monotonic() - started < 1.0  # séquentiel : ~1.5 s
+
+
+@pytest.mark.anyio
+async def test_list_slow_vault_lookup_times_out(client: AsyncClient, dev_token: str,
+                                                db_session: AsyncSession, argocd, monkeypatch):
+    monkeypatch.setattr(deployment_service, "_CALL_TIMEOUT", 0.1)
+    slow, fast = await _cluster(db_session, "slow"), await _cluster(db_session, "fast")
+    slow_app = await _app(db_session, "billing", slow.id)
+    await _app(db_session, "search", fast.id)
+    argocd.vault_delays[slow.id] = 1.0
+    argocd.client.histories = {"search-dev": [_entry(1, "2026-10-01T10:00:00Z")]}
+
+    started = time.monotonic()
+    body = (await client.get("/api/v1/deployments/", headers=_auth(dev_token))).json()
+
+    assert time.monotonic() - started < 0.8
+    assert [d["app_slug"] for d in body["items"]] == ["search"]
+    assert body["unavailable"] == [
+        {"app_id": slow_app.id, "env": "dev", "reason": "ArgoCD token lookup timeout"},
+        {"app_id": slow_app.id, "env": "prod", "reason": "ArgoCD token lookup timeout"},
+    ]
+
+
+@pytest.mark.anyio
+async def test_list_budget_includes_vault_phase(client: AsyncClient, dev_token: str,
+                                                db_session: AsyncSession, argocd, monkeypatch):
+    monkeypatch.setattr(deployment_service, "_CALL_TIMEOUT", 1.0)
+    monkeypatch.setattr(deployment_service, "_LIST_BUDGET", 1.2)
+    cluster = await _cluster(db_session)
+    await _app(db_session, "billing", cluster.id)
+    argocd.vault_delays[cluster.id] = 0.8
+    argocd.client.delays = {"billing-dev": 5.0, "billing-prod": 5.0}
+
+    started = time.monotonic()
+    body = (await client.get("/api/v1/deployments/", headers=_auth(dev_token))).json()
+
+    assert time.monotonic() - started < 1.5  # sans budget partagé : 0.8 + 1.0 s
+    assert {u["reason"] for u in body["unavailable"]} == {"ArgoCD timeout"}
+
+
+VAULT_ERROR = ("ArgoCD token unavailable for cluster 'c1': None, "
+               "on get http://vault.internal:8200/v1/secret/data/argocd/1")
+
+
+@pytest.mark.anyio
+async def test_list_never_leaks_vault_details(client: AsyncClient, dev_token: str,
+                                              db_session: AsyncSession, argocd):
+    cluster = await _cluster(db_session)
+    await _app(db_session, "billing", cluster.id)
+    await _app(db_session, "search", cluster.id)
+    argocd.cluster_errors = {cluster.id: HTTPException(status_code=503, detail=VAULT_ERROR)}
+    argocd.client.errors = {"search-dev": RuntimeError("boom at https://argocd.internal/x")}
+
+    resp = await client.get("/api/v1/deployments/", headers=_auth(dev_token))
+
+    assert {u["reason"] for u in resp.json()["unavailable"]} == {"ArgoCD token unavailable for cluster 'c1'"}
+    assert "vault.internal" not in resp.text
+
+
+@pytest.mark.anyio
+async def test_list_generic_argocd_error_hides_message(client: AsyncClient, dev_token: str,
+                                                       db_session: AsyncSession, argocd):
+    cluster = await _cluster(db_session)
+    billing = await _app(db_session, "billing", cluster.id)
+    argocd.client.errors = {"billing-dev": RuntimeError("boom at https://argocd.internal/x")}
+
+    resp = await client.get("/api/v1/deployments/?env=dev", headers=_auth(dev_token))
+
+    assert resp.json()["unavailable"] == [{"app_id": billing.id, "env": "dev", "reason": "ArgoCD error: RuntimeError"}]
+    assert "argocd.internal" not in resp.text
+
+
 # ── GET /deployments/{id} ─────────────────────────────────────────────────────
 
 @pytest.mark.anyio
@@ -386,3 +472,16 @@ async def test_get_argocd_timeout_is_503(client: AsyncClient, dev_token: str,
 @pytest.mark.anyio
 async def test_get_requires_auth(client: AsyncClient):
     assert (await client.get("/api/v1/deployments/1:prod:1")).status_code == 401
+
+
+@pytest.mark.anyio
+async def test_get_never_leaks_vault_details(client: AsyncClient, dev_token: str,
+                                             db_session: AsyncSession, argocd):
+    cluster = await _cluster(db_session)
+    billing = await _app(db_session, "billing", cluster.id)
+    argocd.cluster_errors = {cluster.id: HTTPException(status_code=503, detail=VAULT_ERROR)}
+
+    resp = await client.get(f"/api/v1/deployments/{billing.id}:prod:5", headers=_auth(dev_token))
+
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "ArgoCD token unavailable for cluster 'c1'"
