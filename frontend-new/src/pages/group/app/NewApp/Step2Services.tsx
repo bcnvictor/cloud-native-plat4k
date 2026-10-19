@@ -15,28 +15,35 @@ interface Props {
   onBack: () => void;
 }
 
-const SERVICES = [
+// `badge`: why a service can't be picked in the wizard (null = selectable).
+const SERVICES: {
+  key: 'database' | 'auth' | 'cache';
+  icon: JSX.Element;
+  label: string;
+  desc: string;
+  badge: 'CLI/API' | 'Soon' | null;
+}[] = [
   {
-    key: 'database' as const,
+    key: 'database',
     icon: <IconDatabase size={18} />,
     label: 'Database',
     // Not sent by the wizard (see services.ts): scaffold-time PostgreSQL stays CLI/API only.
     desc: 'PostgreSQL managed in-cluster — available through the CLI/API only',
-    soon: true,
+    badge: 'CLI/API',
   },
   {
-    key: 'auth' as const,
+    key: 'auth',
     icon: <IconLock size={18} />,
     label: 'Authentication',
     desc: 'Keycloak — dedicated realm per env, delegated admin console',
-    soon: false,
+    badge: null,
   },
   {
-    key: 'cache' as const,
+    key: 'cache',
     icon: <IconBolt size={18} />,
     label: 'Cache',
     desc: 'Redis — memory cache',
-    soon: true,
+    badge: 'Soon',
   },
 ];
 
@@ -48,6 +55,7 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
       </p>
 
       {SERVICES.map((svc) => {
+        const unavailable = svc.badge !== null;
         const enabled =
           svc.key === 'database'
             ? data.database.enabled
@@ -60,7 +68,7 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
             key={svc.key}
             className={cn(
               'border-2 rounded-md transition-colors bg-card',
-              svc.soon
+              unavailable
                 ? 'border-border opacity-60'
                 : enabled
                 ? 'border-foreground'
@@ -69,13 +77,13 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
           >
             <button
               type="button"
-              disabled={svc.soon}
+              disabled={unavailable}
               className={cn(
                 'w-full flex items-center gap-3 p-4 text-left',
-                svc.soon ? 'cursor-not-allowed' : 'cursor-pointer'
+                unavailable ? 'cursor-not-allowed' : 'cursor-pointer'
               )}
               onClick={() => {
-                if (svc.soon) return;
+                if (unavailable) return;
                 if (svc.key === 'database') {
                   onChange({ database: { ...data.database, enabled: !data.database.enabled } });
                 } else if (svc.key === 'auth') {
@@ -90,9 +98,9 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
                 <p className="text-sm font-medium text-foreground">{svc.label}</p>
                 <p className="text-xs text-muted-foreground">{svc.desc}</p>
               </div>
-              {svc.soon ? (
+              {unavailable ? (
                 <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                  Soon
+                  {svc.badge}
                 </span>
               ) : enabled ? (
                 <IconCircleCheckFilled size={18} className="text-info" />

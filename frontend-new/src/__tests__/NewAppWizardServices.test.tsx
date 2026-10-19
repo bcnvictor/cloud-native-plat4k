@@ -1,4 +1,4 @@
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Step2Services } from '../pages/group/app/NewApp/Step2Services';
 import { Step4Recap } from '../pages/group/app/NewApp/Step4Recap';
@@ -22,6 +22,17 @@ describe('Step2Services', () => {
     expect(tile.textContent).toMatch(/CLI\/API only/);
     fireEvent.click(tile);
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('badges the database "CLI/API", not "Soon", and the cache "Soon"', () => {
+    render(<Step2Services data={services(false)} onChange={() => {}} onNext={() => {}} onBack={() => {}} />);
+
+    const database = screen.getByRole('button', { name: /Database/ });
+    expect(within(database).getByText('CLI/API')).toBeTruthy();
+    expect(within(database).queryByText('Soon')).toBeNull();
+    const cache = screen.getByRole('button', { name: /Cache/ });
+    expect(within(cache).getByText('Soon')).toBeTruthy();
+    expect(cache.hasAttribute('disabled')).toBe(true);
   });
 
   it('keeps authentication selectable', () => {
