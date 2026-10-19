@@ -68,7 +68,7 @@ export interface Application {
   auth_enabled?: boolean;
   auth_provisioned?: boolean | null;
   auth_instance_key?: string | null;
-  auth_warnings?: string[] | null;
+  auth_warnings?: KeycloakAuthWarning[] | null;
 }
 
 export interface ArgoEnvStatus {
@@ -228,6 +228,14 @@ export interface MyAccessResponse {
  *  realm CNP didn't create for this app · unknown: Keycloak unreachable/disabled. */
 export type KeycloakEnvState = 'active' | 'missing' | 'foreign' | 'unknown';
 
+/** Application.auth_warnings codes (shared/models.py KeycloakAuthWarning). The first
+ *  three describe the last failed activation; chart_missing_envfrom the repo's chart. */
+export type KeycloakAuthWarning =
+  | 'keycloak_instance_unavailable'
+  | 'keycloak_provisioning_failed'
+  | 'oidc_keys_conflict'
+  | 'chart_missing_envfrom';
+
 export interface KeycloakEnvStatus {
   enabled: boolean;
   realm: string;
@@ -251,7 +259,7 @@ export interface KeycloakStatusResponse {
   auth_provisioned?: boolean | null;
   dev: KeycloakEnvStatus;
   prod: KeycloakEnvStatus;
-  auth_warnings: string[];
+  auth_warnings: KeycloakAuthWarning[];
 }
 
 export interface KeycloakConsoleAccessResponse {

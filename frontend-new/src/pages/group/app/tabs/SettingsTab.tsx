@@ -1,4 +1,5 @@
 import { AuthInstanceInfo } from './AuthInstanceInfo';
+import { EnvFromWarning, activationProblem } from './AuthWarnings';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -8,7 +9,6 @@ import {
   IconTrash,
   IconCopy,
   IconCheck,
-  IconAlertTriangle,
 } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { appsApi, EnvName } from '@/api/apps';
@@ -406,11 +406,7 @@ export function SettingsTab() {
         {!app.auth_enabled ? (
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
-              {(app.auth_warnings ?? []).includes('oidc_keys_conflict')
-                ? 'Not activated: this app already defines OIDC_* variables (its own identity provider?). Remove them to enable Keycloak.'
-                : app.auth_provisioned === false
-                  ? 'Provisioning did not complete. Retry activation to finish the setup.'
-                  : 'Not activated for this app.'}
+              {activationProblem(app.auth_warnings, app.auth_provisioned) ?? 'Not activated for this app.'}
             </p>
             <Button
               variant="primary"
@@ -500,24 +496,7 @@ export function SettingsTab() {
                 );
               })}
 
-            {(authStatus?.auth_warnings ?? []).length > 0 && (
-              <div className="flex items-start gap-2 mt-1 p-2 bg-warning-subtle rounded-md">
-                <IconAlertTriangle size={14} className="text-warning-text shrink-0 mt-0.5" />
-                <p className="text-xs text-warning-text">
-                  This app's chart doesn't appear to consume the <code>{app.slug}-env</code>{' '}
-                  Secret via <code>envFrom</code> — OIDC variables may never reach the pod.{' '}
-                  <a
-                    href="https://cnp-docs.pages.dev/guides/keycloak-app-auth/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline"
-                  >
-                    See the integration guide
-                  </a>
-                  .
-                </p>
-              </div>
-            )}
+            <EnvFromWarning warnings={authStatus?.auth_warnings} appSlug={app.slug} />
           </div>
         )}
       </Card>
