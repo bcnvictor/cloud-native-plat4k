@@ -12,6 +12,23 @@ pytestmark = pytest.mark.keycloak_infra
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _wait_for_status(client: httpx.Client, path: str, code: int, **kwargs) -> int | None:
+    """Poll `path` until it answers `code`; return the last status seen (None if no
+    attempt got a response). An nginx reload or restart closes keep-alive connections
+    and the client may first reuse a dead one, so a transport error means "not yet".
+    """
+    status = None
+    for _ in range(50):
+        try:
+            status = client.get(path, **kwargs).status_code
+        except httpx.TransportError:
+            status = None
+        if status == code:
+            break
+        time.sleep(0.2)
+    return status
+
+
 @pytest.fixture(scope="module")
 def gateway(tmp_path_factory):
     from infra.keycloak.lib.config import TargetConfig
@@ -99,13 +116,9 @@ def gateway(tmp_path_factory):
             headers={"Host": "auth.test"},
             timeout=10,
         )
-        for _ in range(30):
-            try:
-                if client.get("/clusters/public-01/realms/demo-prod").status_code == 200:
-                    break
-            except httpx.HTTPError:
-                pass
-            time.sleep(0.2)
+        assert _wait_for_status(client, "/clusters/public-01/realms/demo-prod", 200) == 200, (
+            docker("logs", "nginx-grafana")
+        )
         yield client, folder, docker, compose
         client.close()
     finally:
@@ -192,7 +205,8 @@ def test_invalid_reload_preserves_routes(gateway):
     )
     assert result.returncode != 0
     assert (folder / "routes/private-01.conf").read_bytes() == original
-    assert client.get("/clusters/private-01/realms/demo-prod").status_code == 200
+    # The rejected candidate was rolled back with a reload of the previous route.
+    assert _wait_for_status(client, "/clusters/private-01/realms/demo-prod", 200) == 200
 
 
 def test_grafana_works_without_auth_certificate(gateway):
@@ -204,27 +218,22 @@ def test_grafana_works_without_auth_certificate(gateway):
         docker("restart", "nginx-grafana")
         port = docker("port", "nginx-grafana", "443").strip().rsplit(":", 1)[1]
         client.base_url = f"https://127.0.0.1:{port}"
-        response = None
-        last_error = None
-        for _ in range(30):
-            try:
-                response = client.get("/", headers={"Host": "grafana.test"})
-                if response.status_code == 200:
-                    break
-            except httpx.HTTPError as exc:
-                last_error = str(exc)
-            time.sleep(0.2)
-        assert response is not None, (
-            last_error,
+        status = _wait_for_status(client, "/", 200, headers={"Host": "grafana.test"})
+        assert status == 200, (
+            status,
             docker("logs", "nginx-grafana"),
             docker("port", "nginx-grafana", "443"),
         )
-        assert response.text == "grafana"
+        assert client.get("/", headers={"Host": "grafana.test"}).text == "grafana"
     finally:
         cert.write_bytes(saved)
         docker("restart", "nginx-grafana")
         port = docker("port", "nginx-grafana", "443").strip().rsplit(":", 1)[1]
         client.base_url = f"https://127.0.0.1:{port}"
+        # Later tests assume the auth vhost is back: wait for it, not just the restart.
+        assert _wait_for_status(client, "/clusters/public-01/realms/demo-prod", 200) == 200, (
+            docker("logs", "nginx-grafana")
+        )
 
 
 def test_failed_activation_restores_last_working_route(gateway):
@@ -251,12 +260,7 @@ def test_failed_activation_restores_last_working_route(gateway):
         capture_output=True,
     )
     try:
-        for attempt in range(30):
-            response = client.get("/clusters/private-01/realms/demo-prod")
-            if response.status_code == 503:
-                break
-            time.sleep(0.1)
-        assert response.status_code == 503
+        assert _wait_for_status(client, "/clusters/private-01/realms/demo-prod", 503) == 503
         assert client.get("/clusters/public-01/realms/demo-prod").status_code == 200
     finally:
         subprocess.run(
@@ -267,9 +271,4 @@ def test_failed_activation_restores_last_working_route(gateway):
             capture_output=True,
         )
     assert (folder / "routes/private-01.conf").read_bytes() == original
-    for attempt in range(30):
-        response = client.get("/clusters/private-01/realms/demo-prod")
-        if response.status_code == 200:
-            break
-        time.sleep(0.1)
-    assert response.status_code == 200
+    assert _wait_for_status(client, "/clusters/private-01/realms/demo-prod", 200) == 200
