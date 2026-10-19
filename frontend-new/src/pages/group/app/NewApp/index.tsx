@@ -123,7 +123,6 @@ export function NewApp() {
           onChange={(d) => setStep2((p) => ({ ...p, ...d }))}
           onNext={() => setStep(3)}
           onBack={() => setStep(1)}
-          origin={step1.origin}
         />
       )}
       {step === 3 && (

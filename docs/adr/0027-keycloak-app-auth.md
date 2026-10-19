@@ -241,7 +241,8 @@ variables d'environnement (ADR-0025) et auraient empêché Keycloak de livrer qu
    envoyé au backend (`ApplicationScaffoldRequest.scaffolding` restait `None`). Corrigé :
    le front construit et envoie `scaffolding.services` (scaffold) / `services` (onboard,
    nouveau champ sur `ApplicationOnboardRequest`), validés côté backend contre une liste
-   blanche `{"postgresql", "keycloak"}`.
+   blanche `{"postgresql", "keycloak"}`. Le wizard n'envoie que `keycloak` : la tuile
+   Database y est grisée, PostgreSQL au scaffold reste disponible par la CLI et l'API.
 2. **Chart → pod** : `chart/templates/deployment.yaml` des 4 templates ne déclarait ni
    `envFrom` vers le Secret ESO `{app_slug}-env`, ni l'annotation Reloader
    (`reloader.stakater.com/auto: "true"`) — alors qu'ADR-0024 §3 et ADR-0025 §6 décrivaient ce

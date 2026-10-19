@@ -10,6 +10,7 @@ import {
   MyAccessResponse,
   KeycloakStatusResponse,
   KeycloakConsoleAccessResponse,
+  ScaffoldingServicesPayload,
 } from '@/types';
 
 export type ScaleEnv = 'dev' | 'prod' | 'both';
@@ -46,7 +47,7 @@ export const appsApi = {
     owning_gitlab_group_id?: number;
     expose?: boolean;
     target_cluster_id?: number | null;
-    scaffolding?: { services: string[]; pg_size?: string };
+    scaffolding?: ScaffoldingServicesPayload;
   }): Promise<Application> {
     const res = await api.post<Application>('/apps/scaffold', payload);
     return res.data;

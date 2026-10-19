@@ -6,8 +6,6 @@ import {
 } from '@tabler/icons-react';
 import { ServiceConfig } from '@/types';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Select } from '@/components/ui/Select';
 import { cn } from '@/utils/cn';
 
 interface Props {
@@ -15,9 +13,6 @@ interface Props {
   onChange: (d: Partial<ServiceConfig>) => void;
   onNext: () => void;
   onBack: () => void;
-  /** CNP only rewrites the chart of apps it scaffolds — onboarded apps keep their own
-   * chart, so the PostgreSQL injection (which needs to patch values.yaml) isn't offered. */
-  origin?: 'scaffold' | 'onboard';
 }
 
 const SERVICES = [
@@ -25,8 +20,9 @@ const SERVICES = [
     key: 'database' as const,
     icon: <IconDatabase size={18} />,
     label: 'Database',
-    desc: 'PostgreSQL managed in-cluster',
-    soon: false,
+    // Not sent by the wizard (see services.ts): scaffold-time PostgreSQL stays CLI/API only.
+    desc: 'PostgreSQL managed in-cluster — available through the CLI/API only',
+    soon: true,
   },
   {
     key: 'auth' as const,
@@ -44,7 +40,7 @@ const SERVICES = [
   },
 ];
 
-export function Step2Services({ data, onChange, onNext, onBack, origin = 'scaffold' }: Props) {
+export function Step2Services({ data, onChange, onNext, onBack }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
@@ -52,8 +48,6 @@ export function Step2Services({ data, onChange, onNext, onBack, origin = 'scaffo
       </p>
 
       {SERVICES.map((svc) => {
-        const disabledForOnboard = svc.key === 'database' && origin === 'onboard';
-        const disabled = svc.soon || disabledForOnboard;
         const enabled =
           svc.key === 'database'
             ? data.database.enabled
@@ -66,7 +60,7 @@ export function Step2Services({ data, onChange, onNext, onBack, origin = 'scaffo
             key={svc.key}
             className={cn(
               'border-2 rounded-md transition-colors bg-card',
-              disabled
+              svc.soon
                 ? 'border-border opacity-60'
                 : enabled
                 ? 'border-foreground'
@@ -75,13 +69,13 @@ export function Step2Services({ data, onChange, onNext, onBack, origin = 'scaffo
           >
             <button
               type="button"
-              disabled={disabled}
+              disabled={svc.soon}
               className={cn(
                 'w-full flex items-center gap-3 p-4 text-left',
-                disabled ? 'cursor-not-allowed' : 'cursor-pointer'
+                svc.soon ? 'cursor-not-allowed' : 'cursor-pointer'
               )}
               onClick={() => {
-                if (disabled) return;
+                if (svc.soon) return;
                 if (svc.key === 'database') {
                   onChange({ database: { ...data.database, enabled: !data.database.enabled } });
                 } else if (svc.key === 'auth') {
@@ -94,11 +88,7 @@ export function Step2Services({ data, onChange, onNext, onBack, origin = 'scaffo
               <span className="text-muted-foreground">{svc.icon}</span>
               <div className="flex-1">
                 <p className="text-sm font-medium text-foreground">{svc.label}</p>
-                <p className="text-xs text-muted-foreground">
-                  {disabledForOnboard
-                    ? 'Not available for onboarded repos — CNP does not rewrite their chart'
-                    : svc.desc}
-                </p>
+                <p className="text-xs text-muted-foreground">{svc.desc}</p>
               </div>
               {svc.soon ? (
                 <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
@@ -110,47 +100,6 @@ export function Step2Services({ data, onChange, onNext, onBack, origin = 'scaffo
                 <span className="h-[18px] w-[18px] rounded-full border-2 border-border block" />
               )}
             </button>
-
-            {svc.key === 'database' && data.database.enabled && (
-              <div className="px-4 pb-4 pt-0 bg-background-subtle rounded-b-md flex gap-3">
-                <Select
-                  label="Type"
-                  options={[{ value: 'postgresql', label: 'PostgreSQL' }]}
-                  value="postgresql"
-                  onChange={() => {}}
-                  className="w-36"
-                />
-                <Input
-                  label="DB name"
-                  value={data.database.dbName}
-                  onChange={(e) =>
-                    onChange({
-                      database: { ...data.database, dbName: e.target.value },
-                    })
-                  }
-                  placeholder="myapp_db"
-                  className="flex-1"
-                />
-                <Select
-                  label="Size"
-                  options={[
-                    { value: '1Gi', label: '1 Gi' },
-                    { value: '5Gi', label: '5 Gi' },
-                    { value: '20Gi', label: '20 Gi' },
-                  ]}
-                  value={data.database.pgSize}
-                  onChange={(v) =>
-                    onChange({
-                      database: {
-                        ...data.database,
-                        pgSize: v as '1Gi' | '5Gi' | '20Gi',
-                      },
-                    })
-                  }
-                  className="w-24"
-                />
-              </div>
-            )}
           </div>
         );
       })}
