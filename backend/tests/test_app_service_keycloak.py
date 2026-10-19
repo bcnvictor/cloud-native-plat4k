@@ -137,6 +137,21 @@ class TestScaffold:
             assert fake_keycloak.realms[f"demo-{env}"]["attributes"]["cnp_app_id"] == str(app.id)
             assert fake_vault[f"apps/_ungrouped/demo/{env}"]["OIDC_CLIENT_ID"] == "demo"
 
+    async def test_oidc_keys_are_checked_once_per_env(self, db_session, monkeypatch, fake_vault, fake_keycloak):
+        reads: list[str] = []
+        fake_get_secret = vault_client.get_secret
+
+        def counting_get_secret(path, mount_point="secret"):
+            reads.append(path)
+            return fake_get_secret(path, mount_point)
+
+        monkeypatch.setattr(vault_client, "get_secret", counting_get_secret)
+
+        app = await AppService(db_session).scaffold_app(_scaffold_request(["keycloak"]))
+
+        assert app.auth_provisioned is True
+        assert reads == ["apps/_ungrouped/demo/dev", "apps/_ungrouped/demo/prod"]
+
     async def test_no_keycloak_service_leaves_auth_untouched(self, db_session, fake_keycloak):
         app = await AppService(db_session).scaffold_app(_scaffold_request([]))
 
@@ -166,6 +181,16 @@ class TestScaffold:
         assert app.auth_warnings == ["keycloak_instance_unavailable"]
         assert fake_keycloak.realms == {}
         assert "hvs.must-not-leak" not in caplog.text
+
+    async def test_unexpected_activation_error_does_not_fail_app_creation(self, db_session, monkeypatch):
+        async def crash(self, app):
+            raise RuntimeError("unexpected")
+
+        monkeypatch.setattr(KeycloakService, "activate", crash)
+
+        app = await AppService(db_session).scaffold_app(_scaffold_request(["keycloak"]))
+
+        assert app.id is not None
 
     async def test_foreign_oidc_keys_leave_keycloak_off(self, db_session, fake_vault, fake_keycloak):
         fake_vault["apps/_ungrouped/demo/prod"] = {"OIDC_ISSUER_URL": "https://their-own-idp"}

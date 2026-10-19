@@ -184,13 +184,19 @@ class KeycloakService:
         await self.db.refresh(app)
         return await self.status(app)
 
-    async def _activation_failed(self, app: Application, warning: KeycloakAuthWarning) -> KeycloakStatusResponse:
+    async def mark_activation_failed(self, app: Application, warning: KeycloakAuthWarning) -> None:
+        """auth_provisioned=False with the reason, which replaces an earlier attempt's.
+        Never calls Keycloak.
+        """
         app.auth_provisioned = False
-        clear_activation_warnings(app)  # this attempt's reason replaces an earlier one
+        clear_activation_warnings(app)
         add_auth_warnings(app, warning)
         logger.warning("Keycloak activation failed for app %s (%s)", app.slug, warning.value)
         await self.db.commit()
         await self.db.refresh(app)
+
+    async def _activation_failed(self, app: Application, warning: KeycloakAuthWarning) -> KeycloakStatusResponse:
+        await self.mark_activation_failed(app, warning)
         return await self.status(app)
 
     async def _vault_path(self, app: Application, env: str) -> str:

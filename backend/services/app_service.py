@@ -411,33 +411,22 @@ class AppService:
         """Best-effort (4K-15/ADR-0027): the app is created and usable even if
         Keycloak provisioning fails — auth_provisioned reports the outcome (mirrors
         ci_injected), never raises so app creation itself never fails because of it.
+        KeycloakService.activate records its own failures (Vault or instance
+        unavailable, provisioning error) as warnings.
         """
         from backend.services.keycloak_service import KeycloakService
 
         service = KeycloakService(self.db)
         try:
-            await service.assert_no_foreign_oidc_keys(app)
+            await service.activate(app)
         except HTTPException as e:
-            # The app defines OIDC_* itself (its own IdP): don't enable Keycloak over it.
+            # Only possible 409 for a new app: it defines OIDC_* itself (its own IdP),
+            # so Keycloak stays off instead of overwriting them.
             logger.warning("Keycloak not enabled for app %s: %s", app.slug, e.detail)
-            await self._auth_not_provisioned(app, KeycloakAuthWarning.OIDC_KEYS_CONFLICT)
-            return
+            await service.mark_activation_failed(app, KeycloakAuthWarning.OIDC_KEYS_CONFLICT)
         except Exception as e:
-            # Vault unreachable: same outcome as in KeycloakService.activate, the team
-            # retries activation later. Only the type is logged (no Vault detail).
-            logger.error("Keycloak not enabled for app %s: OIDC_* check failed (%s)", app.slug, type(e).__name__)
-            await self._auth_not_provisioned(app, KeycloakAuthWarning.INSTANCE_UNAVAILABLE)
-            return
-
-        await service.activate(app)
-
-    async def _auth_not_provisioned(self, app: Application, warning: KeycloakAuthWarning) -> None:
-        from backend.services.keycloak_service import add_auth_warnings
-
-        app.auth_provisioned = False
-        add_auth_warnings(app, warning)
-        await self.db.commit()
-        await self.db.refresh(app)
+            # Unexpected: still never fail the app creation. Only the type is logged.
+            logger.error("Keycloak activation failed for app %s (%s)", app.slug, type(e).__name__)
 
     async def _check_envfrom_warning(self, app: Application, bot: "GitLabClient") -> None:
         """Onboarded-app-only (mode A, ADR-0027 §6): best-effort check that the
