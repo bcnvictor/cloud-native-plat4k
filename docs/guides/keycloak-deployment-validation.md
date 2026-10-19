@@ -12,39 +12,48 @@ en attente de `terraform apply`.
 
 - Chart commun : Helm 3.17.3, lint strict et rendu des cibles public AKS, public GKE
   et privé k3s, PVC conservé, probes management, exposition privée, secrets ESO isolés.
-- Passerelle : 28 tests sur NGINX réel (Docker) avec deux amonts isolés ;
+- Passerelle : 32 tests sur NGINX réel (Docker) avec deux amonts isolés ;
   préfixes conservés, voisins inconnus 404, master/management 403, encodages
-  bloqués, amont absent 503, rollback de configuration invalide et d'une route
+  bloqués, `#` brut dans la ligne de requête refusé (400), amont absent 503, rollback de configuration invalide et d'une route
   valide mais inaccessible, Grafana disponible sans certificat auth. Fichier rejoué
   10 fois de suite sans échec (attentes tolérantes aux rechargements NGINX).
 - Sonde directe sur Keycloak 26.8.0 : `realms/master;x/...` répond 400 en direct
   et 403 via la passerelle ; `master%3Bx` répond 404 en direct et 403 via la
-  passerelle. Le rejet en bordure reste une défense en profondeur.
-- Banc local réel (exécuté avant les correctifs de la revue qualité de la PR #51,
-  non rejoué depuis) : **6/6 tests réussis**, deux Keycloak 26.8.0, PostgreSQL 16,
+  passerelle ; `realms/x#/../master/...` était transmis tel quel à Keycloak (qui le
+  refuse lui-même : 400 `missingNormalization`) et est désormais refusé par la
+  passerelle (400). Le rejet en bordure reste une défense en profondeur.
+- Keycloak 26.8.0 accepte l'id interne imposé à la création d'un realm, refuse un id
+  déjà pris (409) et ne le change jamais, même quand un `realm-admin` renomme le realm
+  en envoyant un autre id : la propriété d'un realm repose sur cet id.
+- Banc local réel (rejoué le 19 octobre 2026 après le durcissement avant activation) :
+  **7/7 tests réussis**, deux Keycloak 26.8.0, PostgreSQL 16,
   Vault 1.21, NGINX, base CNP dédiée ; bootstrap répété sans rotation, token ESO
   renouvelé et scopes interdits refusés, preuve d'issuer avec un certificat local
   approuvé, migration historique, provisioning CNP sur deux instances, association
   conservée après retarget, suppression d'un realm possédé, client confidential,
   SPA PKCE S256, JWT avec mauvaise audience/issuer refusé, login/refresh/logout,
-  401 anonyme/invalide, console d'équipe et révocation réelle, réinstallation
+  401 anonyme/invalide, console d'équipe (mot de passe temporaire changé au premier
+  login sous la politique `length(12) and notUsername`) et révocation réelle, realm
+  créé avec son id CNP, la protection brute-force et la politique de mot de passe,
+  realm renommé par son `realm-admin` vers le nom d'une autre app vu `foreign` (ni
+  adopté, ni complété, ni supprimé), `#` brut refusé par la passerelle, réinstallation
   après remise à zéro de la seule base Keycloak de test avec secret conservé.
   Les services et
   volumes sont supprimés en fin de test ; aucune donnée personnelle partagée.
-- Suite backend ordinaire (commande CI) : **485 réussis**, 2 ignorés ;
-  suite opérateur `-m keycloak_infra` : **55 réussis**, dont les 28 tests
-  passerelle avec Docker. Les 6 tests d'intégration sont exécutés séparément.
-- Frontend : **69/69 tests vitest**, tsc, eslint et build sans erreur ; ruff sans erreur.
+- Suite backend ordinaire (commande CI) : **515 réussis**, 2 ignorés ;
+  suite opérateur `-m keycloak_infra` : **59 réussis**, dont les 32 tests
+  passerelle avec Docker. Les 7 tests d'intégration sont exécutés séparément.
+- Frontend : **77/77 tests vitest**, tsc, eslint et build sans erreur ; ruff sans erreur.
 - Locks backend runtime/dev et opérateur : régénération sans différences
   (contrôle du 9 octobre).
 - Migration : un seul head Alembic, `c2d3e4f5a6b7`.
 
-Les 6 tests du banc (`verify.sh --local`) : bootstrap idempotent, migration
+Les 7 tests du banc (`verify.sh --local`) : bootstrap idempotent, migration
 conservant l'auth historique, lifecycle d'app isolé, login/refresh/logout PKCE
-sous préfixe, console d'équipe et frontières master, reprise réutilisant les
-credentials conservés. Ils forment un parcours ordonné : migration avant
-lifecycle, puis navigateur et console, enfin remise à zéro de la base de test
-et reprise.
+sous préfixe, console d'équipe et frontières master, realm renommé jamais adopté,
+reprise réutilisant les credentials conservés. Ils forment un parcours ordonné :
+migration avant lifecycle, puis navigateur et console, enfin remise à zéro de la
+base de test et reprise.
 Pour les rejouer, utiliser le runner complet.
 Le navigateur de test utilise le port localhost 5173, déjà autorisé dans les
 clients dev CNP ; libérer ce port avant l'essai. Il ne prend pas un serveur existant.
