@@ -2,8 +2,8 @@
 
 État au 19 octobre 2026, branche `feature/keycloak-portable-cnp`.
 Ce document distingue les essais réalisés des validations encore ouvertes.
-origin/main a été fusionné dans la branche (dernière fusion `a754047`) ; la branche n'est pas
-encore fusionnée dans main. Aucune installation live AKS ou k3s ni migration de
+origin/main a été fusionné dans la branche (dernière fusion `a754047`) ; sa fusion dans main
+se fait en mode dormant (voir [Publication et fusion](#publication-et-fusion)). Aucune installation live AKS ou k3s ni migration de
 la base CNP de production n'a été effectuée. La règle ACL Tailscale
 `tag:cnp-control` → `tag:k8s:8080` est ajoutée dans `infra/tailscale/main.tf`,
 en attente de `terraform apply`.
@@ -164,5 +164,11 @@ Les sauvegardes d'identités restent nécessaires pour récupérer les anciens u
 Publier le chart avec un SHA immuable, puis vérifier l'accès de lecture ArgoCD
 avant d'intégrer les Applications générées dans `cnp-gitops`.
 L'absence de publication n'est pas remplacée par un SHA fictif ou `HEAD`.
-La correction Compose isolant le Keycloak local est incluse ; elle n'autorise
-pas une fusion sur la seule base de ces tests sans les essais live encore ouverts.
+La correction Compose isolant le Keycloak local est incluse.
+
+Décision de fusion : le code est fusionné dans main en **mode dormant** (merge de la
+PR #51) : `KEYCLOAK_ENABLED=false` et aucune instance enregistrée dans le registre
+`keycloak_instances`, donc aucune app ne peut activer Keycloak et rien ne change pour
+la plateforme. La validation live reste ouverte : elle se fait instance par instance,
+avant l'activation de chacune, dans l'ordre k3s, puis AKS, puis GKE (parcours décrits
+ci-dessus). Une instance n'est enregistrée et activée qu'une fois son parcours validé.

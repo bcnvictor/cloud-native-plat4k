@@ -5,6 +5,9 @@
 Proposed
 - Date : 2026-09-24
 - Ticket : 4K-15
+- Mise en service : code fusionné en mode dormant (PR #51 : `KEYCLOAK_ENABLED=false`, aucune
+  instance enregistrée). Chaque instance est validée en live avant son activation (k3s, puis
+  AKS, puis GKE), voir le [guide de validation](../guides/keycloak-deployment-validation.md).
 
 ## Contexte
 
@@ -318,6 +321,10 @@ Négatif / Dette :
 - Instance Keycloak partagée = point de défaillance unique pour l'auth de toutes les apps qui
   l'utilisent ; son indisponibilité bloque `provision`/`reprovision`/`console-access` (mais pas
   les apps déjà provisionnées, qui valident leurs tokens localement via JWKS mis en cache).
+- La passerelle publique `auth.` (NGINX, `infra/keycloak/gateway/`) tourne sur la VM
+  `cnp-control` : point unique de défaillance accepté pour la v1. Une panne de la VM coupe le
+  login OIDC de toutes les apps protégées, quelle que soit leur instance, car tous les issuers
+  passent par elle. La résilience de `cnp-control` est un chantier futur, hors de cet ADR.
 - V1 sans SSO GitLab pour la console Keycloak : mot de passe temporaire à distribuer un par un,
   UX moins fluide que le reste de la plateforme (qui utilise déjà GitLab OAuth).
 - Mode A (apps importées) ne garantit pas que le code de l'app consomme réellement `OIDC_*` —
