@@ -100,3 +100,21 @@ describe('SettingsTab Keycloak activation', () => {
     expect(retry.hasAttribute('disabled')).toBe(true);
   });
 });
+
+describe('SettingsTab Keycloak status errors', () => {
+  it('reports a failed status request instead of a missing instance', async () => {
+    api.getAuthStatus.mockRejectedValue(new Error('503'));
+    const client = renderTab();
+    const button = await activationButton(client, /Activate Keycloak/);
+    expect(screen.getByText(/Could not load the Keycloak status/)).toBeTruthy();
+    expect(screen.queryByText('No Keycloak instance configured.')).toBeNull();
+    expect(button.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('claims nothing about the instance while the status is loading', async () => {
+    api.getAuthStatus.mockReturnValue(new Promise(() => {}));
+    const client = renderTab();
+    await waitFor(() => expect(client.getQueryState(['myAccess', 1])?.status).toBe('success'));
+    expect(screen.queryByText('No Keycloak instance configured.')).toBeNull();
+  });
+});

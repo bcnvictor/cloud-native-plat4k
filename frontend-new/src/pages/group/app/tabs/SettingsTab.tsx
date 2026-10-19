@@ -158,7 +158,7 @@ export function SettingsTab() {
   }
 
   // Authentication (Keycloak) — 4K-15/ADR-0027
-  const { data: authStatus } = useQuery({
+  const { data: authStatus, isError: authStatusFailed } = useQuery({
     queryKey: ['authStatus', app?.id],
     queryFn: () => appsApi.getAuthStatus(app!.id),
     enabled: !!app,
@@ -402,7 +402,14 @@ export function SettingsTab() {
           admin console access is granted per member (Owner/Maintainer only).
         </p>
 
-        <AuthInstanceInfo instance={authStatus?.instance ?? null} />
+        {/* Activation stays disabled until the status is known (canActivateAuth). */}
+        {authStatusFailed ? (
+          <p className="text-xs text-danger-text mb-3">
+            Could not load the Keycloak status. Retry later; if it persists, ask a platform admin.
+          </p>
+        ) : authStatus ? (
+          <AuthInstanceInfo instance={authStatus.instance ?? null} />
+        ) : null}
 
         {!app.auth_enabled ? (
           <div className="flex items-center justify-between">
