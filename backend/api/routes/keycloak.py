@@ -59,13 +59,16 @@ async def enable_auth(
     idempotent step by step, so a retry completes a half-created setup.
     """
     app = await _get_app(app_id, db)
-    if app.auth_enabled and app.auth_provisioned is not False:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Keycloak is already enabled for this app")
-    service = KeycloakService(db)
-    result = await service.activate(app)
+    result = await KeycloakService(db).activate(app)  # 409 if already enabled
 
     audit = AuditService(db)
-    await audit.log_action(current_user.id, "app.auth.enabled", app_id=app.id)
+    if result.auth_provisioned:
+        await audit.log_action(current_user.id, "app.auth.enabled", app_id=app.id)
+    else:
+        await audit.log_action(
+            current_user.id, "app.auth.enable_failed", app_id=app.id,
+            extra={"warnings": result.auth_warnings},
+        )
     await db.commit()
 
     return result

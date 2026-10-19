@@ -9,10 +9,11 @@ import pytest
 from httpx import AsyncClient
 from hvac.exceptions import InvalidPath
 from shared.models import UserRole
+from sqlalchemy import select
 
 from backend.core.config import settings
 from backend.core.security import get_password_hash
-from backend.db.models import Application, AppMember, ClusterConnection, User
+from backend.db.models import Application, AppMember, AuditLog, ClusterConnection, User
 from backend.services.keycloak_service import KeycloakService
 from backend.tests.test_keycloak_client import FakeKeycloak
 from backend.vault.client import vault_client
@@ -121,6 +122,11 @@ def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+async def _auth_audit(db_session) -> list[tuple]:
+    logs = (await db_session.execute(select(AuditLog).order_by(AuditLog.id))).scalars()
+    return [(log.action, log.app_id, log.extra) for log in logs if log.action.startswith("app.auth.")]
+
+
 class TestStatusRoute:
     async def test_viewer_can_read_status(self, client: AsyncClient, viewer, app_with_members, fake_keycloak):
         _, token = viewer
@@ -141,13 +147,37 @@ class TestEnableRoute:
         resp = await client.post(f"/api/v1/apps/{app_with_members.id}/auth", headers=_auth(token))
         assert resp.status_code == 403
 
-    async def test_maintainer_can_enable(self, client: AsyncClient, maintainer, app_with_members, fake_keycloak):
+    async def test_maintainer_can_enable(self, client: AsyncClient, db_session, maintainer, app_with_members, fake_keycloak):
         _, token = maintainer
         resp = await client.post(f"/api/v1/apps/{app_with_members.id}/auth", headers=_auth(token))
         assert resp.status_code == 201
         body = resp.json()
         assert body["dev"]["exists"] is True
         assert body["prod"]["exists"] is True
+        assert await _auth_audit(db_session) == [("app.auth.enabled", app_with_members.id, None)]
+
+    async def test_failed_activation_is_audited_as_a_failure(
+        self, client: AsyncClient, db_session, monkeypatch, maintainer, app_with_members
+    ):
+        from backend.keycloak.client import KeycloakClient
+
+        def refuse(request):
+            raise httpx.ConnectError("refused", request=request)
+
+        monkeypatch.setattr(
+            KeycloakService, "_client",
+            lambda self, connection: KeycloakClient(
+                base_url="http://keycloak.test", admin_client_id="x", admin_client_secret="y",
+                transport=httpx.MockTransport(refuse),
+            ),
+        )
+        _, token = maintainer
+        resp = await client.post(f"/api/v1/apps/{app_with_members.id}/auth", headers=_auth(token))
+
+        assert resp.json()["auth_provisioned"] is False
+        assert await _auth_audit(db_session) == [
+            ("app.auth.enable_failed", app_with_members.id, {"warnings": ["keycloak_provisioning_failed"]})
+        ]
 
 
 class TestConsoleAccessRoute:
