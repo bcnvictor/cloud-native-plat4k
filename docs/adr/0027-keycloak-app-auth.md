@@ -116,7 +116,9 @@ Alignés sur les tiers CNP existants (ADR-0017, dépendance `require_tier` dans
 Viewer et Developer voient le statut (realm actif / supprimé / non activé) mais n'ont aucune
 action, cohérent avec le fait que la console Keycloak d'un realm permet de gérer les secrets
 et l'auth de l'app — une action à réserver aux mêmes tiers que la gestion des membres et le
-déploiement prod.
+déploiement prod. L'accès console et la recréation d'un realm exigent en plus que Keycloak
+soit activé sur l'app (`auth_enabled`), sinon 409 : CNP ne crée jamais de realm, de client
+ni de compte `realm-admin` pour une app qui n'utilise pas Keycloak.
 
 ### 3. Accès console V1 : compte local, mot de passe temporaire
 

@@ -85,6 +85,16 @@ def _owned_by(realm_repr: dict, app: Application, env: str) -> bool:
     )
 
 
+def _require_enabled(app: Application) -> None:
+    """Console access and realm recreation are for apps that use Keycloak: never
+    create a realm, a client or a realm-admin account for an app that has it off."""
+    if not app.auth_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Keycloak is not enabled for this app — enable it first",
+        )
+
+
 def _is_public_client(framework: str | None) -> bool:
     return framework in PUBLIC_CLIENT_FRAMEWORKS
 
@@ -333,6 +343,7 @@ class KeycloakService:
         using. Callers (routes) are responsible for the Owner-only gate on prod.
         """
         _validate_env(env)
+        _require_enabled(app)
         connection = await KeycloakInstanceService(self.db).resolve_for_app(app)
         client = self._client(connection)
         realm = realm_name(app.slug, env)
@@ -345,6 +356,7 @@ class KeycloakService:
 
     async def grant_console_access(self, app: Application, env: str, user: User) -> KeycloakConsoleAccessResponse:
         _validate_env(env)
+        _require_enabled(app)
         connection = await KeycloakInstanceService(self.db).resolve_for_app(app)
         client = self._client(connection)
         realm = realm_name(app.slug, env)

@@ -238,7 +238,7 @@ class TestStatus:
 
 class TestReprovision:
     async def test_reprovision_conflicts_if_realm_exists(self, fake_keycloak, fake_vault):
-        app = _app()
+        app = _app(auth_enabled=True)
         service = KeycloakService(db=None)
         await service.provision(app, "dev")
 
@@ -247,15 +247,24 @@ class TestReprovision:
         assert getattr(exc_info.value, "status_code", None) == 409
 
     async def test_reprovision_succeeds_if_realm_missing(self, fake_keycloak, fake_vault):
-        app = _app()
+        app = _app(auth_enabled=True)
         service = KeycloakService(db=None)
         result = await service.reprovision(app, "dev")
         assert result.exists is True
 
+    async def test_reprovision_refused_when_keycloak_is_not_enabled(self, fake_keycloak, fake_vault):
+        """Recreating a realm is for apps that use Keycloak: never create a realm,
+        a client and OIDC_* variables for an app that has it off."""
+        with pytest.raises(Exception) as exc_info:
+            await KeycloakService(db=None).reprovision(_app(auth_enabled=False), "dev")
+        assert getattr(exc_info.value, "status_code", None) == 409
+        assert fake_keycloak.realms == {}
+        assert fake_vault == {}
+
 
 class TestConsoleAccess:
     async def test_grant_console_access_returns_credentials_once(self, fake_keycloak, fake_vault):
-        app = _app()
+        app = _app(auth_enabled=True)
         service = KeycloakService(db=None)
         await service.provision(app, "dev")
         user = User(id=42, email="alice@example.com", hashed_password="x")
@@ -270,13 +279,26 @@ class TestConsoleAccess:
         assert result.temporary_password != result.username
 
     async def test_grant_console_access_requires_existing_realm(self, fake_keycloak, fake_vault):
-        app = _app()
+        app = _app(auth_enabled=True)
         service = KeycloakService(db=None)
         user = User(id=42, email="alice@example.com", hashed_password="x")
 
         with pytest.raises(Exception) as exc_info:
             await service.grant_console_access(app, "dev", user)
         assert getattr(exc_info.value, "status_code", None) == 409
+
+    async def test_grant_console_access_refused_when_keycloak_is_not_enabled(self, fake_keycloak, fake_vault):
+        """Even if the app's realm still exists (Keycloak turned off since): no
+        realm-admin account is handed out for an app that has Keycloak off."""
+        app = _app(auth_enabled=True)
+        service = KeycloakService(db=None)
+        await service.provision(app, "dev")
+        app.auth_enabled = False
+
+        with pytest.raises(Exception) as exc_info:
+            await service.grant_console_access(app, "dev", User(id=42, email="alice@example.com", hashed_password="x"))
+        assert getattr(exc_info.value, "status_code", None) == 409
+        assert fake_keycloak.realms["demo-dev"]["users"] == {}
 
 
 class TestRevokeAndDeprovision:
@@ -286,7 +308,7 @@ class TestRevokeAndDeprovision:
         await KeycloakService(db=None).revoke_member(app, 1)  # must not raise
 
     async def test_revoke_member_removes_console_user(self, fake_keycloak, fake_vault):
-        app = _app()
+        app = _app(auth_enabled=True)
         service = KeycloakService(db=None)
         await service.provision(app, "dev")
         user = User(id=1, email="alice@example.com", hashed_password="x")

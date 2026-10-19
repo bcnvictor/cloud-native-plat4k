@@ -118,6 +118,12 @@ async def app_with_members(db_session, cluster, viewer, developer, maintainer, o
     return application
 
 
+async def _enable(db_session, application: Application) -> None:
+    """Keycloak on for the app (what activation sets), without provisioning."""
+    application.auth_enabled = True
+    await db_session.commit()
+
+
 def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
@@ -201,7 +207,8 @@ class TestConsoleAccessRoute:
         assert body["username"] == f"cnp.maintainer.{user.id}"
         assert "temporary_password" in body
 
-    async def test_console_access_without_realm_is_409(self, client: AsyncClient, maintainer, app_with_members, fake_keycloak):
+    async def test_console_access_without_realm_is_409(self, client: AsyncClient, db_session, maintainer, app_with_members, fake_keycloak):
+        await _enable(db_session, app_with_members)
         _, token = maintainer
         resp = await client.post(
             f"/api/v1/apps/{app_with_members.id}/auth/dev/console-access", headers=_auth(token)
@@ -217,7 +224,8 @@ class TestConsoleAccessRoute:
 
 
 class TestReprovisionRoute:
-    async def test_dev_reprovision_allowed_for_maintainer(self, client: AsyncClient, maintainer, app_with_members, fake_keycloak):
+    async def test_dev_reprovision_allowed_for_maintainer(self, client: AsyncClient, db_session, maintainer, app_with_members, fake_keycloak):
+        await _enable(db_session, app_with_members)
         _, token = maintainer
         resp = await client.post(
             f"/api/v1/apps/{app_with_members.id}/auth/dev/reprovision", headers=_auth(token)
@@ -232,7 +240,8 @@ class TestReprovisionRoute:
         )
         assert resp.status_code == 403
 
-    async def test_prod_reprovision_allowed_for_owner(self, client: AsyncClient, owner, app_with_members, fake_keycloak):
+    async def test_prod_reprovision_allowed_for_owner(self, client: AsyncClient, db_session, owner, app_with_members, fake_keycloak):
+        await _enable(db_session, app_with_members)
         _, token = owner
         resp = await client.post(
             f"/api/v1/apps/{app_with_members.id}/auth/prod/reprovision", headers=_auth(token)
@@ -247,6 +256,38 @@ class TestReprovisionRoute:
             f"/api/v1/apps/{app_with_members.id}/auth/dev/reprovision", headers=_auth(token)
         )
         assert resp.status_code == 409
+
+
+class TestKeycloakOffGuards:
+    """Console access and realm recreation need Keycloak on for the app (S3)."""
+
+    async def test_reprovision_refused_when_keycloak_is_off(
+        self, client: AsyncClient, db_session, maintainer, app_with_members, fake_keycloak, fake_vault
+    ):
+        _, token = maintainer
+        resp = await client.post(
+            f"/api/v1/apps/{app_with_members.id}/auth/dev/reprovision", headers=_auth(token)
+        )
+        assert resp.status_code == 409
+        assert fake_keycloak.realms == {}
+        assert fake_vault == {}
+        assert await _auth_audit(db_session) == []
+
+    async def test_console_access_refused_when_keycloak_is_off(
+        self, client: AsyncClient, db_session, maintainer, app_with_members, fake_keycloak
+    ):
+        _, token = maintainer
+        await _enable(db_session, app_with_members)
+        await client.post(f"/api/v1/apps/{app_with_members.id}/auth/dev/reprovision", headers=_auth(token))
+        app_with_members.auth_enabled = False
+        await db_session.commit()
+
+        resp = await client.post(
+            f"/api/v1/apps/{app_with_members.id}/auth/dev/console-access", headers=_auth(token)
+        )
+        assert resp.status_code == 409
+        assert fake_keycloak.realms["demo-dev"]["users"] == {}
+        assert ("app.auth.console_access", app_with_members.id, {"env": "dev"}) not in await _auth_audit(db_session)
 
 
 class TestEnableAndErrorsRoutes:
@@ -278,7 +319,7 @@ class TestEnableAndErrorsRoutes:
         assert resp.status_code == 409
 
     async def test_keycloak_unreachable_is_503_not_500(
-        self, client: AsyncClient, monkeypatch, maintainer, app_with_members
+        self, client: AsyncClient, db_session, monkeypatch, maintainer, app_with_members
     ):
         import httpx
 
@@ -295,6 +336,7 @@ class TestEnableAndErrorsRoutes:
                 transport=httpx.MockTransport(_boom),
             ),
         )
+        await _enable(db_session, app_with_members)
         _, token = maintainer
         resp = await client.post(
             f"/api/v1/apps/{app_with_members.id}/auth/dev/console-access", headers=_auth(token)
