@@ -108,6 +108,9 @@ VAULT_TOKEN=hvs.xxxxxxxxxxxx
 
 # Orchestration docker-compose
 COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.tunnel.yml
+
+# Serveur MCP (4K-77) : hosts acceptés par cnp-mcp
+MCP_ALLOWED_HOSTS=cnp.cloud-native-plat4k.me,localhost
 ```
 
 **Tout le reste** (SECRET_KEY, ENCRYPTION_KEY, GITLAB_*, PROMETHEUS_URL, etc.) est lu depuis Vault au démarrage du backend — ne pas les remettre dans `.env`.
@@ -181,6 +184,28 @@ vault kv put secret/argocd/<cluster_id> token=<argocd-token>
 Voir [architecture réseau](../architecture/network-tailscale.md) pour la topologie complète et [cluster-health-monitoring.md](cluster-health-monitoring.md) pour la procédure d'ajout d'un cluster.
 
 Pour la gestion des secrets Vault (rotation, policy, unseal keys), voir [`vault-runbook.md`](vault-runbook.md).
+
+## Serveur MCP (`cnp-mcp`)
+
+Le service `cnp-mcp` (4K-77) tourne dans le même compose que le backend, sans port publié. Le nginx du `frontend` l'expose en `https://cnp.cloud-native-plat4k.me/mcp`. Il n'a pas de secret : chaque client envoie sa propre clé API CNP.
+
+Variable d'infra à définir dans le `.env` de la VM (non secrète) :
+
+```bash
+MCP_ALLOWED_HOSTS=cnp.cloud-native-plat4k.me,localhost
+```
+
+`CNP_API_KEY` ne doit **pas** être défini en prod.
+
+Vérifications après déploiement :
+
+```bash
+docker compose ps cnp-mcp                     # healthy
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://cnp.cloud-native-plat4k.me/mcp   # 401 sans clé
+docker compose logs cnp-mcp --tail 50
+```
+
+Si `cnp-mcp` est arrêté, l'UI reste disponible et seul `/mcp` répond 502.
 
 ## Cloudflare Tunnel
 

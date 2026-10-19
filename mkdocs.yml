@@ -103,3 +103,4 @@ nav:
       - ADR-0021 — Grafana HTTPS: adr/0021-grafana-https-letsencrypt.md
       - ADR-0022 — Cloud privé k3s multi-cluster: adr/0022-cloud-prive-k3s-multi-cluster.md
       - ADR-0023 — Alerting et notifications: adr/0023-alerting-notifications-centre-notif.md
+      - ADR-0026 — Serveur MCP read-only: adr/0026-mcp-server.md
