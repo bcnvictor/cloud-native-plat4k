@@ -23,7 +23,6 @@ from backend.vault.client import vault_client
 @dataclass(frozen=True)
 class ResolvedKeycloak:
     instance_key: str | None
-    cluster_id: int | None
     public_url: str
     admin_url: str
     client_id: str
@@ -62,7 +61,6 @@ class KeycloakInstanceService:
             raise unavailable() from None
         return ResolvedKeycloak(
             row.instance_key,
-            row.cluster_id,
             row.public_url,
             row.admin_url,
             row.admin_client_id,
@@ -74,7 +72,6 @@ class KeycloakInstanceService:
         if not settings.KEYCLOAK_ENABLED or not settings.KEYCLOAK_ADMIN_CLIENT_SECRET:
             raise unavailable()
         return ResolvedKeycloak(
-            None,
             None,
             settings.KEYCLOAK_PUBLIC_URL.rstrip("/"),
             settings.KEYCLOAK_URL.rstrip("/"),

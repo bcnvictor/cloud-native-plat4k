@@ -205,21 +205,12 @@ def _client(fake: FakeKeycloak) -> KeycloakClient:
     )
 
 
-async def test_realm_exists_false_then_true_after_create():
-    fake = FakeKeycloak()
-    client = _client(fake)
-
-    assert await client.realm_exists("demo-dev") is False
-    await client.create_realm("demo-dev")
-    assert await client.realm_exists("demo-dev") is True
-
-
 async def test_create_realm_conflict_is_swallowed():
     fake = FakeKeycloak()
     client = _client(fake)
     await client.create_realm("demo-dev")
     await client.create_realm("demo-dev")  # must not raise
-    assert await client.realm_exists("demo-dev") is True
+    assert await client.get_realm("demo-dev") is not None
 
 
 async def test_create_realm_invalidates_cached_token():
@@ -234,13 +225,13 @@ async def test_create_realm_invalidates_cached_token():
     fake = FakeKeycloak()
     client = _client(fake)
 
-    await client.realm_exists("demo-dev")  # forces an initial token fetch
+    await client.get_realm("demo-dev")  # forces an initial token fetch
     assert fake.token_calls == 1
 
     await client.create_realm("demo-dev")
     assert client._token is None, "cached token must be cleared after creating a realm"
 
-    await client.realm_exists("demo-dev")
+    await client.get_realm("demo-dev")
     assert fake.token_calls == 2, "the next call must fetch a fresh token"
 
 
@@ -250,7 +241,7 @@ async def test_create_realm_conflict_does_not_invalidate_token():
     fake = FakeKeycloak()
     client = _client(fake)
     await client.create_realm("demo-dev")
-    await client.realm_exists("demo-dev")  # re-fetch token after the invalidation above
+    await client.get_realm("demo-dev")  # re-fetch token after the invalidation above
     calls_before = fake.token_calls
 
     await client.create_realm("demo-dev")  # 409, swallowed
@@ -401,15 +392,15 @@ async def test_unreachable_server_raises_keycloak_unavailable():
         admin_client_secret="s3cr3t", transport=httpx.MockTransport(_boom),
     )
     with pytest.raises(KeycloakUnavailable):
-        await client.realm_exists("demo-dev")
+        await client.get_realm("demo-dev")
 
 
 async def test_token_is_cached_across_calls():
     fake = FakeKeycloak()
     client = _client(fake)
-    await client.realm_exists("a")
-    await client.realm_exists("b")
-    await client.realm_exists("c")
+    await client.get_realm("a")
+    await client.get_realm("b")
+    await client.get_realm("c")
     assert fake.token_calls == 1
 
 

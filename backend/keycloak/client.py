@@ -101,9 +101,6 @@ class KeycloakClient:
             return None
         return resp.json()
 
-    async def realm_exists(self, realm: str) -> bool:
-        return await self.get_realm(realm) is not None
-
     async def create_realm(
         self,
         realm: str,
@@ -196,7 +193,7 @@ class KeycloakClient:
 
     async def _ensure_audience_mapper(self, realm: str, internal_id: str, client_id: str) -> None:
         """By default a Keycloak access token's `aud` is `account`, not the client_id —
-        useless for local JWT validation (ADR-0027 §A.6). This mapper fixes that.
+        useless for local JWT validation (ADR-0027 §1). This mapper fixes that.
         """
         resp = await self._request(
             "GET", f"/admin/realms/{realm}/clients/{internal_id}/protocol-mappers/models"
@@ -313,7 +310,7 @@ class KeycloakClient:
 
     async def assign_realm_admin(self, realm: str, user_id: str) -> None:
         """Grant the `realm-management` client's `realm-admin` role — full admin of
-        THIS realm only (ADR-0027 §A.6).
+        THIS realm only (ADR-0027 §1).
         """
         resp = await self._request(
             "GET", f"/admin/realms/{realm}/clients", params={"clientId": "realm-management"}

@@ -464,11 +464,14 @@ export function SettingsTab() {
                     <div className="flex items-center gap-2 shrink-0">
                       {envStatus?.state === 'active' ? (
                         <>
-                          <a href={envStatus.console_url ?? '#'} target="_blank" rel="noopener noreferrer">
-                            <Button size="sm" variant="ghost" icon={<IconExternalLink size={13} />}>
-                              Console
-                            </Button>
-                          </a>
+                          {/* Always set for an active realm (KeycloakService._status_for_env). */}
+                          {envStatus.console_url && (
+                            <a href={envStatus.console_url} target="_blank" rel="noopener noreferrer">
+                              <Button size="sm" variant="ghost" icon={<IconExternalLink size={13} />}>
+                                Console
+                              </Button>
+                            </a>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
