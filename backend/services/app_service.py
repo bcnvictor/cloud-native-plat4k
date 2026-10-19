@@ -293,7 +293,16 @@ class AppService:
             )
         )
         member = result.scalar_one_or_none()
+        loses_console_tier = False
         if member:
+            from backend.services.keycloak_service import level_grants_console
+
+            # 4K-15/ADR-0027: a downgrade below Maintainer may lose console access.
+            loses_console_tier = (
+                member.status == MemberStatus.ACTIVE
+                and level_grants_console(member.access_level)
+                and not level_grants_console(access_level)
+            )
             member.access_level = access_level
             member.status = MemberStatus.ACTIVE
             if cnp_user_id:
@@ -309,6 +318,10 @@ class AppService:
             self.db.add(member)
         await self.db.commit()
         await self.db.refresh(member)
+        if loses_console_tier:
+            from backend.services.keycloak_service import revoke_console_access_if_not_maintainer
+
+            await revoke_console_access_if_not_maintainer(self.db, app, member.cnp_user_id)
         return member
 
     async def invite_member(self, app_id: int, email: str, access_level: int) -> AppMember:

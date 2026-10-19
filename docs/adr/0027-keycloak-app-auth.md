@@ -215,11 +215,16 @@ l'utilisateur. Conséquences :
 - **Retrait d'un membre / perte de tier Owner-Maintainer** : `KeycloakService.revoke_member`
   best-effort, supprime des deux realms de l'app le compte console portant son `cnp_user_id`
   (robuste à un changement d'email ou de username). Limite : un `realm-admin` peut avoir créé
-  d'autres comptes admin dans son realm ; CNP ne révoque que ceux qu'il a créés. Couverture
-  actuelle : la synchronisation des membres d'un projet (`gitlab_sync_service._sync_project`),
-  quand le membre quitte le projet GitLab ou passe sous Maintainer. La synchronisation des
-  groupes (le tier peut venir du groupe propriétaire) et une rétrogradation via
-  `AppService.add_member` ne révoquent pas encore : suivi prévu.
+  d'autres comptes admin dans son realm ; CNP ne révoque que ceux qu'il a créés. Déclencheurs :
+  dès qu'une appartenance qui donnait Maintainer+ baisse sous ce niveau ou disparaît —
+  synchronisation des membres d'un projet (`gitlab_sync_service._sync_project`) ou du groupe
+  propriétaire (`_sync_group`), rétrogradation via `AppService.add_member` —, CNP recalcule le
+  tier effectif (`deps.get_effective_tier` : meilleur des deux appartenances) et ne révoque que
+  s'il est passé sous Maintainer : un membre resté Maintainer par le groupe garde son accès.
+  La désactivation d'un utilisateur CNP (`PATCH /users/{id}`, `is_active=false`) révoque ses
+  comptes console sur toutes les apps où Keycloak est actif. Toujours best-effort : aucun
+  appel à Keycloak tant qu'il est inactif pour l'app, et un échec Keycloak ne fait jamais
+  échouer la synchronisation ni la requête.
 - **Suppression de l'app** (`AppService.delete_app`) : `KeycloakService.deprovision` supprime
   les deux realms (seulement s'ils appartiennent à l'app : id interne et `cnp_app_id`), best-effort, comme le reste du cleanup de `delete_app` (gitops, GitLab
   project, Vault env vars) — un échec Keycloak n'empêche pas la suppression de l'app.

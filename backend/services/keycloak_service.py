@@ -24,6 +24,7 @@ import secrets
 from fastapi import HTTPException, status
 from hvac.exceptions import InvalidPath
 from shared.models import (
+    CnpTier,
     KeycloakAuthWarning,
     KeycloakConsoleAccessResponse,
     KeycloakEnvState,
@@ -31,8 +32,10 @@ from shared.models import (
     KeycloakStatusResponse,
     app_internet_url,
 )
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.api.deps import _TIER_ORDER, _access_level_to_tier, get_effective_tier
 from backend.db.models import Application, User
 from backend.gitlab.client import GitLabClient
 from backend.keycloak.client import KeycloakClient, KeycloakConflict, KeycloakError
@@ -50,6 +53,19 @@ PUBLIC_CLIENT_FRAMEWORKS = {"react-vite"}
 
 REALM_OWNER_ATTRIBUTE = "cnp_app_id"
 USER_OWNER_ATTRIBUTE = "cnp_user_id"
+
+# Same gate as the console-access route (ADR-0027 §2): a console account is only
+# kept while the user's effective tier on the app stays at this level or above.
+CONSOLE_ACCESS_TIER = CnpTier.MAINTAINER
+
+
+def has_console_tier(tier: CnpTier) -> bool:
+    return _TIER_ORDER.index(tier) >= _TIER_ORDER.index(CONSOLE_ACCESS_TIER)
+
+
+def level_grants_console(access_level: int | None) -> bool:
+    """Whether one GitLab membership level is enough, on its own, for console access."""
+    return access_level is not None and has_console_tier(_access_level_to_tier(access_level))
 
 
 def realm_name(app_slug: str, env: str) -> str:
@@ -134,6 +150,28 @@ def add_auth_warnings(app: Application, *warnings: KeycloakAuthWarning | str) ->
 
 def clear_activation_warnings(app: Application) -> None:
     app.auth_warnings = [w for w in (app.auth_warnings or []) if w not in _ACTIVATION_WARNINGS]
+
+
+async def revoke_console_access_if_not_maintainer(
+    db: AsyncSession, app: Application, cnp_user_id: int | None
+) -> None:
+    """Best-effort (ADR-0027 §5): call after a membership of `cnp_user_id` lost
+    Maintainer+ (downgrade or departure, project or owning group). Deletes their
+    console accounts from both realms unless their effective tier on the app — best
+    of project and owning-group membership, as deps.get_effective_tier — still grants
+    console access. No-op without any Keycloak call when Keycloak is off for the app
+    or the member has no linked CNP account. Pending membership changes are flushed
+    first so the tier reflects them. Never raises past the flush.
+    """
+    if not cnp_user_id or not app.auth_enabled:
+        return
+    await db.flush()
+    try:
+        if has_console_tier(await get_effective_tier(cnp_user_id, app.id, db)):
+            return
+        await KeycloakService(db).revoke_member(app, cnp_user_id)
+    except Exception:
+        logger.exception("Failed to revoke Keycloak access for user %s on app %s", cnp_user_id, app.slug)
 
 
 def detect_envfrom_warning(bot: GitLabClient, project_path: str, app_slug: str) -> list[str]:
@@ -410,6 +448,23 @@ class KeycloakService:
                     await client.delete_users_by_attribute(realm, USER_OWNER_ATTRIBUTE, str(cnp_user_id))
             except Exception:
                 logger.warning("Failed to revoke Keycloak console access for user %s in %s", cnp_user_id, realm)
+
+    async def revoke_user_everywhere(self, cnp_user_id: int) -> None:
+        """Best-effort: a deactivated CNP user keeps no console account on any app.
+        Only apps with Keycloak on are contacted. Never raises — the caller already
+        committed the deactivation.
+        """
+        try:
+            result = await self.db.execute(select(Application).where(Application.auth_enabled.is_(True)))
+            apps = list(result.scalars().all())
+        except Exception:
+            logger.exception("Could not list Keycloak-enabled apps to revoke user %s", cnp_user_id)
+            return
+        for app in apps:
+            try:
+                await self.revoke_member(app, cnp_user_id)
+            except Exception:
+                logger.exception("Failed to revoke Keycloak access for user %s on app %s", cnp_user_id, app.slug)
 
     async def deprovision(self, app: Application) -> None:
         """Best-effort: delete both realms — only if CNP created them for this app.

@@ -102,9 +102,22 @@ async def _resolve_cnp_user_id(db: AsyncSession, gitlab_user_id: int) -> int | N
     return result.scalar_one_or_none()
 
 
+def _loses_console_tier(row: AppMember | GitLabGroupMember, new_level: int | None) -> bool:
+    """An active membership granting Maintainer+ drops below it (None: member left)."""
+    from backend.services.keycloak_service import level_grants_console
+
+    return (
+        row.status == MemberStatus.ACTIVE
+        and level_grants_console(row.access_level)
+        and not level_grants_console(new_level)
+    )
+
+
 async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
     """Upsert active members for one GitLab group; soft-revoke absent ones."""
     stats = {"created": 0, "updated": 0, "revoked": 0}
+    # 4K-15/ADR-0027: the owning group can be what grants Maintainer+ on its apps.
+    lost_console_tier: set[int] = set()
 
     try:
         gl_group = await asyncio.to_thread(gl.groups.get, group.gitlab_group_id)
@@ -129,6 +142,8 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
         cnp_user_id = await _resolve_cnp_user_id(db, m.id)
         if m.id in existing:
             row = existing[m.id]
+            if _loses_console_tier(row, m.access_level) and (row.cnp_user_id or cnp_user_id):
+                lost_console_tier.add(row.cnp_user_id or cnp_user_id)
             row.access_level = m.access_level
             row.username = getattr(m, 'username', None)
             row.status = MemberStatus.ACTIVE
@@ -155,6 +170,8 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
     # Soft-revoke members absent from GitLab (never hard-delete)
     for gl_id, row in existing.items():
         if gl_id not in active_gl_ids and row.status == MemberStatus.ACTIVE:
+            if _loses_console_tier(row, None) and row.cnp_user_id:
+                lost_console_tier.add(row.cnp_user_id)
             row.status = MemberStatus.LEFT
             row.updated_at = datetime.now(timezone.utc)
             stats["revoked"] += 1
@@ -163,29 +180,33 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
                                  payload={"cnp_user_id": row.cnp_user_id, "group_name": group.name,
                                           "group_id": group.gitlab_group_id})
 
+    if lost_console_tier:
+        result = await db.execute(
+            select(Application).where(
+                Application.owning_gitlab_group_id == group.gitlab_group_id,
+                Application.auth_enabled.is_(True),
+            )
+        )
+        for app in result.scalars().all():
+            for cnp_user_id in sorted(lost_console_tier):
+                await _revoke_console_access(db, app, cnp_user_id)
+
     group.synced_at = datetime.now(timezone.utc)
     return stats
 
 
-async def _maybe_revoke_keycloak_access(db: AsyncSession, app: Application, cnp_user_id: int | None) -> None:
-    """Best-effort (4K-15/ADR-0027): revoke a member's Keycloak console access when
-    they lose Maintainer+ on an app or leave it entirely. No-op if Keycloak isn't
-    enabled/provisioned for this app, or the member never had a linked CNP account
-    (console accounts are tagged with the CNP user id — see KeycloakService).
-    """
-    if not cnp_user_id or not app.auth_enabled:
-        return
-    try:
-        from backend.services.keycloak_service import KeycloakService
-        await KeycloakService(db).revoke_member(app, cnp_user_id)
-    except Exception:
-        logger.exception("Failed to revoke Keycloak access for user %s on app %s", cnp_user_id, app.slug)
+async def _revoke_console_access(db: AsyncSession, app: Application, cnp_user_id: int) -> None:
+    """Best-effort, see keycloak_service.revoke_console_access_if_not_maintainer."""
+    from backend.services.keycloak_service import revoke_console_access_if_not_maintainer
+
+    await revoke_console_access_if_not_maintainer(db, app, cnp_user_id)
 
 
 async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
     """Upsert active members and pending invitations for one GitLab project."""
     stats = {"created": 0, "updated": 0, "revoked": 0}
     project_id = app.gitlab_project_id
+    lost_console_tier: set[int] = set()
 
     try:
         gl_project = await asyncio.to_thread(gl.projects.get, project_id)
@@ -219,11 +240,11 @@ async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
         cnp_user_id = await _resolve_cnp_user_id(db, m.id)
         if m.id in existing_by_gl_id:
             row = existing_by_gl_id[m.id]
-            # 4K-15/ADR-0027: dropping below Maintainer loses Keycloak console access
-            # (realm-admin is gated on the same tier). Check before overwriting
-            # access_level below.
-            if row.access_level >= 40 > m.access_level:
-                await _maybe_revoke_keycloak_access(db, app, row.cnp_user_id)
+            # 4K-15/ADR-0027: dropping below Maintainer may lose Keycloak console
+            # access (realm-admin is gated on the same tier). Check before
+            # overwriting access_level below.
+            if _loses_console_tier(row, m.access_level) and (row.cnp_user_id or cnp_user_id):
+                lost_console_tier.add(row.cnp_user_id or cnp_user_id)
             row.access_level = m.access_level
             row.status = MemberStatus.ACTIVE
             if cnp_user_id:
@@ -263,7 +284,8 @@ async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
     # Soft-revoke absent active members
     for gl_id, row in existing_by_gl_id.items():
         if gl_id not in active_gl_ids and row.status == MemberStatus.ACTIVE:
-            await _maybe_revoke_keycloak_access(db, app, row.cnp_user_id)
+            if _loses_console_tier(row, None) and row.cnp_user_id:
+                lost_console_tier.add(row.cnp_user_id)
             row.status = MemberStatus.LEFT
             row.updated_at = datetime.now(timezone.utc)
             stats["revoked"] += 1
@@ -274,6 +296,10 @@ async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
             row.status = MemberStatus.LEFT
             row.updated_at = datetime.now(timezone.utc)
             stats["revoked"] += 1
+
+    # After the upserts: the effective tier must see this project's new levels.
+    for cnp_user_id in sorted(lost_console_tier):
+        await _revoke_console_access(db, app, cnp_user_id)
 
     return stats
 

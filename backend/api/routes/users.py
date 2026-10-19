@@ -7,6 +7,7 @@ from backend.core.exceptions import BadRequestException, NotFoundException
 from backend.core.security import get_password_hash
 from backend.db.models import GitLabGroup, GitLabGroupMember, User
 from backend.db.session import get_db
+from backend.services.keycloak_service import KeycloakService
 from fastapi import APIRouter, Depends, Request
 from shared.models import MemberStatus, UserResponse, UserRole
 from sqlalchemy import select
@@ -105,12 +106,16 @@ async def update_user(
     user = result.scalar_one_or_none()
     if not user:
         raise NotFoundException("User not found")
+    deactivated = payload.is_active is False and user.is_active
     if payload.role is not None:
         user.role = payload.role
     if payload.is_active is not None:
         user.is_active = payload.is_active
     await db.commit()
     await db.refresh(user)
+    if deactivated:
+        # 4K-15/ADR-0027: best-effort, no Keycloak call unless an app has it on.
+        await KeycloakService(db).revoke_user_everywhere(user.id)
     return user
 
 
