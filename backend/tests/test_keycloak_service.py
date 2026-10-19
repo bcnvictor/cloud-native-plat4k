@@ -264,7 +264,10 @@ class TestConsoleAccess:
 
         assert result.username == "cnp.alice.42"
         assert result.console_url == "https://auth.example.com/admin/demo-dev/console/"
-        assert len(result.temporary_password) > 10
+        # Must satisfy the realm password policy (length(12) and notUsername), which
+        # Keycloak also enforces on admin password resets.
+        assert len(result.temporary_password) >= 12
+        assert result.temporary_password != result.username
 
     async def test_grant_console_access_requires_existing_realm(self, fake_keycloak, fake_vault):
         app = _app()

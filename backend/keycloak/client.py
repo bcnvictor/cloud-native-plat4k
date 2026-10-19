@@ -14,6 +14,12 @@ logger = logging.getLogger(__name__)
 
 _TIMEOUT = 10  # secondes, cohérent avec ArgoCDClient/VaultClient
 
+# Baseline of every realm CNP creates. Brute-force detection uses Keycloak's
+# defaults (temporary lockout, never permanent). The password policy also applies
+# to admin password resets: the temporary console passwords CNP generates
+# (secrets.token_urlsafe(18), 24 characters) satisfy it (verified against 26.8.0).
+REALM_PASSWORD_POLICY = "length(12) and notUsername"
+
 
 class KeycloakError(Exception):
     """Base class for Keycloak Admin API errors."""
@@ -112,7 +118,13 @@ class KeycloakClient:
         """`realm_id` sets the realm's internal id, which Keycloak never changes
         afterwards — not even when a realm-admin renames the realm (verified against
         26.8.0). A 409 (name or id taken) is treated as "already exists"."""
-        payload = {"realm": realm, "enabled": True, "registrationAllowed": registration_allowed}
+        payload = {
+            "realm": realm,
+            "enabled": True,
+            "registrationAllowed": registration_allowed,
+            "bruteForceProtected": True,
+            "passwordPolicy": REALM_PASSWORD_POLICY,
+        }
         if realm_id:
             payload["id"] = realm_id
         if attributes:

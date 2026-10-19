@@ -316,6 +316,10 @@ async def verify_lifecycle(state, monkeypatch):
                     other.request("GET", f"/admin/realms/{app.slug}-dev", missing_ok=True) is None
                 )
                 own = admin(state, name)
+                realm = own.request("GET", f"/admin/realms/{app.slug}-dev")
+                assert realm["id"] == f"cnp-{app.id}-dev"
+                assert realm["bruteForceProtected"] is True
+                assert realm["passwordPolicy"] == "length(12) and notUsername"
                 clients = own.request(
                     "GET", f"/admin/realms/{app.slug}-dev/clients?clientId={app.slug}"
                 )

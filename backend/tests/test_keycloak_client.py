@@ -343,6 +343,18 @@ async def test_create_realm_with_owner_attribute():
     assert await client.get_realm("nope") is None
 
 
+async def test_create_realm_enables_brute_force_protection_and_password_policy():
+    """Every team realm starts locked down: temporary lockout after repeated failed
+    logins, and passwords of at least 12 characters, different from the username."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    created = fake.realms["demo-dev"]["settings"]
+    assert created["bruteForceProtected"] is True
+    assert created["passwordPolicy"] == "length(12) and notUsername"
+    assert created["registrationAllowed"] is False
+
+
 async def test_create_realm_with_explicit_internal_id():
     """The realm's internal id survives a rename (Keycloak 26.8.0): CNP picks it at
     creation so ownership never depends on what a realm-admin can rewrite."""

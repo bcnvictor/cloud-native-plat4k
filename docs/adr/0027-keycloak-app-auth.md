@@ -182,7 +182,9 @@ l'utilisateur. Conséquences :
 - **Provisioning** (`KeycloakService.provision`) : déclenché après `_save_app` (best-effort —
   l'app existe même si Keycloak échoue) quand `"keycloak"` est présent dans les `services`
   demandés au scaffold/onboard. **Idempotent étape par étape** : crée le realm s'il manque
-  (`registrationAllowed=false`, id interne `cnp-{app_id}-{env}`, attribut `cnp_app_id`), puis s'assure que le client, le mapper
+  (`registrationAllowed=false`, protection brute-force de Keycloak activée avec ses réglages par
+  défaut — verrouillage temporaire, jamais permanent —, politique de mot de passe
+  `length(12) and notUsername`, id interne `cnp-{app_id}-{env}`, attribut `cnp_app_id`), puis s'assure que le client, le mapper
   audience et les `OIDC_*` dans Vault existent. Un provisioning interrompu (realm créé, client
   ou Vault en échec, `auth_provisioned=false`) se termine donc par un simple "Retry" (UI) /
   `cnp keycloak enable` — sans toucher au reste du realm (users, rôles, réglages). Les
