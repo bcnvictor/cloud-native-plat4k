@@ -8,12 +8,14 @@ test_env_var_routes.py.
 import httpx
 import pytest
 from hvac.exceptions import InvalidPath
-from shared.models import CnpTier, KeycloakEnvState
+from shared.models import CnpTier, KeycloakAuthWarning, KeycloakEnvState
 
 from backend.core.config import settings
 from backend.db.models import Application, User
 from backend.services.keycloak_service import (
     KeycloakService,
+    add_auth_warnings,
+    clear_activation_warnings,
     console_username,
     detect_envfrom_warning,
     realm_name,
@@ -296,6 +298,21 @@ class TestHelpers:
     def test_console_username_falls_back_when_email_empty(self):
         user = User(id=7, email="", hashed_password="x")
         assert console_username(user) == "cnp.user.7"
+
+    def test_add_auth_warnings_keeps_order_without_duplicates(self):
+        app = _app(auth_warnings=["chart_missing_envfrom"])
+        add_auth_warnings(app, KeycloakAuthWarning.PROVISIONING_FAILED, "chart_missing_envfrom")
+        assert app.auth_warnings == ["chart_missing_envfrom", "keycloak_provisioning_failed"]
+        assert all(type(code) is str for code in app.auth_warnings)  # JSON column, API contract
+
+    def test_add_auth_warnings_rejects_unknown_codes(self):
+        with pytest.raises(ValueError):
+            add_auth_warnings(_app(), "made_up")
+
+    def test_clear_activation_warnings_keeps_the_chart_warning(self):
+        app = _app(auth_warnings=[w.value for w in KeycloakAuthWarning])
+        clear_activation_warnings(app)
+        assert app.auth_warnings == ["chart_missing_envfrom"]
 
 
 class TestEnvfromDetection:

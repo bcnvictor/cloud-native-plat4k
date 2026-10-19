@@ -147,7 +147,7 @@ class Application(Base):
     auth_enabled = Column(Boolean, nullable=False, default=False, server_default="false")
     auth_instance_key = Column(String(63), ForeignKey("keycloak_instances.instance_key", ondelete="RESTRICT"), nullable=True, index=True)
     auth_provisioned = Column(Boolean, nullable=True)  # like ci_injected: None = n/a, True/False = last attempt's outcome
-    auth_warnings = Column(JSON, nullable=True)  # e.g. ["chart_missing_envfrom"] — onboarded apps only
+    auth_warnings = Column(JSON, nullable=True)  # list of KeycloakAuthWarning values (shared/models.py)
     last_pipeline_status = Column(String, nullable=True)
     last_known_status = Column(
         SQLEnum(ApplicationStatus, values_callable=lambda x: [e.value for e in x]),

@@ -437,7 +437,7 @@ class ApplicationResponse(ApplicationBase):
     auth_enabled: bool = False
     auth_instance_key: str | None = None
     auth_provisioned: Optional[bool] = None  # None = n/a, True/False = last provisioning attempt's outcome
-    auth_warnings: Optional[List[str]] = None  # e.g. ["chart_missing_envfrom"] — onboarded apps only
+    auth_warnings: Optional[List[str]] = None  # KeycloakAuthWarning values, sent as plain strings
 
     class Config:
         from_attributes = True
@@ -450,6 +450,17 @@ class KeycloakEnvState(str, Enum):
     MISSING = "missing"    # realm deleted -> "Recreate" is offered
     FOREIGN = "foreign"    # a realm with that name exists but isn't this app's
     UNKNOWN = "unknown"    # Keycloak unreachable or disabled — never offer "Recreate"
+
+
+class KeycloakAuthWarning(str, Enum):
+    """Codes stored in Application.auth_warnings. The API returns them as strings.
+    The first three describe the last activation attempt and are cleared when an
+    activation succeeds; the envFrom one is about the onboarded repo's chart.
+    """
+    INSTANCE_UNAVAILABLE = "keycloak_instance_unavailable"  # no usable instance, or Vault unreachable
+    PROVISIONING_FAILED = "keycloak_provisioning_failed"    # realm/client/Vault write failed — retry completes it
+    OIDC_KEYS_CONFLICT = "oidc_keys_conflict"               # the app already defines OIDC_* itself
+    CHART_MISSING_ENVFROM = "chart_missing_envfrom"         # chart doesn't consume {app_slug}-env (onboarded)
 
 
 class KeycloakEnvStatus(BaseModel):

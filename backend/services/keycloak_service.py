@@ -21,6 +21,7 @@ import secrets
 from fastapi import HTTPException, status
 from hvac.exceptions import InvalidPath
 from shared.models import (
+    KeycloakAuthWarning,
     KeycloakConsoleAccessResponse,
     KeycloakEnvState,
     KeycloakEnvStatus,
@@ -93,6 +94,26 @@ def _redirect_uris(app: Application, env: str) -> list[str]:
     return uris or ["http://localhost:*"]
 
 
+# What an activation attempt can leave behind: a successful activation clears them,
+# a failed one replaces them with its own reason. chart_missing_envfrom stays — it is
+# about the repo's chart and is only computed once, at onboarding.
+_ACTIVATION_WARNINGS = frozenset({
+    KeycloakAuthWarning.INSTANCE_UNAVAILABLE,
+    KeycloakAuthWarning.PROVISIONING_FAILED,
+    KeycloakAuthWarning.OIDC_KEYS_CONFLICT,
+})
+
+
+def add_auth_warnings(app: Application, *warnings: KeycloakAuthWarning | str) -> None:
+    """Append to app.auth_warnings, keeping order and skipping duplicates."""
+    codes = [KeycloakAuthWarning(warning).value for warning in warnings]
+    app.auth_warnings = list(dict.fromkeys([*(app.auth_warnings or []), *codes]))
+
+
+def clear_activation_warnings(app: Application) -> None:
+    app.auth_warnings = [w for w in (app.auth_warnings or []) if w not in _ACTIVATION_WARNINGS]
+
+
 def detect_envfrom_warning(bot: GitLabClient, project_path: str, app_slug: str) -> list[str]:
     """Best-effort heuristic (ADR-0027 §6): does the onboarded repo's chart already
     consume the ESO-synced `{app_slug}-env` Secret via `envFrom`? Read-only, never
@@ -123,7 +144,7 @@ def detect_envfrom_warning(bot: GitLabClient, project_path: str, app_slug: str) 
         if "envFrom" in content and (f"{app_slug}-env" in content or "app.name" in content):
             return []
 
-    return ["chart_missing_envfrom"]
+    return [KeycloakAuthWarning.CHART_MISSING_ENVFROM.value]
 
 
 class KeycloakService:
@@ -146,28 +167,28 @@ class KeycloakService:
             except HTTPException:
                 raise
             except Exception:
-                return await self._activation_failed(app, "keycloak_instance_unavailable")
+                return await self._activation_failed(app, KeycloakAuthWarning.INSTANCE_UNAVAILABLE)
         try:
             await KeycloakInstanceService(self.db).bind_for_activation(app)
         except Exception:
-            return await self._activation_failed(app, "keycloak_instance_unavailable")
+            return await self._activation_failed(app, KeycloakAuthWarning.INSTANCE_UNAVAILABLE)
         app.auth_enabled = True
         try:
             await self.provision(app, "dev")
             await self.provision(app, "prod")
             app.auth_provisioned = True
-            app.auth_warnings = [warning for warning in (app.auth_warnings or [])
-                                 if warning not in ("keycloak_instance_unavailable", "keycloak_provisioning_failed")]
+            clear_activation_warnings(app)
         except Exception:
-            return await self._activation_failed(app, "keycloak_provisioning_failed")
+            return await self._activation_failed(app, KeycloakAuthWarning.PROVISIONING_FAILED)
         await self.db.commit()
         await self.db.refresh(app)
         return await self.status(app)
 
-    async def _activation_failed(self, app: Application, warning: str) -> KeycloakStatusResponse:
+    async def _activation_failed(self, app: Application, warning: KeycloakAuthWarning) -> KeycloakStatusResponse:
         app.auth_provisioned = False
-        app.auth_warnings = list(dict.fromkeys([*(app.auth_warnings or []), warning]))
-        logger.warning("Keycloak activation failed for app %s (%s)", app.slug, warning)
+        clear_activation_warnings(app)  # this attempt's reason replaces an earlier one
+        add_auth_warnings(app, warning)
+        logger.warning("Keycloak activation failed for app %s (%s)", app.slug, warning.value)
         await self.db.commit()
         await self.db.refresh(app)
         return await self.status(app)

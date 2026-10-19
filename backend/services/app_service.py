@@ -12,6 +12,7 @@ from shared.models import (
     ApplicationUpdate,
     CiStatusUpdate,
     ClusterStatus,
+    KeycloakAuthWarning,
     MemberStatus,
     compute_slug,
 )
@@ -419,20 +420,22 @@ class AppService:
         except HTTPException as e:
             # The app defines OIDC_* itself (its own IdP): don't enable Keycloak over it.
             logger.warning("Keycloak not enabled for app %s: %s", app.slug, e.detail)
-            await self._auth_not_provisioned(app, "oidc_keys_conflict")
+            await self._auth_not_provisioned(app, KeycloakAuthWarning.OIDC_KEYS_CONFLICT)
             return
         except Exception as e:
             # Vault unreachable: same outcome as in KeycloakService.activate, the team
             # retries activation later. Only the type is logged (no Vault detail).
             logger.error("Keycloak not enabled for app %s: OIDC_* check failed (%s)", app.slug, type(e).__name__)
-            await self._auth_not_provisioned(app, "keycloak_instance_unavailable")
+            await self._auth_not_provisioned(app, KeycloakAuthWarning.INSTANCE_UNAVAILABLE)
             return
 
         await service.activate(app)
 
-    async def _auth_not_provisioned(self, app: Application, warning: str) -> None:
+    async def _auth_not_provisioned(self, app: Application, warning: KeycloakAuthWarning) -> None:
+        from backend.services.keycloak_service import add_auth_warnings
+
         app.auth_provisioned = False
-        app.auth_warnings = list(dict.fromkeys([*(app.auth_warnings or []), warning]))
+        add_auth_warnings(app, warning)
         await self.db.commit()
         await self.db.refresh(app)
 
@@ -440,7 +443,7 @@ class AppService:
         """Onboarded-app-only (mode A, ADR-0027 §6): best-effort check that the
         repo's own chart actually consumes the {app_slug}-env Secret. Never raises.
         """
-        from backend.services.keycloak_service import detect_envfrom_warning
+        from backend.services.keycloak_service import add_auth_warnings, detect_envfrom_warning
 
         if not app.repo_url:
             return
@@ -454,7 +457,7 @@ class AppService:
             return
         if warnings:
             # Merge: provisioning may already have recorded its own warning.
-            app.auth_warnings = list(dict.fromkeys([*(app.auth_warnings or []), *warnings]))
+            add_auth_warnings(app, *warnings)
             await self.db.commit()
             await self.db.refresh(app)
 

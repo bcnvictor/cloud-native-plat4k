@@ -178,6 +178,29 @@ class TestScaffold:
         assert fake_keycloak.realms == {}
         assert fake_vault["apps/_ungrouped/demo/prod"] == {"OIDC_ISSUER_URL": "https://their-own-idp"}
 
+    async def test_activation_after_removing_foreign_keys_clears_the_conflict(
+        self, db_session, fake_vault, fake_keycloak
+    ):
+        fake_vault["apps/_ungrouped/demo/prod"] = {"OIDC_ISSUER_URL": "https://their-own-idp"}
+        app = await AppService(db_session).scaffold_app(_scaffold_request(["keycloak"]))
+        assert app.auth_warnings == ["oidc_keys_conflict"]
+
+        del fake_vault["apps/_ungrouped/demo/prod"]  # the team drops its own OIDC_* keys
+        await KeycloakService(db_session).activate(app)
+
+        assert app.auth_provisioned is True
+        assert app.auth_warnings == []
+
+    async def test_failed_retry_replaces_the_previous_reason(self, db_session, fake_vault, keycloak_down):
+        fake_vault["apps/_ungrouped/demo/prod"] = {"OIDC_ISSUER_URL": "https://their-own-idp"}
+        app = await AppService(db_session).scaffold_app(_scaffold_request(["keycloak"]))
+
+        del fake_vault["apps/_ungrouped/demo/prod"]
+        await KeycloakService(db_session).activate(app)
+
+        assert app.auth_provisioned is False
+        assert app.auth_warnings == ["keycloak_provisioning_failed"]
+
 
 class TestEnvfromWarning:
     async def test_keeps_earlier_warnings(self, db_session):
@@ -220,6 +243,23 @@ class TestOnboard:
         assert app.auth_provisioned is False
         assert app.auth_warnings == ["keycloak_instance_unavailable", "chart_missing_envfrom"]
         assert fake_keycloak.realms == {}
+
+    async def test_successful_retry_keeps_the_envfrom_warning(self, db_session, gitlab_bot, monkeypatch, fake_vault):
+        """The envFrom check is about the repo's chart, not the activation: a later
+        successful activation clears only the activation warnings."""
+        real_get_secret = vault_client.get_secret
+
+        def vault_down(path, mount_point="secret"):
+            raise VaultDown("sealed")
+
+        monkeypatch.setattr(vault_client, "get_secret", vault_down)
+        app = await AppService(db_session).onboard_app(_onboard_request())
+        monkeypatch.setattr(vault_client, "get_secret", real_get_secret)
+
+        await KeycloakService(db_session).activate(app)
+
+        assert app.auth_provisioned is True
+        assert app.auth_warnings == ["chart_missing_envfrom"]
 
 
 class TestDelete:
