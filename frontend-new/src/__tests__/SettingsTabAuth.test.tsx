@@ -1,6 +1,6 @@
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Application, KeycloakInstanceSummary, KeycloakStatusResponse } from '@/types';
 import { SettingsTab } from '../pages/group/app/tabs/SettingsTab';
@@ -51,8 +51,10 @@ function renderTab(app: Partial<Application> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
-        <SettingsTab />
+      <MemoryRouter initialEntries={['/groups/team/apps/demo/settings']}>
+        <Routes>
+          <Route path="/groups/:slug/apps/:appSlug/settings" element={<SettingsTab />} />
+        </Routes>
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -116,5 +118,24 @@ describe('SettingsTab Keycloak status errors', () => {
     const client = renderTab();
     await waitFor(() => expect(client.getQueryState(['myAccess', 1])?.status).toBe('success'));
     expect(screen.queryByText('No Keycloak instance configured.')).toBeNull();
+  });
+});
+
+describe('SettingsTab failed activation', () => {
+  it('refetches the app and its auth status so the new failure reason shows', async () => {
+    // e.g. 409 on a retry: the backend replaced the recorded reason (oidc_keys_conflict).
+    api.getAuthStatus.mockResolvedValue(status(instance));
+    api.enableAuth.mockRejectedValue({ response: { status: 409, data: { detail: 'The app already defines OIDC_CLIENT_ID in dev' } } });
+    const client = renderTab({ auth_provisioned: false, auth_warnings: ['keycloak_instance_unavailable'] });
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    const button = await activationButton(client, /Retry activation/);
+
+    fireEvent.click(button);
+
+    await waitFor(() => expect(api.enableAuth).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['authStatus', 1] });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['app', 'demo'] });
+    });
   });
 });

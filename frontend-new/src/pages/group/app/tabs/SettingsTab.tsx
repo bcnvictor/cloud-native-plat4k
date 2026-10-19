@@ -181,7 +181,9 @@ export function SettingsTab() {
 
   const enableAuthMutation = useMutation({
     mutationFn: () => appsApi.enableAuth(app!.id),
-    onSuccess: () => {
+    // Also after an error: a refused retry (409 OIDC_* conflict) records a new
+    // failure reason that must replace the one on screen.
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['authStatus', app?.id] });
       qc.invalidateQueries({ queryKey: ['app', appSlug] });
     },
