@@ -72,8 +72,9 @@ Une nouvelle activation privilégie l'instance du cluster ; une instance configu
 mais indisponible ne déclenche pas de repli vers une autre instance.
 
 Le domaine commun utilise des préfixes :
-`https://auth.cloud-native-plat4k.me/clusters/public-01` et
-`https://auth.cloud-native-plat4k.me/clusters/private-01`.
+`https://auth.cloud-native-plat4k.me/clusters/public-01` (AKS),
+`https://auth.cloud-native-plat4k.me/clusters/public-02` (GKE) et
+`https://auth.cloud-native-plat4k.me/clusters/private-01` (k3s).
 NGINX sur la VM CNP conserve ce préfixe vers le service privé Tailscale de l'instance.
 `master` et le management sont bloqués publiquement. Les consoles des realms apps
 restent accessibles. Ce routage distribue des instances indépendantes ; aucune
@@ -98,7 +99,7 @@ Les résultats effectivement vérifiés figurent dans le
     défaut Keycloak met `aud: account`, inutilisable pour la validation locale du token) ;
   - des users "admin d'équipe" créés à la demande, avec le rôle client
     `realm-management` → `realm-admin`, qui donne l'administration complète de **ce realm
-    uniquement** via `{KEYCLOAK_PUBLIC_URL}/admin/{realm}/console/`.
+    uniquement** via `{public_url}/admin/{realm}/console/` (`{public_url}` défini au §4).
 
 ### 2. Droits d'accès à la console Keycloak d'une app
 
@@ -151,10 +152,14 @@ que les variables d'environnement applicatives (ADR-0025) :
 
 ```
 secret/apps/{group_slug}/{app_slug}/{env}
-  OIDC_ISSUER_URL     = {KEYCLOAK_PUBLIC_URL}/realms/{app_slug}-{env}
+  OIDC_ISSUER_URL     = {public_url}/realms/{app_slug}-{env}
   OIDC_CLIENT_ID      = {app_slug}
   OIDC_CLIENT_SECRET  = <uniquement si client confidential>
 ```
+
+`{public_url}` est l'URL publique de l'instance liée à l'app, préfixe compris
+(`https://auth.cloud-native-plat4k.me/clusters/{instance_key}`, cf. §1), ou
+`KEYCLOAK_PUBLIC_URL` pour une app historique activée sans association.
 
 Ce chemin est le même que celui utilisé par le CRUD de variables d'environnement (ADR-0025) et
 par l'`ExternalSecret` généré par le backend (ADR-0024) — Keycloak ne réutilise pas seulement
@@ -202,8 +207,11 @@ l'utilisateur. Conséquences :
 - **Retrait d'un membre / perte de tier Owner-Maintainer** : `KeycloakService.revoke_member`
   best-effort, supprime des deux realms de l'app le compte console portant son `cnp_user_id`
   (robuste à un changement d'email ou de username). Limite : un `realm-admin` peut avoir créé
-  d'autres comptes admin dans son realm ; CNP ne révoque que ceux qu'il a créés. Branché partout où `app_service.py`
-  / `routes/apps.py` / `gitlab_sync_service.py` retirent ou rétrogradent un membre.
+  d'autres comptes admin dans son realm ; CNP ne révoque que ceux qu'il a créés. Couverture
+  actuelle : la synchronisation des membres d'un projet (`gitlab_sync_service._sync_project`),
+  quand le membre quitte le projet GitLab ou passe sous Maintainer. La synchronisation des
+  groupes (le tier peut venir du groupe propriétaire) et une rétrogradation via
+  `AppService.add_member` ne révoquent pas encore : suivi prévu.
 - **Suppression de l'app** (`AppService.delete_app`) : `KeycloakService.deprovision` supprime
   les deux realms (seulement s'ils portent le `cnp_app_id` de l'app), best-effort, comme le reste du cleanup de `delete_app` (gitops, GitLab
   project, Vault env vars) — un échec Keycloak n'empêche pas la suppression de l'app.
@@ -216,9 +224,10 @@ scaffoldée. La différence est qu'aucun code n'est injecté dans le repo de l'a
 contrôle pas ce code). À la place :
 - une documentation dédiée (`docs/guides/keycloak-app-auth.md`) explique comment consommer
   les variables `OIDC_*` dans chaque stack (FastAPI, Express, Go, Spring, SPA) ;
-- le backend détecte, au provisioning, si le chart du repo importé référence bien
-  `envFrom` → `{slug}-env` (lecture best-effort de `chart/templates/*.yaml` via le bot
-  GitLab). Si absent, un avertissement `auth_warnings: ["chart_missing_envfrom"]` est exposé
+- le backend vérifie une fois, à l'onboarding avec Keycloak demandé, si le chart du repo
+  importé référence bien `envFrom` → `{slug}-env` (lecture best-effort de
+  `chart/templates/*.yaml` via le bot GitLab ; vérification non refaite ensuite). Si absent,
+  un avertissement `auth_warnings: ["chart_missing_envfrom"]` est exposé
   par l'API et affiché dans l'UI/CLI avec un lien vers la doc — **pas de MR automatique** en
   V1 (le mode B, oauth2-proxy en frontal, zéro code, est hors scope et pourrait lever cette
   limitation plus tard).
@@ -309,9 +318,14 @@ Négatif / Dette :
   voir §"Correctifs prérequis" point 2).
 
 Neutre :
-- Keycloak est optionnel et désactivé par défaut (`KEYCLOAK_ENABLED=false`) : le reste de la
-  plateforme fonctionne sans lui, et une app peut être créée avec ou sans le service Keycloak
-  coché, avec le même template.
+- Keycloak est optionnel : le reste de la plateforme fonctionne sans lui, et une app peut être
+  créée avec ou sans le service Keycloak coché, avec le même template. `KEYCLOAK_ENABLED`
+  (faux par défaut) n'active que l'instance globale historique (`KEYCLOAK_URL`,
+  `KEYCLOAK_PUBLIC_URL`, `KEYCLOAK_ADMIN_CLIENT_*`) : elle sert aux apps activées avant le
+  registre, et à une nouvelle activation quand le cluster de l'app n'a pas d'instance
+  enregistrée. Une instance enregistrée et activée sert quel que soit ce flag ; on la coupe
+  avec `enabled=false` dans le registre (`PUT /api/v1/keycloak/instances/{key}`), et ses apps
+  deviennent alors indisponibles, sans repli vers une autre instance.
 - Le rôle `admin` du service account `cnp-provisioner` a été validé de bout en bout contre
   une vraie instance Keycloak en docker compose, d'abord par le smoke test local du Lot 7,
   aujourd'hui par le banc `infra/keycloak/verify.sh --local` (`infra/keycloak/tests/smoke.py`) :

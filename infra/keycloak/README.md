@@ -116,7 +116,7 @@ Le générateur vérifie que le commit existe sur GitHub. Fournir `GITHUB_TOKEN`
 uniquement si nécessaire à cette lecture. L'accès de lecture ArgoCD au dépôt
 utilise un Secret repository existant ; aucun token dans les Applications.
 Après vérification de cet accès, intégrer les fichiers générés dans
-`cnp-gitops/argocd/cnp-aks/keycloak.yaml` et `cnp-k3s/keycloak.yaml`.
+`cnp-gitops/argocd/cnp-aks/keycloak.yaml`, `cnp-gke/keycloak.yaml` et `cnp-k3s/keycloak.yaml`.
 Le déploiement demande alors une sync et observe la disponibilité pendant au
 plus 10 minutes. Il refuse un Helm concurrent sur une installation ArgoCD.
 Aucune Application n'est publiée avec une révision fictive.

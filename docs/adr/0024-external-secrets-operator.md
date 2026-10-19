@@ -137,8 +137,11 @@ redémarre automatiquement les `Deployment` concernés lors d'un changement.
 ### 4. Cycle de vie si le chemin Vault est vide
 
 Si aucune variable n'a encore été définie pour une app (`secret/apps/{group}/{app}/{env}`
-n'existe pas dans Vault), l'`ExternalSecret` reste en état `SecretSyncedError`. Le pod
-démarre sans le `secretRef` manquant uniquement si le Helm chart déclare `envFrom` comme
+n'existe pas dans Vault), l'`ExternalSecret` n'a rien à extraire. Avec
+`deletionPolicy: Delete` (manifest généré par `GitLabClient.upsert_externalsecret` depuis
+4K-15), ESO le signale `Ready` (`SecretDeleted`) sans créer le Secret ; avec la politique
+par défaut `Retain`, il restait en `SecretSyncedError` et ArgoCD marquait l'app `Degraded`.
+Le pod démarre sans le Secret manquant uniquement si le Helm chart déclare `envFrom` comme
 optionnel (`optional: true`). Le template Helm scaffoldé par CNP inclut cette directive
 par défaut.
 
@@ -159,8 +162,8 @@ Négatif / Dette :
 - Stakater Reloader est une dépendance supplémentaire dans chaque cluster (légère, ~20 MB).
 - Pendant la période transitoire (avant AppRole), le token statique ESO → Vault est un
   secret K8s bootstrappé manuellement : sa rotation n'est pas automatisée.
-- Si le chemin Vault n'existe pas encore, l'`ExternalSecret` est en erreur et le pod
-  démarre sans les variables attendues. L'`optional: true` atténue l'impact mais ne
+- Si le chemin Vault n'existe pas encore, le Secret n'est pas créé et le pod démarre sans
+  les variables attendues. L'`optional: true` atténue l'impact mais ne
   supprime pas le risque si une variable est requise au démarrage.
 
 Neutre :

@@ -68,9 +68,9 @@ else
 fi
 
 info "Granting the 'admin' realm role to the service account..."
-# NB: 'admin' is the broadest role (full control of every realm). A narrower
-# 'create-realm' role may be sufficient for what KeycloakService actually calls —
-# see infra/keycloak/README.md for the documented tradeoff and how to switch.
+# NB: 'admin' is the broadest role (full control of every realm). It is the role
+# settled by ADR-0027 §1 and granted to production instances by
+# infra/keycloak/lib/keycloak_api.py (ensure_provisioner).
 dc exec -T keycloak "$KCADM" add-roles \
   --uusername "service-account-${CLIENT_ID}" --rolename admin -r master >/dev/null
 
@@ -83,4 +83,4 @@ echo "KEYCLOAK_URL=http://keycloak:8080"
 echo "KEYCLOAK_PUBLIC_URL=http://localhost:8081"
 echo "KEYCLOAK_ADMIN_CLIENT_ID=${CLIENT_ID}"
 echo "KEYCLOAK_ADMIN_CLIENT_SECRET=${CLIENT_SECRET}"
-warn "In production, this secret also gets written to Vault under secret/cnp/platform — see infra/keycloak/README.md."
+warn "Local only: production instances come from infra/keycloak/deploy.sh, which keeps their secret in Vault under secret/cnp/keycloak/<key>/provisioner — see infra/keycloak/README.md."

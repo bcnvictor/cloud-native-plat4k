@@ -15,7 +15,9 @@ valider un token côté code.
 - **Un client par app** dans chaque realm, portant le nom du `slug` de l'app :
   *public* + PKCE si votre app est une SPA (template `react-vite`), *confidential*
   (avec `client_secret`) sinon.
-- **Console d'admin déléguée** : `{KEYCLOAK_PUBLIC_URL}/admin/{realm}/console/`.
+- **Console d'admin déléguée** :
+  `https://auth.cloud-native-plat4k.me/clusters/{instance_key}/admin/{realm}/console/`
+  (pour une app `legacy` : `{KEYCLOAK_PUBLIC_URL}/admin/{realm}/console/`).
   Un membre Owner/Maintainer de l'app peut s'y connecter pour administrer *ce realm
   uniquement* (créer des users, ajuster des rôles, personnaliser le thème de login…)
   — jamais les autres realms de la plateforme.
@@ -56,7 +58,7 @@ tentative avec un `409`) :
 
 | Variable              | Présente pour                  | Description |
 |------------------------|--------------------------------|--------------|
-| `OIDC_ISSUER_URL`      | tous les clients                | `{KEYCLOAK_PUBLIC_URL}/realms/{app_slug}-{env}` — URL du realm, sert aussi de base à la découverte OIDC (`{issuer}/.well-known/openid-configuration`) et aux JWKS (`{issuer}/protocol/openid-connect/certs`) |
+| `OIDC_ISSUER_URL`      | tous les clients                | `https://auth.cloud-native-plat4k.me/clusters/{instance_key}/realms/{app_slug}-{env}` (app `legacy` : `{KEYCLOAK_PUBLIC_URL}/realms/...`) — URL du realm, sert aussi de base à la découverte OIDC (`{issuer}/.well-known/openid-configuration`) et aux JWKS (`{issuer}/protocol/openid-connect/certs`) |
 | `OIDC_CLIENT_ID`       | tous les clients                | = `{app_slug}` |
 | `OIDC_CLIENT_SECRET`   | clients confidential uniquement | absent pour un client public (SPA) — PKCE ne l'utilise pas |
 
@@ -92,12 +94,15 @@ déjà en place dans le chart depuis la correction 4K-15 Lot 1b — rien à fair
 votre app a été scaffoldée **avant** ce correctif (le template n'est copié qu'une
 fois) : ajoutez le bloc ci-dessus vous-même dans `chart/templates/deployment.yaml`.
 
-**Apps importées (onboarded)** : CNP ne réécrit pas votre chart. Au provisioning, une
-vérification best-effort cherche `envFrom` référençant `{app_slug}-env` dans
-`chart/templates/*.yaml` de votre repo ; si elle échoue, un avertissement
-`chart_missing_envfrom` apparaît dans le portail (onglet Settings) et via
-`cnp keycloak status` — ajoutez le bloc ci-dessus vous-même pour le faire
-disparaître. Aucune MR automatique n'est ouverte pour vous (V1).
+**Apps importées (onboarded)** : CNP ne réécrit pas votre chart. À l'onboarding avec
+Keycloak coché, une vérification best-effort cherche `envFrom` référençant
+`{app_slug}-env` dans `chart/templates/*.yaml` de votre repo ; si elle échoue, un
+avertissement `chart_missing_envfrom` apparaît dans le portail (onglet Settings) et via
+`cnp keycloak status` — ajoutez le bloc ci-dessus vous-même. Cette vérification n'est
+faite qu'une fois : ni une activation ultérieure, ni une modification du chart ne la
+relancent, et l'avertissement reste affiché après l'ajout du bloc (il décrit le chart au
+moment de l'onboarding). Une app onboardée sans Keycloak puis activée depuis Settings
+n'est pas vérifiée. Aucune MR automatique n'est ouverte pour vous (V1).
 
 ## Valider un token côté code
 
