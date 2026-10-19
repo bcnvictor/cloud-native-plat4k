@@ -1,5 +1,11 @@
 import type { KeycloakInstanceSummary } from '@/types';
 
+/** Activation can only succeed against an enabled instance (cluster-bound or legacy);
+ *  without one the backend answers keycloak_instance_unavailable. */
+export function canActivateAuth(instance: KeycloakInstanceSummary | null | undefined): boolean {
+  return !!instance?.enabled;
+}
+
 export function AuthInstanceInfo({ instance }: { instance: KeycloakInstanceSummary | null }) {
   if (!instance) return <p className="text-xs text-muted-foreground mb-3">No Keycloak instance configured.</p>;
   return (

@@ -1,4 +1,4 @@
-import { AuthInstanceInfo } from './AuthInstanceInfo';
+import { AuthInstanceInfo, canActivateAuth } from './AuthInstanceInfo';
 import { EnvFromWarning, activationProblem } from './AuthWarnings';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -165,6 +165,7 @@ export function SettingsTab() {
   });
 
   const isOwner = !!myAccess && (myAccess.is_admin || myAccess.tier === 'owner');
+  const canActivate = canManageApp && canActivateAuth(authStatus?.instance);
   const { toast } = useToast();
 
   function toastAuthError(title: string) {
@@ -412,7 +413,7 @@ export function SettingsTab() {
               variant="primary"
               size="sm"
               loading={enableAuthMutation.isPending}
-              disabled={!canManageApp}
+              disabled={!canActivate}
               onClick={() => enableAuthMutation.mutate()}
             >
               {app.auth_provisioned === false ? 'Retry activation' : 'Activate Keycloak'}
@@ -423,14 +424,13 @@ export function SettingsTab() {
             {app.auth_provisioned === false && (
               <div className="flex items-center justify-between gap-2 p-2 bg-warning-subtle rounded-md">
                 <p className="text-xs text-warning-text">
-                  Keycloak provisioning did not complete. Retrying finishes the setup without
-                  touching what already exists.
+                  {activationProblem(app.auth_warnings, app.auth_provisioned)}
                 </p>
                 <Button
                   size="sm"
                   variant="ghost"
                   loading={enableAuthMutation.isPending}
-                  disabled={!canManageApp}
+                  disabled={!canActivate}
                   onClick={() => enableAuthMutation.mutate()}
                 >
                   Retry
