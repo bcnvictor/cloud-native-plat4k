@@ -440,6 +440,17 @@ class AppService:
         except Exception as e:
             # Unexpected: still never fail the app creation. Only the type is logged.
             logger.error("Keycloak activation failed for app %s (%s)", app.slug, type(e).__name__)
+            # Record it like any other failed activation (Retry offered), after
+            # dropping whatever the crash left half-done in the session.
+            try:
+                await self.db.rollback()
+                await self.db.refresh(app)
+                await service.mark_activation_failed(app, KeycloakAuthWarning.PROVISIONING_FAILED)
+            except Exception as record_error:
+                logger.error(
+                    "Could not record the Keycloak activation failure for app %s (%s)",
+                    app.slug, type(record_error).__name__,
+                )
 
     async def _check_envfrom_warning(self, app: Application, bot: "GitLabClient") -> None:
         """Onboarded-app-only (mode A, ADR-0027 §6): best-effort check that the

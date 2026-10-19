@@ -184,9 +184,29 @@ class TestScaffold:
 
     async def test_unexpected_activation_error_does_not_fail_app_creation(self, db_session, monkeypatch):
         async def crash(self, app):
+            app.auth_enabled = True  # half-done, uncommitted change
             raise RuntimeError("unexpected")
 
         monkeypatch.setattr(KeycloakService, "activate", crash)
+
+        app = await AppService(db_session).scaffold_app(_scaffold_request(["keycloak"]))
+
+        assert app.id is not None
+        # The failure is recorded like any other activation failure (Retry offered),
+        # and the half-done change is rolled back.
+        await db_session.refresh(app)
+        assert app.auth_provisioned is False
+        assert app.auth_warnings == ["keycloak_provisioning_failed"]
+        assert app.auth_enabled is False
+
+    async def test_failing_to_record_the_activation_error_does_not_fail_app_creation(
+        self, db_session, monkeypatch
+    ):
+        async def crash(self, *args):
+            raise RuntimeError("unexpected")
+
+        monkeypatch.setattr(KeycloakService, "activate", crash)
+        monkeypatch.setattr(KeycloakService, "mark_activation_failed", crash)
 
         app = await AppService(db_session).scaffold_app(_scaffold_request(["keycloak"]))
 
