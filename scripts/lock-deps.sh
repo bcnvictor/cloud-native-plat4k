@@ -19,3 +19,11 @@ uv pip compile shared/pyproject.toml backend/pyproject.toml \
   --extra test --extra dev \
   --constraint backend/requirements.lock \
   "${COMMON[@]}" -o backend/requirements-dev.lock
+
+uv pip compile cnp-mcp/pyproject.toml \
+  "${COMMON[@]}" -o cnp-mcp/requirements.lock
+
+uv pip compile cnp-mcp/pyproject.toml \
+  --extra test \
+  --constraint cnp-mcp/requirements.lock \
+  "${COMMON[@]}" -o cnp-mcp/requirements-dev.lock
