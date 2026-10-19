@@ -2,7 +2,7 @@
 
 - **Ticket** : [4K-77](https://linear.app/sigl-4k/issue/4K-77/cnp-mcp-server-exposition-read-only)
 - **Date** : 2026-10-09
-- **Statut** : validé en brainstorming, en attente de relecture
+- **Statut** : validé — revu contre le code le 2026-10-16, points ouverts tranchés le 2026-10-19 (§9)
 
 ## 1. Objectif
 
@@ -14,9 +14,9 @@ Critère de succès : la démo décrite en §8 passe sur `cnp-control`.
 
 | Sujet | Décision | Raison |
 |---|---|---|
-| Authentification | Chaque client envoie **sa propre clé API CNP** (`X-API-Key` ou `Authorization: Bearer`). Le serveur MCP la relaie à l'API. `CNP_API_KEY` n'est qu'un fallback de dev local. | Pas de donnée lisible sans clé valide ; audit et `last_used_at` par utilisateur ; révocation via l'UI existante. |
+| Authentification | Chaque client envoie **sa propre clé API CNP** (`X-API-Key` ou `Authorization: Bearer`). Le serveur MCP la relaie à l'API. `CNP_API_KEY` n'est qu'un fallback de dev local (D1). | Pas de donnée lisible sans clé valide ; audit et `last_used_at` par utilisateur ; révocation via l'UI existante. |
 | Source des déploiements | Nouvel endpoint backend `/api/v1/deployments`, agrégé depuis l'historique ArgoCD. Pas de table. | La logique « deployment » reste dans le backend ; le MCP reste un client fin ; la CLI en profite. |
-| Architecture | Package indépendant `cnp-mcp/`, service Docker séparé, exposé en `/mcp` sur le domaine existant via le nginx du frontend. | Conforme au ticket, zéro changement Cloudflare/DNS, déployé par la CI existante. |
+| Architecture | Package indépendant `cnp-mcp/`, service Docker séparé, exposé en `/mcp` sur le domaine existant via le nginx du frontend (D3). | Conforme au ticket, zéro changement Cloudflare/DNS, déployé par la CI existante. |
 | Fronts | CLI : `cnp deployments list/get`. Frontend : inchangé (garde `/apps/{id}/history`). | Propagation AGENTS.md sans refacto UI risquée (écran rollback). |
 | Dépendance à `shared` | Aucune côté MCP. | Image légère ; le MCP projette le JSON de l'API. |
 
@@ -41,7 +41,7 @@ class DeploymentResponse(BaseModel):
     revisions: list[str]      # SHA Git déployés
     deployed_at: datetime
     deploy_started_at: datetime | None = None
-    initiated_by: str | None = None   # username ArgoCD ; None si automated
+    initiated_by: str | None = None   # username ArgoCD ; None si automated (D2)
     automated: bool = False
 
 class DeploymentUnavailable(BaseModel):
@@ -61,14 +61,20 @@ class DeploymentListResponse(BaseModel):
 - `history_entry_to_deployment(app, env, entry) -> DeploymentResponse` : fonction pure.
 - `DeploymentService(db).list_deployments(app_id=None, env=None, limit=50) -> DeploymentListResponse`
   - Sélectionne les applications avec `target_cluster_id` non nul (filtrées par `app_id` si fourni ; 404 si l'app n'existe pas).
-  - Pour chaque couple (app, env) : `get_argocd_client_for_cluster(cluster)` puis `get_app_history(f"{app.slug}-{env}")`, exécutés en parallèle (`asyncio.gather`, sémaphore de 5).
-  - Toute exception sur un couple → entrée dans `unavailable` avec `reason = str(exc)` ; les autres résultats sont conservés.
+  - Un client ArgoCD par **cluster**, pas par couple : `get_argocd_client_for_cluster` lit Vault de façon synchrone, il est appelé une seule fois par cluster via `asyncio.to_thread`. En cas d'échec (ArgoCD non configuré → 409, token Vault indisponible → 503), tous les couples des apps de ce cluster passent dans `unavailable` avec le `detail` de l'exception.
+  - Pour chaque couple (app, env) : `get_app_history(f"{app.slug}-{env}")`, en parallèle (sémaphore de 5), chaque appel borné à **4 s** (`asyncio.wait_for`).
+  - Budget global de **8 s** (`asyncio.wait(..., timeout=8)`) : les couples non terminés sont annulés et passent dans `unavailable`. Le temps de réponse de l'endpoint reste borné quel que soit le nombre d'apps.
+  - ArgoCD 404 sur `{slug}-{env}` → historique vide (app non déployée dans cet env), sans entrée `unavailable`. Même comportement que `/apps/{id}/history`.
+  - Toute autre erreur sur un couple → entrée dans `unavailable` ; les autres résultats sont conservés. `reason` est lisible, jamais `str(exc)` brut : `HTTPException` → `exc.detail` ; `httpx.HTTPStatusError` → `"ArgoCD HTTP <code>"` ; timeout → `"ArgoCD timeout"` ; autre → `"ArgoCD error: <message>"`.
   - Tri par `deployed_at` décroissant, puis troncature à `limit`.
 - `DeploymentService(db).get_deployment(deployment_id) -> DeploymentResponse`
   - Parse `"{app_id}:{env}:{history_id}"` ; format invalide → 404.
-  - App absente ou sans cluster → 404. ArgoCD en erreur → 503. `history_id` absent de l'historique → 404.
+  - App absente ou sans cluster → 404. ArgoCD 404 sur `{slug}-{env}` ou `history_id` absent de l'historique → 404.
+  - ArgoCD non configuré, token Vault indisponible, erreur HTTP ou timeout (4 s) ArgoCD → 503 avec la même `reason` lisible. Le 409 de `get_argocd_client_for_cluster` est converti en 503 : pour l'appelant, la source est indisponible.
 
 Une application sans `target_cluster_id` n'a jamais été déployée : elle est ignorée, pas signalée.
+
+**Fenêtre d'historique.** ArgoCD ne conserve que les dernières entrées par Application (`revisionHistoryLimit`, 10 par défaut). `/deployments` renvoie donc les déploiements **récents**, pas un historique complet ; un `history_id` sorti de la fenêtre renvoie 404. Un historique complet relève de la persistance (hors scope).
 
 ### 3.3 Routes (`backend/api/routes/deployments.py`)
 
@@ -118,7 +124,7 @@ cnp-mcp/
 1. Le client appelle `POST /mcp` (streamable-http, mode **stateless**) avec `X-API-Key: <clé>` ou `Authorization: Bearer <clé>`.
 2. `auth.py` : sans clé et sans fallback → `401` JSON `{"error": "missing CNP API key"}`. Le middleware ne valide pas la clé ; le backend le fait au premier appel. `/healthz` n'est pas soumis à la clé.
 3. Le tool récupère la clé depuis `ctx.headers` (même règle d'extraction, partagée avec le middleware) et instancie `CnpApiClient(base_url, api_key)`.
-4. `CnpApiClient` appelle l'API avec `X-API-Key`, timeout 10 s. Mapping des erreurs vers `CnpApiError` :
+4. `CnpApiClient` appelle l'API avec `X-API-Key`, timeout 15 s (supérieur au budget de 8 s de `/deployments`, pour que les résultats partiels atteignent le tool). Mapping des erreurs vers `CnpApiError` :
    - 401/403 → « CNP API key invalid, revoked or not allowed »
    - 404 → « not found »
    - 5xx, timeout, erreur réseau → « CNP source unavailable: … »
@@ -140,6 +146,8 @@ Tous enregistrés avec `readOnlyHint=True`. Descriptions en anglais (destinées 
 | `get_platform_health()` | `GET /health/`, `GET /clusters/`, `GET /apps/` | voir 4.5 |
 
 `list_clusters` ne renvoie **jamais** `endpoint`, `kubeconfig_secret_ref`, `prometheus_url`, `loki_url`, `argocd_url`.
+
+La description de `list_deployments` précise que seuls les déploiements récents sont visibles (fenêtre d'historique ArgoCD, ~10 par app et par env) et que `unavailable` liste les sources non interrogées : le LLM ne doit pas en conclure qu'aucun déploiement plus ancien n'existe.
 
 ### 4.5 `get_platform_health`
 
@@ -173,7 +181,10 @@ En prod, `MCP_ALLOWED_HOSTS` inclut `cnp.cloud-native-plat4k.me` (dans `.env` de
 
 ```nginx
 location /mcp {
-    proxy_pass http://cnp-mcp:8080/mcp;
+    # Résolution à la requête : nginx démarre même si cnp-mcp est absent
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $cnp_mcp http://cnp-mcp:8080;
+    proxy_pass $cnp_mcp;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -183,9 +194,9 @@ location /mcp {
 }
 ```
 
-URL publique : `https://cnp.cloud-native-plat4k.me/mcp` (tunnel Cloudflare existant, inchangé). Le job `deploy` existant (`docker compose --profile production up -d --build`) déploie le service.
+URL publique : `https://cnp.cloud-native-plat4k.me/mcp` (tunnel Cloudflare existant, inchangé — cible à vérifier sur la VM, D3). Le job `deploy` existant (`docker compose --profile production up -d --build`) déploie le service.
 
-Le `resolver` nginx n'est pas nécessaire : `cnp-mcp` est démarré par le même compose. Le frontend dépendra de `cnp-mcp` (`depends_on`) pour que nginx résolve l'hôte au démarrage.
+Le `frontend` ne dépend **pas** de `cnp-mcp` (pas de `depends_on`). Avec une `proxy_pass` statique, nginx refuse de démarrer si l'hôte `cnp-mcp` n'est pas résolvable (build en échec, crash), ce qui couperait toute l'UI. Le resolver Docker (`127.0.0.11`) et la variable reportent la résolution à la requête : une panne du MCP se limite à un 502 sur `/mcp`. Une `proxy_pass` à variable sans URI transmet le chemin tel quel (`/mcp`).
 
 ### 5.3 Dépendances et lockfiles
 
@@ -207,10 +218,10 @@ Nouveau job `mcp` : setup Python 3.11 → `pip install -r cnp-mcp/requirements-d
 
 ## 7. Documentation
 
-- `cnp-mcp/README.md` : rôle, variables, lancement local, configuration client (Claude Code `claude mcp add --transport http cnp https://cnp.cloud-native-plat4k.me/mcp --header "X-API-Key: <clé>"`, Cursor/VS Code `mcp.json` avec `headers`, Claude Desktop via `mcp-remote`), création d'une clé dans l'UI.
+- `cnp-mcp/README.md` : rôle, variables, lancement local, configuration client (Claude Code `claude mcp add --transport http cnp https://cnp.cloud-native-plat4k.me/mcp --header "X-API-Key: <clé>"`, Cursor/VS Code `mcp.json` avec `headers`, Claude Desktop via `mcp-remote`), création d'une clé dans l'UI. Préciser que `Authorization: Bearer` attend une **clé API CNP**, pas un JWT de session, et que les réponses des tools sont transmises au LLM du client (D4).
 - `docs/adr/0026-mcp-server.md` : relais de clé vs clé de service ; `/mcp` sur le domaine existant vs sous-domaine ; endpoint `/deployments` agrégé vs table.
 - `docs/cli.md` : commande `deployments`.
-- `docs/guides/cnp-control-deployment.md` : service `cnp-mcp`, variable `MCP_ALLOWED_HOSTS`.
+- `docs/guides/cnp-control-deployment.md` : service `cnp-mcp`, variable `MCP_ALLOWED_HOSTS`, `docker-compose.tunnel.yml` versionné (D3).
 - `docs/api/openapi.json` : régénéré si ce fichier est produit depuis le code.
 
 ## 8. Tests et démo
@@ -221,7 +232,8 @@ Fixtures existantes (SQLite en mémoire, `AsyncClient` ASGI) ; `get_argocd_clien
 
 - `history_entry_to_deployment` : entrée automated, entrée avec username, entrée mono-source (`revision`) et multi-source (`revisions`).
 - `GET /deployments/` : tri décroissant, `limit`, filtre `app_id`, filtre `env`, app sans cluster ignorée, ArgoCD en erreur sur une app → `unavailable` + autres items présents, `app_id` inconnu → 404.
-- `GET /deployments/{id}` : nominal, id mal formé → 404, `history_id` absent → 404, ArgoCD en erreur → 503.
+- `GET /deployments/` (robustesse) : couple dépassant 4 s → `unavailable` (`ArgoCD timeout`) et autres items présents ; ArgoCD 404 sur un env → ni item ni `unavailable` ; ArgoCD non configuré sur un cluster → toutes ses apps dans `unavailable` avec le `detail` ; client ArgoCD créé une seule fois par cluster.
+- `GET /deployments/{id}` : nominal, id mal formé → 404, `history_id` absent → 404, ArgoCD 404 → 404, ArgoCD en erreur ou non configuré → 503.
 - Sans authentification → 401.
 
 ### 8.2 MCP — `cnp-mcp/tests/`
@@ -242,5 +254,32 @@ Pas de suite de tests existante : vérification manuelle de `cnp deployments lis
 Sur `cnp-control`, après merge :
 1. Créer une clé API « MCP » dans l'UI.
 2. `claude mcp add --transport http cnp https://cnp.cloud-native-plat4k.me/mcp --header "X-API-Key: <clé>"` (ou config Cursor équivalente).
-3. Questions couvrant les 6 tools : « Quelles apps tournent sur la plateforme ? », « Détaille l'app X », « Quand a eu lieu le dernier déploiement prod de X et par qui ? », « Montre-moi ce déploiement », « Un cluster est-il offline ? », « La plateforme est-elle en bonne santé ? ».
+3. Questions couvrant les 6 tools : « Quelles apps tournent sur la plateforme ? », « Détaille l'app X », « Quand a eu lieu le dernier déploiement prod de X, et était-il automatique ou manuel ? », « Montre-moi ce déploiement », « Un cluster est-il offline ? », « La plateforme est-elle en bonne santé ? ».
 4. Contre-tests : requête sans clé → 401 ; clé révoquée → erreur de tool explicite.
+
+## 9. Décisions issues de la revue (2026-10-19)
+
+Points ouverts lors de la revue du 2026-10-16, tranchés en retenant la solution recommandée.
+
+### D1 — Clé API par utilisateur, `CNP_API_KEY` en fallback
+
+Chaque client MCP envoie sa propre clé CNP ; `CNP_API_KEY` reste supportée comme fallback et n'est jamais définie en prod. Les deux variables du ticket sont configurables : le critère d'acceptation est rempli à la lettre. Une clé de service unique rendrait les données lisibles par quiconque connaît l'URL publique, et l'audit ne verrait qu'un compte. Écart de lecture du ticket à signaler au créateur du ticket dans la PR.
+
+### D2 — Auteur `auto` pour l'auto-sync, révision = SHA brut ArgoCD
+
+- `initiated_by` vaut `None` (affiché `auto`) pour les déploiements auto-sync ; la question de démo §8.4 est reformulée en conséquence.
+- `revisions` reprend le SHA brut d'ArgoCD. D'après `cnp-ci-modules` (`update-gitops` crée les Applications avec `path: chart`) et le rollback qui en tire le tag d'image (`revisions[0][:8]`), `revisions[0]` est **probablement** le commit du dépôt applicatif. À confirmer dans `cnp-gitops/argocd/<cluster>/<app>/<env>.yaml` pendant l'implémentation, puis à documenter dans le docstring de `DeploymentResponse.revisions`.
+- L'auteur réel (commit déclencheur via GitLab) fait l'objet d'un ticket de suivi.
+
+### D3 — Exposition via le nginx du `frontend`, à vérifier sur la VM
+
+Le design §5.2 est conservé. Première tâche du déploiement : vérifier sur `cnp-control` la cible du tunnel (`cat ~/cloud-native-plat4k/docker-compose.tunnel.yml`, `sudo cat /etc/cloudflared/config.yml`).
+
+- Tunnel → port 80 du `frontend` : rien à changer.
+- Sinon : règle d'ingress `cloudflared` `path: ^/mcp` vers `cnp-mcp` publié sur `127.0.0.1:8080` uniquement.
+
+Dans les deux cas, `docker-compose.tunnel.yml` est versionné dans le repo et référencé dans `docs/guides/cnp-control-deployment.md`, pour que la config de prod ne soit plus implicite.
+
+### D4 — `owner` conservé dans `list_apps`
+
+L'information est déjà visible dans l'UI pour tout utilisateur authentifié et répond à un usage attendu (« à qui appartient l'app X ? »). Le README de `cnp-mcp` rappelle que les réponses des tools sont transmises au LLM du client.
