@@ -1,7 +1,7 @@
 """Administrator-only registry, written by the Keycloak installation command."""
 
 from backend.api.deps import require_admin
-from backend.db.models import KeycloakInstance, User
+from backend.db.models import User
 from backend.db.session import get_db
 from backend.services.audit_service import AuditService
 from backend.services.keycloak_instance_service import KeycloakInstanceService
@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from shared.models import KeycloakInstanceResponse, KeycloakInstanceUpsert
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -32,11 +31,7 @@ router = APIRouter(route_class=RegistryRoute)
 
 @router.get("", response_model=list[KeycloakInstanceResponse])
 async def list_instances(db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    return (
-        (await db.execute(select(KeycloakInstance).order_by(KeycloakInstance.instance_key)))
-        .scalars()
-        .all()
-    )
+    return await KeycloakInstanceService(db).list_instances()
 
 
 @router.get("/{instance_key}", response_model=KeycloakInstanceResponse)

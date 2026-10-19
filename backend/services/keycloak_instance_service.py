@@ -38,6 +38,10 @@ class KeycloakInstanceService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def list_instances(self) -> list[KeycloakInstance]:
+        result = await self.db.execute(select(KeycloakInstance).order_by(KeycloakInstance.instance_key))
+        return list(result.scalars().all())
+
     async def get(self, key: str) -> KeycloakInstance:
         row = await self.db.get(KeycloakInstance, key)
         if row is None:
