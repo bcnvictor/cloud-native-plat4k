@@ -1,8 +1,8 @@
 # Validation du déploiement Keycloak portable
 
-État au 18 octobre 2026, branche `feature/keycloak-portable-cnp`.
+État au 19 octobre 2026, branche `feature/keycloak-portable-cnp`.
 Ce document distingue les essais réalisés des validations encore ouvertes.
-origin/main a été fusionné dans la branche (`e01e32d`) ; la branche n'est pas
+origin/main a été fusionné dans la branche (dernière fusion `a754047`) ; la branche n'est pas
 encore fusionnée dans main. Aucune installation live AKS ou k3s ni migration de
 la base CNP de production n'a été effectuée. La règle ACL Tailscale
 `tag:cnp-control` → `tag:k8s:8080` est ajoutée dans `infra/tailscale/main.tf`,
@@ -10,16 +10,18 @@ en attente de `terraform apply`.
 
 ## Résultats réalisés
 
-- Chart commun : Helm 3.17.3, lint strict et rendu des cibles public AKS et privé
-  k3s, PVC conservé, probes management, exposition privée, secrets ESO isolés.
+- Chart commun : Helm 3.17.3, lint strict et rendu des cibles public AKS, public GKE
+  et privé k3s, PVC conservé, probes management, exposition privée, secrets ESO isolés.
 - Passerelle : 28 tests sur NGINX réel (Docker) avec deux amonts isolés ;
   préfixes conservés, voisins inconnus 404, master/management 403, encodages
   bloqués, amont absent 503, rollback de configuration invalide et d'une route
-  valide mais inaccessible, Grafana disponible sans certificat auth.
+  valide mais inaccessible, Grafana disponible sans certificat auth. Fichier rejoué
+  10 fois de suite sans échec (attentes tolérantes aux rechargements NGINX).
 - Sonde directe sur Keycloak 26.8.0 : `realms/master;x/...` répond 400 en direct
   et 403 via la passerelle ; `master%3Bx` répond 404 en direct et 403 via la
   passerelle. Le rejet en bordure reste une défense en profondeur.
-- Banc local réel : **6/6 tests réussis**, deux Keycloak 26.8.0, PostgreSQL 16,
+- Banc local réel (exécuté avant les correctifs de la revue qualité de la PR #51,
+  non rejoué depuis) : **6/6 tests réussis**, deux Keycloak 26.8.0, PostgreSQL 16,
   Vault 1.21, NGINX, base CNP dédiée ; bootstrap répété sans rotation, token ESO
   renouvelé et scopes interdits refusés, preuve d'issuer avec un certificat local
   approuvé, migration historique, provisioning CNP sur deux instances, association
@@ -29,10 +31,10 @@ en attente de `terraform apply`.
   après remise à zéro de la seule base Keycloak de test avec secret conservé.
   Les services et
   volumes sont supprimés en fin de test ; aucune donnée personnelle partagée.
-- Suite backend ordinaire (commande CI) : **466 réussis**, 2 ignorés ;
-  suite opérateur `-m keycloak_infra` : **53 réussis**, dont les 28 tests
+- Suite backend ordinaire (commande CI) : **485 réussis**, 2 ignorés ;
+  suite opérateur `-m keycloak_infra` : **55 réussis**, dont les 28 tests
   passerelle avec Docker. Les 6 tests d'intégration sont exécutés séparément.
-- Frontend : **59/59 tests vitest**, tsc et eslint sans erreur ; ruff sans erreur.
+- Frontend : **69/69 tests vitest**, tsc, eslint et build sans erreur ; ruff sans erreur.
 - Locks backend runtime/dev et opérateur : régénération sans différences
   (contrôle du 9 octobre).
 - Migration : un seul head Alembic, `c2d3e4f5a6b7`.
