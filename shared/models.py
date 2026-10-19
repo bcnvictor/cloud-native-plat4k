@@ -445,6 +445,38 @@ class ClusterTestResult(BaseModel):
     error: Optional[str] = None
 
 
+# ── Deployments (agrégés depuis l'historique ArgoCD) ──────────────────────────
+
+class DeploymentEnv(str, Enum):
+    DEV = "dev"
+    PROD = "prod"
+
+
+class DeploymentResponse(BaseModel):
+    id: str  # "{app_id}:{env}:{history_id}", ex. "42:prod:17"
+    app_id: int
+    app_slug: str
+    app_name: str
+    env: DeploymentEnv
+    history_id: int  # id d'historique ArgoCD, celui attendu par /apps/{id}/rollback
+    revisions: List[str]  # SHA renvoyés par ArgoCD (probablement le commit applicatif)
+    deployed_at: datetime
+    deploy_started_at: Optional[datetime] = None
+    initiated_by: Optional[str] = None  # username ArgoCD ; None pour un auto-sync
+    automated: bool = False
+
+
+class DeploymentUnavailable(BaseModel):
+    app_id: int
+    env: DeploymentEnv
+    reason: str
+
+
+class DeploymentListResponse(BaseModel):
+    items: List[DeploymentResponse]
+    unavailable: List[DeploymentUnavailable]
+
+
 # ── Security scans ────────────────────────────────────────────────────────────
 
 class SecurityFindingResponse(BaseModel):
