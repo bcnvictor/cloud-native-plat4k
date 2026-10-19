@@ -1,0 +1,3 @@
+path "secret/data/cnp/keycloak/{{instance_key}}/provisioner" {
+  capabilities = ["read"]
+}

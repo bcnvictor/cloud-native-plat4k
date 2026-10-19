@@ -1,0 +1,72 @@
+services:
+  database-public:
+    image: ${TEST_POSTGRES_IMAGE}
+    environment: {POSTGRES_USER: keycloak, POSTGRES_PASSWORD: '${TEST_DB_PASSWORD}', POSTGRES_DB: keycloak}
+    volumes: [database-public:/var/lib/postgresql/data]
+    healthcheck: {test: [CMD-SHELL, 'pg_isready -U keycloak'], interval: 2s, timeout: 2s, retries: 30}
+  database-private:
+    image: ${TEST_POSTGRES_IMAGE}
+    environment: {POSTGRES_USER: keycloak, POSTGRES_PASSWORD: '${TEST_DB_PASSWORD}', POSTGRES_DB: keycloak}
+    volumes: [database-private:/var/lib/postgresql/data]
+    healthcheck: {test: [CMD-SHELL, 'pg_isready -U keycloak'], interval: 2s, timeout: 2s, retries: 30}
+  cnp-database:
+    image: ${TEST_POSTGRES_IMAGE}
+    environment: {POSTGRES_USER: cnp, POSTGRES_PASSWORD: '${TEST_DB_PASSWORD}', POSTGRES_DB: cnp_keycloak_test}
+    ports: ['127.0.0.1:${TEST_CNP_DB_PORT}:5432']
+    volumes: [cnp-database:/var/lib/postgresql/data]
+    healthcheck: {test: [CMD-SHELL, 'pg_isready -U cnp'], interval: 2s, timeout: 2s, retries: 30}
+  vault:
+    image: ${TEST_VAULT_IMAGE}
+    cap_add: [IPC_LOCK]
+    command: [server, -dev, '-dev-listen-address=0.0.0.0:8200']
+    environment: {VAULT_DEV_ROOT_TOKEN_ID: '${TEST_VAULT_TOKEN}'}
+    ports: ['127.0.0.1:${TEST_VAULT_PORT}:8200']
+  public:
+    image: ${TEST_KEYCLOAK_IMAGE}
+    command: [start]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://database-public:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${TEST_DB_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: cnp-bootstrap
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${TEST_BOOTSTRAP_PASSWORD}
+      KC_HOSTNAME: https://localhost:${TEST_GATEWAY_PORT}/clusters/public-01
+      KC_HTTP_ENABLED: 'true'
+      KC_HTTP_RELATIVE_PATH: /clusters/public-01
+      KC_HTTP_MANAGEMENT_RELATIVE_PATH: /
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: 'true'
+    ports: ['127.0.0.1:${TEST_PUBLIC_PORT}:8080']
+    depends_on: {database-public: {condition: service_healthy}}
+    networks: {default: {aliases: [kc-public-01.integration.test]}}
+  private:
+    image: ${TEST_KEYCLOAK_IMAGE}
+    command: [start]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://database-private:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${TEST_DB_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: cnp-bootstrap
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${TEST_BOOTSTRAP_PASSWORD}
+      KC_HOSTNAME: https://localhost:${TEST_GATEWAY_PORT}/clusters/private-01
+      KC_HTTP_ENABLED: 'true'
+      KC_HTTP_RELATIVE_PATH: /clusters/private-01
+      KC_HTTP_MANAGEMENT_RELATIVE_PATH: /
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: 'true'
+    ports: ['127.0.0.1:${TEST_PRIVATE_PORT}:8080']
+    depends_on: {database-private: {condition: service_healthy}}
+    networks: {default: {aliases: [kc-private-01.integration.test]}}
+  gateway:
+    image: ${TEST_NGINX_IMAGE}
+    ports: ['127.0.0.1:${TEST_GATEWAY_PORT}:443']
+    volumes:
+      - ${TEST_DIRECTORY}/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${TEST_DIRECTORY}/routes:/etc/nginx/keycloak-routes:ro
+      - ${TEST_DIRECTORY}/certs:/etc/letsencrypt:ro
+volumes:
+  database-public:
+  database-private:
+  cnp-database:

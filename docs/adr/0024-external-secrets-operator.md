@@ -112,6 +112,7 @@ spec:
   target:
     name: {app_slug}-env
     creationPolicy: Owner
+    deletionPolicy: Delete  # app sans variable = pas de chemin Vault : Ready, pas SecretSyncedError (4K-15)
   dataFrom:
     - extract:
         key: secret/apps/{group_slug}/{app_slug}/{env}
@@ -136,8 +137,11 @@ redémarre automatiquement les `Deployment` concernés lors d'un changement.
 ### 4. Cycle de vie si le chemin Vault est vide
 
 Si aucune variable n'a encore été définie pour une app (`secret/apps/{group}/{app}/{env}`
-n'existe pas dans Vault), l'`ExternalSecret` reste en état `SecretSyncedError`. Le pod
-démarre sans le `secretRef` manquant uniquement si le Helm chart déclare `envFrom` comme
+n'existe pas dans Vault), l'`ExternalSecret` n'a rien à extraire. Avec
+`deletionPolicy: Delete` (manifest généré par `GitLabClient.upsert_externalsecret` depuis
+4K-15), ESO le signale `Ready` (`SecretDeleted`) sans créer le Secret ; avec la politique
+par défaut `Retain`, il restait en `SecretSyncedError` et ArgoCD marquait l'app `Degraded`.
+Le pod démarre sans le Secret manquant uniquement si le Helm chart déclare `envFrom` comme
 optionnel (`optional: true`). Le template Helm scaffoldé par CNP inclut cette directive
 par défaut.
 
@@ -158,8 +162,8 @@ Négatif / Dette :
 - Stakater Reloader est une dépendance supplémentaire dans chaque cluster (légère, ~20 MB).
 - Pendant la période transitoire (avant AppRole), le token statique ESO → Vault est un
   secret K8s bootstrappé manuellement : sa rotation n'est pas automatisée.
-- Si le chemin Vault n'existe pas encore, l'`ExternalSecret` est en erreur et le pod
-  démarre sans les variables attendues. L'`optional: true` atténue l'impact mais ne
+- Si le chemin Vault n'existe pas encore, le Secret n'est pas créé et le pod démarre sans
+  les variables attendues. L'`optional: true` atténue l'impact mais ne
   supprime pas le risque si une variable est requise au démarrage.
 
 Neutre :
@@ -167,3 +171,35 @@ Neutre :
   configurable par app via les values Helm si nécessaire.
 - Les `ExternalSecret` générés par le backend sont idempotents : rejouer le provisioning
   GitOps met à jour le manifest sans créer de doublon.
+
+## Addendum (4K-15 / ADR-0027 Lot 1c) : les ExternalSecret n'étaient déployés par personne
+
+Constat après coup (vérifié sur `cnp-gitops` `origin/main`) : le chemin décrit en §3
+(`apps/{app_slug}/externalsecret-{env}.yaml`) n'était scanné par aucune Application ArgoCD.
+La root-app (`bootstrap/root-app.yaml`) ne scanne que `argocd/` ; et la source `ref: gitops`
+d'une Application (ADR-0014) ne sert qu'à résoudre les `valueFiles` du Helm chart, elle ne
+déploie aucun manifest par elle-même. Résultat : les `ExternalSecret` existaient bien dans
+git mais n'étaient jamais appliqués sur le cluster — le Secret K8s `{app_slug}-env` n'existait
+donc jamais, indépendamment de tout ce que ce document décrit par ailleurs.
+
+Correctif : le manifest est désormais écrit sous
+`apps/{cluster}/{app_slug}/platform/{env}/externalsecret.yaml` (et non plus
+`apps/{app_slug}/externalsecret-{env}.yaml` — le chemin inclut aussi le cluster, qui manquait
+dans la version originale de cet ADR), et `cnp-ci-modules/base/pipeline.yml`
+(`update-gitops`) ajoute une 3e source à l'Application générée :
+
+```yaml
+- repoURL: '<CLEAN_GITOPS_URL>'
+  targetRevision: HEAD
+  path: apps/<cluster>/<app>/platform/<env>
+```
+
+Ce dossier `platform/{env}/` est un emplacement dédié aux manifests posés par la plateforme
+(pas seulement l'ExternalSecret — extensible à oauth2-proxy ou d'autres primitives futures),
+distinct de `apps/{cluster}/{app}/values-{env}.yaml` qui n'est pas un manifest K8s et ne doit
+jamais être inclus dans une source ArgoCD `path:`. `update-gitops` retrofit cette source de
+façon idempotente sur les Applications déjà générées avant ce correctif (`yq`, vérifie
+l'absence avant d'ajouter). Un script one-shot
+(`cloud-native-plat4k/scripts/migrate_externalsecrets_platform_dir.py`, dry-run par défaut)
+migre les fichiers déjà présents à l'ancien emplacement, à exécuter manuellement sur un clone
+local de `cnp-gitops`.

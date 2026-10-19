@@ -15,6 +15,9 @@ def scaffold_app(
     port: int = typer.Option(8000, "--port", "-p", help="Container port"),
     replicas: int = typer.Option(1, "--replicas", "-r", help="Initial number of pods"),
     postgresql: bool = typer.Option(False, "--postgresql", help="Provision a PostgreSQL backing service"),
+    keycloak: bool = typer.Option(
+        False, "--keycloak", help="Provision Keycloak app-auth (realm per env, see 'cnp keycloak')"
+    ),
 ):
     """Scaffold a new application from a CNP template."""
     resolved_owner = owner or load_config().get("user_email", "")
@@ -22,7 +25,11 @@ def scaffold_app(
         print_error("Could not determine owner. Pass --owner or log in first (cnp auth login).")
         raise typer.Exit(1)
 
-    services = ["postgresql"] if postgresql else []
+    services = []
+    if postgresql:
+        services.append("postgresql")
+    if keycloak:
+        services.append("keycloak")
     payload = {
         "name": name,
         "owner": resolved_owner,
@@ -44,6 +51,8 @@ def scaffold_app(
                 ["framework", data.get("framework") or "—"],
                 ["status", data["status"]],
                 ["ci_injected", data.get("ci_injected")],
+                ["auth_enabled", data.get("auth_enabled")],
+                ["auth_provisioned", data.get("auth_provisioned")],
             ],
         )
     except Exception as e:
@@ -58,6 +67,9 @@ def onboard_app(
     owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Owner (defaults to logged-in user)"),
     framework: Optional[str] = typer.Option(None, "--framework", "-f", help="Framework: python, generic (auto-detected if omitted)"),
     cluster_id: Optional[int] = typer.Option(None, "--cluster-id", "-c", help="Target cluster ID (optional)"),
+    keycloak: bool = typer.Option(
+        False, "--keycloak", help="Provision Keycloak app-auth (mode A: credentials only, no code injection)"
+    ),
 ):
     """Onboard an existing internal GitLab repo as a CNP application."""
     resolved_owner = owner or load_config().get("user_email", "")
@@ -70,6 +82,8 @@ def onboard_app(
         payload["framework"] = framework
     if cluster_id is not None:
         payload["target_cluster_id"] = cluster_id
+    if keycloak:
+        payload["services"] = ["keycloak"]
 
     try:
         data = client.post("/apps/onboard", json=payload)
@@ -86,6 +100,9 @@ def onboard_app(
                 ["target_cluster_id", data.get("target_cluster_id") or "—"],
                 ["status", data["status"]],
                 ["ci_injected", data.get("ci_injected")],
+                ["auth_enabled", data.get("auth_enabled")],
+                ["auth_provisioned", data.get("auth_provisioned")],
+                ["auth_warnings", ", ".join(data.get("auth_warnings") or []) or "—"],
             ],
         )
     except Exception as e:

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "tailscale",
+    "postgresql",
+    "resources",
+    "vault",
+    "images",
+    "instanceKey",
+    "publicDomain"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "tailscale": {
+      "type": "object"
+    },
+    "postgresql": {
+      "type": "object"
+    },
+    "resources": {
+      "type": "object"
+    },
+    "vault": {
+      "type": "object"
+    },
+    "images": {
+      "type": "object",
+      "required": [
+        "keycloak",
+        "postgresql",
+        "nginx"
+      ],
+      "properties": {
+        "keycloak": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}$"
+        },
+        "postgresql": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}$"
+        },
+        "nginx": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "instanceKey": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,57}[a-z0-9])?$"
+    },
+    "publicDomain": {
+      "type": "string",
+      "pattern": "^[a-z0-9.-]+$",
+      "minLength": 1
+    }
+  }
+}

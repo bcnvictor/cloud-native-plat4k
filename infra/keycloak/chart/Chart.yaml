@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cnp-keycloak
+version: 0.1.0
+appVersion: "26.8.0"
+description: A cluster-scoped CNP authentication instance with persistent storage

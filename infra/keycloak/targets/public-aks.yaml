@@ -1,0 +1,7 @@
+profile: public
+instance_key: public-01
+context: cnp-aks
+cnp_cluster_name: cnp-aks
+namespace: keycloak-public-01
+release: keycloak
+storage_class: managed-csi

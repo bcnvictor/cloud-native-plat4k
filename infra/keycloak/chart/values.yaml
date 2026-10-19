@@ -1,0 +1,16 @@
+instanceKey: ""
+publicDomain: ""
+tailscale:
+  hostname: ""
+  namespace: tailscale
+postgresql:
+  storageClass: ""
+  storageSize: 5Gi
+  resources: {}
+resources: {}
+vault:
+  server: ""
+images:
+  keycloak: ""
+  postgresql: ""
+  nginx: ""

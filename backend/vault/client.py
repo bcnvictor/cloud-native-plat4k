@@ -32,7 +32,7 @@ class VaultClient:
             )
             return response["data"]["data"]
         except Exception as e:
-            logger.debug("Failed to read secret from %s/%s: %s", mount_point, path, e)
+            logger.debug("Failed to read secret from %s/%s (%s)", mount_point, path, type(e).__name__)
             raise
 
     def put_secret(self, path: str, secret: dict, mount_point: str = "secret") -> None:
