@@ -105,10 +105,16 @@ class KeycloakClient:
         self,
         realm: str,
         *,
+        realm_id: str | None = None,
         registration_allowed: bool = False,
         attributes: dict[str, str] | None = None,
     ) -> None:
+        """`realm_id` sets the realm's internal id, which Keycloak never changes
+        afterwards — not even when a realm-admin renames the realm (verified against
+        26.8.0). A 409 (name or id taken) is treated as "already exists"."""
         payload = {"realm": realm, "enabled": True, "registrationAllowed": registration_allowed}
+        if realm_id:
+            payload["id"] = realm_id
         if attributes:
             payload["attributes"] = attributes
         try:

@@ -34,8 +34,10 @@ class FakeKeycloak:
                 return c
         raise AssertionError("test bug: realm-management client not preseeded")
 
-    def create_realm(self, name: str, attributes: dict | None = None) -> None:
+    def create_realm(self, name: str, attributes: dict | None = None, id: str | None = None) -> None:
+        """Like Keycloak: the internal id is the one given at creation, else generated."""
         self.realms[name] = {
+            "id": id or str(uuid.uuid4()),
             "attributes": dict(attributes or {}),
             "user_profile": {"attributes": [{"name": "username"}]},
             "clients": {
@@ -64,9 +66,14 @@ class FakeKeycloak:
         if path == "/admin/realms" and method == "POST":
             body = _json(request)
             name = body["realm"]
-            if name in self.realms:
+            if name in self.realms or (
+                body.get("id") and any(r["id"] == body["id"] for r in self.realms.values())
+            ):
                 return httpx.Response(409, json={"errorMessage": "exists"})
-            self.create_realm(name, body.get("attributes"))
+            self.create_realm(name, body.get("attributes"), body.get("id"))
+            self.realms[name]["settings"] = {
+                k: v for k, v in body.items() if k not in ("realm", "id", "attributes")
+            }
             return httpx.Response(201)
 
         if path.startswith("/admin/realms/"):
@@ -78,9 +85,12 @@ class FakeKeycloak:
                 if method == "GET":
                     if realm not in self.realms:
                         return httpx.Response(404)
+                    data = self.realms[realm]
                     return httpx.Response(
-                        200, json={"realm": realm, "attributes": self.realms[realm]["attributes"]}
+                        200, json={"id": data["id"], "realm": realm, "attributes": data["attributes"]}
                     )
+                if method == "PUT":
+                    return self._update_realm(realm, _json(request))
                 if method == "DELETE":
                     if realm not in self.realms:
                         return httpx.Response(404)
@@ -103,6 +113,24 @@ class FakeKeycloak:
                 return self._users(request, realm_data, parts[2:])
 
         return httpx.Response(500, json={"error": f"unhandled {method} {path}"})
+
+    def rename_realm(self, realm: str, new_name: str, attributes: dict) -> None:
+        """What a realm-admin of `realm` can do with PUT /admin/realms/{realm}."""
+        self._update_realm(realm, {"realm": new_name, "id": "ignored", "attributes": attributes})
+
+    def _update_realm(self, realm: str, body: dict) -> httpx.Response:
+        if realm not in self.realms:
+            return httpx.Response(404)
+        # Keycloak ignores `id` on update (verified against 26.8.0): it never changes.
+        data = self.realms[realm]
+        if "attributes" in body:
+            data["attributes"] = dict(body["attributes"])
+        new_name = body.get("realm", realm)
+        if new_name != realm:
+            if new_name in self.realms:
+                return httpx.Response(409)
+            self.realms[new_name] = self.realms.pop(realm)
+        return httpx.Response(204)
 
     def _clients(self, request: httpx.Request, realm_data: dict, rest: list[str]) -> httpx.Response:
         method = request.method
@@ -313,6 +341,15 @@ async def test_create_realm_with_owner_attribute():
     realm = await client.get_realm("demo-dev")
     assert realm["attributes"]["cnp_app_id"] == "42"
     assert await client.get_realm("nope") is None
+
+
+async def test_create_realm_with_explicit_internal_id():
+    """The realm's internal id survives a rename (Keycloak 26.8.0): CNP picks it at
+    creation so ownership never depends on what a realm-admin can rewrite."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev", realm_id="cnp-42-dev", attributes={"cnp_app_id": "42"})
+    assert (await client.get_realm("demo-dev"))["id"] == "cnp-42-dev"
 
 
 async def test_ensure_cnp_admin_user_creates_tagged_account_then_reactivates():

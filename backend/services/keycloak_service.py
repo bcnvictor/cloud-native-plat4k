@@ -7,9 +7,12 @@ ADR-0025). Covers both scaffolded and onboarded apps identically (mode A for
 onboarded: same provisioning, no code injection — see ADR-0027 §6).
 
 Ownership markers (never trust a name alone):
-- each realm CNP creates carries the realm attribute `cnp_app_id`; a realm with the
-  expected name but without the matching marker is "foreign" and is never adopted,
-  completed, handed out or deleted (slug reuse after a failed cleanup, manual realm);
+- each realm CNP creates gets an internal id chosen by CNP (`cnp-{app_id}-{env}`) and
+  the realm attribute `cnp_app_id`; a realm with the expected name but without both
+  markers is "foreign" and is never adopted, completed, handed out or deleted (slug
+  reuse after a failed cleanup, manual realm). The id is what makes this hold: the
+  app's realm-admins can rename their realm and rewrite its attributes, but Keycloak
+  never changes a realm's id;
 - each console account CNP creates carries the user attribute `cnp_user_id`; CNP
   looks accounts up by that attribute, never by username, so it can't take over one
   of the app's end-user accounts.
@@ -53,6 +56,12 @@ def realm_name(app_slug: str, env: str) -> str:
     return f"{app_slug}-{env}"
 
 
+def realm_id(app_id: int, env: str) -> str:
+    """Internal id CNP gives the realm at creation. Unlike the name and the
+    attributes, a realm-admin cannot change it (a rename keeps the id)."""
+    return f"cnp-{app_id}-{env}"
+
+
 def _validate_env(env: str) -> None:
     if env not in VALID_ENVS:
         raise HTTPException(status_code=422, detail="env must be 'dev' or 'prod'")
@@ -69,8 +78,11 @@ def console_username(user: User) -> str:
     return f"cnp.{local}.{user.id}"
 
 
-def _owned_by(realm_repr: dict, app: Application) -> bool:
-    return (realm_repr.get("attributes") or {}).get(REALM_OWNER_ATTRIBUTE) == str(app.id)
+def _owned_by(realm_repr: dict, app: Application, env: str) -> bool:
+    return (
+        realm_repr.get("id") == realm_id(app.id, env)
+        and (realm_repr.get("attributes") or {}).get(REALM_OWNER_ATTRIBUTE) == str(app.id)
+    )
 
 
 def _is_public_client(framework: str | None) -> bool:
@@ -229,7 +241,7 @@ class KeycloakService:
         """
         realm = realm_name(app.slug, env)
         repr_ = await client.get_realm(realm)
-        if repr_ is not None and not _owned_by(repr_, app):
+        if repr_ is not None and not _owned_by(repr_, app, env):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -254,6 +266,7 @@ class KeycloakService:
         if await self._get_owned_realm(client, app, env) is None:
             await client.create_realm(
                 realm,
+                realm_id=realm_id(app.id, env),
                 registration_allowed=False,
                 attributes={REALM_OWNER_ATTRIBUTE: str(app.id)},
             )
@@ -304,7 +317,7 @@ class KeycloakService:
             return KeycloakEnvStatus(**base, exists=False, state=KeycloakEnvState.UNKNOWN)
         if repr_ is None:
             return KeycloakEnvStatus(**base, exists=False, state=KeycloakEnvState.MISSING)
-        if not _owned_by(repr_, app):
+        if not _owned_by(repr_, app, env):
             return KeycloakEnvStatus(**base, exists=True, state=KeycloakEnvState.FOREIGN)
         return KeycloakEnvStatus(
             **base,
@@ -381,7 +394,7 @@ class KeycloakService:
             realm = realm_name(app.slug, env)
             try:
                 repr_ = await client.get_realm(realm)
-                if repr_ is not None and _owned_by(repr_, app):
+                if repr_ is not None and _owned_by(repr_, app, env):
                     await client.delete_users_by_attribute(realm, USER_OWNER_ATTRIBUTE, str(cnp_user_id))
             except Exception:
                 logger.warning("Failed to revoke Keycloak console access for user %s in %s", cnp_user_id, realm)
@@ -402,7 +415,7 @@ class KeycloakService:
                 repr_ = await client.get_realm(realm)
                 if repr_ is None:
                     continue
-                if not _owned_by(repr_, app):
+                if not _owned_by(repr_, app, env):
                     logger.warning("Not deleting realm %s: not owned by app %s", realm, app.id)
                     continue
                 await client.delete_realm(realm)

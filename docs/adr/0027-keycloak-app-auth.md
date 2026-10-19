@@ -182,7 +182,7 @@ l'utilisateur. Conséquences :
 - **Provisioning** (`KeycloakService.provision`) : déclenché après `_save_app` (best-effort —
   l'app existe même si Keycloak échoue) quand `"keycloak"` est présent dans les `services`
   demandés au scaffold/onboard. **Idempotent étape par étape** : crée le realm s'il manque
-  (`registrationAllowed=false`, attribut `cnp_app_id`), puis s'assure que le client, le mapper
+  (`registrationAllowed=false`, id interne `cnp-{app_id}-{env}`, attribut `cnp_app_id`), puis s'assure que le client, le mapper
   audience et les `OIDC_*` dans Vault existent. Un provisioning interrompu (realm créé, client
   ou Vault en échec, `auth_provisioned=false`) se termine donc par un simple "Retry" (UI) /
   `cnp keycloak enable` — sans toucher au reste du realm (users, rôles, réglages). Les
@@ -190,10 +190,14 @@ l'utilisateur. Conséquences :
   actif, plus `http://localhost:*` en dev ; `webOrigins` vaut `+` (origines déduites des
   redirect URIs — une valeur avec chemin ou joker ne correspond jamais à un header `Origin`
   et casserait l'échange de token CORS du template SPA).
-- **Propriété d'un realm** : chaque realm créé par CNP porte l'attribut `cnp_app_id`. Un realm
-  du bon nom mais sans ce marqueur (réutilisation d'un slug après un cleanup raté, realm créé
-  à la main) est `foreign` : CNP ne l'adopte pas, ne le complète pas, n'y donne aucun accès et
-  ne le supprime pas (409 — un admin plateforme doit trancher).
+- **Propriété d'un realm** : chaque realm créé par CNP reçoit un id interne choisi par CNP
+  (`cnp-{app_id}-{env}`) et porte l'attribut `cnp_app_id`. Un realm du bon nom sans ces deux
+  marqueurs (réutilisation d'un slug après un cleanup raté, realm créé à la main, realm d'une
+  autre app renommé) est `foreign` : CNP ne l'adopte pas, ne le complète pas, n'y donne aucun
+  accès et ne le supprime pas (409 — un admin plateforme doit trancher). L'attribut seul ne
+  suffit pas : le `realm-admin` d'une app peut renommer son realm et réécrire ses attributs
+  (`PUT /admin/realms/{realm}`), mais Keycloak ne change jamais l'id d'un realm, même au
+  renommage (vérifié sur 26.8.0).
 - **États exposés** (`KeycloakEnvStatus.state`) : `active`, `missing` (realm supprimé →
   "Recréer" proposé), `foreign`, `unknown` (Keycloak injoignable ou désactivé). `unknown`
   n'est jamais présenté comme une suppression : aucun bouton destructif dans ce cas.
@@ -213,7 +217,7 @@ l'utilisateur. Conséquences :
   groupes (le tier peut venir du groupe propriétaire) et une rétrogradation via
   `AppService.add_member` ne révoquent pas encore : suivi prévu.
 - **Suppression de l'app** (`AppService.delete_app`) : `KeycloakService.deprovision` supprime
-  les deux realms (seulement s'ils portent le `cnp_app_id` de l'app), best-effort, comme le reste du cleanup de `delete_app` (gitops, GitLab
+  les deux realms (seulement s'ils appartiennent à l'app : id interne et `cnp_app_id`), best-effort, comme le reste du cleanup de `delete_app` (gitops, GitLab
   project, Vault env vars) — un échec Keycloak n'empêche pas la suppression de l'app.
 
 ### 6. Apps importées (`origin == "onboarded"`) : mode A

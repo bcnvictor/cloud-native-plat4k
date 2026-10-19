@@ -74,7 +74,7 @@ async def test_app_lifecycle_uses_bound_instance(operation, providers, db_sessio
     service = KeycloakService(db_session)
     fake = fakes["private-01"]
     for env in ("dev", "prod"):
-        fake.create_realm("commande-" + env, {"cnp_app_id": str(app.id)})
+        fake.create_realm("commande-" + env, {"cnp_app_id": str(app.id)}, id=f"cnp-{app.id}-{env}")
     if operation == "provision":
         await service.provision(app, "prod")
         assert (
@@ -135,7 +135,9 @@ async def test_cluster_move_preserves_issuer(providers, db_session):
     app, _, _, _ = providers
     app.target_cluster_id = None
     await db_session.commit()
-    providers[2]["private-01"].create_realm("commande-prod", {"cnp_app_id": str(app.id)})
+    providers[2]["private-01"].create_realm(
+        "commande-prod", {"cnp_app_id": str(app.id)}, id=f"cnp-{app.id}-prod"
+    )
     result = await KeycloakService(db_session).status(app)
     assert (
         result.prod.issuer_url

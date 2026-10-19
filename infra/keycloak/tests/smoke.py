@@ -511,6 +511,113 @@ async def verify_console(state, monkeypatch):
                 assert client.get(base + suffix).status_code == 403
 
 
+async def verify_realm_rename(state, monkeypatch):
+    """A team realm-admin renames its realm to another app's realm name and retags
+    it with that app's id: CNP must treat it as foreign (ownership rests on the
+    internal id CNP chose at creation, which a rename never changes)."""
+    import hvac
+    from backend.db.models import Application
+    from backend.services.keycloak_service import KeycloakService
+    from backend.vault.client import vault_client
+    from hvac.exceptions import InvalidPath
+    from shared.models import KeycloakEnvState
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    monkeypatch.setattr(
+        vault_client,
+        "_client",
+        hvac.Client(url=state["vault_url"], token=state["credentials"]["vault"], timeout=10),
+    )
+    own = admin(state, "public")
+    engine = create_async_engine(state["database_url"])
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            apps = [
+                Application(
+                    id=app_id,
+                    name=slug,
+                    slug=slug,
+                    owner="test",
+                    framework="python-fastapi",
+                    target_cluster_id=1,
+                    expose=False,
+                )
+                for app_id, slug in ((104, "integration-renamer"), (105, "integration-victim"))
+            ]
+            session.add_all(apps)
+            await session.commit()
+            renamer, victim = apps
+            service = KeycloakService(session)
+            assert (await service.activate(renamer)).auth_provisioned is True
+
+            realm = "integration-renamer-dev"
+            password = secrets.token_hex(16)
+            own.request(
+                "POST",
+                f"/admin/realms/{realm}/users",
+                {
+                    "username": "team-admin",
+                    "enabled": True,
+                    "email": "team-admin@integration.test",
+                    "emailVerified": True,
+                    "firstName": "Team",
+                    "lastName": "Admin",
+                    "credentials": [{"type": "password", "value": password, "temporary": False}],
+                },
+            )
+            user = own.request("GET", f"/admin/realms/{realm}/users?username=team-admin&exact=true")[0]
+            management = own.request(
+                "GET", f"/admin/realms/{realm}/clients?clientId=realm-management"
+            )[0]["id"]
+            role = own.request(
+                "GET", f"/admin/realms/{realm}/clients/{management}/roles/realm-admin"
+            )
+            own.request(
+                "POST",
+                f"/admin/realms/{realm}/users/{user['id']}/role-mappings/clients/{management}",
+                [role],
+            )
+            team = JSONAPI(state["public"]["admin_url"])
+            token = team.request(
+                "POST",
+                f"/realms/{realm}/protocol/openid-connect/token",
+                {
+                    "grant_type": "password",
+                    "client_id": "admin-cli",
+                    "username": "team-admin",
+                    "password": password,
+                },
+                form=True,
+            )["access_token"]
+            team.headers = {"Authorization": "Bearer " + token}
+            representation = team.request("GET", f"/admin/realms/{realm}")
+            representation["realm"] = "integration-victim-dev"
+            representation["id"] = "cnp-105-dev"
+            representation["attributes"] = {
+                **(representation.get("attributes") or {}),
+                "cnp_app_id": "105",
+            }
+            team.request("PUT", f"/admin/realms/{realm}", representation)
+            own.login()
+            renamed = own.request("GET", "/admin/realms/integration-victim-dev")
+            assert renamed["id"] == "cnp-104-dev"
+            assert renamed["attributes"]["cnp_app_id"] == "105"
+
+            assert (await service.status(victim)).dev.state == KeycloakEnvState.FOREIGN
+            assert (await service.activate(victim)).auth_provisioned is False
+            try:
+                vault_client.get_secret("apps/_ungrouped/integration-victim/dev")
+            except InvalidPath:
+                pass
+            else:
+                raise AssertionError("Renamed realm credentials were handed to another app")
+            await service.deprovision(victim)
+            assert own.request("GET", "/admin/realms/integration-victim-dev")["id"] == "cnp-104-dev"
+            own.request("DELETE", "/admin/realms/integration-victim-dev")
+    finally:
+        await engine.dispose()
+
+
 def verify_recovery(state, monkeypatch):
     """Destroy only the disposable public Keycloak schema; retain real Vault/CNP."""
     from infra.keycloak.lib import deploy as installer

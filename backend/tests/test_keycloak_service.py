@@ -119,7 +119,7 @@ class TestProvision:
     async def test_provision_completes_a_half_created_setup(self, fake_keycloak, fake_vault):
         """Realm created, then client/Vault failed: a second provision() must finish
         the job instead of being a no-op because the realm exists."""
-        fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "1"})  # realm only, no client
+        fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "1"}, id="cnp-1-dev")  # realm only
 
         await KeycloakService(db=None).provision(_app(), "dev")
 
@@ -141,6 +141,46 @@ class TestProvision:
         with pytest.raises(Exception) as exc_info:
             await KeycloakService(db=None).assert_no_foreign_oidc_keys(_app())
         assert getattr(exc_info.value, "status_code", None) == 409
+
+
+class TestRealmOwnership:
+    """Ownership = the CNP-chosen internal id AND the cnp_app_id attribute. A realm's
+    admin can rename it and rewrite its attributes, never its id (Keycloak 26.8.0)."""
+
+    async def test_provision_creates_realm_with_cnp_chosen_id(self, fake_keycloak, fake_vault):
+        await KeycloakService(db=None).provision(_app(id=7), "dev")
+        assert fake_keycloak.realms["demo-dev"]["id"] == "cnp-7-dev"
+
+    async def test_renamed_realm_of_another_app_is_never_adopted(self, fake_keycloak, fake_vault):
+        """Realm-admin of a-dev renames it b-dev and retags it with app b's id."""
+        service = KeycloakService(db=None)
+        await service.provision(_app(id=5, slug="a", name="a"), "dev")
+        fake_keycloak.rename_realm("a-dev", "b-dev", {"cnp_app_id": "6"})
+        app_b = _app(id=6, slug="b", name="b", auth_enabled=True)
+
+        assert (await service.status(app_b)).dev.state == KeycloakEnvState.FOREIGN
+        with pytest.raises(Exception) as exc_info:
+            await service.provision(app_b, "dev")
+        assert getattr(exc_info.value, "status_code", None) == 409
+        assert "apps/_ungrouped/b/dev" not in fake_vault
+        with pytest.raises(Exception) as exc_info:
+            await service.grant_console_access(app_b, "dev", User(id=3, email="e@x.test", hashed_password="x"))
+        assert getattr(exc_info.value, "status_code", None) == 409
+        await service.deprovision(app_b)
+        assert "b-dev" in fake_keycloak.realms
+
+    async def test_realm_of_the_other_env_is_not_owned(self, fake_keycloak, fake_vault):
+        """Renaming demo-dev to demo-prod (same app attribute) must not make it prod."""
+        service = KeycloakService(db=None)
+        app = _app(auth_enabled=True)
+        await service.provision(app, "dev")
+        fake_keycloak.rename_realm("demo-dev", "demo-prod", {"cnp_app_id": "1"})
+        assert (await service.status(app)).prod.state == KeycloakEnvState.FOREIGN
+
+    async def test_matching_id_without_matching_attribute_is_foreign(self, fake_keycloak, fake_vault):
+        fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "999"}, id="cnp-1-dev")
+        result = await KeycloakService(db=None).status(_app(auth_enabled=True))
+        assert result.dev.state == KeycloakEnvState.FOREIGN
 
 
 class TestStatus:
@@ -284,6 +324,11 @@ class TestHelpers:
     def test_realm_name(self):
         assert realm_name("my-app", "dev") == "my-app-dev"
         assert realm_name("my-app", "prod") == "my-app-prod"
+
+    def test_realm_id_depends_on_app_id_and_env_only(self):
+        from backend.services.keycloak_service import realm_id
+        assert realm_id(7, "dev") == "cnp-7-dev"
+        assert realm_id(7, "prod") == "cnp-7-prod"
 
     def test_console_username_is_prefixed_and_unique_per_user(self):
         a = User(id=1, email="alice@a.com", hashed_password="x")
