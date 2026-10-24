@@ -14,10 +14,6 @@ from cli.commands import env as env_cmd
 
 runner = CliRunner()
 
-# Known bugs found by this campaign, fixed in follow-up commits (strict: the
-# marker must be removed by the fix, or the suite goes red).
-BUG_UNSET = pytest.mark.xfail(strict=True, reason="4K-248: unset doesn't encode keys / stops silently on failure")
-
 APP_ID = 7
 APP_SLUG = "my-app"
 
@@ -115,7 +111,6 @@ class TestUnset:
             f"/apps/{APP_ID}/env/dev/B",
         ]
 
-    @BUG_UNSET
     def test_keys_are_url_encoded(self, fake_client):
         """A key containing URL metacharacters must stay one path segment
         (the web UI already encodes it, apps.ts deleteEnvVar)."""
@@ -127,7 +122,6 @@ class TestUnset:
             f"/apps/{APP_ID}/env/dev/E%2FF",
         ]
 
-    @BUG_UNSET
     def test_partial_failure_reports_what_was_removed(self, monkeypatch):
         fake = FakeClient(fail_on_delete="/B")
         monkeypatch.setattr(env_cmd, "client", fake)

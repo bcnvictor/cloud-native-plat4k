@@ -194,7 +194,6 @@ class TestDevAccess:
         )
         assert resp.json()["keys"] == [{"key": "B", "is_set": True, "managed": False}]
 
-    @pytest.mark.xfail(strict=True, reason="4K-248: deleting a missing key reports success")
     async def test_delete_missing_key_returns_404(
         self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault
     ):

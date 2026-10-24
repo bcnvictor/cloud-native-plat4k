@@ -1,6 +1,7 @@
 import os
 import re
 from typing import List
+from urllib.parse import quote
 
 import typer
 
@@ -89,11 +90,24 @@ def unset_env(
     _validate_env(env)
     try:
         app_id = _resolve_app_id(app_slug)
-        for key in keys:
-            client.delete(f"/apps/{app_id}/env/{env}/{key}")
-        print_success(f"Removed {len(keys)} variable(s) from {app_slug} ({env})")
     except Exception as e:
         print_error(str(e))
+        raise typer.Exit(1)
+
+    # One call per key: try them all and report exactly which ones changed.
+    removed, failed = [], []
+    for key in keys:
+        try:
+            client.delete(f"/apps/{app_id}/env/{env}/{quote(key, safe='')}")
+            removed.append(key)
+        except Exception as e:
+            failed.append(key)
+            print_error(f"{key}: {e}")
+
+    if removed:
+        print_success(f"Removed {len(removed)} variable(s) from {app_slug} ({env}): {', '.join(removed)}")
+    if failed:
+        print_error(f"Not removed: {', '.join(failed)}")
         raise typer.Exit(1)
 
 
