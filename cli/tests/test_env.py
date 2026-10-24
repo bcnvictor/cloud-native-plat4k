@@ -91,6 +91,13 @@ class TestSet:
         assert result.exit_code == 1
         assert fake_client.calls == []
 
+    @pytest.mark.parametrize("bad_key", ["", "MY KEY", "a/b", "clé"])
+    def test_invalid_key_rejected_before_any_call(self, fake_client, bad_key):
+        result = _invoke("set", "-a", APP_SLUG, "-e", "dev", "GOOD=1", f"{bad_key}=x")
+        assert result.exit_code == 1
+        assert "Invalid variable name" in result.output
+        assert fake_client.calls == []
+
     def test_unknown_env_rejected(self, fake_client):
         result = _invoke("set", "-a", APP_SLUG, "-e", "PROD", "A=1")
         assert result.exit_code == 1
