@@ -194,6 +194,24 @@ class TestDevAccess:
         )
         assert resp.json()["keys"] == [{"key": "B", "is_set": True, "managed": False}]
 
+    @pytest.mark.xfail(strict=True, reason="4K-248: deleting a missing key reports success")
+    async def test_delete_missing_key_returns_404(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault
+    ):
+        """`cnp env unset` printed "Removed" for keys that were never set."""
+        await client.put(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev",
+            json={"variables": {"A": "1"}},
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        resp = await client.delete(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev/MISSING",
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 404
+        assert "MISSING" in resp.json()["detail"]
+        assert fake_vault["apps/_ungrouped/demo/dev"] == {"A": "1"}
+
     async def test_status_endpoint_reflects_key_presence(
         self, client: AsyncClient, developer_token: str, app_with_developer: Application
     ):
