@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/Button';
 import { Tabs } from '@/components/ui/Tabs';
 import { Badge } from '@/components/ui/Badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { apiError } from '@/utils/apiError';
 import { appUrl } from '@/utils/appUrls';
 import { cn } from '@/utils/cn';
 import { useToast } from '@/components/ui/toast';
@@ -90,13 +91,18 @@ export function SettingsTab() {
     onError: () => setExpose(app?.expose ?? false),
   });
 
-  const { data: myAccess } = useQuery({
+  const { data: myAccess, isLoading: myAccessLoading } = useQuery({
     queryKey: ['myAccess', app?.id],
     queryFn: () => appsApi.getMyAccess(app!.id),
     enabled: !!app,
   });
 
-  const { data: envVarsData, isLoading: envVarsLoading } = useQuery({
+  const {
+    data: envVarsData,
+    isLoading: envVarsLoading,
+    isError: envVarsIsError,
+    error: envVarsError,
+  } = useQuery({
     queryKey: ['envVars', app?.id, envTab],
     queryFn: () => appsApi.listEnvVars(app!.id, envTab),
     enabled: !!app && envVarPermissions(myAccess, envTab).canRead,
@@ -118,11 +124,13 @@ export function SettingsTab() {
   const setVarsMutation = useMutation({
     mutationFn: (variables: Record<string, string>) => appsApi.setEnvVars(app!.id, envTab, variables),
     onSuccess: invalidateEnvVars,
+    onError: (err) => toast({ title: 'Save failed', description: apiError(err), variant: 'destructive' }),
   });
 
   const deleteVarMutation = useMutation({
     mutationFn: (key: string) => appsApi.deleteEnvVar(app!.id, envTab, key),
     onSuccess: invalidateEnvVars,
+    onError: (err) => toast({ title: 'Delete failed', description: apiError(err), variant: 'destructive' }),
   });
 
   const addingKeyInvalid = addingKey.trim() !== '' && !isValidEnvVarKey(addingKey.trim());
@@ -293,8 +301,10 @@ export function SettingsTab() {
           className="mb-3"
         />
 
-        {envVarsLoading ? (
+        {envVarsLoading || myAccessLoading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>
+        ) : envVarsIsError ? (
+          <p className="text-xs text-danger-text">Could not load variables · {apiError(envVarsError)}</p>
         ) : (envVarsData?.keys.length ?? 0) === 0 && !showAddForm ? (
           <p className="text-xs text-muted-foreground">No variables.</p>
         ) : (
