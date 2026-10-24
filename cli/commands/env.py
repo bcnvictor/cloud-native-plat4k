@@ -1,3 +1,4 @@
+import os
 import re
 from typing import List
 
@@ -96,23 +97,41 @@ def unset_env(
         raise typer.Exit(1)
 
 
+def _dotenv_line(key: str, value: str) -> str:
+    """Single-quoted: literal for Docker Compose and Node dotenv (no `$`
+    interpolation, `#` kept, multi-line allowed). python-dotenv decodes `\\\\`
+    and `\\'` there, so only backslashes it would consume are doubled (before
+    a backslash, a quote or the end), which keeps `C:\\path` intact for Compose.
+    """
+    escaped = re.sub(r"\\(?=[\\']|\Z)", r"\\\\", value).replace("'", "\\'")
+    return f"{key}='{escaped}'\n"
+
+
 @app.command("pull")
 def pull_env(
     app_slug: str = typer.Option(..., "--app", "-a", help="Application slug"),
     env: str = typer.Option("dev", "--env", "-e", help="Environment — dev only"),
     output: str = typer.Option(".env.local", "--output", "-o", help="Output file path"),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite the output file if it exists"),
 ):
     """Write real values to a local .env file. Dev only — prod values are never
     exposed through the API, by design (see ADR-0025 addendum)."""
     if env != "dev":
         print_error("cnp env pull is only available for --env dev — prod values are never exposed via the API.")
         raise typer.Exit(1)
+    if os.path.exists(output) and not force:
+        print_error(f"{output} already exists — pass --force to overwrite it.")
+        raise typer.Exit(1)
     try:
         app_id = _resolve_app_id(app_slug)
         values = client.get(f"/apps/{app_id}/env/dev/values")
-        with open(output, "w") as f:
+        # Real secrets: owner-only, including when overwriting a looser existing file.
+        fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        if hasattr(os, "fchmod"):  # POSIX only before Python 3.13
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as f:
             for key, value in values.items():
-                f.write(f"{key}={value}\n")
+                f.write(_dotenv_line(key, value))
         print_success(f"Wrote {len(values)} variable(s) to {output}")
     except Exception as e:
         print_error(str(e))

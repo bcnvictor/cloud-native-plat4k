@@ -17,7 +17,6 @@ runner = CliRunner()
 # Known bugs found by this campaign, fixed in follow-up commits (strict: the
 # marker must be removed by the fix, or the suite goes red).
 BUG_UNSET = pytest.mark.xfail(strict=True, reason="4K-248: unset doesn't encode keys / stops silently on failure")
-BUG_PULL_FILE = pytest.mark.xfail(strict=True, reason="4K-248: pull writes unquoted, world-readable, overwrites")
 
 APP_ID = 7
 APP_SLUG = "my-app"
@@ -171,6 +170,9 @@ class TestPullFile:
         "QUOTES": "it's \"quoted\"",
         "DOLLAR": "pa$$word${HOME}",
         "BACKSLASH": "C:\\path\\n",
+        "DOUBLE_BACKSLASH": "a\\\\b",
+        "TRAILING_BACKSLASH": "end\\",
+        "BACKSLASH_QUOTE": "x\\'y",
         "MULTILINE": "-----BEGIN KEY-----\nline2\n-----END KEY-----",
         "EQUALS": "a=b",
         "EMPTY": "",
@@ -181,22 +183,23 @@ class TestPullFile:
         monkeypatch.setattr(env_cmd, "client", fake)
         return _invoke("pull", "-a", APP_SLUG, "-o", str(out), *extra)
 
-    @BUG_PULL_FILE
     def test_values_round_trip_through_dotenv(self, monkeypatch, tmp_path):
         dotenv = pytest.importorskip("dotenv")
         out = tmp_path / ".env.local"
         result = self._pull(monkeypatch, out)
         assert result.exit_code == 0, result.output
-        assert dotenv.dotenv_values(out) == self.TRICKY
+        # interpolate=False: python-dotenv expands ${VAR} even inside single
+        # quotes and has no escape for it, so no file format can keep ${HOME}
+        # literal for its default mode. Single quotes are literal for Docker
+        # Compose and Node dotenv; here we check the raw parse round-trips.
+        assert dotenv.dotenv_values(out, interpolate=False) == self.TRICKY
 
-    @BUG_PULL_FILE
     def test_file_is_owner_only(self, monkeypatch, tmp_path):
         out = tmp_path / ".env.local"
         result = self._pull(monkeypatch, out)
         assert result.exit_code == 0, result.output
         assert stat.S_IMODE(out.stat().st_mode) == 0o600
 
-    @BUG_PULL_FILE
     def test_existing_file_not_overwritten_without_force(self, monkeypatch, tmp_path):
         out = tmp_path / ".env.local"
         out.write_text("LOCAL_ONLY=keep-me\n")
@@ -204,7 +207,6 @@ class TestPullFile:
         assert result.exit_code == 1
         assert out.read_text() == "LOCAL_ONLY=keep-me\n"
 
-    @BUG_PULL_FILE
     def test_force_overwrites_and_tightens_permissions(self, monkeypatch, tmp_path):
         out = tmp_path / ".env.local"
         out.write_text("OLD=1\n")
