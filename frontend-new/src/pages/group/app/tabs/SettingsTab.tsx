@@ -21,6 +21,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { appUrl } from '@/utils/appUrls';
 import { cn } from '@/utils/cn';
 import { useToast } from '@/components/ui/toast';
+import { isValidEnvVarKey } from '@/utils/envVars';
 import type { KeycloakConsoleAccessResponse, KeycloakEnvState } from '@/types';
 
 const STATE_BADGES: Record<
@@ -127,9 +128,11 @@ export function SettingsTab() {
     onSuccess: invalidateEnvVars,
   });
 
+  const addingKeyInvalid = addingKey.trim() !== '' && !isValidEnvVarKey(addingKey.trim());
+
   function submitAddVar() {
     const key = addingKey.trim();
-    if (!key) return;
+    if (!key || !isValidEnvVarKey(key)) return;
     setVarsMutation.mutate(
       { [key]: addingValue },
       {
@@ -375,7 +378,7 @@ export function SettingsTab() {
                   size="sm"
                   variant="primary"
                   loading={setVarsMutation.isPending}
-                  disabled={!addingKey.trim()}
+                  disabled={!addingKey.trim() || addingKeyInvalid}
                   onClick={submitAddVar}
                 >
                   Save
@@ -388,6 +391,11 @@ export function SettingsTab() {
                   Cancel
                 </Button>
               </div>
+            )}
+            {showAddForm && addingKeyInvalid && (
+              <p className="text-xs text-danger-text">
+                Use only letters, digits, &quot;-&quot;, &quot;_&quot; and &quot;.&quot; in variable names.
+              </p>
             )}
           </div>
         )}

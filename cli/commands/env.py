@@ -1,3 +1,4 @@
+import re
 from typing import List
 
 import typer
@@ -8,6 +9,10 @@ from cli.core.output import print_error, print_success, print_table
 app = typer.Typer(help="Manage application environment variables.")
 
 _VALID_ENVS = ("dev", "prod")
+
+# Same charset as shared.models.ENV_VAR_KEY_PATTERN (the CLI doesn't depend on
+# shared): checked here to fail before any API call, with a readable message.
+_KEY_PATTERN = r"[-._a-zA-Z0-9]+"
 
 
 def _resolve_app_id(slug: str) -> int:
@@ -59,6 +64,9 @@ def set_env(
             print_error(f"Invalid KEY=VALUE pair: '{pair}'")
             raise typer.Exit(1)
         key, value = pair.split("=", 1)
+        if not re.fullmatch(_KEY_PATTERN, key):
+            print_error(f"Invalid variable name '{key}': allowed characters are {_KEY_PATTERN}")
+            raise typer.Exit(1)
         variables[key] = value
 
     try:

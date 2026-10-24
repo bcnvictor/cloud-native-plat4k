@@ -450,7 +450,6 @@ class TestKeyValidation:
     and deletable so they can be cleaned up.
     """
 
-    @pytest.mark.xfail(strict=True, reason="4K-248: PUT accepts keys ESO cannot sync")
     @pytest.mark.parametrize("bad_key", ["", "MY KEY", "a/b", "a:b", "clé", "KEY\n", "A=B"])
     async def test_invalid_key_rejected_on_write(
         self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault, bad_key
