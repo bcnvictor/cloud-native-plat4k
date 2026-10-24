@@ -21,7 +21,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { appUrl } from '@/utils/appUrls';
 import { cn } from '@/utils/cn';
 import { useToast } from '@/components/ui/toast';
-import { isValidEnvVarKey } from '@/utils/envVars';
+import { envVarPermissions, isValidEnvVarKey } from '@/utils/envVars';
 import type { KeycloakConsoleAccessResponse, KeycloakEnvState } from '@/types';
 
 const STATE_BADGES: Record<
@@ -99,18 +99,15 @@ export function SettingsTab() {
   const { data: envVarsData, isLoading: envVarsLoading } = useQuery({
     queryKey: ['envVars', app?.id, envTab],
     queryFn: () => appsApi.listEnvVars(app!.id, envTab),
-    enabled: !!app,
+    enabled: !!app && envVarPermissions(myAccess, envTab).canRead,
   });
 
   // Rename/delete/expose require maintainer+ (mirrors require_tier(MAINTAINER) on the backend).
   const canManageApp = !!myAccess && (myAccess.is_admin || myAccess.tier === 'maintainer' || myAccess.tier === 'owner');
 
-  // Developer has zero access to prod, not even key names (ADR-0025 §3).
-  const canSeeProd = !!myAccess && (myAccess.is_admin || myAccess.tier !== 'developer');
-  const canWriteEnv = !!myAccess && (
-    myAccess.is_admin ||
-    (envTab === 'dev' ? myAccess.tier !== 'viewer' : myAccess.tier === 'maintainer' || myAccess.tier === 'owner')
-  );
+  // Only Maintainer/Owner/admin see prod at all, not even key names (ADR-0025 §3).
+  const canSeeProd = envVarPermissions(myAccess, 'prod').canRead;
+  const canWriteEnv = envVarPermissions(myAccess, envTab).canWrite;
 
   useEffect(() => {
     if (envTab === 'prod' && myAccess && !canSeeProd) setEnvTab('dev');
