@@ -441,3 +441,54 @@ class TestOidcKeysWithoutKeycloak:
             headers={"Authorization": f"Bearer {developer_token}"},
         )
         assert resp.json()["keys"] == [{"key": "OIDC_ISSUER_URL", "is_set": True, "managed": False}]
+
+
+class TestKeyValidation:
+    """Keys must match the ESO/K8s Secret key charset [-._a-zA-Z0-9]+ (4K-248):
+    one bad key makes the ExternalSecret fail to sync, freezing every variable
+    of that env. Enforced on write only — keys already in Vault stay readable
+    and deletable so they can be cleaned up.
+    """
+
+    @pytest.mark.xfail(strict=True, reason="4K-248: PUT accepts keys ESO cannot sync")
+    @pytest.mark.parametrize("bad_key", ["", "MY KEY", "a/b", "a:b", "clé", "KEY\n", "A=B"])
+    async def test_invalid_key_rejected_on_write(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault, bad_key
+    ):
+        resp = await client.put(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev",
+            json={"variables": {"GOOD_KEY": "1", bad_key: "x"}},
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 422
+        assert fake_vault == {}, "a rejected payload must not be partially written"
+
+    @pytest.mark.parametrize("key", ["DATABASE_URL", "my.key", "a-b", "_x", "9LIVES"])
+    async def test_valid_keys_accepted(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application, key
+    ):
+        resp = await client.put(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev",
+            json={"variables": {key: "v"}},
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["keys"] == [{"key": key, "is_set": True, "managed": False}]
+
+    async def test_existing_invalid_key_still_listed_and_deletable(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault
+    ):
+        fake_vault["apps/_ungrouped/demo/dev"] = {"BAD KEY": "x", "OK": "y"}
+        headers = {"Authorization": f"Bearer {developer_token}"}
+        base = f"/api/v1/apps/{app_with_developer.id}/env/dev"
+
+        resp = await client.get(base, headers=headers)
+        assert resp.status_code == 200
+        assert [k["key"] for k in resp.json()["keys"]] == ["BAD KEY", "OK"]
+
+        resp = await client.get(f"{base}/BAD%20KEY/status", headers=headers)
+        assert resp.json() == {"key": "BAD KEY", "is_set": True}
+
+        resp = await client.delete(f"{base}/BAD%20KEY", headers=headers)
+        assert resp.status_code == 200
+        assert fake_vault["apps/_ungrouped/demo/dev"] == {"OK": "y"}
