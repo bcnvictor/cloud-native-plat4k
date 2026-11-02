@@ -6,8 +6,6 @@ import {
 } from '@tabler/icons-react';
 import { ServiceConfig } from '@/types';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Select } from '@/components/ui/Select';
 import { cn } from '@/utils/cn';
 
 interface Props {
@@ -22,15 +20,16 @@ const SERVICES = [
     key: 'database' as const,
     icon: <IconDatabase size={18} />,
     label: 'Database',
-    desc: 'PostgreSQL managed in-cluster',
-    soon: false,
+    // Not sent by the wizard (see services.ts): scaffold-time PostgreSQL stays CLI/API only.
+    desc: 'PostgreSQL managed in-cluster — available through the CLI/API only',
+    soon: true,
   },
   {
     key: 'auth' as const,
     icon: <IconLock size={18} />,
     label: 'Authentication',
-    desc: 'Keycloak — SSO & account management',
-    soon: true,
+    desc: 'Keycloak — dedicated realm per env, delegated admin console',
+    soon: false,
   },
   {
     key: 'cache' as const,
@@ -101,47 +100,6 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
                 <span className="h-[18px] w-[18px] rounded-full border-2 border-border block" />
               )}
             </button>
-
-            {svc.key === 'database' && data.database.enabled && (
-              <div className="px-4 pb-4 pt-0 bg-background-subtle rounded-b-md flex gap-3">
-                <Select
-                  label="Type"
-                  options={[{ value: 'postgresql', label: 'PostgreSQL' }]}
-                  value="postgresql"
-                  onChange={() => {}}
-                  className="w-36"
-                />
-                <Input
-                  label="DB name"
-                  value={data.database.dbName}
-                  onChange={(e) =>
-                    onChange({
-                      database: { ...data.database, dbName: e.target.value },
-                    })
-                  }
-                  placeholder="myapp_db"
-                  className="flex-1"
-                />
-                <Select
-                  label="Size"
-                  options={[
-                    { value: '1Gi', label: '1 Gi' },
-                    { value: '5Gi', label: '5 Gi' },
-                    { value: '20Gi', label: '20 Gi' },
-                  ]}
-                  value={data.database.pgSize}
-                  onChange={(v) =>
-                    onChange({
-                      database: {
-                        ...data.database,
-                        pgSize: v as '1Gi' | '5Gi' | '20Gi',
-                      },
-                    })
-                  }
-                  className="w-24"
-                />
-              </div>
-            )}
           </div>
         );
       })}

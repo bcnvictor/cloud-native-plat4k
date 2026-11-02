@@ -1,0 +1,7 @@
+profile: private
+instance_key: private-01
+context: cnp-k3s
+cnp_cluster_name: cnp-k3s
+namespace: keycloak-private-01
+release: keycloak
+storage_class: local-path

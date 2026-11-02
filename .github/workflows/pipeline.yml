@@ -24,7 +24,7 @@ jobs:
       - name: Check lockfiles are up to date
         run: |
           ./scripts/lock-deps.sh
-          git diff --exit-code backend/requirements.lock backend/requirements-dev.lock \
+          git diff --exit-code backend/requirements.lock backend/requirements-dev.lock infra/keycloak/requirements.lock \
             || { echo "::error::Lockfiles désynchronisés des pyproject.toml — lancer ./scripts/lock-deps.sh et committer"; exit 1; }
 
       - name: Install locked dependencies
@@ -37,7 +37,7 @@ jobs:
         run: ruff check backend/ shared/
 
       - name: Test — pytest
-        run: pytest backend/tests/ -v
+        run: pytest backend/tests/ -m 'not keycloak_integration and not keycloak_infra' -v
 
   frontend:
     name: Frontend — lint, type check & build

@@ -17,6 +17,12 @@ envsubst '${GRAFANA_DOMAIN}' \
     < /etc/nginx/grafana.conf.template \
     > /etc/nginx/conf.d/grafana.conf
 
+# Auth is optional: a missing certificate must never prevent Grafana startup.
+rm -f /etc/nginx/conf.d/auth.conf
+if [ -n "${AUTH_DOMAIN:-}" ] && [ -f "/etc/letsencrypt/live/${AUTH_DOMAIN}/fullchain.pem" ]; then
+    envsubst '${AUTH_DOMAIN}' < /etc/nginx/auth.conf.template > /etc/nginx/conf.d/auth.conf
+fi
+
 # Rechargement toutes les 6h pour capter les renouvellements certbot
 ( while sleep 6h; do nginx -s reload; done ) &
 

@@ -1,0 +1,5 @@
+cloud_kind: public
+public_domain: auth.cloud-native-plat4k.me
+tailnet_domain: ${TAILNET_DOMAIN}
+gateway_host: cnp-control
+mode: helm

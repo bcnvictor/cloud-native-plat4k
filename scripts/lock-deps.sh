@@ -19,3 +19,5 @@ uv pip compile shared/pyproject.toml backend/pyproject.toml \
   --extra test --extra dev \
   --constraint backend/requirements.lock \
   "${COMMON[@]}" -o backend/requirements-dev.lock
+
+uv pip compile infra/keycloak/pyproject.toml "${COMMON[@]}" -o infra/keycloak/requirements.lock

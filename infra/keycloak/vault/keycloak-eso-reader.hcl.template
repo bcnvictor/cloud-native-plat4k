@@ -1,0 +1,9 @@
+path "secret/data/cnp/keycloak/{{instance_key}}/database" {
+  capabilities = ["read"]
+}
+path "secret/data/cnp/keycloak/{{instance_key}}/bootstrap" {
+  capabilities = ["read"]
+}
+path "auth/token/lookup-self" { capabilities = ["read"] }
+path "auth/token/renew-self" { capabilities = ["update"] }
+path "auth/token/revoke-self" { capabilities = ["update"] }
