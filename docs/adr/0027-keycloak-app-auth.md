@@ -282,6 +282,14 @@ l'utilisateur. Conséquences :
   (`PUT /admin/realms/{realm}`), mais Keycloak ne change jamais l'id d'un realm, même au
   renommage (vérifié sur 26.8.0). Le compte console d'équipe ne peut plus le faire (§1) :
   l'id reste une défense en profondeur.
+- **Unicité de l'id CNP : une base CNP par instance Keycloak.** `cnp-{app_id}-{env}` n'est
+  unique qu'à l'intérieur d'une base CNP : deux bases (une base de dev, une base réinitialisée
+  ou restaurée d'une ancienne sauvegarde) attribuent les mêmes `app_id` à des apps
+  différentes. Une telle base pointée vers une instance de prod reconnaîtrait comme siens les
+  realms d'autres apps (accès console, `OIDC_*` dans Vault, suppression par `deprovision`).
+  **Ne jamais enregistrer une instance Keycloak de prod dans une base CNP de dev ou
+  réinitialisée** ; une instance de dev ou de test a sa propre base CNP (c'est le cas du banc
+  `verify.sh --local`).
 - **États exposés** (`KeycloakEnvStatus.state`) : `active`, `missing` (realm supprimé →
   "Recréer" proposé), `foreign`, `unknown` (Keycloak injoignable ou désactivé). `unknown`
   n'est jamais présenté comme une suppression : aucun bouton destructif dans ce cas.
