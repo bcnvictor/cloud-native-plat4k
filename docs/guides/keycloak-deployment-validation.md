@@ -23,9 +23,18 @@ en attente de `terraform apply`.
   refuse lui-même : 400 `missingNormalization`) et est désormais refusé par la
   passerelle (400). Le rejet en bordure reste une défense en profondeur.
 - Keycloak 26.8.0 accepte l'id interne imposé à la création d'un realm, refuse un id
-  déjà pris (409) et ne le change jamais, même quand un `realm-admin` renomme le realm
-  en envoyant un autre id : la propriété d'un realm repose sur cet id.
-- Banc local réel (rejoué le 19 octobre 2026 après le durcissement avant activation) :
+  déjà pris (409) et ne le change jamais, même quand un compte `realm-admin` renomme le
+  realm en envoyant un autre id : la propriété d'un realm repose sur cet id.
+- Rôle d'équipe restreint (option B, ADR-0027 §1), sondé le 4 novembre 2026 sur 26.8.0
+  avec un compte créé par le vrai code CNP et le jeton de la vraie console : gestion des
+  utilisateurs, clients et événements possible ; renommage, suppression, politique de mot
+  de passe, protection brute-force, thème et user profile refusés (403) ; aucune escalade
+  vers `manage-realm`, `realm-admin` ou `impersonation` (soi, autre utilisateur, groupe,
+  rôles par défaut, composite de `realm-management`, service account, mappers de jeton ou
+  de fournisseur d'identité) ; autre realm refusé. `admin-cli` refuse la connexion par
+  mot de passe (400 `unauthorized_client`). Course à la création reproduite avant le
+  correctif (client et secret écrits dans un realm étranger), refusée après (409).
+- Banc local réel (rejoué le 4 novembre 2026 après le rôle d'équipe restreint) :
   **7/7 tests réussis**, deux Keycloak 26.8.0, PostgreSQL 16,
   Vault 1.21, NGINX, base CNP dédiée ; bootstrap répété sans rotation, token ESO
   renouvelé et scopes interdits refusés, preuve d'issuer avec un certificat local
@@ -33,17 +42,18 @@ en attente de `terraform apply`.
   conservée après retarget, suppression d'un realm possédé, client confidential,
   SPA PKCE S256, JWT avec mauvaise audience/issuer refusé, login/refresh/logout,
   401 anonyme/invalide, console d'équipe (mot de passe temporaire changé au premier
-  login sous la politique `length(12) and notUsername`) et révocation réelle, realm
-  créé avec son id CNP, la protection brute-force et la politique de mot de passe,
-  realm renommé par son `realm-admin` vers le nom d'une autre app vu `foreign` (ni
+  login sous la politique `length(12) and notUsername`, rôle restreint vérifié par 25
+  appels d'Admin API avec le jeton de la console, `admin-cli` refusé) et révocation
+  réelle, realm créé avec son id CNP, la protection brute-force et la politique de mot de
+  passe, realm renommé par l'admin master vers le nom d'une autre app vu `foreign` (ni
   adopté, ni complété, ni supprimé), `#` brut refusé par la passerelle, réinstallation
   après remise à zéro de la seule base Keycloak de test avec secret conservé.
   Les services et
   volumes sont supprimés en fin de test ; aucune donnée personnelle partagée.
-- Suite backend ordinaire (commande CI) : **515 réussis**, 2 ignorés ;
+- Suite backend ordinaire (commande CI) : **535 réussis**, 2 ignorés ;
   suite opérateur `-m keycloak_infra` : **59 réussis**, dont les 32 tests
   passerelle avec Docker. Les 7 tests d'intégration sont exécutés séparément.
-- Frontend : **77/77 tests vitest**, tsc, eslint et build sans erreur ; ruff sans erreur.
+- Frontend : **79/79 tests vitest**, tsc, eslint et build sans erreur ; ruff sans erreur.
 - Locks backend runtime/dev et opérateur : régénération sans différences
   (contrôle du 9 octobre).
 - Migration : un seul head Alembic, `c2d3e4f5a6b7`.
