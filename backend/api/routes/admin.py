@@ -4,6 +4,7 @@ from typing import Optional
 
 from backend.api.deps import require_admin
 from backend.core.config import settings
+from backend.core.grafana_embed import create_grafana_embed_token
 from backend.db.models import GitLabGroup, User
 from backend.db.session import get_db
 from backend.services.audit_service import AuditService
@@ -134,15 +135,18 @@ async def deregister_gitlab_group(
 
 @router.get("/finops/grafana-urls", response_model=FinopsGrafanaUrls)
 async def get_finops_grafana_urls(
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ) -> FinopsGrafanaUrls:
     """URLs d'embed du dashboard cnp-finops-overview (panels fixés sur les 30 derniers jours)."""
-    if not settings.GRAFANA_URL or not settings.GRAFANA_FINOPS_DASHBOARD_UID or not settings.GRAFANA_EMBED_TOKEN:
+    if not settings.GRAFANA_URL or not settings.GRAFANA_FINOPS_DASHBOARD_UID:
+        return FinopsGrafanaUrls()
+
+    token = create_grafana_embed_token(current_user.id)
+    if not token:
         return FinopsGrafanaUrls()
 
     base = settings.GRAFANA_URL.rstrip("/")
     uid = settings.GRAFANA_FINOPS_DASHBOARD_UID
-    token = settings.GRAFANA_EMBED_TOKEN
     range_qs = "from=now-30d&to=now"
 
     return FinopsGrafanaUrls(

@@ -134,6 +134,16 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_SECURITY_ALLOW_EMBEDDING=true
       - GF_EXPLORE_ENABLED=false
+      # Iframes CNP (ADR-0028) : le JWT reste désactivé tant que la clé publique n'est pas dans le .env.
+      - GF_AUTH_JWT_ENABLED=${GRAFANA_JWT_PUBLIC_KEY_B64:+true}
+      - GF_AUTH_JWT_KEY_VALUE=${GRAFANA_JWT_PUBLIC_KEY_B64:-}
+      - GF_AUTH_JWT_HEADER_NAME=X-JWT-Assertion
+      - GF_AUTH_JWT_URL_LOGIN=true
+      - GF_AUTH_JWT_USERNAME_CLAIM=sub
+      - GF_AUTH_JWT_AUTO_SIGN_UP=true
+      - GF_AUTH_JWT_ROLE_ATTRIBUTE_PATH=role
+      - GF_AUTH_JWT_ROLE_ATTRIBUTE_STRICT=true
+      - 'GF_AUTH_JWT_EXPECT_CLAIMS={"iss":"cnp-backend"}'
       - GF_SERVER_ROOT_URL=${GRAFANA_URL:-http://localhost:3000}
       - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus-operated.monitoring.svc.cluster.local:9090}
       - LOKI_URL=${LOKI_URL:-http://loki.monitoring.svc.cluster.local:3100}

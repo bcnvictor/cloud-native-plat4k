@@ -69,11 +69,11 @@ Le domaine `grafana.cloud-native-plat4k.me` est géré sur Cloudflare. Le challe
 | `CERTBOT_EMAIL` | `.env` VM OCI | Email pour les notifications d'expiration Let's Encrypt |
 | `GRAFANA_URL` | Vault `secret/cnp/platform` | URL publique Grafana, browser-accessible. Utilisée par le backend pour construire les URLs d'embed. |
 | `GRAFANA_DASHBOARD_UID` | Vault `secret/cnp/platform` | UID du dashboard `cnp—group-overview` dans Grafana (visible dans l'URL `/d/{UID}/…`). |
-| `GRAFANA_EMBED_TOKEN` | Vault `secret/cnp/platform` | Token d'un service account Grafana (rôle Viewer). Injecté dans les URLs d'iframe par le backend. Ne jamais exposer côté frontend. |
+| `GRAFANA_JWT_PRIVATE_KEY` | Vault `secret/cnp/platform` | Clé signant les JWT d'embed (voir [ADR-0028](0028-grafana-embed-jwt.md), qui remplace le token de service account). |
 
 ### Intégration frontend
 
-Le frontend CNP (onglet "Métriques" de chaque groupe) appelle `GET /api/v1/groups/{id}/grafana-url` (endpoint authentifié CNP). Le backend retourne deux URLs avec le token d'embed baked-in :
+Le frontend CNP (onglet "Métriques" de chaque groupe) appelle `GET /api/v1/groups/{id}/grafana-url` (endpoint authentifié CNP). Le backend retourne deux URLs portant un JWT de courte durée, propre à l'utilisateur ([ADR-0028](0028-grafana-embed-jwt.md)) :
 
 ```
 panel_base_url  →  https://grafana.../d-solo/{uid}?orgId=1&auth_token=TOKEN&var-group_id={gid}

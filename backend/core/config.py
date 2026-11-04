@@ -100,7 +100,8 @@ class Settings(BaseSettings):
     GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: https://grafana.example.com
     GRAFANA_DASHBOARD_UID: str = ""  # UID du dashboard team-metrics dans Grafana (visible dans l'URL /d/{UID}/...)
     GRAFANA_FINOPS_DASHBOARD_UID: str = ""  # UID du dashboard FinOps global (cnp-finops-overview) dans Grafana
-    GRAFANA_EMBED_TOKEN: str = ""  # Token service account Grafana (rôle Viewer) pour l'embedding sécurisé en iframe
+    GRAFANA_JWT_PRIVATE_KEY: str = ""  # Clé EC P-256 (PEM en base64) signant les JWT des iframes Grafana (ADR-0028), dans Vault
+    GRAFANA_JWT_TTL_MINUTES: int = 480
 
     # AI Assistant
     AI_ASSISTANT_ENABLED: bool = False
