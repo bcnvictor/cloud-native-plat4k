@@ -7,9 +7,14 @@ ADR-0025). Covers both scaffolded and onboarded apps identically (mode A for
 onboarded: same provisioning, no code injection — see ADR-0027 §6).
 
 Ownership markers (never trust a name alone):
-- each realm CNP creates carries the realm attribute `cnp_app_id`; a realm with the
-  expected name but without the matching marker is "foreign" and is never adopted,
-  completed, handed out or deleted (slug reuse after a failed cleanup, manual realm);
+- each realm CNP creates gets an internal id chosen by CNP (`cnp-{app_id}-{env}`) and
+  the realm attribute `cnp_app_id`; a realm with the expected name but without both
+  markers is "foreign" and is never adopted, completed, handed out or deleted (slug
+  reuse after a failed cleanup, manual realm). The id is what makes this hold: an
+  account with manage-realm (a platform admin) can rename a realm and rewrite its
+  attributes, but Keycloak never changes a realm's id. Team console accounts granted
+  since TEAM_CONSOLE_ROLES no longer hold manage-realm: only CNP creates, renames or
+  deletes realms;
 - each console account CNP creates carries the user attribute `cnp_user_id`; CNP
   looks accounts up by that attribute, never by username, so it can't take over one
   of the app's end-user accounts.
@@ -17,10 +22,12 @@ Ownership markers (never trust a name alone):
 import logging
 import re
 import secrets
+from collections.abc import Iterable
 
 from fastapi import HTTPException, status
 from hvac.exceptions import InvalidPath
 from shared.models import (
+    CnpTier,
     KeycloakAuthWarning,
     KeycloakConsoleAccessResponse,
     KeycloakEnvState,
@@ -28,13 +35,16 @@ from shared.models import (
     KeycloakStatusResponse,
     app_internet_url,
 )
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import Application, User
+from backend.db.session import AsyncSessionLocal
 from backend.gitlab.client import GitLabClient
 from backend.keycloak.client import KeycloakClient, KeycloakConflict, KeycloakError
 from backend.services.env_var_service import MANAGED_ENV_KEYS, resolve_group_slug, vault_env_path
 from backend.services.keycloak_instance_service import KeycloakInstanceService, ResolvedKeycloak
+from backend.services.tier_service import access_level_to_tier, get_effective_tier, tier_at_least
 from backend.vault.client import vault_client
 
 logger = logging.getLogger(__name__)
@@ -48,9 +58,28 @@ PUBLIC_CLIENT_FRAMEWORKS = {"react-vite"}
 REALM_OWNER_ATTRIBUTE = "cnp_app_id"
 USER_OWNER_ATTRIBUTE = "cnp_user_id"
 
+# Same gate as the console-access route (ADR-0027 §2): a console account is only
+# kept while the user's effective tier on the app stays at this level or above.
+CONSOLE_ACCESS_TIER = CnpTier.MAINTAINER
+
+
+def has_console_tier(tier: CnpTier) -> bool:
+    return tier_at_least(tier, CONSOLE_ACCESS_TIER)
+
+
+def level_grants_console(access_level: int | None) -> bool:
+    """Whether one GitLab membership level is enough, on its own, for console access."""
+    return access_level is not None and has_console_tier(access_level_to_tier(access_level))
+
 
 def realm_name(app_slug: str, env: str) -> str:
     return f"{app_slug}-{env}"
+
+
+def realm_id(app_id: int, env: str) -> str:
+    """Internal id CNP gives the realm at creation. Unlike the name and the
+    attributes, nobody can change it (a rename keeps the id)."""
+    return f"cnp-{app_id}-{env}"
 
 
 def _validate_env(env: str) -> None:
@@ -69,8 +98,21 @@ def console_username(user: User) -> str:
     return f"cnp.{local}.{user.id}"
 
 
-def _owned_by(realm_repr: dict, app: Application) -> bool:
-    return (realm_repr.get("attributes") or {}).get(REALM_OWNER_ATTRIBUTE) == str(app.id)
+def _owned_by(realm_repr: dict, app: Application, env: str) -> bool:
+    return (
+        realm_repr.get("id") == realm_id(app.id, env)
+        and (realm_repr.get("attributes") or {}).get(REALM_OWNER_ATTRIBUTE) == str(app.id)
+    )
+
+
+def _require_enabled(app: Application) -> None:
+    """Console access and realm recreation are for apps that use Keycloak: never
+    create a realm, a client or a console account for an app that has it off."""
+    if not app.auth_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Keycloak is not enabled for this app — enable it first",
+        )
 
 
 def _is_public_client(framework: str | None) -> bool:
@@ -112,6 +154,66 @@ def add_auth_warnings(app: Application, *warnings: KeycloakAuthWarning | str) ->
 
 def clear_activation_warnings(app: Application) -> None:
     app.auth_warnings = [w for w in (app.auth_warnings or []) if w not in _ACTIVATION_WARNINGS]
+
+
+async def revoke_console_access_if_not_maintainer(
+    db: AsyncSession, app: Application, cnp_user_id: int | None
+) -> None:
+    """Best-effort (ADR-0027 §5): call once a change that may have cost `cnp_user_id`
+    Maintainer+ on the app is COMMITTED (membership downgrade or departure, project
+    or owning group). Deletes their console accounts from both realms unless their
+    effective tier on the app — best of project and owning-group membership, as
+    tier_service.get_effective_tier — still grants console access. Committed first:
+    the tier is read from the database, and the Keycloak calls never run inside the
+    caller's write transaction (no row lock held during a network call). No-op
+    without any Keycloak call when Keycloak is off for the app or the member has no
+    linked CNP account. Never raises.
+    """
+    if not cnp_user_id or not app.auth_enabled:
+        return
+    try:
+        tier = await get_effective_tier(cnp_user_id, app.id, db)
+        # End the read transaction before the Vault/Keycloak calls (expire_on_commit is
+        # off: loaded objects stay usable; the caller has nothing pending by contract).
+        await db.commit()
+        if has_console_tier(tier):
+            return
+        await KeycloakService(db).revoke_member(app, cnp_user_id)
+    except Exception:
+        logger.exception("Failed to revoke Keycloak access for user %s on app %s", cnp_user_id, app.slug)
+
+
+async def revoke_lost_console_access(db: AsyncSession, pairs: Iterable[tuple[int, int]]) -> None:
+    """Best-effort, after the GitLab sync committed: (app_id, cnp_user_id) pairs whose
+    membership dropped below Maintainer during the sync. Never raises."""
+    for app_id, cnp_user_id in sorted(set(pairs)):
+        # A database error on a previous pair leaves the transaction failed: start each
+        # pair from a clean one (nothing is pending, the sync committed). The rollback
+        # expires loaded objects, hence the app is fetched per pair.
+        await db.rollback()
+        try:
+            app = await db.get(Application, app_id)
+        except Exception:
+            logger.exception("Could not load app %s to revoke Keycloak access", app_id)
+            continue
+        if app is not None:
+            await revoke_console_access_if_not_maintainer(db, app, cnp_user_id)
+
+
+async def revoke_console_access_after_user_update(cnp_user_id: int, *, deactivated: bool) -> None:
+    """Background task for PATCH /users/{id}, run after the update is committed and
+    the response sent, with its own session (the request's is closed by then).
+    Deactivated: no console account left on any app. Demoted from admin: only those
+    the user's own membership no longer justifies go. Never raises."""
+    try:
+        async with AsyncSessionLocal() as db:
+            service = KeycloakService(db)
+            if deactivated:
+                await service.revoke_user_everywhere(cnp_user_id)
+            else:
+                await service.revoke_user_where_not_maintainer(cnp_user_id)
+    except Exception:
+        logger.exception("Failed to revoke Keycloak access for user %s", cnp_user_id)
 
 
 def detect_envfrom_warning(bot: GitLabClient, project_path: str, app_slug: str) -> list[str]:
@@ -165,6 +267,10 @@ class KeycloakService:
             try:
                 await self.assert_no_foreign_oidc_keys(app)
             except HTTPException:
+                # A retry after a recorded failure: the conflict is now the reason.
+                # A first attempt leaves the app untouched (the request is refused).
+                if app.auth_provisioned is False:
+                    await self.mark_activation_failed(app, KeycloakAuthWarning.OIDC_KEYS_CONFLICT)
                 raise
             except Exception:
                 return await self._activation_failed(app, KeycloakAuthWarning.INSTANCE_UNAVAILABLE)
@@ -229,7 +335,7 @@ class KeycloakService:
         """
         realm = realm_name(app.slug, env)
         repr_ = await client.get_realm(realm)
-        if repr_ is not None and not _owned_by(repr_, app):
+        if repr_ is not None and not _owned_by(repr_, app, env):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -244,7 +350,9 @@ class KeycloakService:
         Vault variables exist. Each step is idempotent, so calling this again after a
         partial failure (realm created, client or Vault write failed) completes the
         setup instead of being stuck on "realm already exists".
-        Never touches anything else in an existing realm (users, roles, settings).
+        Besides the app's client, only touches the realm's `admin-cli` client (no
+        direct password login); never the rest of an existing realm (users, roles,
+        settings).
         """
         _validate_env(env)
         connection = await KeycloakInstanceService(self.db).resolve_for_app(app)
@@ -254,9 +362,22 @@ class KeycloakService:
         if await self._get_owned_realm(client, app, env) is None:
             await client.create_realm(
                 realm,
+                realm_id=realm_id(app.id, env),
                 registration_allowed=False,
                 attributes={REALM_OWNER_ATTRIBUTE: str(app.id)},
             )
+            # create_realm swallows a 409 (name or id taken): read the realm back and
+            # check who owns it before creating a client in it or writing its secret
+            # to Vault. A foreign realm that took the name meanwhile raises 409 here.
+            if await self._get_owned_realm(client, app, env) is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"This app's realm id '{realm_id(app.id, env)}' already exists under "
+                        f"another name than '{realm}' — a platform admin must check it."
+                    ),
+                )
+        await client.disable_admin_cli_password_grant(realm)
 
         public = _is_public_client(app.framework)
         internal_id = await client.create_client(
@@ -273,7 +394,13 @@ class KeycloakService:
         # already set for this app/env (ADR-0025).
         vault_client.patch_secret(await self._vault_path(app, env), oidc_vars)
 
-        return await self._status_for_env(app, env, client, connection.public_url)
+        result = await self._status_for_env(app, env, client, connection.public_url)
+        if result.state in (KeycloakEnvState.MISSING, KeycloakEnvState.FOREIGN):
+            # Never report a provisioning as done once the realm is gone or no longer
+            # CNP's. UNKNOWN (a transient read error after every write succeeded) is not
+            # a failure: provision is idempotent, the next status read settles it.
+            raise KeycloakError(f"Realm {realm} is {result.state.value} after provisioning")
+        return result
 
     async def status(self, app: Application) -> KeycloakStatusResponse:
         instances = KeycloakInstanceService(self.db)
@@ -304,7 +431,7 @@ class KeycloakService:
             return KeycloakEnvStatus(**base, exists=False, state=KeycloakEnvState.UNKNOWN)
         if repr_ is None:
             return KeycloakEnvStatus(**base, exists=False, state=KeycloakEnvState.MISSING)
-        if not _owned_by(repr_, app):
+        if not _owned_by(repr_, app, env):
             return KeycloakEnvStatus(**base, exists=True, state=KeycloakEnvState.FOREIGN)
         return KeycloakEnvStatus(
             **base,
@@ -320,6 +447,7 @@ class KeycloakService:
         using. Callers (routes) are responsible for the Owner-only gate on prod.
         """
         _validate_env(env)
+        _require_enabled(app)
         connection = await KeycloakInstanceService(self.db).resolve_for_app(app)
         client = self._client(connection)
         realm = realm_name(app.slug, env)
@@ -332,6 +460,7 @@ class KeycloakService:
 
     async def grant_console_access(self, app: Application, env: str, user: User) -> KeycloakConsoleAccessResponse:
         _validate_env(env)
+        _require_enabled(app)
         connection = await KeycloakInstanceService(self.db).resolve_for_app(app)
         client = self._client(connection)
         realm = realm_name(app.slug, env)
@@ -355,7 +484,7 @@ class KeycloakService:
                     "CNP did not create — rename or delete it in the console first."
                 ),
             )
-        await client.assign_realm_admin(realm, user_id)
+        await client.set_team_console_roles(realm, user_id)
         temporary_password = secrets.token_urlsafe(18)
         await client.set_temporary_password(realm, user_id, temporary_password)
 
@@ -381,10 +510,41 @@ class KeycloakService:
             realm = realm_name(app.slug, env)
             try:
                 repr_ = await client.get_realm(realm)
-                if repr_ is not None and _owned_by(repr_, app):
+                if repr_ is not None and _owned_by(repr_, app, env):
                     await client.delete_users_by_attribute(realm, USER_OWNER_ATTRIBUTE, str(cnp_user_id))
             except Exception:
                 logger.warning("Failed to revoke Keycloak console access for user %s in %s", cnp_user_id, realm)
+
+    async def revoke_user_everywhere(self, cnp_user_id: int) -> None:
+        """Best-effort: a deactivated CNP user keeps no console account on any app.
+        Only apps with Keycloak on are contacted. Never raises — the caller already
+        committed the deactivation.
+        """
+        app_ids = await self._keycloak_enabled_app_ids(cnp_user_id)
+        for app_id in app_ids:
+            await self.db.rollback()  # see revoke_lost_console_access
+            try:
+                app = await self.db.get(Application, app_id)
+                if app is not None:
+                    await self.revoke_member(app, cnp_user_id)
+            except Exception:
+                logger.exception("Failed to revoke Keycloak access for user %s on app %s", cnp_user_id, app_id)
+
+    async def revoke_user_where_not_maintainer(self, cnp_user_id: int) -> None:
+        """Best-effort: an admin demoted to a regular role loses the tier bypass, so
+        keeps a console account only on apps where their effective tier is still
+        Maintainer+. Only apps with Keycloak on are contacted. Never raises."""
+        await revoke_lost_console_access(
+            self.db, [(app_id, cnp_user_id) for app_id in await self._keycloak_enabled_app_ids(cnp_user_id)]
+        )
+
+    async def _keycloak_enabled_app_ids(self, cnp_user_id: int) -> list[int]:
+        try:
+            result = await self.db.execute(select(Application.id).where(Application.auth_enabled.is_(True)))
+            return list(result.scalars().all())
+        except Exception:
+            logger.exception("Could not list Keycloak-enabled apps to revoke user %s", cnp_user_id)
+            return []
 
     async def deprovision(self, app: Application) -> None:
         """Best-effort: delete both realms — only if CNP created them for this app.
@@ -402,7 +562,7 @@ class KeycloakService:
                 repr_ = await client.get_realm(realm)
                 if repr_ is None:
                     continue
-                if not _owned_by(repr_, app):
+                if not _owned_by(repr_, app, env):
                     logger.warning("Not deleting realm %s: not owned by app %s", realm, app.id)
                     continue
                 await client.delete_realm(realm)

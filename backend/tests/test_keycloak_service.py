@@ -7,11 +7,13 @@ test_env_var_routes.py.
 """
 import httpx
 import pytest
+from fastapi import HTTPException
 from hvac.exceptions import InvalidPath
-from shared.models import CnpTier, KeycloakAuthWarning, KeycloakEnvState
+from shared.models import CnpTier, KeycloakAuthWarning, KeycloakEnvState, KeycloakEnvStatus
 
 from backend.core.config import settings
 from backend.db.models import Application, User
+from backend.keycloak.client import KeycloakError
 from backend.services.keycloak_service import (
     KeycloakService,
     add_auth_warnings,
@@ -112,6 +114,11 @@ class TestProvision:
         assert "OIDC_CLIENT_SECRET" not in secret
         assert secret["OIDC_CLIENT_ID"] == "demo"
 
+    async def test_provision_disables_admin_cli_password_grant(self, fake_keycloak, fake_vault):
+        await KeycloakService(db=None).provision(_app(), "dev")
+        admin_cli = fake_keycloak.realms["demo-dev"]["clients"]["admin-cli-id"]
+        assert admin_cli["directAccessGrantsEnabled"] is False
+
     async def test_provision_tags_realm_with_owning_app(self, fake_keycloak, fake_vault):
         await KeycloakService(db=None).provision(_app(id=7), "dev")
         assert fake_keycloak.realms["demo-dev"]["attributes"]["cnp_app_id"] == "7"
@@ -119,7 +126,7 @@ class TestProvision:
     async def test_provision_completes_a_half_created_setup(self, fake_keycloak, fake_vault):
         """Realm created, then client/Vault failed: a second provision() must finish
         the job instead of being a no-op because the realm exists."""
-        fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "1"})  # realm only, no client
+        fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "1"}, id="cnp-1-dev")  # realm only
 
         await KeycloakService(db=None).provision(_app(), "dev")
 
@@ -141,6 +148,98 @@ class TestProvision:
         with pytest.raises(Exception) as exc_info:
             await KeycloakService(db=None).assert_no_foreign_oidc_keys(_app())
         assert getattr(exc_info.value, "status_code", None) == 409
+
+
+class TestRealmOwnership:
+    """Ownership = the CNP-chosen internal id AND the cnp_app_id attribute. A realm's
+    admin can rename it and rewrite its attributes, never its id (Keycloak 26.8.0)."""
+
+    async def test_provision_creates_realm_with_cnp_chosen_id(self, fake_keycloak, fake_vault):
+        await KeycloakService(db=None).provision(_app(id=7), "dev")
+        assert fake_keycloak.realms["demo-dev"]["id"] == "cnp-7-dev"
+
+    async def test_renamed_realm_of_another_app_is_never_adopted(self, fake_keycloak, fake_vault):
+        """a-dev is renamed b-dev and retagged with app b's id (a platform admin can)."""
+        service = KeycloakService(db=None)
+        await service.provision(_app(id=5, slug="a", name="a"), "dev")
+        fake_keycloak.rename_realm("a-dev", "b-dev", {"cnp_app_id": "6"})
+        app_b = _app(id=6, slug="b", name="b", auth_enabled=True)
+
+        assert (await service.status(app_b)).dev.state == KeycloakEnvState.FOREIGN
+        with pytest.raises(Exception) as exc_info:
+            await service.provision(app_b, "dev")
+        assert getattr(exc_info.value, "status_code", None) == 409
+        assert "apps/_ungrouped/b/dev" not in fake_vault
+        with pytest.raises(Exception) as exc_info:
+            await service.grant_console_access(app_b, "dev", User(id=3, email="e@x.test", hashed_password="x"))
+        assert getattr(exc_info.value, "status_code", None) == 409
+        await service.deprovision(app_b)
+        assert "b-dev" in fake_keycloak.realms
+
+    async def test_realm_of_the_other_env_is_not_owned(self, fake_keycloak, fake_vault):
+        """Renaming demo-dev to demo-prod (same app attribute) must not make it prod."""
+        service = KeycloakService(db=None)
+        app = _app(auth_enabled=True)
+        await service.provision(app, "dev")
+        fake_keycloak.rename_realm("demo-dev", "demo-prod", {"cnp_app_id": "1"})
+        assert (await service.status(app)).prod.state == KeycloakEnvState.FOREIGN
+
+    async def test_provision_refuses_a_realm_that_takes_the_name_during_creation(self, fake_keycloak, fake_vault):
+        """N1: the name is free when provision() reads it, then another realm takes it
+        before the POST (409, swallowed). provision() must re-read the realm and stop
+        before creating the client or writing to Vault."""
+        fake_keycloak.create_realm("decoy-dev", {"cnp_app_id": "999"})
+        original = fake_keycloak.handler
+
+        def racing(request):
+            response = original(request)
+            if request.method == "GET" and request.url.path == "/admin/realms/demo-dev" and response.status_code == 404:
+                fake_keycloak.realms["demo-dev"] = fake_keycloak.realms.pop("decoy-dev")
+            return response
+
+        fake_keycloak.handler = racing
+
+        with pytest.raises(Exception) as exc_info:
+            await KeycloakService(db=None).provision(_app(), "dev")
+        assert getattr(exc_info.value, "status_code", None) == 409
+        assert not [c for c in fake_keycloak.realms["demo-dev"]["clients"].values() if c["clientId"] == "demo"]
+        assert fake_vault == {}
+
+    async def test_provision_with_its_id_taken_under_another_name_is_an_explicit_409(self, fake_keycloak, fake_vault):
+        """N1: the app's realm exists under another name (its CNP id is taken): a clear
+        409 for a platform admin, not a 502 from a missing realm."""
+        fake_keycloak.create_realm("old-name-dev", {"cnp_app_id": "1"}, id="cnp-1-dev")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await KeycloakService(db=None).provision(_app(), "dev")
+        assert exc_info.value.status_code == 409
+        assert "cnp-1-dev" in exc_info.value.detail
+        assert fake_vault == {}
+
+    async def test_provision_fails_unless_the_realm_ends_active(self, fake_keycloak, fake_vault, monkeypatch):
+        """activate() sets auth_provisioned=True only if provision() did not raise."""
+        async def gone(self, app, env, client, public_url):
+            return KeycloakEnvStatus(enabled=True, realm="demo-dev", exists=False, state=KeycloakEnvState.MISSING)
+
+        monkeypatch.setattr(KeycloakService, "_status_for_env", gone)
+        with pytest.raises(KeycloakError):
+            await KeycloakService(db=None).provision(_app(), "dev")
+
+    async def test_provision_tolerates_an_unreadable_final_status(self, fake_keycloak, fake_vault, monkeypatch):
+        """A transient read error once every write succeeded is not a provisioning failure."""
+        async def unreadable(self, app, env, client, public_url):
+            return KeycloakEnvStatus(enabled=True, realm="demo-dev", exists=False, state=KeycloakEnvState.UNKNOWN)
+
+        monkeypatch.setattr(KeycloakService, "_status_for_env", unreadable)
+        result = await KeycloakService(db=None).provision(_app(), "dev")
+
+        assert result.state == KeycloakEnvState.UNKNOWN
+        assert "OIDC_ISSUER_URL" in fake_vault["apps/_ungrouped/demo/dev"]
+
+    async def test_matching_id_without_matching_attribute_is_foreign(self, fake_keycloak, fake_vault):
+        fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "999"}, id="cnp-1-dev")
+        result = await KeycloakService(db=None).status(_app(auth_enabled=True))
+        assert result.dev.state == KeycloakEnvState.FOREIGN
 
 
 class TestStatus:
@@ -198,7 +297,7 @@ class TestStatus:
 
 class TestReprovision:
     async def test_reprovision_conflicts_if_realm_exists(self, fake_keycloak, fake_vault):
-        app = _app()
+        app = _app(auth_enabled=True)
         service = KeycloakService(db=None)
         await service.provision(app, "dev")
 
@@ -207,15 +306,24 @@ class TestReprovision:
         assert getattr(exc_info.value, "status_code", None) == 409
 
     async def test_reprovision_succeeds_if_realm_missing(self, fake_keycloak, fake_vault):
-        app = _app()
+        app = _app(auth_enabled=True)
         service = KeycloakService(db=None)
         result = await service.reprovision(app, "dev")
         assert result.exists is True
 
+    async def test_reprovision_refused_when_keycloak_is_not_enabled(self, fake_keycloak, fake_vault):
+        """Recreating a realm is for apps that use Keycloak: never create a realm,
+        a client and OIDC_* variables for an app that has it off."""
+        with pytest.raises(Exception) as exc_info:
+            await KeycloakService(db=None).reprovision(_app(auth_enabled=False), "dev")
+        assert getattr(exc_info.value, "status_code", None) == 409
+        assert fake_keycloak.realms == {}
+        assert fake_vault == {}
+
 
 class TestConsoleAccess:
     async def test_grant_console_access_returns_credentials_once(self, fake_keycloak, fake_vault):
-        app = _app()
+        app = _app(auth_enabled=True)
         service = KeycloakService(db=None)
         await service.provision(app, "dev")
         user = User(id=42, email="alice@example.com", hashed_password="x")
@@ -224,16 +332,46 @@ class TestConsoleAccess:
 
         assert result.username == "cnp.alice.42"
         assert result.console_url == "https://auth.example.com/admin/demo-dev/console/"
-        assert len(result.temporary_password) > 10
+        # Must satisfy the realm password policy (length(12) and notUsername), which
+        # Keycloak also enforces on admin password resets.
+        assert len(result.temporary_password) >= 12
+        assert result.temporary_password != result.username
+
+    async def test_grant_console_access_gives_the_restricted_team_role(self, fake_keycloak, fake_vault):
+        """Option B (ADR-0027 §1): the console account never gets realm-admin or
+        manage-realm — renaming, deleting or reconfiguring the realm stays with CNP."""
+        from backend.keycloak.client import TEAM_CONSOLE_ROLES
+
+        app = _app(auth_enabled=True)
+        service = KeycloakService(db=None)
+        await service.provision(app, "dev")
+
+        await service.grant_console_access(app, "dev", User(id=42, email="alice@example.com", hashed_password="x"))
+
+        (account,) = fake_keycloak.realms["demo-dev"]["users"].values()
+        assert {r["name"] for r in account["roles"]} == set(TEAM_CONSOLE_ROLES)
 
     async def test_grant_console_access_requires_existing_realm(self, fake_keycloak, fake_vault):
-        app = _app()
+        app = _app(auth_enabled=True)
         service = KeycloakService(db=None)
         user = User(id=42, email="alice@example.com", hashed_password="x")
 
         with pytest.raises(Exception) as exc_info:
             await service.grant_console_access(app, "dev", user)
         assert getattr(exc_info.value, "status_code", None) == 409
+
+    async def test_grant_console_access_refused_when_keycloak_is_not_enabled(self, fake_keycloak, fake_vault):
+        """Even if the app's realm still exists (Keycloak turned off since): no
+        console account is handed out for an app that has Keycloak off."""
+        app = _app(auth_enabled=True)
+        service = KeycloakService(db=None)
+        await service.provision(app, "dev")
+        app.auth_enabled = False
+
+        with pytest.raises(Exception) as exc_info:
+            await service.grant_console_access(app, "dev", User(id=42, email="alice@example.com", hashed_password="x"))
+        assert getattr(exc_info.value, "status_code", None) == 409
+        assert fake_keycloak.realms["demo-dev"]["users"] == {}
 
 
 class TestRevokeAndDeprovision:
@@ -243,7 +381,7 @@ class TestRevokeAndDeprovision:
         await KeycloakService(db=None).revoke_member(app, 1)  # must not raise
 
     async def test_revoke_member_removes_console_user(self, fake_keycloak, fake_vault):
-        app = _app()
+        app = _app(auth_enabled=True)
         service = KeycloakService(db=None)
         await service.provision(app, "dev")
         user = User(id=1, email="alice@example.com", hashed_password="x")
@@ -284,6 +422,11 @@ class TestHelpers:
     def test_realm_name(self):
         assert realm_name("my-app", "dev") == "my-app-dev"
         assert realm_name("my-app", "prod") == "my-app-prod"
+
+    def test_realm_id_depends_on_app_id_and_env_only(self):
+        from backend.services.keycloak_service import realm_id
+        assert realm_id(7, "dev") == "cnp-7-dev"
+        assert realm_id(7, "prod") == "cnp-7-prod"
 
     def test_console_username_is_prefixed_and_unique_per_user(self):
         a = User(id=1, email="alice@a.com", hashed_password="x")

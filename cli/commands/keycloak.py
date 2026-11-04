@@ -107,7 +107,7 @@ def console_access(
     app_slug: str = typer.Option(..., "--app", "-a", help="Application slug"),
     env: str = typer.Option(..., "--env", "-e", help="Environment: dev or prod"),
 ):
-    """Create/reactivate a temporary console admin account for you and print the
+    """Create/reactivate your console account on the app's realm and print the
     URL + credentials. The password is shown only once — copy it now."""
     _validate_env(env)
     try:
@@ -126,6 +126,12 @@ def console_access(
             ["username", data["username"]],
             ["temporary_password", data["temporary_password"]],
         ],
+    )
+    console.print(
+        "This account manages the realm's users, groups, clients and identity providers. "
+        "Realm settings (password policy, themes, email, login options) and deleting the "
+        "realm go through a platform admin.",
+        markup=False,
     )
 
 

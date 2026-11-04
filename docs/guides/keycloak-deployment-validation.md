@@ -2,8 +2,8 @@
 
 État au 19 octobre 2026, branche `feature/keycloak-portable-cnp`.
 Ce document distingue les essais réalisés des validations encore ouvertes.
-origin/main a été fusionné dans la branche (dernière fusion `a754047`) ; la branche n'est pas
-encore fusionnée dans main. Aucune installation live AKS ou k3s ni migration de
+origin/main a été fusionné dans la branche (dernière fusion `a754047`) ; sa fusion dans main
+se fait en mode dormant (voir [Publication et fusion](#publication-et-fusion)). Aucune installation live AKS ou k3s ni migration de
 la base CNP de production n'a été effectuée. La règle ACL Tailscale
 `tag:cnp-control` → `tag:k8s:8080` est ajoutée dans `infra/tailscale/main.tf`,
 en attente de `terraform apply`.
@@ -12,39 +12,58 @@ en attente de `terraform apply`.
 
 - Chart commun : Helm 3.17.3, lint strict et rendu des cibles public AKS, public GKE
   et privé k3s, PVC conservé, probes management, exposition privée, secrets ESO isolés.
-- Passerelle : 28 tests sur NGINX réel (Docker) avec deux amonts isolés ;
+- Passerelle : 32 tests sur NGINX réel (Docker) avec deux amonts isolés ;
   préfixes conservés, voisins inconnus 404, master/management 403, encodages
-  bloqués, amont absent 503, rollback de configuration invalide et d'une route
+  bloqués, `#` brut dans la ligne de requête refusé (400), amont absent 503, rollback de configuration invalide et d'une route
   valide mais inaccessible, Grafana disponible sans certificat auth. Fichier rejoué
   10 fois de suite sans échec (attentes tolérantes aux rechargements NGINX).
 - Sonde directe sur Keycloak 26.8.0 : `realms/master;x/...` répond 400 en direct
   et 403 via la passerelle ; `master%3Bx` répond 404 en direct et 403 via la
-  passerelle. Le rejet en bordure reste une défense en profondeur.
-- Banc local réel (exécuté avant les correctifs de la revue qualité de la PR #51,
-  non rejoué depuis) : **6/6 tests réussis**, deux Keycloak 26.8.0, PostgreSQL 16,
+  passerelle ; `realms/x#/../master/...` était transmis tel quel à Keycloak (qui le
+  refuse lui-même : 400 `missingNormalization`) et est désormais refusé par la
+  passerelle (400). Le rejet en bordure reste une défense en profondeur.
+- Keycloak 26.8.0 accepte l'id interne imposé à la création d'un realm, refuse un id
+  déjà pris (409) et ne le change jamais, même quand un compte `realm-admin` renomme le
+  realm en envoyant un autre id : la propriété d'un realm repose sur cet id.
+- Rôle d'équipe restreint (option B, ADR-0027 §1), sondé le 4 novembre 2026 sur 26.8.0
+  avec un compte créé par le vrai code CNP et le jeton de la vraie console : gestion des
+  utilisateurs, clients et événements possible ; renommage, suppression, politique de mot
+  de passe, protection brute-force, thème et user profile refusés (403) ; aucune escalade
+  vers `manage-realm`, `realm-admin` ou `impersonation` (soi, autre utilisateur, groupe,
+  rôles par défaut, composite de `realm-management`, service account, mappers de jeton ou
+  de fournisseur d'identité) ; autre realm refusé. `admin-cli` refuse la connexion par
+  mot de passe (400 `unauthorized_client`). Course à la création reproduite avant le
+  correctif (client et secret écrits dans un realm étranger), refusée après (409).
+- Banc local réel (rejoué le 4 novembre 2026 après le rôle d'équipe restreint) :
+  **7/7 tests réussis**, deux Keycloak 26.8.0, PostgreSQL 16,
   Vault 1.21, NGINX, base CNP dédiée ; bootstrap répété sans rotation, token ESO
   renouvelé et scopes interdits refusés, preuve d'issuer avec un certificat local
   approuvé, migration historique, provisioning CNP sur deux instances, association
   conservée après retarget, suppression d'un realm possédé, client confidential,
   SPA PKCE S256, JWT avec mauvaise audience/issuer refusé, login/refresh/logout,
-  401 anonyme/invalide, console d'équipe et révocation réelle, réinstallation
+  401 anonyme/invalide, console d'équipe (mot de passe temporaire changé au premier
+  login sous la politique `length(12) and notUsername`, rôle restreint vérifié par 25
+  appels d'Admin API avec le jeton de la console, `admin-cli` refusé) et révocation
+  réelle, realm créé avec son id CNP, la protection brute-force et la politique de mot de
+  passe, realm renommé par l'admin master vers le nom d'une autre app vu `foreign` (ni
+  adopté, ni complété, ni supprimé), `#` brut refusé par la passerelle, réinstallation
   après remise à zéro de la seule base Keycloak de test avec secret conservé.
   Les services et
   volumes sont supprimés en fin de test ; aucune donnée personnelle partagée.
-- Suite backend ordinaire (commande CI) : **485 réussis**, 2 ignorés ;
-  suite opérateur `-m keycloak_infra` : **55 réussis**, dont les 28 tests
-  passerelle avec Docker. Les 6 tests d'intégration sont exécutés séparément.
-- Frontend : **69/69 tests vitest**, tsc, eslint et build sans erreur ; ruff sans erreur.
+- Suite backend ordinaire (commande CI) : **535 réussis**, 2 ignorés ;
+  suite opérateur `-m keycloak_infra` : **59 réussis**, dont les 32 tests
+  passerelle avec Docker. Les 7 tests d'intégration sont exécutés séparément.
+- Frontend : **79/79 tests vitest**, tsc, eslint et build sans erreur ; ruff sans erreur.
 - Locks backend runtime/dev et opérateur : régénération sans différences
   (contrôle du 9 octobre).
 - Migration : un seul head Alembic, `c2d3e4f5a6b7`.
 
-Les 6 tests du banc (`verify.sh --local`) : bootstrap idempotent, migration
+Les 7 tests du banc (`verify.sh --local`) : bootstrap idempotent, migration
 conservant l'auth historique, lifecycle d'app isolé, login/refresh/logout PKCE
-sous préfixe, console d'équipe et frontières master, reprise réutilisant les
-credentials conservés. Ils forment un parcours ordonné : migration avant
-lifecycle, puis navigateur et console, enfin remise à zéro de la base de test
-et reprise.
+sous préfixe, console d'équipe et frontières master, realm renommé jamais adopté,
+reprise réutilisant les credentials conservés. Ils forment un parcours ordonné :
+migration avant lifecycle, puis navigateur et console, enfin remise à zéro de la
+base de test et reprise.
 Pour les rejouer, utiliser le runner complet.
 Le navigateur de test utilise le port localhost 5173, déjà autorisé dans les
 clients dev CNP ; libérer ce port avant l'essai. Il ne prend pas un serveur existant.
@@ -164,5 +183,11 @@ Les sauvegardes d'identités restent nécessaires pour récupérer les anciens u
 Publier le chart avec un SHA immuable, puis vérifier l'accès de lecture ArgoCD
 avant d'intégrer les Applications générées dans `cnp-gitops`.
 L'absence de publication n'est pas remplacée par un SHA fictif ou `HEAD`.
-La correction Compose isolant le Keycloak local est incluse ; elle n'autorise
-pas une fusion sur la seule base de ces tests sans les essais live encore ouverts.
+La correction Compose isolant le Keycloak local est incluse.
+
+Décision de fusion : le code est fusionné dans main en **mode dormant** (merge de la
+PR #51) : `KEYCLOAK_ENABLED=false` et aucune instance enregistrée dans le registre
+`keycloak_instances`, donc aucune app ne peut activer Keycloak et rien ne change pour
+la plateforme. La validation live reste ouverte : elle se fait instance par instance,
+avant l'activation de chacune, dans l'ordre k3s, puis AKS, puis GKE (parcours décrits
+ci-dessus). Une instance n'est enregistrée et activée qu'une fois son parcours validé.

@@ -17,7 +17,7 @@ import httpx
 import yaml
 from infra.keycloak.lib.config import ROOT, TargetConfig, load_target
 from infra.keycloak.lib.gateway import render_route
-from infra.keycloak.lib.http_api import JSONAPI
+from infra.keycloak.lib.http_api import JSONAPI, APIError
 from infra.keycloak.lib.keycloak_api import KeycloakAdmin
 from infra.keycloak.lib.vault_api import VaultAPI
 
@@ -28,6 +28,28 @@ def free_port():
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
+
+
+def raw_get(base, target):
+    """Send `target` verbatim over TLS: HTTP clients drop a URL fragment before
+    sending, a raw client does not. Returns (status, body)."""
+    import ssl
+    from urllib.parse import urlsplit
+
+    url = urlsplit(base)
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    with socket.create_connection((url.hostname, url.port), timeout=15) as raw:
+        with context.wrap_socket(raw, server_hostname=url.hostname) as tls:
+            tls.sendall(
+                f"GET {target} HTTP/1.1\r\nHost: {url.hostname}\r\nConnection: close\r\n\r\n".encode()
+            )
+            data = b""
+            while chunk := tls.recv(65536):
+                data += chunk
+    head, _, body = data.partition(b"\r\n\r\n")
+    return int(head.split()[1]), body
 
 
 def checked(argv, *, env=None):
@@ -316,6 +338,10 @@ async def verify_lifecycle(state, monkeypatch):
                     other.request("GET", f"/admin/realms/{app.slug}-dev", missing_ok=True) is None
                 )
                 own = admin(state, name)
+                realm = own.request("GET", f"/admin/realms/{app.slug}-dev")
+                assert realm["id"] == f"cnp-{app.id}-dev"
+                assert realm["bruteForceProtected"] is True
+                assert realm["passwordPolicy"] == "length(12) and notUsername"
                 clients = own.request(
                     "GET", f"/admin/realms/{app.slug}-dev/clients?clientId={app.slug}"
                 )
@@ -444,9 +470,103 @@ def verify_browser(state):
     assert json.loads(result.stdout)["passed"] is True
 
 
+def team_role_probes(own, realm, team_user_id, neighbour):
+    """Admin API calls the team console account makes with its own console token,
+    with the status Keycloak must answer (ADR-0027 §1, option B). Fixtures and ids
+    come from the bootstrap admin; none of them is a secret."""
+    base = f"/admin/realms/{realm}"
+    management = own.request("GET", f"{base}/clients?clientId=realm-management")[0]
+    roles = {
+        role["name"]: role
+        for role in own.request("GET", f"{base}/clients/{management['id']}/roles")
+    }
+    mappings = f"{base}/users/{{}}/role-mappings/clients/{management['id']}"
+    own.request("POST", f"{base}/users", {"username": "role-probe-other", "enabled": True})
+    other = own.request("GET", f"{base}/users?username=role-probe-other&exact=true")[0]["id"]
+    own.request("POST", f"{base}/groups", {"name": "role-probe-group"})
+    group = own.request("GET", f"{base}/groups?search=role-probe-group")[0]["id"]
+    own.request(
+        "POST",
+        f"{base}/clients",
+        {"clientId": "role-probe-service", "publicClient": False, "serviceAccountsEnabled": True},
+    )
+    service = own.request("GET", f"{base}/clients?clientId=role-probe-service")[0]["id"]
+    service_user = own.request("GET", f"{base}/clients/{service}/service-account-user")["id"]
+    default_roles = own.request("GET", f"{base}/roles/default-roles-{realm}")["id"]
+    return [
+        # The console is usable: users and clients of the realm.
+        ("list users", "GET", f"{base}/users", None, 200),
+        ("create a user", "POST", f"{base}/users", {"username": "made-by-team"}, 201),
+        ("list clients", "GET", f"{base}/clients", None, 200),
+        (
+            "create a client with a service account",
+            "POST",
+            f"{base}/clients",
+            {"clientId": "made-by-team", "publicClient": False, "serviceAccountsEnabled": True},
+            201,
+        ),
+        ("read login events", "GET", f"{base}/events", None, 200),
+        # Realm settings stay with CNP and platform admins.
+        ("relax the password policy", "PUT", base, {"passwordPolicy": ""}, 403),
+        ("disable brute-force protection", "PUT", base, {"bruteForceProtected": False}, 403),
+        ("change the login theme", "PUT", base, {"loginTheme": "keycloak"}, 403),
+        ("change the user profile", "PUT", f"{base}/users/profile", {"attributes": []}, 403),
+        # No escalation through manage-users.
+        *(
+            (f"give {target} {role}", "POST", mappings.format(user), [roles[role]], 403)
+            for target, user in (("itself", team_user_id), ("another user", other))
+            for role in ("manage-realm", "realm-admin", "impersonation")
+        ),
+        (
+            "give realm-admin to a group",
+            "POST",
+            f"{base}/groups/{group}/role-mappings/clients/{management['id']}",
+            [roles["realm-admin"]],
+            403,
+        ),
+        (
+            "add manage-realm to the default roles",
+            "POST",
+            f"{base}/roles-by-id/{default_roles}/composites",
+            [roles["manage-realm"]],
+            403,
+        ),
+        ("impersonate another user", "POST", f"{base}/users/{other}/impersonation", None, 403),
+        # No escalation through manage-clients.
+        (
+            "add manage-realm to a realm-management role",
+            "POST",
+            f"{base}/clients/{management['id']}/roles/view-realm/composites",
+            [roles["manage-realm"]],
+            403,
+        ),
+        (
+            "change the realm-management client",
+            "PUT",
+            f"{base}/clients/{management['id']}",
+            {**management, "description": "changed by team"},
+            403,
+        ),
+        (
+            "give manage-realm to a service account",
+            "POST",
+            mappings.format(service_user),
+            [roles["manage-realm"]],
+            403,
+        ),
+        # Confined to its realm.
+        ("read another realm", "GET", f"/admin/realms/{neighbour}", None, 403),
+        ("list users of another realm", "GET", f"/admin/realms/{neighbour}/users", None, 403),
+        # Last: would destroy the realm if Keycloak accepted them.
+        ("rename the realm", "PUT", base, {"realm": realm + "-renamed"}, 403),
+        ("delete the realm", "DELETE", base, None, 403),
+    ]
+
+
 async def verify_console(state, monkeypatch):
     import hvac
     from backend.db.models import Application, User
+    from backend.keycloak.client import TEAM_CONSOLE_ROLES
     from backend.services.keycloak_service import KeycloakService
     from backend.vault.client import vault_client
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -469,12 +589,32 @@ async def verify_console(state, monkeypatch):
             await session.commit()
             service = KeycloakService(session)
             access = await service.grant_console_access(app, "dev", user)
+            own = admin(state, "private")
+            realm = "integration-private-dev"
+            account = own.request(
+                "GET", f"/admin/realms/{realm}/users?username={access.username}&exact=true"
+            )[0]
+            management = own.request(
+                "GET", f"/admin/realms/{realm}/clients?clientId=realm-management"
+            )[0]["id"]
+            granted = own.request(
+                "GET",
+                f"/admin/realms/{realm}/users/{account['id']}/role-mappings/clients/{management}",
+            )
+            assert {role["name"] for role in granted} == set(TEAM_CONSOLE_ROLES)
+            neighbour = "integration-neighbour-dev"
+            own.request("POST", "/admin/realms", {"realm": neighbour, "enabled": True})
+            probes = team_role_probes(own, realm, account["id"], neighbour)
             payload = {
                 "mode": "console",
                 "url": access.console_url,
                 "username": access.username,
                 "password": access.temporary_password,
                 "newPassword": secrets.token_hex(16),
+                "probes": [
+                    {"label": label, "method": method, "path": path, "body": body}
+                    for label, method, path, body, _ in probes
+                ],
             }
             result = subprocess.run(
                 ["node", str(ROOT / "tests/browser-smoke.mjs")],
@@ -486,7 +626,37 @@ async def verify_console(state, monkeypatch):
                 raise RuntimeError(
                     "Team console browser smoke failed: " + result.stderr.decode()[-1500:]
                 )
-            assert json.loads(result.stdout)["passed"] is True
+            outcome = json.loads(result.stdout)
+            assert outcome["passed"] is True
+            answered = {probe["label"]: probe["status"] for probe in outcome["probes"]}
+            unexpected = {
+                label: (answered.get(label), expected)
+                for label, _, _, _, expected in probes
+                if answered.get(label) != expected
+            }
+            assert not unexpected, f"Team role probes (got, expected): {unexpected}"
+            own.login()
+            assert own.request("GET", f"/admin/realms/{realm}")["id"] == "cnp-102-dev"
+            own.request("DELETE", f"/admin/realms/{neighbour}")
+            # N3: no direct password login through admin-cli, even with the right password.
+            admin_cli = own.request("GET", f"/admin/realms/{realm}/clients?clientId=admin-cli")[0]
+            assert admin_cli["directAccessGrantsEnabled"] is False
+            try:
+                JSONAPI(state["private"]["admin_url"]).request(
+                    "POST",
+                    f"/realms/{realm}/protocol/openid-connect/token",
+                    {
+                        "grant_type": "password",
+                        "client_id": "admin-cli",
+                        "username": access.username,
+                        "password": payload["newPassword"],
+                    },
+                    form=True,
+                )
+            except APIError as error:
+                assert error.status in (400, 401)
+            else:
+                raise AssertionError("admin-cli accepted a direct password login")
             await service.revoke_member(app, user.id)
             assert (
                 admin(state, "private").request(
@@ -509,6 +679,83 @@ async def verify_console(state, monkeypatch):
                 "/health/ready",
             ):
                 assert client.get(base + suffix).status_code == 403
+    for name in ("public", "private"):
+        prefix = state[name]["public_url"][len(state["public_base"]) :]
+        status, body = raw_get(
+            state["public_base"], prefix + "/realms/x#/../master/.well-known/openid-configuration"
+        )
+        # Rejected by the gateway itself, not by Keycloak's own path normalization.
+        assert status == 400 and b"missingNormalization" not in body
+
+
+async def verify_realm_rename(state, monkeypatch):
+    """A realm is renamed to another app's realm name and retagged with that app's
+    id: CNP must treat it as foreign (ownership rests on the internal id CNP chose at
+    creation, which a rename never changes). Team console accounts can no longer
+    rename (verify_console); a platform admin in master still can, as done here."""
+    import hvac
+    from backend.db.models import Application
+    from backend.services.keycloak_service import KeycloakService
+    from backend.vault.client import vault_client
+    from hvac.exceptions import InvalidPath
+    from shared.models import KeycloakEnvState
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    monkeypatch.setattr(
+        vault_client,
+        "_client",
+        hvac.Client(url=state["vault_url"], token=state["credentials"]["vault"], timeout=10),
+    )
+    own = admin(state, "public")
+    engine = create_async_engine(state["database_url"])
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            apps = [
+                Application(
+                    id=app_id,
+                    name=slug,
+                    slug=slug,
+                    owner="test",
+                    framework="python-fastapi",
+                    target_cluster_id=1,
+                    expose=False,
+                )
+                for app_id, slug in ((104, "integration-renamer"), (105, "integration-victim"))
+            ]
+            session.add_all(apps)
+            await session.commit()
+            renamer, victim = apps
+            service = KeycloakService(session)
+            assert (await service.activate(renamer)).auth_provisioned is True
+
+            realm = "integration-renamer-dev"
+            own.login()
+            representation = own.request("GET", f"/admin/realms/{realm}")
+            representation["realm"] = "integration-victim-dev"
+            representation["id"] = "cnp-105-dev"
+            representation["attributes"] = {
+                **(representation.get("attributes") or {}),
+                "cnp_app_id": "105",
+            }
+            own.request("PUT", f"/admin/realms/{realm}", representation)
+            own.login()
+            renamed = own.request("GET", "/admin/realms/integration-victim-dev")
+            assert renamed["id"] == "cnp-104-dev"
+            assert renamed["attributes"]["cnp_app_id"] == "105"
+
+            assert (await service.status(victim)).dev.state == KeycloakEnvState.FOREIGN
+            assert (await service.activate(victim)).auth_provisioned is False
+            try:
+                vault_client.get_secret("apps/_ungrouped/integration-victim/dev")
+            except InvalidPath:
+                pass
+            else:
+                raise AssertionError("Renamed realm credentials were handed to another app")
+            await service.deprovision(victim)
+            assert own.request("GET", "/admin/realms/integration-victim-dev")["id"] == "cnp-104-dev"
+            own.request("DELETE", "/admin/realms/integration-victim-dev")
+    finally:
+        await engine.dispose()
 
 
 def verify_recovery(state, monkeypatch):

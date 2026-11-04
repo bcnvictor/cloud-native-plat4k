@@ -1,4 +1,6 @@
 import os
+import socket
+import ssl
 import subprocess
 import time
 from dataclasses import replace
@@ -27,6 +29,25 @@ def _wait_for_status(client: httpx.Client, path: str, code: int, **kwargs) -> in
             break
         time.sleep(0.2)
     return status
+
+
+def _raw_get(client: httpx.Client, target: str) -> tuple[int, bytes]:
+    """Send `target` verbatim over TLS. httpx (like browsers) drops a URL fragment
+    before sending, but nothing stops a raw client from putting '#' in the request
+    line."""
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    with socket.create_connection(("127.0.0.1", client.base_url.port), timeout=10) as raw:
+        with context.wrap_socket(raw, server_hostname="auth.test") as tls:
+            tls.sendall(
+                f"GET {target} HTTP/1.1\r\nHost: auth.test\r\nConnection: close\r\n\r\n".encode()
+            )
+            data = b""
+            while chunk := tls.recv(65536):
+                data += chunk
+    head, _, body = data.partition(b"\r\n\r\n")
+    return int(head.split()[1]), body
 
 
 @pytest.fixture(scope="module")
@@ -178,6 +199,24 @@ def test_app_realm_paths_are_proxied_unchanged(gateway, path):
 def test_master_paths_are_blocked(gateway, path):
     client, *_ = gateway
     assert client.get(f"/clusters/public-01/{path}").status_code == 403
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # nginx matches locations on $uri, which stops at '#', but proxies the raw
+        # $request_uri: the upstream would see the master path behind the fragment.
+        "realms/foo#/../master/.well-known/openid-configuration",
+        "realms/x#/../../realms/master/.well-known/openid-configuration",
+        "admin/demo-dev#/../master/console/",
+        "realms/demo-prod/protocol/openid-connect/auth?state=a#b",
+    ],
+)
+def test_raw_fragment_is_rejected_at_the_edge(gateway, path):
+    client, *_ = gateway
+    status, body = _raw_get(client, f"/clusters/public-01/{path}")
+    assert status == 400
+    assert b"public-01:" not in body  # never reached the upstream
 
 
 def test_unknown_prefix_is_rejected(gateway):

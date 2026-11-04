@@ -4,7 +4,7 @@ import type { KeycloakAuthWarning } from '@/types';
 /** One sentence per auth_warnings code (shared/models.py KeycloakAuthWarning). */
 export const AUTH_WARNING_LABELS: Record<KeycloakAuthWarning, string> = {
   keycloak_instance_unavailable:
-    "No Keycloak instance is configured or available for this app's cluster. Ask a platform admin, then retry.",
+    'Keycloak instance or Vault unavailable. Retry later; if it persists, ask a platform admin.',
   keycloak_provisioning_failed:
     'Keycloak provisioning did not complete. Retrying finishes the setup without touching what already exists.',
   oidc_keys_conflict:

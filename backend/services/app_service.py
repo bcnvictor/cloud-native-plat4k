@@ -293,7 +293,16 @@ class AppService:
             )
         )
         member = result.scalar_one_or_none()
+        loses_console_tier = False
         if member:
+            from backend.services.keycloak_service import level_grants_console
+
+            # 4K-15/ADR-0027: a downgrade below Maintainer may lose console access.
+            loses_console_tier = (
+                member.status == MemberStatus.ACTIVE
+                and level_grants_console(member.access_level)
+                and not level_grants_console(access_level)
+            )
             member.access_level = access_level
             member.status = MemberStatus.ACTIVE
             if cnp_user_id:
@@ -309,6 +318,10 @@ class AppService:
             self.db.add(member)
         await self.db.commit()
         await self.db.refresh(member)
+        if loses_console_tier:
+            from backend.services.keycloak_service import revoke_console_access_if_not_maintainer
+
+            await revoke_console_access_if_not_maintainer(self.db, app, member.cnp_user_id)
         return member
 
     async def invite_member(self, app_id: int, email: str, access_level: int) -> AppMember:
@@ -427,6 +440,17 @@ class AppService:
         except Exception as e:
             # Unexpected: still never fail the app creation. Only the type is logged.
             logger.error("Keycloak activation failed for app %s (%s)", app.slug, type(e).__name__)
+            # Record it like any other failed activation (Retry offered), after
+            # dropping whatever the crash left half-done in the session.
+            try:
+                await self.db.rollback()
+                await self.db.refresh(app)
+                await service.mark_activation_failed(app, KeycloakAuthWarning.PROVISIONING_FAILED)
+            except Exception as record_error:
+                logger.error(
+                    "Could not record the Keycloak activation failure for app %s (%s)",
+                    app.slug, type(record_error).__name__,
+                )
 
     async def _check_envfrom_warning(self, app: Application, bot: "GitLabClient") -> None:
         """Onboarded-app-only (mode A, ADR-0027 §6): best-effort check that the

@@ -52,6 +52,12 @@ async def test_team_console_and_master_boundaries(real_stack, monkeypatch):
     await verify_console(real_stack, monkeypatch)
 
 
+async def test_renamed_team_realm_is_never_adopted(real_stack, monkeypatch):
+    from infra.keycloak.tests.smoke import verify_realm_rename
+
+    await verify_realm_rename(real_stack, monkeypatch)
+
+
 def test_real_recovery_reuses_retained_credentials(real_stack, monkeypatch):
     from infra.keycloak.tests.smoke import verify_recovery
 

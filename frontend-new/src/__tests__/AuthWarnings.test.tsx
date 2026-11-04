@@ -36,6 +36,15 @@ describe('activationProblem', () => {
     );
   });
 
+  it('does not blame a missing instance when Vault may be the one down', () => {
+    // keycloak_instance_unavailable also covers Vault unreachable/sealed (the
+    // provisioner secret and the OIDC_* check both live there).
+    const label = AUTH_WARNING_LABELS.keycloak_instance_unavailable;
+    expect(label).toMatch(/Vault/);
+    expect(label).toMatch(/retry later/i);
+    expect(label).not.toMatch(/no keycloak instance is configured/i);
+  });
+
   it('falls back to the retry message when provisioning failed without a code', () => {
     expect(activationProblem([], false)).toBe(AUTH_WARNING_LABELS.keycloak_provisioning_failed);
   });

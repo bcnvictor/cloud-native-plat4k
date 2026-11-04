@@ -14,6 +14,34 @@ logger = logging.getLogger(__name__)
 
 _TIMEOUT = 10  # secondes, cohérent avec ArgoCDClient/VaultClient
 
+# Baseline of every realm CNP creates. Brute-force detection uses Keycloak's
+# defaults (temporary lockout, never permanent). The password policy also applies
+# to admin password resets: the temporary console passwords CNP generates
+# (secrets.token_urlsafe(18), 24 characters) satisfy it (verified against 26.8.0).
+REALM_PASSWORD_POLICY = "length(12) and notUsername"
+
+# `realm-management` roles of a team console account (ADR-0027 §1, option B): users,
+# groups, clients, events and identity providers of its realm — never the realm
+# itself. Without manage-realm (and realm-admin, which contains it) Keycloak refuses
+# renaming or deleting the realm and changing its settings (password policy,
+# brute-force protection, themes, SMTP, login options, user profile). Keycloak also
+# refuses every grant of a realm-management role the account does not hold, so the
+# set cannot grow into realm-admin (verified against 26.8.0, see the ADR).
+TEAM_CONSOLE_ROLES = (
+    "view-realm",
+    "view-users",
+    "query-users",
+    "query-groups",
+    "manage-users",
+    "view-clients",
+    "query-clients",
+    "manage-clients",
+    "view-events",
+    "manage-events",
+    "view-identity-providers",
+    "manage-identity-providers",
+)
+
 
 class KeycloakError(Exception):
     """Base class for Keycloak Admin API errors."""
@@ -105,17 +133,30 @@ class KeycloakClient:
         self,
         realm: str,
         *,
+        realm_id: str | None = None,
         registration_allowed: bool = False,
         attributes: dict[str, str] | None = None,
     ) -> None:
-        payload = {"realm": realm, "enabled": True, "registrationAllowed": registration_allowed}
+        """`realm_id` sets the realm's internal id, which Keycloak never changes
+        afterwards — not even when the realm is renamed (verified against 26.8.0).
+        A 409 (name or id taken) is not an error here: the realm now under `realm`
+        may not be the one requested, so callers must read it back and check who owns
+        it (KeycloakService.provision does)."""
+        payload = {
+            "realm": realm,
+            "enabled": True,
+            "registrationAllowed": registration_allowed,
+            "bruteForceProtected": True,
+            "passwordPolicy": REALM_PASSWORD_POLICY,
+        }
+        if realm_id:
+            payload["id"] = realm_id
         if attributes:
             payload["attributes"] = attributes
         try:
             await self._request("POST", "/admin/realms", json=payload)
         except KeycloakConflict:
-            logger.info("Keycloak realm %s already exists, skipping create", realm)
-            return
+            logger.info("Keycloak realm %s (or its id) already exists, skipping create", realm)
 
         # Creating a realm changes what the CURRENT admin token is authorized to do:
         # Keycloak auto-creates a "{realm}-realm" client in master representing the
@@ -123,8 +164,9 @@ class KeycloakClient:
         # (e.g. "admin") only reflect that new resource_access entry in a FRESHLY
         # issued token. A token cached from before this realm existed keeps 403ing
         # on calls scoped to it (confirmed against a real Keycloak instance — the
-        # very next call in provision() is create_client on this same realm).
-        # Force the next _get_token() to fetch a new one.
+        # very next call in provision() is create_client on this same realm). On a 409
+        # the conflicting realm may also be newer than the token, and provision()
+        # reads it back next. Force the next _get_token() to fetch a new one.
         self._token = None
         self._token_expires_at = 0.0
 
@@ -133,6 +175,30 @@ class KeycloakClient:
             await self._request("DELETE", f"/admin/realms/{realm}")
         except KeycloakNotFound:
             pass
+
+    async def disable_admin_cli_password_grant(self, realm: str) -> None:
+        """Turn off direct password login (Resource Owner Password Credentials) on the
+        realm's built-in `admin-cli` client: console accounts sign in through the
+        admin console's code flow, so a password posted to the token endpoint with
+        client_id=admin-cli is refused. Idempotent; keeps the rest of the client.
+        """
+        resp = await self._request(
+            "GET", f"/admin/realms/{realm}/clients", params={"clientId": "admin-cli"}
+        )
+        clients = resp.json()
+        if not clients:
+            # A team with manage-clients can delete or rename admin-cli: nothing left to
+            # turn off, and that must not fail provisioning.
+            logger.warning("No 'admin-cli' client in realm %s — password grant check skipped", realm)
+            return
+        admin_cli = clients[0]
+        if admin_cli.get("directAccessGrantsEnabled") is False:
+            return
+        await self._request(
+            "PUT",
+            f"/admin/realms/{realm}/clients/{admin_cli['id']}",
+            json={**admin_cli, "directAccessGrantsEnabled": False},
+        )
 
     # ---- Clients ----
 
@@ -268,7 +334,7 @@ class KeycloakClient:
 
         The account is identified by its `cnp_user_id` attribute, never by username
         alone: a realm also holds the app's own end users, and CNP must never take
-        over (password reset + realm-admin) an account it didn't create. If the
+        over (password reset + console roles) an account it didn't create. If the
         username is already taken by an account without the matching attribute,
         raises KeycloakConflict instead.
 
@@ -308,9 +374,10 @@ class KeycloakClient:
             )
         return created[0]["id"]
 
-    async def assign_realm_admin(self, realm: str, user_id: str) -> None:
-        """Grant the `realm-management` client's `realm-admin` role — full admin of
-        THIS realm only (ADR-0027 §1).
+    async def set_team_console_roles(self, realm: str, user_id: str) -> None:
+        """Give the account exactly TEAM_CONSOLE_ROLES of the realm's `realm-management`
+        client: adds the missing ones, removes any other realm-management role mapped
+        to it directly (e.g. realm-admin). Idempotent.
         """
         resp = await self._request(
             "GET", f"/admin/realms/{realm}/clients", params={"clientId": "realm-management"}
@@ -319,15 +386,21 @@ class KeycloakClient:
         if not rm_clients:
             raise KeycloakError(f"'realm-management' client not found in realm {realm}")
         rm_id = rm_clients[0]["id"]
-        resp = await self._request(
-            "GET", f"/admin/realms/{realm}/clients/{rm_id}/roles/realm-admin"
-        )
-        role = resp.json()
-        await self._request(
-            "POST",
-            f"/admin/realms/{realm}/users/{user_id}/role-mappings/clients/{rm_id}",
-            json=[role],
-        )
+        resp = await self._request("GET", f"/admin/realms/{realm}/clients/{rm_id}/roles")
+        available = {role["name"]: role for role in resp.json()}
+        missing = [name for name in TEAM_CONSOLE_ROLES if name not in available]
+        if missing:
+            raise KeycloakError(f"realm-management roles {missing} not found in realm {realm}")
+
+        mappings = f"/admin/realms/{realm}/users/{user_id}/role-mappings/clients/{rm_id}"
+        current = (await self._request("GET", mappings)).json()
+        extra = [role for role in current if role["name"] not in TEAM_CONSOLE_ROLES]
+        if extra:
+            await self._request("DELETE", mappings, json=extra)
+        held = {role["name"] for role in current}
+        to_add = [available[name] for name in TEAM_CONSOLE_ROLES if name not in held]
+        if to_add:
+            await self._request("POST", mappings, json=to_add)
 
     async def set_temporary_password(self, realm: str, user_id: str, password: str) -> None:
         await self._request(

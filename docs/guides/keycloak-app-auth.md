@@ -18,9 +18,9 @@ valider un token côté code.
 - **Console d'admin déléguée** :
   `https://auth.cloud-native-plat4k.me/clusters/{instance_key}/admin/{realm}/console/`
   (pour une app `legacy` : `{KEYCLOAK_PUBLIC_URL}/admin/{realm}/console/`).
-  Un membre Owner/Maintainer de l'app peut s'y connecter pour administrer *ce realm
-  uniquement* (créer des users, ajuster des rôles, personnaliser le thème de login…)
-  — jamais les autres realms de la plateforme.
+  Un membre Owner/Maintainer de l'app peut s'y connecter pour gérer *ce realm
+  uniquement* (utilisateurs, groupes, clients, fournisseurs d'identité, événements) —
+  jamais les autres realms de la plateforme. Voir [ce que la console permet](#ce-que-la-console-permet).
 - **Profil console** : à la première connexion, Keycloak peut demander une adresse
   email et les champs de profil obligatoires du realm. CNP ne recopie pas votre
   email automatiquement pour éviter de prendre l’adresse d’un compte utilisateur
@@ -28,13 +28,40 @@ valider un token côté code.
 - **Accès console V1** : compte local au realm, mot de passe temporaire à usage
   unique (`UPDATE_PASSWORD` requis à la première connexion). Le login fédéré via
   GitLab (SSO) est une évolution future, pas encore disponible.
-- **Recréation d'un realm supprimé : jamais automatique.** Si le realm est
-  supprimé (volontairement via la console, ou par erreur), CNP ne le recrée pas de
-  lui-même — il détecte l'absence (`status: missing`) et affiche un bouton
+- **Recréation d'un realm supprimé : jamais automatique.** Les équipes ne peuvent
+  pas supprimer leur realm. S'il disparaît (suppression par un admin plateforme, perte
+  de la base Keycloak), CNP ne le recrée pas de lui-même — il détecte l'absence (`status: missing`) et affiche un bouton
   "Recréer" (portail) ou la commande `cnp keycloak reprovision` (CLI). Recréer
   produit un realm **vierge** : nouveaux users, nouveau `client_secret`, aucune
   récupération des anciennes données. En dev, Owner ou Maintainer peuvent recréer ;
   en prod, Owner uniquement.
+
+## Ce que la console permet
+
+Le compte console reçoit un rôle d'équipe restreint
+([ADR-0027 §1](../adr/0027-keycloak-app-auth.md#1-architecture-réseau-et-realms)).
+
+Vous pouvez :
+- créer, modifier, désactiver et supprimer des utilisateurs, réinitialiser leur mot de
+  passe, gérer les groupes et donner aux utilisateurs les rôles de vos clients ;
+- modifier le client de votre app (redirect URIs, web origins, rôles client, mappers),
+  créer d'autres clients, y compris avec un service account ;
+- ajouter des fournisseurs d'identité (login social, autre IdP OIDC/SAML) ;
+- consulter les événements de connexion et d'administration, et régler leur
+  enregistrement.
+
+Vous ne pouvez plus :
+- changer les réglages du realm : politique de mot de passe, protection brute-force,
+  thèmes, email/SMTP, options de login (inscription, mot de passe oublié, « se souvenir de
+  moi »), flux d'authentification, user profile, rôles de realm, clés ;
+- renommer ou supprimer le realm (seul CNP le fait, à la suppression de l'app ou avec
+  « Recréer ») ;
+- vous faire passer pour un utilisateur (impersonation) ou vous donner plus de droits
+  d'administration.
+
+Pour un changement de réglage du realm, demandez à un admin plateforme. Les réglages de
+départ sont : protection brute-force active (verrouillage temporaire), mot de passe d'au
+moins 12 caractères différent du nom d'utilisateur, inscription désactivée.
 
 ## Activer Keycloak sur votre app
 

@@ -158,14 +158,16 @@ export function SettingsTab() {
   }
 
   // Authentication (Keycloak) — 4K-15/ADR-0027
-  const { data: authStatus } = useQuery({
+  const { data: authStatus, isError: authStatusFailed } = useQuery({
     queryKey: ['authStatus', app?.id],
     queryFn: () => appsApi.getAuthStatus(app!.id),
     enabled: !!app,
   });
 
   const isOwner = !!myAccess && (myAccess.is_admin || myAccess.tier === 'owner');
-  const canActivate = canManageApp && canActivateAuth(authStatus?.instance);
+  // react-query v5 keeps the last data when a refetch fails: isError is what says the
+  // status can no longer be trusted.
+  const canActivate = canManageApp && !authStatusFailed && canActivateAuth(authStatus?.instance);
   const { toast } = useToast();
 
   function toastAuthError(title: string) {
@@ -181,7 +183,9 @@ export function SettingsTab() {
 
   const enableAuthMutation = useMutation({
     mutationFn: () => appsApi.enableAuth(app!.id),
-    onSuccess: () => {
+    // Also after an error: a refused retry (409 OIDC_* conflict) records a new
+    // failure reason that must replace the one on screen.
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['authStatus', app?.id] });
       qc.invalidateQueries({ queryKey: ['app', appSlug] });
     },
@@ -402,7 +406,14 @@ export function SettingsTab() {
           admin console access is granted per member (Owner/Maintainer only).
         </p>
 
-        <AuthInstanceInfo instance={authStatus?.instance ?? null} />
+        {/* Activation stays disabled until the status is known (canActivateAuth). */}
+        {authStatusFailed ? (
+          <p className="text-xs text-danger-text mb-3">
+            Could not load the Keycloak status. Retry later; if it persists, ask a platform admin.
+          </p>
+        ) : authStatus ? (
+          <AuthInstanceInfo instance={authStatus.instance ?? null} />
+        ) : null}
 
         {!app.auth_enabled ? (
           <div className="flex items-center justify-between">
@@ -619,9 +630,14 @@ export function SettingsTab() {
           <div className="absolute inset-0 bg-black/30" onClick={() => setConsoleCreds(null)} />
           <div className="relative bg-background border border-border rounded-lg shadow-lg p-6 w-full max-w-sm mx-4">
             <h3 className="text-sm font-semibold text-foreground mb-2">Keycloak console access</h3>
-            <p className="text-xs text-muted-foreground mb-4">
+            <p className="text-xs text-muted-foreground mb-2">
               Copy this password now — it won't be shown again. You'll be asked to set a new
               one on first login.
+            </p>
+            <p className="text-xs text-muted-foreground mb-4">
+              This account manages the realm's users, groups, clients and identity providers.
+              Realm settings (password policy, themes, email, login options) and deleting the
+              realm go through a platform admin.
             </p>
             <div className="flex flex-col gap-2 mb-4">
               <div>

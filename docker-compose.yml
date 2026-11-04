@@ -104,7 +104,8 @@ services:
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
       - KC_HEALTH_ENABLED=true
     ports:
-      - "8081:8080"
+      # Loopback only: the admin account defaults to admin/admin.
+      - "127.0.0.1:8081:8080"
     healthcheck:
       # Keycloak's health endpoints are served on the management interface (port
       # 9000 by default in KC 26 quarkus, NOT the main HTTP port 8080) — confirmed

@@ -37,3 +37,15 @@ def test_json_status_preserves_instance_fields(cli_auth):
     result = CliRunner().invoke(cli_auth[0], ['status', '--app', 'demo', '--output', 'json'])
     assert result.exit_code == 0
     assert json.loads(result.stdout)['instance']['instance_key'] == 'private-01'
+
+
+def test_console_access_says_realm_settings_need_a_platform_admin(cli_auth, monkeypatch):
+    """Option B (ADR-0027 §1): the console account manages users and clients, not
+    the realm itself — say so before the team finds read-only settings."""
+    from cli.commands import keycloak
+    creds = {'console_url': 'https://auth.example/admin/demo-dev/console/',
+             'username': 'cnp.alice.42', 'temporary_password': 'once-only-password'}
+    monkeypatch.setattr(keycloak.client, 'post', lambda path: creds)
+    result = CliRunner().invoke(cli_auth[0], ['console', '--app', 'demo', '--env', 'dev'])
+    assert result.exit_code == 0
+    assert 'platform admin' in result.stdout
