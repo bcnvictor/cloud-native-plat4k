@@ -4,7 +4,7 @@ A CNP user keeps a Keycloak console account only while their effective
 tier on the app — best of project and owning-group membership, as in
 tier_service.get_effective_tier — is Maintainer or above. Exercised through the real
 triggers: GitLab sync (full and per user), AppService.add_member, deactivating the
-CNP user. Revocations run after the triggering change is
+CNP user and demoting an admin. Revocations run after the triggering change is
 committed, never inside its transaction. Always best-effort: no Keycloak call while
 Keycloak is off for the app, and a Keycloak failure never breaks the caller.
 """
@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
-from shared.models import MemberStatus
+from shared.models import MemberStatus, UserRole
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.core.security import get_password_hash
@@ -313,6 +313,36 @@ class TestUserUpdates:
         assert resp.status_code == 200
         assert "keycloak" in events
         assert events.index("commit") < events.index("keycloak")
+
+    async def test_demoting_an_admin_revokes_console_access_they_no_longer_have(
+        self, setup, client, admin_token, background_sessions, db_session
+    ):
+        """N4: an admin gets console access on any app (tier bypass). Demoted, they
+        keep it only where their own membership grants Maintainer+."""
+        _, _, user, fake = setup
+        user.role = UserRole.ADMIN
+        await db_session.commit()
+        resp = await client.patch(
+            f"/api/v1/users/{user.id}", json={"role": "dev"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["role"] == "dev"
+        assert _console_accounts(fake, user) == []
+
+    async def test_demoting_an_admin_keeps_access_granted_by_membership(
+        self, setup, client, admin_token, background_sessions, db_session
+    ):
+        _, _, user, fake = setup
+        user.role = UserRole.ADMIN
+        db_session.add(_membership(GitLabGroupMember, user, 40, gitlab_group_id=GROUP_ID))
+        await db_session.commit()
+        resp = await client.patch(
+            f"/api/v1/users/{user.id}", json={"role": "viewer"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        assert _console_accounts(fake, user)
 
     async def test_other_user_updates_do_not_touch_keycloak(
         self, setup, client, admin_token, background_sessions

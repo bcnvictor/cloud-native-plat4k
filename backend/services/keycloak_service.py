@@ -191,13 +191,18 @@ async def revoke_lost_console_access(db: AsyncSession, pairs: Iterable[tuple[int
             await revoke_console_access_if_not_maintainer(db, app, cnp_user_id)
 
 
-async def revoke_console_access_after_user_update(cnp_user_id: int) -> None:
-    """Background task for PATCH /users/{id} deactivating a user, run after the
-    update is committed and the response sent, with its own session (the request's
-    is closed by then): no console account left on any app. Never raises."""
+async def revoke_console_access_after_user_update(cnp_user_id: int, *, deactivated: bool) -> None:
+    """Background task for PATCH /users/{id}, run after the update is committed and
+    the response sent, with its own session (the request's is closed by then).
+    Deactivated: no console account left on any app. Demoted from admin: only those
+    the user's own membership no longer justifies go. Never raises."""
     try:
         async with AsyncSessionLocal() as db:
-            await KeycloakService(db).revoke_user_everywhere(cnp_user_id)
+            service = KeycloakService(db)
+            if deactivated:
+                await service.revoke_user_everywhere(cnp_user_id)
+            else:
+                await service.revoke_user_where_not_maintainer(cnp_user_id)
     except Exception:
         logger.exception("Failed to revoke Keycloak access for user %s", cnp_user_id)
 
@@ -515,6 +520,19 @@ class KeycloakService:
                 await self.revoke_member(app, cnp_user_id)
             except Exception:
                 logger.exception("Failed to revoke Keycloak access for user %s on app %s", cnp_user_id, app.slug)
+
+    async def revoke_user_where_not_maintainer(self, cnp_user_id: int) -> None:
+        """Best-effort: an admin demoted to a regular role loses the tier bypass, so
+        keeps a console account only on apps where their effective tier is still
+        Maintainer+. Only apps with Keycloak on are contacted. Never raises."""
+        try:
+            result = await self.db.execute(select(Application).where(Application.auth_enabled.is_(True)))
+            apps = list(result.scalars().all())
+        except Exception:
+            logger.exception("Could not list Keycloak-enabled apps to revoke user %s", cnp_user_id)
+            return
+        for app in apps:
+            await revoke_console_access_if_not_maintainer(self.db, app, cnp_user_id)
 
     async def deprovision(self, app: Application) -> None:
         """Best-effort: delete both realms — only if CNP created them for this app.

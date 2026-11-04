@@ -303,8 +303,10 @@ l'utilisateur. Conséquences :
   tier effectif (`tier_service.get_effective_tier` : meilleur des deux appartenances) et ne
   révoque que s'il est passé sous Maintainer : un membre resté Maintainer par le groupe garde
   son accès. La désactivation d'un utilisateur CNP (`PATCH /users/{id}`, `is_active=false`)
-  révoque ses comptes console sur toutes les apps où Keycloak est actif. **Toujours après le
-  commit** : la synchronisation collecte les paires (app, utilisateur) et ne révoque qu'une
+  révoque ses comptes console sur toutes les apps où Keycloak est actif. Un admin CNP passe
+  le contrôle de tier (`require_tier`) et peut donc obtenir un accès console sur n'importe
+  quelle app : rétrogradé (`role` admin → autre), il ne garde ses comptes console que sur les
+  apps où son tier effectif reste Maintainer+. **Toujours après le commit** : la synchronisation collecte les paires (app, utilisateur) et ne révoque qu'une
   fois ses changements commités (`run_gitlab_sync`, `run_gitlab_sync_for_user`) ; `PATCH
   /users/{id}` révoque dans une tâche de fond (`BackgroundTasks`, session dédiée) après sa
   réponse. Le tier lu est donc l'état commité, et aucun verrou de ligne n'est tenu pendant un

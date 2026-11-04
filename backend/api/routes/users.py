@@ -108,16 +108,19 @@ async def update_user(
     if not user:
         raise NotFoundException("User not found")
     deactivated = payload.is_active is False and user.is_active
+    demoted = payload.role not in (None, UserRole.ADMIN) and user.role == UserRole.ADMIN
     if payload.role is not None:
         user.role = payload.role
     if payload.is_active is not None:
         user.is_active = payload.is_active
     await db.commit()
     await db.refresh(user)
-    if deactivated:
+    if deactivated or demoted:
         # 4K-15/ADR-0027: once committed, after the response, best-effort; no Keycloak
         # call unless an app has it on.
-        background_tasks.add_task(revoke_console_access_after_user_update, user.id)
+        background_tasks.add_task(
+            revoke_console_access_after_user_update, user.id, deactivated=deactivated
+        )
     return user
 
 
