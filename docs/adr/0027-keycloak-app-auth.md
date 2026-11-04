@@ -130,7 +130,9 @@ de realm ne serait modifiable qu'avec `manage-realm`, mais l'attribution directe
 objet de plus à protéger. À chaque octroi d'accès console (`set_team_console_roles`), CNP
 ajoute les rôles manquants et retire tout autre rôle `realm-management` attribué
 directement au compte (par exemple un `realm-admin` donné à la main) : le résultat est
-déterministe.
+déterministe. Un compte console créé avant ce changement garde `realm-admin` jusqu'à son
+prochain octroi : aucun n'existe en prod (Keycloak dormant) ; sur un realm de validation,
+refaire un octroi.
 
 Vérifié sur Keycloak 26.8.0 avec un compte créé par le vrai code CNP
 (`grant_console_access`), connecté par la vraie console (mot de passe temporaire changé,
@@ -158,8 +160,10 @@ refusé (403). Keycloak laisse le compte s'attribuer `create-client`, `query-rea
 `manage-authorization`, que `manage-clients` couvre déjà côté Keycloak ; même avec ces
 trois rôles en plus, renommage, suppression, réglages et escalades restent refusés, et CNP
 les retire au prochain octroi. Limite connue : avec `manage-clients`, une équipe peut
-réactiver la connexion directe par mot de passe du client `admin-cli` de son realm (§3) ;
-cela ne concerne que son propre realm.
+réactiver la connexion directe par mot de passe du client `admin-cli` de son realm (§3),
+ou créer un autre client qui l'autorise, et obtenir ainsi un jeton d'administration par
+mot de passe ; cela ne concerne que son propre realm et ne donne pas plus de droits que la
+console.
 
 Ce que les équipes perdent : modifier elles-mêmes les réglages du realm (politique de mot
 de passe, protection brute-force, thèmes, email/SMTP, options de login, flux
