@@ -35,12 +35,12 @@ from shared.models import (
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.deps import _TIER_ORDER, _access_level_to_tier, get_effective_tier
 from backend.db.models import Application, User
 from backend.gitlab.client import GitLabClient
 from backend.keycloak.client import KeycloakClient, KeycloakConflict, KeycloakError
 from backend.services.env_var_service import MANAGED_ENV_KEYS, resolve_group_slug, vault_env_path
 from backend.services.keycloak_instance_service import KeycloakInstanceService, ResolvedKeycloak
+from backend.services.tier_service import access_level_to_tier, get_effective_tier, tier_at_least
 from backend.vault.client import vault_client
 
 logger = logging.getLogger(__name__)
@@ -60,12 +60,12 @@ CONSOLE_ACCESS_TIER = CnpTier.MAINTAINER
 
 
 def has_console_tier(tier: CnpTier) -> bool:
-    return _TIER_ORDER.index(tier) >= _TIER_ORDER.index(CONSOLE_ACCESS_TIER)
+    return tier_at_least(tier, CONSOLE_ACCESS_TIER)
 
 
 def level_grants_console(access_level: int | None) -> bool:
     """Whether one GitLab membership level is enough, on its own, for console access."""
-    return access_level is not None and has_console_tier(_access_level_to_tier(access_level))
+    return access_level is not None and has_console_tier(access_level_to_tier(access_level))
 
 
 def realm_name(app_slug: str, env: str) -> str:
@@ -158,7 +158,7 @@ async def revoke_console_access_if_not_maintainer(
     """Best-effort (ADR-0027 §5): call after a membership of `cnp_user_id` lost
     Maintainer+ (downgrade or departure, project or owning group). Deletes their
     console accounts from both realms unless their effective tier on the app — best
-    of project and owning-group membership, as deps.get_effective_tier — still grants
+    of project and owning-group membership, as tier_service.get_effective_tier — still grants
     console access. No-op without any Keycloak call when Keycloak is off for the app
     or the member has no linked CNP account. Pending membership changes are flushed
     first so the tier reflects them. Never raises past the flush.
