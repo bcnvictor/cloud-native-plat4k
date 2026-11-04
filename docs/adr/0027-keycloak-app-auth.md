@@ -300,12 +300,17 @@ l'utilisateur. Conséquences :
   dès qu'une appartenance qui donnait Maintainer+ baisse sous ce niveau ou disparaît —
   synchronisation des membres d'un projet (`gitlab_sync_service._sync_project`) ou du groupe
   propriétaire (`_sync_group`), rétrogradation via `AppService.add_member` —, CNP recalcule le
-  tier effectif (`deps.get_effective_tier` : meilleur des deux appartenances) et ne révoque que
-  s'il est passé sous Maintainer : un membre resté Maintainer par le groupe garde son accès.
-  La désactivation d'un utilisateur CNP (`PATCH /users/{id}`, `is_active=false`) révoque ses
-  comptes console sur toutes les apps où Keycloak est actif. Toujours best-effort : aucun
-  appel à Keycloak tant qu'il est inactif pour l'app, et un échec Keycloak ne fait jamais
-  échouer la synchronisation ni la requête.
+  tier effectif (`tier_service.get_effective_tier` : meilleur des deux appartenances) et ne
+  révoque que s'il est passé sous Maintainer : un membre resté Maintainer par le groupe garde
+  son accès. La désactivation d'un utilisateur CNP (`PATCH /users/{id}`, `is_active=false`)
+  révoque ses comptes console sur toutes les apps où Keycloak est actif. **Toujours après le
+  commit** : la synchronisation collecte les paires (app, utilisateur) et ne révoque qu'une
+  fois ses changements commités (`run_gitlab_sync`, `run_gitlab_sync_for_user`) ; `PATCH
+  /users/{id}` révoque dans une tâche de fond (`BackgroundTasks`, session dédiée) après sa
+  réponse. Le tier lu est donc l'état commité, et aucun verrou de ligne n'est tenu pendant un
+  appel réseau à Keycloak. Toujours best-effort : aucun appel à Keycloak tant qu'il est
+  inactif pour l'app, et un échec Keycloak ne fait jamais échouer la synchronisation ni la
+  requête.
 - **Suppression de l'app** (`AppService.delete_app`) : `KeycloakService.deprovision` supprime
   les deux realms (seulement s'ils appartiennent à l'app : id interne et `cnp_app_id`), best-effort, comme le reste du cleanup de `delete_app` (gitops, GitLab
   project, Vault env vars) — un échec Keycloak n'empêche pas la suppression de l'app.

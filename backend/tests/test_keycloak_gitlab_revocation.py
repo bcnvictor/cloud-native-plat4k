@@ -2,22 +2,28 @@
 
 A CNP user keeps a Keycloak console account only while their effective
 tier on the app — best of project and owning-group membership, as in
-deps.get_effective_tier — is Maintainer or above. Exercised through the real
-triggers: GitLab group and project sync, AppService.add_member, and deactivating the
-CNP user. Always best-effort: no Keycloak call while Keycloak is off for the app,
-and a Keycloak failure never breaks the caller.
+tier_service.get_effective_tier — is Maintainer or above. Exercised through the real
+triggers: GitLab sync (full and per user), AppService.add_member, deactivating the
+CNP user. Revocations run after the triggering change is
+committed, never inside its transaction. Always best-effort: no Keycloak call while
+Keycloak is off for the app, and a Keycloak failure never breaks the caller.
 """
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 from shared.models import MemberStatus
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.core.security import get_password_hash
 from backend.db.models import AppMember, GitLabGroup, GitLabGroupMember, User
 from backend.keycloak.client import KeycloakClient
 from backend.services.app_service import AppService
-from backend.services.gitlab_sync_service import _sync_group, _sync_project
+from backend.services.gitlab_sync_service import (
+    _sync_group,
+    run_gitlab_sync,
+    run_gitlab_sync_for_user,
+)
 from backend.services.keycloak_service import (
     KeycloakService,
     revoke_console_access_if_not_maintainer,
@@ -95,14 +101,40 @@ async def test_gitlab_revocation_uses_bound_instance(providers, db_session, admi
     assert fake.realms["commande-prod"]["users"] == {}
 
 
+async def _full_sync(db, *, group_members=(), project_members=()):
+    gl = _gl_with(group_members=list(group_members), project_members=list(project_members))
+    with patch("backend.services.gitlab_sync_service._build_gitlab_client", return_value=gl), \
+            patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
+        return await run_gitlab_sync(db)
+
+
+def _record_order(db, fake, monkeypatch) -> list[str]:
+    """Commits of `db` and Keycloak requests, in the order they happen."""
+    events: list[str] = []
+    commit = db.commit
+
+    async def recording_commit():
+        events.append("commit")
+        await commit()
+
+    monkeypatch.setattr(db, "commit", recording_commit)
+    handler = fake.handler
+
+    def recording_handler(request):
+        events.append("keycloak")
+        return handler(request)
+
+    fake.handler = recording_handler
+    return events
+
+
 class TestGroupSync:
     async def test_group_downgrade_below_maintainer_revokes(self, setup, db_session):
         _, group, user, fake = setup
         db_session.add(_membership(GitLabGroupMember, user, 40, gitlab_group_id=GROUP_ID))
         await db_session.commit()
 
-        with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            await _sync_group(db_session, _gl_with(group_members=[_gl_member(30)]), group)
+        await _full_sync(db_session, group_members=[_gl_member(30)])
 
         assert _console_accounts(fake, user) == []
 
@@ -111,22 +143,19 @@ class TestGroupSync:
         db_session.add(_membership(GitLabGroupMember, user, 50, gitlab_group_id=GROUP_ID))
         await db_session.commit()
 
-        with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            await _sync_group(db_session, _gl_with(group_members=[]), group)
+        await _full_sync(db_session, group_members=[])
 
         assert _console_accounts(fake, user) == []
 
     async def test_group_downgrade_revokes_with_production_session_settings(self, setup, db_session):
-        """AsyncSessionLocal has autoflush=False: the effective tier must still see the
-        membership change the sync has not committed yet."""
-        app, group, user, fake = setup
+        """AsyncSessionLocal has autoflush=False: the revocation reads the committed
+        membership change."""
+        _, group, user, fake = setup
         db_session.add(_membership(GitLabGroupMember, user, 40, gitlab_group_id=GROUP_ID))
         await db_session.commit()
         db_session.sync_session.autoflush = False
 
-        with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            await _sync_group(db_session, _gl_with(group_members=[_gl_member(30)]), group)
-            await _sync_project(db_session, _gl_with(project_members=[]), app)
+        await _full_sync(db_session, group_members=[_gl_member(30)])
 
         assert _console_accounts(fake, user) == []
 
@@ -138,48 +167,88 @@ class TestGroupSync:
         ])
         await db_session.commit()
 
-        with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            await _sync_group(db_session, _gl_with(group_members=[_gl_member(30)]), group)
+        await _full_sync(db_session, group_members=[_gl_member(30)], project_members=[_gl_member(40)])
 
         assert _console_accounts(fake, user)
+
+    async def test_the_sync_itself_never_calls_keycloak(self, setup, db_session):
+        """N6: the membership pass only collects what to revoke; Keycloak is called
+        once the caller has committed."""
+        app, group, user, fake = setup
+        db_session.add(_membership(GitLabGroupMember, user, 40, gitlab_group_id=GROUP_ID))
+        await db_session.commit()
+        before = len(fake.requests)
+        lost: set[tuple[int, int]] = set()
+
+        with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
+            await _sync_group(db_session, _gl_with(group_members=[]), group, lost_console_access=lost)
+
+        assert len(fake.requests) == before
+        assert lost == {(app.id, user.id)}
+
+    async def test_revocation_runs_after_the_sync_commits(self, setup, db_session, monkeypatch):
+        _, group, user, fake = setup
+        db_session.add(_membership(GitLabGroupMember, user, 40, gitlab_group_id=GROUP_ID))
+        await db_session.commit()
+        events = _record_order(db_session, fake, monkeypatch)
+
+        await _full_sync(db_session, group_members=[])
+
+        assert _console_accounts(fake, user) == []
+        assert "keycloak" in events
+        assert events.index("commit") < events.index("keycloak")
 
 
 class TestProjectSync:
     async def test_project_downgrade_below_maintainer_revokes(self, setup, db_session):
-        app, _, user, fake = setup
+        _, _, user, fake = setup
         db_session.add(_membership(AppMember, user, 40, gitlab_project_id=PROJECT_ID))
         await db_session.commit()
 
-        with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            await _sync_project(db_session, _gl_with(project_members=[_gl_member(30)]), app)
+        await _full_sync(db_session, project_members=[_gl_member(30)])
 
         assert _console_accounts(fake, user) == []
 
     async def test_project_downgrade_keeps_access_granted_by_the_group(self, setup, db_session):
-        app, _, user, fake = setup
+        _, _, user, fake = setup
         db_session.add_all([
             _membership(AppMember, user, 40, gitlab_project_id=PROJECT_ID),
             _membership(GitLabGroupMember, user, 40, gitlab_group_id=GROUP_ID),
         ])
         await db_session.commit()
 
-        with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            await _sync_project(db_session, _gl_with(project_members=[_gl_member(30)]), app)
+        await _full_sync(db_session, group_members=[_gl_member(40)], project_members=[_gl_member(30)])
 
         assert _console_accounts(fake, user)
 
     async def test_leaving_the_project_keeps_access_granted_by_the_group(self, setup, db_session):
-        app, _, user, fake = setup
+        _, _, user, fake = setup
         db_session.add_all([
             _membership(AppMember, user, 40, gitlab_project_id=PROJECT_ID),
             _membership(GitLabGroupMember, user, 50, gitlab_group_id=GROUP_ID),
         ])
         await db_session.commit()
 
-        with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            await _sync_project(db_session, _gl_with(project_members=[]), app)
+        await _full_sync(db_session, group_members=[_gl_member(50)], project_members=[])
 
         assert _console_accounts(fake, user)
+
+    async def test_user_sync_revokes_after_it_commits(self, setup, db_session, monkeypatch):
+        """run_gitlab_sync_for_user (login, "sync my teams") follows the same rule."""
+        _, _, user, fake = setup
+        db_session.add(_membership(AppMember, user, 40, gitlab_project_id=PROJECT_ID))
+        await db_session.commit()
+        events = _record_order(db_session, fake, monkeypatch)
+        gl = _gl_with(project_members=[_gl_member(30)])
+        gl.groups.list.return_value = []
+
+        with patch("backend.services.gitlab_sync_service._build_gitlab_client", return_value=gl), \
+                patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
+            await run_gitlab_sync_for_user(db_session, user.id)
+
+        assert _console_accounts(fake, user) == []
+        assert "keycloak" in events
+        assert events.index("commit") < events.index("keycloak")
 
 
 class TestAddMember:
@@ -207,9 +276,21 @@ class TestAddMember:
         assert _console_accounts(fake, user)
 
 
-class TestUserDeactivation:
+@pytest.fixture
+def background_sessions(db_session, monkeypatch):
+    """Background revocations open their own session (the request's is closed by
+    then); point it at the test database."""
+    import backend.services.keycloak_service as keycloak_service
+
+    monkeypatch.setattr(
+        keycloak_service, "AsyncSessionLocal",
+        async_sessionmaker(bind=db_session.bind, expire_on_commit=False),
+    )
+
+
+class TestUserUpdates:
     async def test_deactivating_a_user_revokes_their_console_accounts(
-        self, setup, client, admin_token
+        self, setup, client, admin_token, background_sessions
     ):
         _, _, user, fake = setup
         resp = await client.patch(
@@ -220,7 +301,22 @@ class TestUserDeactivation:
         assert resp.json()["is_active"] is False
         assert _console_accounts(fake, user) == []
 
-    async def test_other_user_updates_do_not_touch_keycloak(self, setup, client, admin_token):
+    async def test_deactivation_revokes_after_the_commit(
+        self, setup, client, admin_token, background_sessions, db_session, monkeypatch
+    ):
+        _, _, user, fake = setup
+        events = _record_order(db_session, fake, monkeypatch)
+        resp = await client.patch(
+            f"/api/v1/users/{user.id}", json={"is_active": False},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        assert "keycloak" in events
+        assert events.index("commit") < events.index("keycloak")
+
+    async def test_other_user_updates_do_not_touch_keycloak(
+        self, setup, client, admin_token, background_sessions
+    ):
         _, _, user, fake = setup
         before = len(fake.requests)
         resp = await client.patch(
@@ -243,9 +339,7 @@ class TestBestEffort:
         await db_session.commit()
         before = len(fake.requests)
 
-        with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            await _sync_group(db_session, _gl_with(group_members=[]), group)
-            await _sync_project(db_session, _gl_with(project_members=[]), app)
+        await _full_sync(db_session)
         with patch("backend.services.app_service._get_bot_client", return_value=MagicMock()):
             await AppService(db_session).add_member(app.id, GITLAB_USER_ID, 30)
 
@@ -269,10 +363,7 @@ class TestBestEffort:
                 transport=httpx.MockTransport(refuse),
             ),
         )
-        with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            group_stats = await _sync_group(db_session, _gl_with(group_members=[]), group)
-            project_stats = await _sync_project(db_session, _gl_with(project_members=[]), app)
-        await db_session.commit()
+        total = await _full_sync(db_session)
 
-        assert group_stats["revoked"] == 1
-        assert project_stats["revoked"] == 1
+        assert total["groups"]["revoked"] == 1
+        assert total["projects"]["revoked"] == 1

@@ -21,6 +21,7 @@ Ownership markers (never trust a name alone):
 import logging
 import re
 import secrets
+from collections.abc import Iterable
 
 from fastapi import HTTPException, status
 from hvac.exceptions import InvalidPath
@@ -37,6 +38,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import Application, User
+from backend.db.session import AsyncSessionLocal
 from backend.gitlab.client import GitLabClient
 from backend.keycloak.client import KeycloakClient, KeycloakConflict, KeycloakError
 from backend.services.env_var_service import MANAGED_ENV_KEYS, resolve_group_slug, vault_env_path
@@ -156,23 +158,48 @@ def clear_activation_warnings(app: Application) -> None:
 async def revoke_console_access_if_not_maintainer(
     db: AsyncSession, app: Application, cnp_user_id: int | None
 ) -> None:
-    """Best-effort (ADR-0027 §5): call after a membership of `cnp_user_id` lost
-    Maintainer+ (downgrade or departure, project or owning group). Deletes their
-    console accounts from both realms unless their effective tier on the app — best
-    of project and owning-group membership, as tier_service.get_effective_tier — still grants
-    console access. No-op without any Keycloak call when Keycloak is off for the app
-    or the member has no linked CNP account. Pending membership changes are flushed
-    first so the tier reflects them. Never raises past the flush.
+    """Best-effort (ADR-0027 §5): call once a change that may have cost `cnp_user_id`
+    Maintainer+ on the app is COMMITTED (membership downgrade or departure, project
+    or owning group). Deletes their console accounts from both realms unless their
+    effective tier on the app — best of project and owning-group membership, as
+    tier_service.get_effective_tier — still grants console access. Committed first:
+    the tier is read from the database, and the Keycloak calls never run inside the
+    caller's write transaction (no row lock held during a network call). No-op
+    without any Keycloak call when Keycloak is off for the app or the member has no
+    linked CNP account. Never raises.
     """
     if not cnp_user_id or not app.auth_enabled:
         return
-    await db.flush()
     try:
         if has_console_tier(await get_effective_tier(cnp_user_id, app.id, db)):
             return
         await KeycloakService(db).revoke_member(app, cnp_user_id)
     except Exception:
         logger.exception("Failed to revoke Keycloak access for user %s on app %s", cnp_user_id, app.slug)
+
+
+async def revoke_lost_console_access(db: AsyncSession, pairs: Iterable[tuple[int, int]]) -> None:
+    """Best-effort, after the GitLab sync committed: (app_id, cnp_user_id) pairs whose
+    membership dropped below Maintainer during the sync. Never raises."""
+    for app_id, cnp_user_id in sorted(set(pairs)):
+        try:
+            app = await db.get(Application, app_id)
+        except Exception:
+            logger.exception("Could not load app %s to revoke Keycloak access", app_id)
+            continue
+        if app is not None:
+            await revoke_console_access_if_not_maintainer(db, app, cnp_user_id)
+
+
+async def revoke_console_access_after_user_update(cnp_user_id: int) -> None:
+    """Background task for PATCH /users/{id} deactivating a user, run after the
+    update is committed and the response sent, with its own session (the request's
+    is closed by then): no console account left on any app. Never raises."""
+    try:
+        async with AsyncSessionLocal() as db:
+            await KeycloakService(db).revoke_user_everywhere(cnp_user_id)
+    except Exception:
+        logger.exception("Failed to revoke Keycloak access for user %s", cnp_user_id)
 
 
 def detect_envfrom_warning(bot: GitLabClient, project_path: str, app_slug: str) -> list[str]:

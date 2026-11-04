@@ -7,8 +7,8 @@ from backend.core.exceptions import BadRequestException, NotFoundException
 from backend.core.security import get_password_hash
 from backend.db.models import GitLabGroup, GitLabGroupMember, User
 from backend.db.session import get_db
-from backend.services.keycloak_service import KeycloakService
-from fastapi import APIRouter, Depends, Request
+from backend.services.keycloak_service import revoke_console_access_after_user_update
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from shared.models import MemberStatus, UserResponse, UserRole
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -99,6 +99,7 @@ async def update_user(
     user_id: int,
     payload: UserUpdate,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN))
 ):
@@ -114,8 +115,9 @@ async def update_user(
     await db.commit()
     await db.refresh(user)
     if deactivated:
-        # 4K-15/ADR-0027: best-effort, no Keycloak call unless an app has it on.
-        await KeycloakService(db).revoke_user_everywhere(user.id)
+        # 4K-15/ADR-0027: once committed, after the response, best-effort; no Keycloak
+        # call unless an app has it on.
+        background_tasks.add_task(revoke_console_access_after_user_update, user.id)
     return user
 
 
