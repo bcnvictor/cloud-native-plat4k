@@ -225,6 +225,17 @@ class TestRealmOwnership:
         with pytest.raises(KeycloakError):
             await KeycloakService(db=None).provision(_app(), "dev")
 
+    async def test_provision_tolerates_an_unreadable_final_status(self, fake_keycloak, fake_vault, monkeypatch):
+        """A transient read error once every write succeeded is not a provisioning failure."""
+        async def unreadable(self, app, env, client, public_url):
+            return KeycloakEnvStatus(enabled=True, realm="demo-dev", exists=False, state=KeycloakEnvState.UNKNOWN)
+
+        monkeypatch.setattr(KeycloakService, "_status_for_env", unreadable)
+        result = await KeycloakService(db=None).provision(_app(), "dev")
+
+        assert result.state == KeycloakEnvState.UNKNOWN
+        assert "OIDC_ISSUER_URL" in fake_vault["apps/_ungrouped/demo/dev"]
+
     async def test_matching_id_without_matching_attribute_is_foreign(self, fake_keycloak, fake_vault):
         fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "999"}, id="cnp-1-dev")
         result = await KeycloakService(db=None).status(_app(auth_enabled=True))

@@ -27,6 +27,7 @@ from backend.services.gitlab_sync_service import (
 from backend.services.keycloak_service import (
     KeycloakService,
     revoke_console_access_if_not_maintainer,
+    revoke_lost_console_access,
 )
 from backend.tests.test_keycloak_instance_routing import providers as provider_fixture
 
@@ -90,6 +91,34 @@ def _membership(model, user, level, **keys):
         gitlab_user_id=GITLAB_USER_ID, cnp_user_id=user.id, access_level=level,
         status=MemberStatus.ACTIVE, **keys,
     )
+
+
+async def test_a_failed_pair_does_not_stop_the_next_revocations(setup, db_session, monkeypatch):
+    """Each pair starts from a clean transaction: a database error on one pair (which
+    on Postgres leaves the transaction failed) must not cost the following ones."""
+    import backend.services.keycloak_service as module
+
+    app, _, user, fake = setup
+    real_tier = module.get_effective_tier
+    rollbacks = []
+    rollback = db_session.rollback
+
+    async def counting_rollback():
+        rollbacks.append(1)
+        await rollback()
+
+    async def failing_first(user_id, app_id, db):
+        if user_id == -1:  # sorts first, so it runs before the real pair
+            raise RuntimeError("database error")
+        return await real_tier(user_id, app_id, db)
+
+    monkeypatch.setattr(module, "get_effective_tier", failing_first)
+    monkeypatch.setattr(db_session, "rollback", counting_rollback)
+
+    await revoke_lost_console_access(db_session, [(app.id, user.id), (app.id, -1)])
+
+    assert _console_accounts(fake, user) == []
+    assert len(rollbacks) == 2
 
 
 async def test_gitlab_revocation_uses_bound_instance(providers, db_session, admin_user):

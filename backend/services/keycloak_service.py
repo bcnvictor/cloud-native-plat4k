@@ -12,8 +12,9 @@ Ownership markers (never trust a name alone):
   markers is "foreign" and is never adopted, completed, handed out or deleted (slug
   reuse after a failed cleanup, manual realm). The id is what makes this hold: an
   account with manage-realm (a platform admin) can rename a realm and rewrite its
-  attributes, but Keycloak never changes a realm's id. Team console accounts no longer
-  hold manage-realm (TEAM_CONSOLE_ROLES): only CNP creates, renames or deletes realms;
+  attributes, but Keycloak never changes a realm's id. Team console accounts granted
+  since TEAM_CONSOLE_ROLES no longer hold manage-realm: only CNP creates, renames or
+  deletes realms;
 - each console account CNP creates carries the user attribute `cnp_user_id`; CNP
   looks accounts up by that attribute, never by username, so it can't take over one
   of the app's end-user accounts.
@@ -171,7 +172,11 @@ async def revoke_console_access_if_not_maintainer(
     if not cnp_user_id or not app.auth_enabled:
         return
     try:
-        if has_console_tier(await get_effective_tier(cnp_user_id, app.id, db)):
+        tier = await get_effective_tier(cnp_user_id, app.id, db)
+        # End the read transaction before the Vault/Keycloak calls (expire_on_commit is
+        # off: loaded objects stay usable; the caller has nothing pending by contract).
+        await db.commit()
+        if has_console_tier(tier):
             return
         await KeycloakService(db).revoke_member(app, cnp_user_id)
     except Exception:
@@ -182,6 +187,10 @@ async def revoke_lost_console_access(db: AsyncSession, pairs: Iterable[tuple[int
     """Best-effort, after the GitLab sync committed: (app_id, cnp_user_id) pairs whose
     membership dropped below Maintainer during the sync. Never raises."""
     for app_id, cnp_user_id in sorted(set(pairs)):
+        # A database error on a previous pair leaves the transaction failed: start each
+        # pair from a clean one (nothing is pending, the sync committed). The rollback
+        # expires loaded objects, hence the app is fetched per pair.
+        await db.rollback()
         try:
             app = await db.get(Application, app_id)
         except Exception:
@@ -386,8 +395,10 @@ class KeycloakService:
         vault_client.patch_secret(await self._vault_path(app, env), oidc_vars)
 
         result = await self._status_for_env(app, env, client, connection.public_url)
-        if result.state != KeycloakEnvState.ACTIVE:
-            # Never report a provisioning as done unless the realm is still CNP's.
+        if result.state in (KeycloakEnvState.MISSING, KeycloakEnvState.FOREIGN):
+            # Never report a provisioning as done once the realm is gone or no longer
+            # CNP's. UNKNOWN (a transient read error after every write succeeded) is not
+            # a failure: provision is idempotent, the next status read settles it.
             raise KeycloakError(f"Realm {realm} is {result.state.value} after provisioning")
         return result
 
@@ -509,30 +520,31 @@ class KeycloakService:
         Only apps with Keycloak on are contacted. Never raises — the caller already
         committed the deactivation.
         """
-        try:
-            result = await self.db.execute(select(Application).where(Application.auth_enabled.is_(True)))
-            apps = list(result.scalars().all())
-        except Exception:
-            logger.exception("Could not list Keycloak-enabled apps to revoke user %s", cnp_user_id)
-            return
-        for app in apps:
+        app_ids = await self._keycloak_enabled_app_ids(cnp_user_id)
+        for app_id in app_ids:
+            await self.db.rollback()  # see revoke_lost_console_access
             try:
-                await self.revoke_member(app, cnp_user_id)
+                app = await self.db.get(Application, app_id)
+                if app is not None:
+                    await self.revoke_member(app, cnp_user_id)
             except Exception:
-                logger.exception("Failed to revoke Keycloak access for user %s on app %s", cnp_user_id, app.slug)
+                logger.exception("Failed to revoke Keycloak access for user %s on app %s", cnp_user_id, app_id)
 
     async def revoke_user_where_not_maintainer(self, cnp_user_id: int) -> None:
         """Best-effort: an admin demoted to a regular role loses the tier bypass, so
         keeps a console account only on apps where their effective tier is still
         Maintainer+. Only apps with Keycloak on are contacted. Never raises."""
+        await revoke_lost_console_access(
+            self.db, [(app_id, cnp_user_id) for app_id in await self._keycloak_enabled_app_ids(cnp_user_id)]
+        )
+
+    async def _keycloak_enabled_app_ids(self, cnp_user_id: int) -> list[int]:
         try:
-            result = await self.db.execute(select(Application).where(Application.auth_enabled.is_(True)))
-            apps = list(result.scalars().all())
+            result = await self.db.execute(select(Application.id).where(Application.auth_enabled.is_(True)))
+            return list(result.scalars().all())
         except Exception:
             logger.exception("Could not list Keycloak-enabled apps to revoke user %s", cnp_user_id)
-            return
-        for app in apps:
-            await revoke_console_access_if_not_maintainer(self.db, app, cnp_user_id)
+            return []
 
     async def deprovision(self, app: Application) -> None:
         """Best-effort: delete both realms — only if CNP created them for this app.
