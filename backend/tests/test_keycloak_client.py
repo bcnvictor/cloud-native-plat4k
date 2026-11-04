@@ -328,6 +328,18 @@ async def test_disable_admin_cli_password_grant_is_idempotent():
     assert not [r for r in fake.requests if r.method == "PUT"]
 
 
+async def test_disable_admin_cli_password_grant_tolerates_a_deleted_admin_cli():
+    """A team with manage-clients can delete admin-cli: provisioning must not fail on it."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    del fake.realms["demo-dev"]["clients"]["admin-cli-id"]
+
+    await client.disable_admin_cli_password_grant("demo-dev")
+
+    assert not [r for r in fake.requests if r.method == "PUT"]
+
+
 async def test_delete_realm_missing_is_noop():
     fake = FakeKeycloak()
     client = _client(fake)

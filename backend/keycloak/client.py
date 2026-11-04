@@ -187,7 +187,10 @@ class KeycloakClient:
         )
         clients = resp.json()
         if not clients:
-            raise KeycloakNotFound(f"'admin-cli' client not found in realm {realm}")
+            # A team with manage-clients can delete or rename admin-cli: nothing left to
+            # turn off, and that must not fail provisioning.
+            logger.warning("No 'admin-cli' client in realm %s — password grant check skipped", realm)
+            return
         admin_cli = clients[0]
         if admin_cli.get("directAccessGrantsEnabled") is False:
             return
