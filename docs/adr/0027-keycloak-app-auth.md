@@ -252,8 +252,14 @@ l'utilisateur. Conséquences :
   demandés au scaffold/onboard. **Idempotent étape par étape** : crée le realm s'il manque
   (`registrationAllowed=false`, protection brute-force de Keycloak activée avec ses réglages par
   défaut — verrouillage temporaire, jamais permanent —, politique de mot de passe
-  `length(12) and notUsername`, id interne `cnp-{app_id}-{env}`, attribut `cnp_app_id`), puis s'assure que le client, le mapper
-  audience et les `OIDC_*` dans Vault existent. Un provisioning interrompu (realm créé, client
+  `length(12) and notUsername`, id interne `cnp-{app_id}-{env}`, attribut `cnp_app_id`). Si
+  la création répond 409 (nom ou id déjà pris, par exemple un autre realm qui a pris le nom
+  entre la lecture et la création), CNP relit le realm et vérifie son propriétaire (id et
+  attribut) **avant** de créer le client ou d'écrire dans Vault : un realm étranger, ou l'id
+  de l'app déjà porté par un realm d'un autre nom, donne un 409 explicite. Puis CNP s'assure
+  que le client, le mapper audience et les `OIDC_*` dans Vault existent ; `provision` échoue
+  si le realm n'est pas `active` à la fin (l'activation reste alors en échec, jamais
+  `auth_provisioned=true`). Un provisioning interrompu (realm créé, client
   ou Vault en échec, `auth_provisioned=false`) se termine donc par un simple "Retry" (UI) /
   `cnp keycloak enable` — sans toucher au reste du realm (users, rôles, réglages). Les
   redirect URIs du client sont dérivées de `app_hostname(slug, env)` si `app.expose` est

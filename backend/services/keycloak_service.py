@@ -323,6 +323,17 @@ class KeycloakService:
                 registration_allowed=False,
                 attributes={REALM_OWNER_ATTRIBUTE: str(app.id)},
             )
+            # create_realm swallows a 409 (name or id taken): read the realm back and
+            # check who owns it before creating a client in it or writing its secret
+            # to Vault. A foreign realm that took the name meanwhile raises 409 here.
+            if await self._get_owned_realm(client, app, env) is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"This app's realm id '{realm_id(app.id, env)}' already exists under "
+                        f"another name than '{realm}' — a platform admin must check it."
+                    ),
+                )
 
         public = _is_public_client(app.framework)
         internal_id = await client.create_client(
@@ -339,7 +350,11 @@ class KeycloakService:
         # already set for this app/env (ADR-0025).
         vault_client.patch_secret(await self._vault_path(app, env), oidc_vars)
 
-        return await self._status_for_env(app, env, client, connection.public_url)
+        result = await self._status_for_env(app, env, client, connection.public_url)
+        if result.state != KeycloakEnvState.ACTIVE:
+            # Never report a provisioning as done unless the realm is still CNP's.
+            raise KeycloakError(f"Realm {realm} is {result.state.value} after provisioning")
+        return result
 
     async def status(self, app: Application) -> KeycloakStatusResponse:
         instances = KeycloakInstanceService(self.db)

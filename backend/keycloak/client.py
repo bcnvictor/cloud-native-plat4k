@@ -139,7 +139,9 @@ class KeycloakClient:
     ) -> None:
         """`realm_id` sets the realm's internal id, which Keycloak never changes
         afterwards — not even when the realm is renamed (verified against 26.8.0).
-        A 409 (name or id taken) is treated as "already exists"."""
+        A 409 (name or id taken) is not an error here: the realm now under `realm`
+        may not be the one requested, so callers must read it back and check who owns
+        it (KeycloakService.provision does)."""
         payload = {
             "realm": realm,
             "enabled": True,
@@ -154,8 +156,7 @@ class KeycloakClient:
         try:
             await self._request("POST", "/admin/realms", json=payload)
         except KeycloakConflict:
-            logger.info("Keycloak realm %s already exists, skipping create", realm)
-            return
+            logger.info("Keycloak realm %s (or its id) already exists, skipping create", realm)
 
         # Creating a realm changes what the CURRENT admin token is authorized to do:
         # Keycloak auto-creates a "{realm}-realm" client in master representing the
@@ -163,8 +164,9 @@ class KeycloakClient:
         # (e.g. "admin") only reflect that new resource_access entry in a FRESHLY
         # issued token. A token cached from before this realm existed keeps 403ing
         # on calls scoped to it (confirmed against a real Keycloak instance — the
-        # very next call in provision() is create_client on this same realm).
-        # Force the next _get_token() to fetch a new one.
+        # very next call in provision() is create_client on this same realm). On a 409
+        # the conflicting realm may also be newer than the token, and provision()
+        # reads it back next. Force the next _get_token() to fetch a new one.
         self._token = None
         self._token_expires_at = 0.0
 

@@ -7,11 +7,13 @@ test_env_var_routes.py.
 """
 import httpx
 import pytest
+from fastapi import HTTPException
 from hvac.exceptions import InvalidPath
-from shared.models import CnpTier, KeycloakAuthWarning, KeycloakEnvState
+from shared.models import CnpTier, KeycloakAuthWarning, KeycloakEnvState, KeycloakEnvStatus
 
 from backend.core.config import settings
 from backend.db.models import Application, User
+from backend.keycloak.client import KeycloakError
 from backend.services.keycloak_service import (
     KeycloakService,
     add_auth_warnings,
@@ -176,6 +178,47 @@ class TestRealmOwnership:
         await service.provision(app, "dev")
         fake_keycloak.rename_realm("demo-dev", "demo-prod", {"cnp_app_id": "1"})
         assert (await service.status(app)).prod.state == KeycloakEnvState.FOREIGN
+
+    async def test_provision_refuses_a_realm_that_takes_the_name_during_creation(self, fake_keycloak, fake_vault):
+        """N1: the name is free when provision() reads it, then another realm takes it
+        before the POST (409, swallowed). provision() must re-read the realm and stop
+        before creating the client or writing to Vault."""
+        fake_keycloak.create_realm("decoy-dev", {"cnp_app_id": "999"})
+        original = fake_keycloak.handler
+
+        def racing(request):
+            response = original(request)
+            if request.method == "GET" and request.url.path == "/admin/realms/demo-dev" and response.status_code == 404:
+                fake_keycloak.realms["demo-dev"] = fake_keycloak.realms.pop("decoy-dev")
+            return response
+
+        fake_keycloak.handler = racing
+
+        with pytest.raises(Exception) as exc_info:
+            await KeycloakService(db=None).provision(_app(), "dev")
+        assert getattr(exc_info.value, "status_code", None) == 409
+        assert not [c for c in fake_keycloak.realms["demo-dev"]["clients"].values() if c["clientId"] == "demo"]
+        assert fake_vault == {}
+
+    async def test_provision_with_its_id_taken_under_another_name_is_an_explicit_409(self, fake_keycloak, fake_vault):
+        """N1: the app's realm exists under another name (its CNP id is taken): a clear
+        409 for a platform admin, not a 502 from a missing realm."""
+        fake_keycloak.create_realm("old-name-dev", {"cnp_app_id": "1"}, id="cnp-1-dev")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await KeycloakService(db=None).provision(_app(), "dev")
+        assert exc_info.value.status_code == 409
+        assert "cnp-1-dev" in exc_info.value.detail
+        assert fake_vault == {}
+
+    async def test_provision_fails_unless_the_realm_ends_active(self, fake_keycloak, fake_vault, monkeypatch):
+        """activate() sets auth_provisioned=True only if provision() did not raise."""
+        async def gone(self, app, env, client, public_url):
+            return KeycloakEnvStatus(enabled=True, realm="demo-dev", exists=False, state=KeycloakEnvState.MISSING)
+
+        monkeypatch.setattr(KeycloakService, "_status_for_env", gone)
+        with pytest.raises(KeycloakError):
+            await KeycloakService(db=None).provision(_app(), "dev")
 
     async def test_matching_id_without_matching_attribute_is_foreign(self, fake_keycloak, fake_vault):
         fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "999"}, id="cnp-1-dev")

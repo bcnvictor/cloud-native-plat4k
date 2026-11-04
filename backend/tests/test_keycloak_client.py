@@ -294,9 +294,10 @@ async def test_create_realm_invalidates_cached_token():
     assert fake.token_calls == 2, "the next call must fetch a fresh token"
 
 
-async def test_create_realm_conflict_does_not_invalidate_token():
-    """If the realm already existed (409), nothing actually changed permission-wise
-    — no need to force a token refresh."""
+async def test_create_realm_conflict_also_invalidates_token():
+    """A 409 means a realm with that name or id exists, possibly created after the
+    cached token was issued (a concurrent activation, another realm taking the name):
+    provision() re-reads it right away (N1), which needs a freshly issued token."""
     fake = FakeKeycloak()
     client = _client(fake)
     await client.create_realm("demo-dev")
@@ -305,8 +306,9 @@ async def test_create_realm_conflict_does_not_invalidate_token():
 
     await client.create_realm("demo-dev")  # 409, swallowed
 
-    assert client._token is not None
-    assert fake.token_calls == calls_before
+    assert client._token is None
+    await client.get_realm("demo-dev")
+    assert fake.token_calls == calls_before + 1
 
 
 async def test_delete_realm_missing_is_noop():
