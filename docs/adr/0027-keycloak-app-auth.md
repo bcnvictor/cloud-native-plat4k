@@ -208,6 +208,12 @@ Le login via GitLab brokering (SSO fédéré depuis le realm `master` ou depuis 
    - Keycloak 24+ (user profile déclaratif) ignore les attributs non déclarés : CNP passe la
      politique `unmanagedAttributePolicy` du realm à `ADMIN_EDIT` (attributs visibles et
      modifiables par les admins seulement).
+   **Connexion par la console uniquement** : dans chaque realm créé par CNP, le client
+   intégré `admin-cli` a la connexion directe par mot de passe désactivée
+   (`directAccessGrantsEnabled: false`, réappliqué à chaque `provision`). Un mot de passe
+   posté au token endpoint avec `client_id=admin-cli` et `grant_type=password` est refusé
+   (400 `unauthorized_client`, vérifié sur 26.8.0) ; la console (client
+   `security-admin-console`, code + PKCE) et le login des apps ne changent pas.
 3. La réponse contient `{console_url, username, temporary_password}` **une seule fois** — ce
    mot de passe n'est jamais loggé, jamais mis en cache (react-query : pas de `staleTime`,
    invalidation immédiate), jamais stocké en base côté CNP.

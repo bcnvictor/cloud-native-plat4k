@@ -17,7 +17,7 @@ import httpx
 import yaml
 from infra.keycloak.lib.config import ROOT, TargetConfig, load_target
 from infra.keycloak.lib.gateway import render_route
-from infra.keycloak.lib.http_api import JSONAPI
+from infra.keycloak.lib.http_api import JSONAPI, APIError
 from infra.keycloak.lib.keycloak_api import KeycloakAdmin
 from infra.keycloak.lib.vault_api import VaultAPI
 
@@ -638,6 +638,25 @@ async def verify_console(state, monkeypatch):
             own.login()
             assert own.request("GET", f"/admin/realms/{realm}")["id"] == "cnp-102-dev"
             own.request("DELETE", f"/admin/realms/{neighbour}")
+            # N3: no direct password login through admin-cli, even with the right password.
+            admin_cli = own.request("GET", f"/admin/realms/{realm}/clients?clientId=admin-cli")[0]
+            assert admin_cli["directAccessGrantsEnabled"] is False
+            try:
+                JSONAPI(state["private"]["admin_url"]).request(
+                    "POST",
+                    f"/realms/{realm}/protocol/openid-connect/token",
+                    {
+                        "grant_type": "password",
+                        "client_id": "admin-cli",
+                        "username": access.username,
+                        "password": payload["newPassword"],
+                    },
+                    form=True,
+                )
+            except APIError as error:
+                assert error.status in (400, 401)
+            else:
+                raise AssertionError("admin-cli accepted a direct password login")
             await service.revoke_member(app, user.id)
             assert (
                 admin(state, "private").request(
@@ -670,9 +689,10 @@ async def verify_console(state, monkeypatch):
 
 
 async def verify_realm_rename(state, monkeypatch):
-    """A team realm-admin renames its realm to another app's realm name and retags
-    it with that app's id: CNP must treat it as foreign (ownership rests on the
-    internal id CNP chose at creation, which a rename never changes)."""
+    """A realm is renamed to another app's realm name and retagged with that app's
+    id: CNP must treat it as foreign (ownership rests on the internal id CNP chose at
+    creation, which a rename never changes). Team console accounts can no longer
+    rename (verify_console); a platform admin in master still can, as done here."""
     import hvac
     from backend.db.models import Application
     from backend.services.keycloak_service import KeycloakService
@@ -709,53 +729,15 @@ async def verify_realm_rename(state, monkeypatch):
             assert (await service.activate(renamer)).auth_provisioned is True
 
             realm = "integration-renamer-dev"
-            password = secrets.token_hex(16)
-            own.request(
-                "POST",
-                f"/admin/realms/{realm}/users",
-                {
-                    "username": "team-admin",
-                    "enabled": True,
-                    "email": "team-admin@integration.test",
-                    "emailVerified": True,
-                    "firstName": "Team",
-                    "lastName": "Admin",
-                    "credentials": [{"type": "password", "value": password, "temporary": False}],
-                },
-            )
-            user = own.request("GET", f"/admin/realms/{realm}/users?username=team-admin&exact=true")[0]
-            management = own.request(
-                "GET", f"/admin/realms/{realm}/clients?clientId=realm-management"
-            )[0]["id"]
-            role = own.request(
-                "GET", f"/admin/realms/{realm}/clients/{management}/roles/realm-admin"
-            )
-            own.request(
-                "POST",
-                f"/admin/realms/{realm}/users/{user['id']}/role-mappings/clients/{management}",
-                [role],
-            )
-            team = JSONAPI(state["public"]["admin_url"])
-            token = team.request(
-                "POST",
-                f"/realms/{realm}/protocol/openid-connect/token",
-                {
-                    "grant_type": "password",
-                    "client_id": "admin-cli",
-                    "username": "team-admin",
-                    "password": password,
-                },
-                form=True,
-            )["access_token"]
-            team.headers = {"Authorization": "Bearer " + token}
-            representation = team.request("GET", f"/admin/realms/{realm}")
+            own.login()
+            representation = own.request("GET", f"/admin/realms/{realm}")
             representation["realm"] = "integration-victim-dev"
             representation["id"] = "cnp-105-dev"
             representation["attributes"] = {
                 **(representation.get("attributes") or {}),
                 "cnp_app_id": "105",
             }
-            team.request("PUT", f"/admin/realms/{realm}", representation)
+            own.request("PUT", f"/admin/realms/{realm}", representation)
             own.login()
             renamed = own.request("GET", "/admin/realms/integration-victim-dev")
             assert renamed["id"] == "cnp-104-dev"

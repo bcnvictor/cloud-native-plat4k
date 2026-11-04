@@ -114,6 +114,11 @@ class TestProvision:
         assert "OIDC_CLIENT_SECRET" not in secret
         assert secret["OIDC_CLIENT_ID"] == "demo"
 
+    async def test_provision_disables_admin_cli_password_grant(self, fake_keycloak, fake_vault):
+        await KeycloakService(db=None).provision(_app(), "dev")
+        admin_cli = fake_keycloak.realms["demo-dev"]["clients"]["admin-cli-id"]
+        assert admin_cli["directAccessGrantsEnabled"] is False
+
     async def test_provision_tags_realm_with_owning_app(self, fake_keycloak, fake_vault):
         await KeycloakService(db=None).provision(_app(id=7), "dev")
         assert fake_keycloak.realms["demo-dev"]["attributes"]["cnp_app_id"] == "7"

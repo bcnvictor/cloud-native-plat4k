@@ -176,6 +176,27 @@ class KeycloakClient:
         except KeycloakNotFound:
             pass
 
+    async def disable_admin_cli_password_grant(self, realm: str) -> None:
+        """Turn off direct password login (Resource Owner Password Credentials) on the
+        realm's built-in `admin-cli` client: console accounts sign in through the
+        admin console's code flow, so a password posted to the token endpoint with
+        client_id=admin-cli is refused. Idempotent; keeps the rest of the client.
+        """
+        resp = await self._request(
+            "GET", f"/admin/realms/{realm}/clients", params={"clientId": "admin-cli"}
+        )
+        clients = resp.json()
+        if not clients:
+            raise KeycloakNotFound(f"'admin-cli' client not found in realm {realm}")
+        admin_cli = clients[0]
+        if admin_cli.get("directAccessGrantsEnabled") is False:
+            return
+        await self._request(
+            "PUT",
+            f"/admin/realms/{realm}/clients/{admin_cli['id']}",
+            json={**admin_cli, "directAccessGrantsEnabled": False},
+        )
+
     # ---- Clients ----
 
     async def create_client(

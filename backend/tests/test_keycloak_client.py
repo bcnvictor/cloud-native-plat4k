@@ -311,6 +311,23 @@ async def test_create_realm_conflict_also_invalidates_token():
     assert fake.token_calls == calls_before + 1
 
 
+async def test_disable_admin_cli_password_grant_is_idempotent():
+    """N3: console accounts sign in through the admin console (code flow), never
+    with a password posted to admin-cli's token endpoint."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+
+    await client.disable_admin_cli_password_grant("demo-dev")
+    admin_cli = fake.realms["demo-dev"]["clients"]["admin-cli-id"]
+    assert admin_cli["directAccessGrantsEnabled"] is False
+    assert admin_cli["publicClient"] is True  # the rest of the client is kept
+
+    fake.requests.clear()
+    await client.disable_admin_cli_password_grant("demo-dev")
+    assert not [r for r in fake.requests if r.method == "PUT"]
+
+
 async def test_delete_realm_missing_is_noop():
     fake = FakeKeycloak()
     client = _client(fake)

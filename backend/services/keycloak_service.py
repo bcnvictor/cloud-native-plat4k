@@ -309,7 +309,9 @@ class KeycloakService:
         Vault variables exist. Each step is idempotent, so calling this again after a
         partial failure (realm created, client or Vault write failed) completes the
         setup instead of being stuck on "realm already exists".
-        Never touches anything else in an existing realm (users, roles, settings).
+        Besides the app's client, only touches the realm's `admin-cli` client (no
+        direct password login); never the rest of an existing realm (users, roles,
+        settings).
         """
         _validate_env(env)
         connection = await KeycloakInstanceService(self.db).resolve_for_app(app)
@@ -334,6 +336,7 @@ class KeycloakService:
                         f"another name than '{realm}' — a platform admin must check it."
                     ),
                 )
+        await client.disable_admin_cli_password_grant(realm)
 
         public = _is_public_client(app.framework)
         internal_id = await client.create_client(
