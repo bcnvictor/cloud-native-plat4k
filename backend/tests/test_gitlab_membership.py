@@ -353,7 +353,7 @@ class TestSyncGroup:
         gl.groups.get.return_value = gl_group_mock
 
         with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            stats = await _sync_group(db_session, gl, gitlab_group)
+            stats = await _sync_group(db_session, gl, gitlab_group, lost_console_access=set())
 
         assert stats["created"] == 1
         assert stats["updated"] == 0
@@ -380,7 +380,7 @@ class TestSyncGroup:
         gl.groups.get.return_value = gl_group_mock
 
         with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            stats = await _sync_group(db_session, gl, gitlab_group)
+            stats = await _sync_group(db_session, gl, gitlab_group, lost_console_access=set())
 
         assert stats["updated"] == 1
         assert stats["created"] == 0
@@ -403,7 +403,7 @@ class TestSyncGroup:
         gl.groups.get.return_value = gl_group_mock
 
         with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            stats = await _sync_group(db_session, gl, gitlab_group)
+            stats = await _sync_group(db_session, gl, gitlab_group, lost_console_access=set())
 
         assert stats["revoked"] == 1
 
@@ -422,7 +422,7 @@ class TestSyncGroup:
         gl.groups.get.return_value = gl_group_mock
 
         with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            await _sync_group(db_session, gl, gitlab_group)
+            await _sync_group(db_session, gl, gitlab_group, lost_console_access=set())
 
         result = await db_session.execute(
             select(GitLabGroupMember).where(GitLabGroupMember.gitlab_user_id == 100)
@@ -440,7 +440,7 @@ class TestSyncProject:
         gl.projects.get.return_value = gl_project_mock
 
         with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            stats = await _sync_project(db_session, gl, app_with_project)
+            stats = await _sync_project(db_session, gl, app_with_project, lost_console_access=set())
 
         assert stats["created"] == 1
         result = await db_session.execute(
@@ -459,7 +459,7 @@ class TestSyncProject:
         gl.projects.get.return_value = gl_project_mock
 
         with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            stats = await _sync_project(db_session, gl, app_with_project)
+            stats = await _sync_project(db_session, gl, app_with_project, lost_console_access=set())
 
         assert stats["created"] == 1
         result = await db_session.execute(
@@ -487,7 +487,7 @@ class TestSyncProject:
         gl.projects.get.return_value = gl_project_mock
 
         with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            await _sync_project(db_session, gl, app_with_project)
+            await _sync_project(db_session, gl, app_with_project, lost_console_access=set())
 
         result = await db_session.execute(
             select(AppMember).where(AppMember.email == "invited@user.com")
@@ -509,7 +509,7 @@ class TestSyncProject:
         gl.projects.get.return_value = gl_project_mock
 
         with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            stats = await _sync_project(db_session, gl, app_with_project)
+            stats = await _sync_project(db_session, gl, app_with_project, lost_console_access=set())
 
         assert stats["revoked"] == 1
         result = await db_session.execute(
@@ -531,7 +531,7 @@ class TestSyncProject:
         gl.projects.get.return_value = gl_project_mock
 
         with patch("backend.services.gitlab_sync_service.asyncio.to_thread", new=_fake_to_thread):
-            stats = await _sync_project(db_session, gl, app_with_project)
+            stats = await _sync_project(db_session, gl, app_with_project, lost_console_access=set())
 
         assert stats["revoked"] == 1
         result = await db_session.execute(

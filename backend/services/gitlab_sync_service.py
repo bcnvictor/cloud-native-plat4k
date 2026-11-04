@@ -117,7 +117,8 @@ async def _sync_group(
     db: AsyncSession,
     gl: Any,
     group: GitLabGroup,
-    lost_console_access: set[tuple[int, int]] | None = None,
+    *,
+    lost_console_access: set[tuple[int, int]],
 ) -> dict:
     """Upsert active members for one GitLab group; soft-revoke absent ones.
 
@@ -217,7 +218,8 @@ async def _sync_project(
     db: AsyncSession,
     gl: Any,
     app: Application,
-    lost_console_access: set[tuple[int, int]] | None = None,
+    *,
+    lost_console_access: set[tuple[int, int]],
 ) -> dict:
     """Upsert active members and pending invitations for one GitLab project.
 
@@ -339,7 +341,7 @@ async def run_gitlab_sync(db: AsyncSession) -> dict:
 
     result = await db.execute(select(GitLabGroup))
     for group in result.scalars().all():
-        s = await _sync_group(db, gl, group, lost_console_access)
+        s = await _sync_group(db, gl, group, lost_console_access=lost_console_access)
         for k in total["groups"]:
             total["groups"][k] += s[k]
 
@@ -347,7 +349,7 @@ async def run_gitlab_sync(db: AsyncSession) -> dict:
         select(Application).where(Application.gitlab_project_id.isnot(None))
     )
     for app in result.scalars().all():
-        s = await _sync_project(db, gl, app, lost_console_access)
+        s = await _sync_project(db, gl, app, lost_console_access=lost_console_access)
         for k in total["projects"]:
             total["projects"][k] += s[k]
 
@@ -406,7 +408,7 @@ async def run_gitlab_sync_for_user(db: AsyncSession, user_id: int) -> dict:
         select(GitLabGroup).where(GitLabGroup.gitlab_group_id.in_(group_ids))
     )
     for group in res.scalars().all():
-        s = await _sync_group(db, gl, group, lost_console_access)
+        s = await _sync_group(db, gl, group, lost_console_access=lost_console_access)
         for k in total["groups"]:
             total["groups"][k] += s[k]
 
@@ -431,7 +433,7 @@ async def run_gitlab_sync_for_user(db: AsyncSession, user_id: int) -> dict:
         apps_to_sync.setdefault(app.id, app)
 
     for app in apps_to_sync.values():
-        s = await _sync_project(db, gl, app, lost_console_access)
+        s = await _sync_project(db, gl, app, lost_console_access=lost_console_access)
         for k in total["projects"]:
             total["projects"][k] += s[k]
 
