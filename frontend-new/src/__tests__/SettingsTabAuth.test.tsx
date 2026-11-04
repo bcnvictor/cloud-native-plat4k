@@ -113,6 +113,23 @@ describe('SettingsTab Keycloak status errors', () => {
     expect(button.hasAttribute('disabled')).toBe(true);
   });
 
+  it('disables activation when a refetch fails after a successful load', async () => {
+    // react-query v5 keeps the last data on a failed refetch: isError is the signal.
+    api.getAuthStatus.mockResolvedValueOnce(status(instance));
+    const client = renderTab();
+    const button = await activationButton(client, /Activate Keycloak/);
+    expect(button.hasAttribute('disabled')).toBe(false);
+
+    api.getAuthStatus.mockRejectedValue(new Error('503'));
+    await client.refetchQueries({ queryKey: ['authStatus', 1] });
+
+    await waitFor(() => expect(client.getQueryState(['authStatus', 1])?.status).toBe('error'));
+    expect(client.getQueryData(['authStatus', 1])).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Activate Keycloak/ }).hasAttribute('disabled')).toBe(true)
+    );
+  });
+
   it('claims nothing about the instance while the status is loading', async () => {
     api.getAuthStatus.mockReturnValue(new Promise(() => {}));
     const client = renderTab();

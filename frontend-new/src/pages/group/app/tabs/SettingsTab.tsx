@@ -165,7 +165,9 @@ export function SettingsTab() {
   });
 
   const isOwner = !!myAccess && (myAccess.is_admin || myAccess.tier === 'owner');
-  const canActivate = canManageApp && canActivateAuth(authStatus?.instance);
+  // react-query v5 keeps the last data when a refetch fails: isError is what says the
+  // status can no longer be trusted.
+  const canActivate = canManageApp && !authStatusFailed && canActivateAuth(authStatus?.instance);
   const { toast } = useToast();
 
   function toastAuthError(title: string) {
