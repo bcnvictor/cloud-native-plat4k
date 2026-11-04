@@ -10,9 +10,10 @@ Ownership markers (never trust a name alone):
 - each realm CNP creates gets an internal id chosen by CNP (`cnp-{app_id}-{env}`) and
   the realm attribute `cnp_app_id`; a realm with the expected name but without both
   markers is "foreign" and is never adopted, completed, handed out or deleted (slug
-  reuse after a failed cleanup, manual realm). The id is what makes this hold: the
-  app's realm-admins can rename their realm and rewrite its attributes, but Keycloak
-  never changes a realm's id;
+  reuse after a failed cleanup, manual realm). The id is what makes this hold: an
+  account with manage-realm (a platform admin) can rename a realm and rewrite its
+  attributes, but Keycloak never changes a realm's id. Team console accounts no longer
+  hold manage-realm (TEAM_CONSOLE_ROLES): only CNP creates, renames or deletes realms;
 - each console account CNP creates carries the user attribute `cnp_user_id`; CNP
   looks accounts up by that attribute, never by username, so it can't take over one
   of the app's end-user accounts.
@@ -74,7 +75,7 @@ def realm_name(app_slug: str, env: str) -> str:
 
 def realm_id(app_id: int, env: str) -> str:
     """Internal id CNP gives the realm at creation. Unlike the name and the
-    attributes, a realm-admin cannot change it (a rename keeps the id)."""
+    attributes, nobody can change it (a rename keeps the id)."""
     return f"cnp-{app_id}-{env}"
 
 
@@ -103,7 +104,7 @@ def _owned_by(realm_repr: dict, app: Application, env: str) -> bool:
 
 def _require_enabled(app: Application) -> None:
     """Console access and realm recreation are for apps that use Keycloak: never
-    create a realm, a client or a realm-admin account for an app that has it off."""
+    create a realm, a client or a console account for an app that has it off."""
     if not app.auth_enabled:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -422,7 +423,7 @@ class KeycloakService:
                     "CNP did not create — rename or delete it in the console first."
                 ),
             )
-        await client.assign_realm_admin(realm, user_id)
+        await client.set_team_console_roles(realm, user_id)
         temporary_password = secrets.token_urlsafe(18)
         await client.set_temporary_password(realm, user_id, temporary_password)
 

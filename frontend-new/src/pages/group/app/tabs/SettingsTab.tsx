@@ -628,9 +628,14 @@ export function SettingsTab() {
           <div className="absolute inset-0 bg-black/30" onClick={() => setConsoleCreds(null)} />
           <div className="relative bg-background border border-border rounded-lg shadow-lg p-6 w-full max-w-sm mx-4">
             <h3 className="text-sm font-semibold text-foreground mb-2">Keycloak console access</h3>
-            <p className="text-xs text-muted-foreground mb-4">
+            <p className="text-xs text-muted-foreground mb-2">
               Copy this password now — it won't be shown again. You'll be asked to set a new
               one on first login.
+            </p>
+            <p className="text-xs text-muted-foreground mb-4">
+              This account manages the realm's users, groups, clients and identity providers.
+              Realm settings (password policy, themes, email, login options) and deleting the
+              realm go through a platform admin.
             </p>
             <div className="flex flex-col gap-2 mb-4">
               <div>

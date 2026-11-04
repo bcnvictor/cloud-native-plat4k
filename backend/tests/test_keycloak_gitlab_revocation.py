@@ -1,6 +1,6 @@
 """Console access follows the effective tier (4K-15/ADR-0027 §5).
 
-A CNP user keeps a Keycloak console account (realm-admin) only while their effective
+A CNP user keeps a Keycloak console account only while their effective
 tier on the app — best of project and owning-group membership, as in
 deps.get_effective_tier — is Maintainer or above. Exercised through the real
 triggers: GitLab group and project sync, AppService.add_member, and deactivating the

@@ -11,6 +11,10 @@ if(config.mode==='console') {
   const browser=await chromium.launch({headless:true});
   const context=await browser.newContext({ignoreHTTPSErrors:true});
   const page=await context.newPage();
+  // The console's own bearer token, reused for the Admin API probes: it never leaves
+  // this process (only probe labels and HTTP statuses are printed).
+  let bearer=null;
+  page.on('request',r=>{const h=r.headers()['authorization']; if(h && h.startsWith('Bearer ') && new URL(r.url()).pathname.includes('/admin/realms/')) bearer=h;});
   let stage='console login';
   try {
     await page.goto(config.url);
@@ -29,11 +33,26 @@ if(config.mode==='console') {
     await page.locator('input[type="submit"],button[type="submit"]').click();
     stage='team realm administration';
     await page.getByRole('link',{name:'Users',exact:true}).waitFor({timeout:30000});
+    stage='users page';
+    await page.getByRole('link',{name:'Users',exact:true}).click();
+    await page.getByText(config.username,{exact:true}).first().waitFor({timeout:30000});
     const prefix=new URL(config.url).pathname.split('/admin/')[0];
     const master=await context.request.get(new URL(prefix+'/admin/master',config.url).href);
     if(master.status()!==403) throw Error('Master console accepted team');
-    console.log(JSON.stringify({passed:true,teamConsole:true,master403:true}));
-  } catch(error) {const text=(await page.locator('body').innerText()).replaceAll(config.username,'[user]').replaceAll(config.password,'[redacted]').replaceAll(config.newPassword,'[redacted]'); console.error('Console flow failed during '+stage+': '+error.name+'; visible text: '+text.slice(0,2000));process.exitCode=1;}
+    stage='admin API probes';
+    for(let i=0;!bearer && i<50;i++) await page.waitForTimeout(200);
+    if(!bearer) throw Error('No console token captured');
+    const probes=[];
+    for(const probe of config.probes||[]) {
+      const response=await context.request.fetch(new URL(prefix+probe.path,config.url).href,{
+        method:probe.method,
+        headers:{Authorization:bearer,'Content-Type':'application/json'},
+        data:probe.body===null||probe.body===undefined?undefined:JSON.stringify(probe.body),
+      });
+      probes.push({label:probe.label,status:response.status()});
+    }
+    console.log(JSON.stringify({passed:true,teamConsole:true,usersPage:true,master403:true,probes}));
+  } catch(error) {const text=(await page.locator('body').innerText()).replaceAll(config.username,'[user]').replaceAll(config.password,'[redacted]').replaceAll(config.newPassword,'[redacted]'); const message=String(error.message).slice(0,300).replaceAll(config.username,'[user]'); console.error('Console flow failed during '+stage+': '+error.name+' '+message+'; visible text: '+text.slice(0,2000));process.exitCode=1;}
   finally {await browser.close();}
   process.exit(process.exitCode||0);
 }

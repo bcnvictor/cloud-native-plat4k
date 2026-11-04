@@ -152,7 +152,7 @@ class TestRealmOwnership:
         assert fake_keycloak.realms["demo-dev"]["id"] == "cnp-7-dev"
 
     async def test_renamed_realm_of_another_app_is_never_adopted(self, fake_keycloak, fake_vault):
-        """Realm-admin of a-dev renames it b-dev and retags it with app b's id."""
+        """a-dev is renamed b-dev and retagged with app b's id (a platform admin can)."""
         service = KeycloakService(db=None)
         await service.provision(_app(id=5, slug="a", name="a"), "dev")
         fake_keycloak.rename_realm("a-dev", "b-dev", {"cnp_app_id": "6"})
@@ -278,6 +278,20 @@ class TestConsoleAccess:
         assert len(result.temporary_password) >= 12
         assert result.temporary_password != result.username
 
+    async def test_grant_console_access_gives_the_restricted_team_role(self, fake_keycloak, fake_vault):
+        """Option B (ADR-0027 §1): the console account never gets realm-admin or
+        manage-realm — renaming, deleting or reconfiguring the realm stays with CNP."""
+        from backend.keycloak.client import TEAM_CONSOLE_ROLES
+
+        app = _app(auth_enabled=True)
+        service = KeycloakService(db=None)
+        await service.provision(app, "dev")
+
+        await service.grant_console_access(app, "dev", User(id=42, email="alice@example.com", hashed_password="x"))
+
+        (account,) = fake_keycloak.realms["demo-dev"]["users"].values()
+        assert {r["name"] for r in account["roles"]} == set(TEAM_CONSOLE_ROLES)
+
     async def test_grant_console_access_requires_existing_realm(self, fake_keycloak, fake_vault):
         app = _app(auth_enabled=True)
         service = KeycloakService(db=None)
@@ -289,7 +303,7 @@ class TestConsoleAccess:
 
     async def test_grant_console_access_refused_when_keycloak_is_not_enabled(self, fake_keycloak, fake_vault):
         """Even if the app's realm still exists (Keycloak turned off since): no
-        realm-admin account is handed out for an app that has Keycloak off."""
+        console account is handed out for an app that has Keycloak off."""
         app = _app(auth_enabled=True)
         service = KeycloakService(db=None)
         await service.provision(app, "dev")

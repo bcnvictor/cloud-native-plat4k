@@ -241,7 +241,7 @@ async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
         if m.id in existing_by_gl_id:
             row = existing_by_gl_id[m.id]
             # 4K-15/ADR-0027: dropping below Maintainer may lose Keycloak console
-            # access (realm-admin is gated on the same tier). Check before
+            # access (gated on the same tier). Check before
             # overwriting access_level below.
             if _loses_console_tier(row, m.access_level) and (row.cnp_user_id or cnp_user_id):
                 lost_console_tier.add(row.cnp_user_id or cnp_user_id)

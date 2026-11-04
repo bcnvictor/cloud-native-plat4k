@@ -139,3 +139,18 @@ describe('SettingsTab failed activation', () => {
     });
   });
 });
+
+describe('SettingsTab console access', () => {
+  it('tells the team that realm settings go through a platform admin', async () => {
+    const env = { enabled: true, exists: true, state: 'active' as const, console_url: 'https://kc/admin/demo-dev/console/', issuer_url: 'https://kc/realms/demo-dev' };
+    api.getAuthStatus.mockResolvedValue({ ...status(instance), auth_provisioned: true, dev: { ...env, realm: 'demo-dev' }, prod: { ...env, realm: 'demo-prod' } });
+    api.getAuthConsoleAccess.mockResolvedValue({ console_url: env.console_url, username: 'cnp.alice.42', temporary_password: 'once-only' });
+    renderTab({ auth_enabled: true, auth_provisioned: true });
+    const [getAccess] = await screen.findAllByRole('button', { name: 'Get access' });
+
+    fireEvent.click(getAccess);
+
+    expect(await screen.findByText(/realm settings/i)).toBeTruthy();
+    expect(screen.getByText(/platform admin/i)).toBeTruthy();
+  });
+});

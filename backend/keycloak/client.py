@@ -20,6 +20,28 @@ _TIMEOUT = 10  # secondes, cohérent avec ArgoCDClient/VaultClient
 # (secrets.token_urlsafe(18), 24 characters) satisfy it (verified against 26.8.0).
 REALM_PASSWORD_POLICY = "length(12) and notUsername"
 
+# `realm-management` roles of a team console account (ADR-0027 §1, option B): users,
+# groups, clients, events and identity providers of its realm — never the realm
+# itself. Without manage-realm (and realm-admin, which contains it) Keycloak refuses
+# renaming or deleting the realm and changing its settings (password policy,
+# brute-force protection, themes, SMTP, login options, user profile). Keycloak also
+# refuses every grant of a realm-management role the account does not hold, so the
+# set cannot grow into realm-admin (verified against 26.8.0, see the ADR).
+TEAM_CONSOLE_ROLES = (
+    "view-realm",
+    "view-users",
+    "query-users",
+    "query-groups",
+    "manage-users",
+    "view-clients",
+    "query-clients",
+    "manage-clients",
+    "view-events",
+    "manage-events",
+    "view-identity-providers",
+    "manage-identity-providers",
+)
+
 
 class KeycloakError(Exception):
     """Base class for Keycloak Admin API errors."""
@@ -116,8 +138,8 @@ class KeycloakClient:
         attributes: dict[str, str] | None = None,
     ) -> None:
         """`realm_id` sets the realm's internal id, which Keycloak never changes
-        afterwards — not even when a realm-admin renames the realm (verified against
-        26.8.0). A 409 (name or id taken) is treated as "already exists"."""
+        afterwards — not even when the realm is renamed (verified against 26.8.0).
+        A 409 (name or id taken) is treated as "already exists"."""
         payload = {
             "realm": realm,
             "enabled": True,
@@ -286,7 +308,7 @@ class KeycloakClient:
 
         The account is identified by its `cnp_user_id` attribute, never by username
         alone: a realm also holds the app's own end users, and CNP must never take
-        over (password reset + realm-admin) an account it didn't create. If the
+        over (password reset + console roles) an account it didn't create. If the
         username is already taken by an account without the matching attribute,
         raises KeycloakConflict instead.
 
@@ -326,9 +348,10 @@ class KeycloakClient:
             )
         return created[0]["id"]
 
-    async def assign_realm_admin(self, realm: str, user_id: str) -> None:
-        """Grant the `realm-management` client's `realm-admin` role — full admin of
-        THIS realm only (ADR-0027 §1).
+    async def set_team_console_roles(self, realm: str, user_id: str) -> None:
+        """Give the account exactly TEAM_CONSOLE_ROLES of the realm's `realm-management`
+        client: adds the missing ones, removes any other realm-management role mapped
+        to it directly (e.g. realm-admin). Idempotent.
         """
         resp = await self._request(
             "GET", f"/admin/realms/{realm}/clients", params={"clientId": "realm-management"}
@@ -337,15 +360,21 @@ class KeycloakClient:
         if not rm_clients:
             raise KeycloakError(f"'realm-management' client not found in realm {realm}")
         rm_id = rm_clients[0]["id"]
-        resp = await self._request(
-            "GET", f"/admin/realms/{realm}/clients/{rm_id}/roles/realm-admin"
-        )
-        role = resp.json()
-        await self._request(
-            "POST",
-            f"/admin/realms/{realm}/users/{user_id}/role-mappings/clients/{rm_id}",
-            json=[role],
-        )
+        resp = await self._request("GET", f"/admin/realms/{realm}/clients/{rm_id}/roles")
+        available = {role["name"]: role for role in resp.json()}
+        missing = [name for name in TEAM_CONSOLE_ROLES if name not in available]
+        if missing:
+            raise KeycloakError(f"realm-management roles {missing} not found in realm {realm}")
+
+        mappings = f"/admin/realms/{realm}/users/{user_id}/role-mappings/clients/{rm_id}"
+        current = (await self._request("GET", mappings)).json()
+        extra = [role for role in current if role["name"] not in TEAM_CONSOLE_ROLES]
+        if extra:
+            await self._request("DELETE", mappings, json=extra)
+        held = {role["name"] for role in current}
+        to_add = [available[name] for name in TEAM_CONSOLE_ROLES if name not in held]
+        if to_add:
+            await self._request("POST", mappings, json=to_add)
 
     async def set_temporary_password(self, realm: str, user_id: str, password: str) -> None:
         await self._request(
