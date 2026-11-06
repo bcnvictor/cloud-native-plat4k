@@ -173,10 +173,10 @@ def configure_secrets(target, vault):
 def install(target):
     images = yaml.safe_load((ROOT / "images.lock.yaml").read_text())
     values = target.helm_values(images)
+    # A list never 404s. --ignore-not-found would make kubectl (1.36) print nothing
+    # instead of an empty list on a fresh namespace.
     existing = json.loads(
-        kubectl(
-            target, "get", "deploy", "-n", target.namespace, "--ignore-not-found", "-o", "json"
-        ).stdout
+        kubectl(target, "get", "deploy", "-n", target.namespace, "-o", "json").stdout
     )
     managed = any(
         item.get("metadata", {}).get("annotations", {}).get("argocd.argoproj.io/tracking-id")
