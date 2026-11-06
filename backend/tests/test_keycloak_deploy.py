@@ -261,3 +261,27 @@ def test_cli_reports_failed_step(deployment, monkeypatch, capsys, stage, error, 
     output = capsys.readouterr()
     assert expected in output.err
     assert "leaked-provisioner-secret" not in output.err + output.out
+
+
+def test_json_api_names_its_client():
+    # cnp.cloud-native-plat4k.me sits behind Cloudflare, which answers HTTP 403
+    # (error 1010) to urllib's default "Python-urllib/x.y" agent.
+    from infra.keycloak.lib.http_api import JSONAPI, USER_AGENT
+
+    sent = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, _limit):
+            return b"[]"
+
+    api = JSONAPI("https://cnp.test", {"X-API-Key": "test"})
+    api.opener = SimpleNamespace(open=lambda request, timeout: sent.append(request) or Response())
+    assert api.request("GET", "/api/v1/keycloak/instances") == []
+    assert sent[0].get_header("User-agent") == USER_AGENT
+    assert sent[0].get_header("X-api-key") == "test"

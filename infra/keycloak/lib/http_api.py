@@ -5,6 +5,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+# Cloudflare's Browser Integrity Check rejects urllib's default "Python-urllib/x.y"
+# agent (HTTP 403, error 1010) on the proxied CNP API; name the client instead.
+USER_AGENT = "cnp-keycloak-deploy/1.0"
+
 
 class APIError(RuntimeError):
     def __init__(self, status: int):
@@ -44,6 +48,7 @@ class JSONAPI:
         else:
             payload = json.dumps(body).encode() if body is not None else None
         headers = {
+            "User-Agent": USER_AGENT,
             "Content-Type": "application/x-www-form-urlencoded" if form else "application/json",
             **self.headers,
             **(headers or {}),
