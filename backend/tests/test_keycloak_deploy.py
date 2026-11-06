@@ -285,3 +285,26 @@ def test_json_api_names_its_client():
     assert api.request("GET", "/api/v1/keycloak/instances") == []
     assert sent[0].get_header("User-agent") == USER_AGENT
     assert sent[0].get_header("X-api-key") == "test"
+
+
+def test_first_install_reads_an_empty_deployment_list(monkeypatch):
+    # kubectl 1.36 prints nothing (not an empty list) for `get --ignore-not-found -o json`
+    # on a fresh namespace; the first install must still reach Helm.
+    from infra.keycloak.lib import deploy as module
+    from infra.keycloak.lib.config import TargetConfig
+
+    target = TargetConfig(
+        "private-01", "private", "test", "test", "auth.test", "test", "test", "test"
+    )
+    calls = []
+
+    def run(argv, stdin=None):
+        calls.append(argv)
+        if argv[0] == "kubectl":
+            out = b"" if "--ignore-not-found" in argv else b'{"items": []}'
+            return SimpleNamespace(stdout=out)
+        return SimpleNamespace(stdout=b"")
+
+    monkeypatch.setattr(module, "run", run)
+    module.install(target)
+    assert any(argv[1:3] == ["upgrade", "--install"] for argv in calls)
