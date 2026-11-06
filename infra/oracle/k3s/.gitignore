@@ -2,3 +2,11 @@
 cnp-k3s.yaml
 *.kubeconfig
 *.yaml.local
+
+# State Terraform (add-ons du cluster) - état réel de l'infra, ne pas commiter
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+# Plan Terraform sauvegardé (peut contenir des valeurs sensibles)
+tfplan
