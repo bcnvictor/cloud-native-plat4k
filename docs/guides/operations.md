@@ -141,28 +141,26 @@ La feature **"Expose on internet"** (4K-94) permet d'exposer une app via un Ingr
 | Cluster | nginx-ingress | DNS wildcard | Expose disponible |
 |---|---|---|---|
 | `aks` | ✅ (Terraform) | ✅ (`*.cloud-native-plat4k.me`) | ✅ |
-| `cnp-k3s` | ❌ non configuré | ❌ | ❌ |
+| `cnp-k3s` | ✅ (Terraform, `infra/oracle/k3s/`) | ❌ (enregistrements par app) | ❌ (pas encore dans le frontend) |
 
-Le frontend désactive l'option pour les clusters k3s (détection par le nom). Le backend accepte le flag `expose` mais ne génère pas de sous-domaine différent selon le cluster — **ne pas activer manuellement `expose` via l'API pour une app sur k3s**.
+La zone `cloud-native-plat4k.me` est servie par Cloudflare (NS `*.ns.cloudflare.com`) ; le
+wildcard y pointe vers l'ingress d'AKS.
 
-### Ajouter le support sur k3s (future)
+Le frontend désactive l'option pour les clusters k3s (détection par le nom), mais pas le toggle
+de l'onglet Settings. Le backend accepte le flag `expose` mais ne génère pas de sous-domaine différent selon le cluster — **ne pas activer manuellement `expose` via l'API pour une app sur k3s**
+tant que son DNS et son HTTPS ne sont pas en place.
 
-```bash
-# 1. Installer nginx-ingress (Klipper LB prend l'IP publique de la VM automatiquement)
-helm install ingress-nginx ingress-nginx/ingress-nginx \
-  --namespace ingress-nginx --create-namespace \
-  --set controller.service.type=LoadBalancer \
-  --kubeconfig cnp-k3s.yaml
+### Support sur k3s : ce qui reste
 
-# 2. Récupérer l'IP assignée
-kubectl --kubeconfig cnp-k3s.yaml -n ingress-nginx \
-  get svc ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+Le contrôleur est déclaré dans `infra/oracle/k3s/main.tf` (procédure : README k3s, étape 7).
+Restent, pour une exposition complète :
 
-# 3. Ajouter un A record wildcard dans la zone Azure DNS existante
-#    *.k3s.cloud-native-plat4k.me → <IP VM Oracle>
-```
-
-Il faudra aussi mettre à jour `app_hostname()` dans `shared/models.py` et `appUrls.ts` pour tenir compte du cluster cible dans le sous-domaine généré, et mettre à jour le prédicat `clusterSupportsIngress` dans `frontend-new/src/utils/clusterUtils.ts`.
+1. Ouvrir 80/443 dans la security list OCI du subnet de la VM.
+2. DNS : soit des enregistrements A par app (`<slug>`, `dev.<slug>`) vers l'IP publique de la
+   VM, soit un sous-domaine par cluster (ex. `*.k3s.cloud-native-plat4k.me`). Le second impose
+   de mettre à jour `app_hostname()` dans `shared/models.py` et `appUrls.ts` pour tenir compte du
+   cluster cible, et le prédicat `clusterSupportsIngress` dans `frontend-new/src/utils/clusterUtils.ts`.
+3. HTTPS (cert-manager) : nécessaire aux SPA avec Keycloak, dont le login PKCE exige une origine sécurisée.
 
 ---
 
