@@ -18,34 +18,25 @@ Grafana est sur la VM OCI `cnp-control`. Voir ADR-0021 pour le détail de l'expo
 
 | Cas | URL | Auth requise |
 |---|---|---|
-| Iframes CNP (embed) | via l'endpoint `/api/v1/groups/{id}/grafana-url` | Token service account (injecté par le backend) |
-| Escape hatch "Voir tout dans Grafana" | Lien retourné par le même endpoint | Token service account (dans l'URL) |
+| Iframes CNP (embed) | via l'endpoint `/api/v1/groups/{id}/grafana-url` | JWT de 8 h signé par le backend (ADR-0028) |
+| Escape hatch "Voir tout dans Grafana" | Lien retourné par le même endpoint | Même JWT (dans l'URL) |
 | Administration / édition | https://grafana.cloud-native-plat4k.me/login | Oui — compte admin |
 
-L'accès anonyme est **désactivé** (`GF_AUTH_ANONYMOUS_ENABLED=false`). Grafana n'est pas accessible directement sans login. Les iframes et l'escape hatch fonctionnent via un token de service account (rôle Viewer, read-only) retourné par le backend CNP — seuls les utilisateurs authentifiés sur la CNP peuvent l'obtenir.
+L'accès anonyme est **désactivé** (`GF_AUTH_ANONYMOUS_ENABLED=false`). Grafana n'est pas accessible directement sans login. Les iframes et l'escape hatch passent par un JWT Viewer, signé par le backend CNP pour l'utilisateur connecté.
 
-Les credentials admin sont dans Vault sous `secret/cnp/platform` (clé `GRAFANA_ADMIN_PASSWORD`). En local/dev, le mot de passe par défaut est `changeme`.
+Le compte admin est `admin`. Son mot de passe vient de `GRAFANA_ADMIN_PASSWORD` dans le `.env` à la première initialisation de Grafana, et vaut `changeme` si la variable est absente.
 
-### Configurer le service account d'embed (une seule fois)
+### Activer l'authentification des iframes (une seule fois)
+
+Après le déploiement du code, sur la VM :
 
 ```bash
-# 1. Créer le service account
-SA_ID=$(curl -s -X POST https://grafana.cloud-native-plat4k.me/api/serviceaccounts \
-  -H "Content-Type: application/json" \
-  -u admin:<password> \
-  -d '{"name":"cnp-embed","role":"Viewer"}' | jq -r '.id')
-
-# 2. Générer le token
-TOKEN=$(curl -s -X POST "https://grafana.cloud-native-plat4k.me/api/serviceaccounts/${SA_ID}/tokens" \
-  -H "Content-Type: application/json" \
-  -u admin:<password> \
-  -d '{"name":"embed-token"}' | jq -r '.key')
-
-# 3. Stocker dans Vault
-vault kv patch secret/cnp/platform GRAFANA_EMBED_TOKEN="${TOKEN}"
+bash ~/cloud-native-plat4k/infra/grafana/setup-embed-jwt.sh
 ```
 
-Le token n'a pas de date d'expiration par défaut — il reste valide jusqu'à révocation manuelle.
+Le script demande le root token Vault, génère une paire de clés ES256, écrit la clé privée dans Vault et la clé publique dans le `.env`, puis recrée Grafana et le backend. `--rotate` remplace la paire de clés.
+
+Les commandes `vault kv patch`/`curl` plus bas utilisent `GRAFANA_ADMIN_PASSWORD` depuis Vault : ce secret n'y existe pas en prod, passez le mot de passe admin directement.
 
 ## Filtrage par groupe — comment ça marche
 
