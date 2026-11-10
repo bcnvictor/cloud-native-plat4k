@@ -3,6 +3,7 @@ import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCloud, IconCpu, Icon
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { MetricCard } from '@/components/MetricCard';
+import { AIFinOpsAdvisor } from '@/components/AIFinOpsAdvisor';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -271,6 +272,9 @@ export function OverviewTab() {
           </div>
         </Card>
       )}
+
+      {/* Conseiller FinOps IA (4K-46) */}
+      {app?.id && <AIFinOpsAdvisor appId={app.id} appName={app.name} />}
 
       {/* Quick access */}
       <Card>

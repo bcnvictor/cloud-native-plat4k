@@ -4,7 +4,7 @@ Covers the tool loop in AssistantService, RBAC scoping of PlatformTools, the
 admin app allow-list, page context resolution and conversation history.
 """
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -357,3 +357,82 @@ async def test_provider_quota_error_returns_429_with_message(client: AsyncClient
         )
     assert resp.status_code == 429
     assert "quota" in resp.json()["detail"].lower()
+
+
+# ── FinOps advisor tool (4K-46) ───────────────────────────────────────────────
+
+
+def _usage(cpu_p95: float, ram_max: float) -> dict:
+    def stats(avg, p95, mx):
+        return {"avg": avg, "p95": p95, "max": mx, "last": avg, "points": 96}
+
+    return {
+        "cpu_mcpu": stats(cpu_p95 / 2, cpu_p95, cpu_p95), "ram_mib": stats(ram_max, ram_max, ram_max),
+        "cpu_request_mcpu": 100.0, "cpu_limit_mcpu": 500.0,
+        "ram_request_mib": 128.0, "ram_limit_mib": 256.0, "pods": 1, "restarts": 0,
+    }
+
+
+_FINOPS_USAGE = {"prod": _usage(3.0, 40.0), "dev": _usage(1.0, 20.0)}
+
+
+def _patch_usage(usage: dict):
+    return patch("backend.services.finops_advisor_service.get_app_resource_usage",
+                 new=AsyncMock(return_value=usage))
+
+
+@pytest.mark.anyio
+async def test_finops_advice_tool_returns_reference_sizing(db_session: AsyncSession, dev_user: User):
+    await _seed(db_session, dev_user)
+    tools = PlatformTools(db_session, dev_user)
+    assert "get_finops_advice" in {
+        d["function"]["name"] for d in await tools.available_definitions()
+    }
+    with _patch_usage(_FINOPS_USAGE):
+        result = await tools.call("get_finops_advice", json.dumps({"app": "api-a"}))
+    text = result.text
+    assert "api-a" in text and "Environnement prod" in text and "Environnement dev" in text
+    assert "Proposition de référence" in text and "Requests : CPU 100 mCPU" in text
+    # The model is told to reuse the computed figures and never apply anything.
+    assert "ne refais pas les calculs" in text and "rien n'est appliqué automatiquement" in text
+
+
+@pytest.mark.anyio
+async def test_finops_advice_tool_filters_env_and_uses_page_app(
+    db_session: AsyncSession, dev_user: User
+):
+    await _seed(db_session, dev_user)
+    tools = PlatformTools(db_session, dev_user, page=PageContext(app_slug="api-a"))
+    with _patch_usage(_FINOPS_USAGE):
+        result = await tools.call("get_finops_advice", json.dumps({"env": "dev"}))
+    assert "Environnement dev" in result.text and "Environnement prod" not in result.text
+    bad = await tools.call("get_finops_advice", json.dumps({"env": "staging"}))
+    assert "Environnement inconnu" in bad.text
+
+
+@pytest.mark.anyio
+async def test_finops_advice_tool_without_metrics(db_session: AsyncSession, dev_user: User):
+    await _seed(db_session, dev_user)
+    tools = PlatformTools(db_session, dev_user)
+    with _patch_usage({}):
+        result = await tools.call("get_finops_advice", json.dumps({"app": "api-a"}))
+    assert "Aucune métrique" in result.text
+
+
+@pytest.mark.anyio
+async def test_finops_advice_tool_respects_scope_and_allow_list(
+    db_session: AsyncSession, dev_user: User
+):
+    await _seed(db_session, dev_user)
+    with _patch_usage(_FINOPS_USAGE) as usage:
+        foreign = await PlatformTools(db_session, dev_user).call(
+            "get_finops_advice", json.dumps({"app": "secret-b"}))
+        assert "introuvable" in foreign.text
+
+        db_session.add(AIGlobalSettings(id=1, app_data_access_enabled=True, allowed_app_ids=[]))
+        await db_session.commit()
+        cfg = await AISettingsService(db_session).effective_config()
+        refused = await PlatformTools(db_session, dev_user, cfg).call(
+            "get_finops_advice", json.dumps({"app": "api-a"}))
+        assert "non autorisé" in refused.text
+    usage.assert_not_awaited()  # Prometheus never queried for refused apps
