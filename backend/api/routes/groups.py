@@ -3,6 +3,7 @@ from typing import List
 from backend.api.deps import _access_level_to_tier, get_current_user
 from backend.api.schemas.members import MemberRead
 from backend.core.config import settings
+from backend.core.grafana_embed import create_grafana_embed_token
 from backend.db.models import Application, Event, GitLabGroupMember, User
 from backend.db.session import get_db
 from fastapi import APIRouter, Depends, Query
@@ -79,11 +80,11 @@ async def get_group_activity(
 async def get_group_grafana_url(
     gitlab_group_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     _EMPTY = {"dashboard_url": None, "panel_base_url": None}
 
-    if not settings.GRAFANA_URL or not settings.GRAFANA_DASHBOARD_UID or not settings.GRAFANA_EMBED_TOKEN:
+    if not settings.GRAFANA_URL or not settings.GRAFANA_DASHBOARD_UID:
         return _EMPTY
 
     result = await db.execute(
@@ -94,9 +95,12 @@ async def get_group_grafana_url(
     if not result.fetchall():
         return _EMPTY
 
+    token = create_grafana_embed_token(current_user.id)
+    if not token:
+        return _EMPTY
+
     base = settings.GRAFANA_URL.rstrip("/")
     uid = settings.GRAFANA_DASHBOARD_UID
-    token = settings.GRAFANA_EMBED_TOKEN
     gid = gitlab_group_id
 
     return {

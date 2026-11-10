@@ -102,9 +102,33 @@ async def _resolve_cnp_user_id(db: AsyncSession, gitlab_user_id: int) -> int | N
     return result.scalar_one_or_none()
 
 
-async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
-    """Upsert active members for one GitLab group; soft-revoke absent ones."""
+def _loses_console_tier(row: AppMember | GitLabGroupMember, new_level: int | None) -> bool:
+    """An active membership granting Maintainer+ drops below it (None: member left)."""
+    from backend.services.keycloak_service import level_grants_console
+
+    return (
+        row.status == MemberStatus.ACTIVE
+        and level_grants_console(row.access_level)
+        and not level_grants_console(new_level)
+    )
+
+
+async def _sync_group(
+    db: AsyncSession,
+    gl: Any,
+    group: GitLabGroup,
+    *,
+    lost_console_access: set[tuple[int, int]],
+) -> dict:
+    """Upsert active members for one GitLab group; soft-revoke absent ones.
+
+    Adds to `lost_console_access` the (app_id, cnp_user_id) pairs to re-check once
+    the caller has committed (keycloak_service.revoke_lost_console_access): no
+    Keycloak call inside the sync's transaction.
+    """
     stats = {"created": 0, "updated": 0, "revoked": 0}
+    # 4K-15/ADR-0027: the owning group can be what grants Maintainer+ on its apps.
+    lost_console_tier: set[int] = set()
 
     try:
         gl_group = await asyncio.to_thread(gl.groups.get, group.gitlab_group_id)
@@ -129,6 +153,8 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
         cnp_user_id = await _resolve_cnp_user_id(db, m.id)
         if m.id in existing:
             row = existing[m.id]
+            if _loses_console_tier(row, m.access_level) and (row.cnp_user_id or cnp_user_id):
+                lost_console_tier.add(row.cnp_user_id or cnp_user_id)
             row.access_level = m.access_level
             row.username = getattr(m, 'username', None)
             row.status = MemberStatus.ACTIVE
@@ -155,6 +181,8 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
     # Soft-revoke members absent from GitLab (never hard-delete)
     for gl_id, row in existing.items():
         if gl_id not in active_gl_ids and row.status == MemberStatus.ACTIVE:
+            if _loses_console_tier(row, None) and row.cnp_user_id:
+                lost_console_tier.add(row.cnp_user_id)
             row.status = MemberStatus.LEFT
             row.updated_at = datetime.now(timezone.utc)
             stats["revoked"] += 1
@@ -163,14 +191,43 @@ async def _sync_group(db: AsyncSession, gl: Any, group: GitLabGroup) -> dict:
                                  payload={"cnp_user_id": row.cnp_user_id, "group_name": group.name,
                                           "group_id": group.gitlab_group_id})
 
+    if lost_console_tier and lost_console_access is not None:
+        result = await db.execute(
+            select(Application.id).where(
+                Application.owning_gitlab_group_id == group.gitlab_group_id,
+                Application.auth_enabled.is_(True),
+            )
+        )
+        for app_id in result.scalars().all():
+            lost_console_access.update((app_id, cnp_user_id) for cnp_user_id in lost_console_tier)
+
     group.synced_at = datetime.now(timezone.utc)
     return stats
 
 
-async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
-    """Upsert active members and pending invitations for one GitLab project."""
+async def _revoke_lost_console_access(db: AsyncSession, pairs: set[tuple[int, int]]) -> None:
+    """Best-effort, after commit: see keycloak_service.revoke_lost_console_access."""
+    if not pairs:
+        return
+    from backend.services.keycloak_service import revoke_lost_console_access
+
+    await revoke_lost_console_access(db, pairs)
+
+
+async def _sync_project(
+    db: AsyncSession,
+    gl: Any,
+    app: Application,
+    *,
+    lost_console_access: set[tuple[int, int]],
+) -> dict:
+    """Upsert active members and pending invitations for one GitLab project.
+
+    Collects pairs to revoke after commit like _sync_group.
+    """
     stats = {"created": 0, "updated": 0, "revoked": 0}
     project_id = app.gitlab_project_id
+    lost_console_tier: set[int] = set()
 
     try:
         gl_project = await asyncio.to_thread(gl.projects.get, project_id)
@@ -204,6 +261,11 @@ async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
         cnp_user_id = await _resolve_cnp_user_id(db, m.id)
         if m.id in existing_by_gl_id:
             row = existing_by_gl_id[m.id]
+            # 4K-15/ADR-0027: dropping below Maintainer may lose Keycloak console
+            # access (gated on the same tier). Check before
+            # overwriting access_level below.
+            if _loses_console_tier(row, m.access_level) and (row.cnp_user_id or cnp_user_id):
+                lost_console_tier.add(row.cnp_user_id or cnp_user_id)
             row.access_level = m.access_level
             row.status = MemberStatus.ACTIVE
             if cnp_user_id:
@@ -243,6 +305,8 @@ async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
     # Soft-revoke absent active members
     for gl_id, row in existing_by_gl_id.items():
         if gl_id not in active_gl_ids and row.status == MemberStatus.ACTIVE:
+            if _loses_console_tier(row, None) and row.cnp_user_id:
+                lost_console_tier.add(row.cnp_user_id)
             row.status = MemberStatus.LEFT
             row.updated_at = datetime.now(timezone.utc)
             stats["revoked"] += 1
@@ -253,6 +317,9 @@ async def _sync_project(db: AsyncSession, gl: Any, app: Application) -> dict:
             row.status = MemberStatus.LEFT
             row.updated_at = datetime.now(timezone.utc)
             stats["revoked"] += 1
+
+    if lost_console_access is not None and app.auth_enabled:
+        lost_console_access.update((app.id, cnp_user_id) for cnp_user_id in lost_console_tier)
 
     return stats
 
@@ -270,10 +337,11 @@ async def run_gitlab_sync(db: AsyncSession) -> dict:
     }
 
     await _discover_subgroups(db, gl)
+    lost_console_access: set[tuple[int, int]] = set()
 
     result = await db.execute(select(GitLabGroup))
     for group in result.scalars().all():
-        s = await _sync_group(db, gl, group)
+        s = await _sync_group(db, gl, group, lost_console_access=lost_console_access)
         for k in total["groups"]:
             total["groups"][k] += s[k]
 
@@ -281,11 +349,13 @@ async def run_gitlab_sync(db: AsyncSession) -> dict:
         select(Application).where(Application.gitlab_project_id.isnot(None))
     )
     for app in result.scalars().all():
-        s = await _sync_project(db, gl, app)
+        s = await _sync_project(db, gl, app, lost_console_access=lost_console_access)
         for k in total["projects"]:
             total["projects"][k] += s[k]
 
     await db.commit()
+    # 4K-15/ADR-0027: Keycloak is called only once the sync is committed.
+    await _revoke_lost_console_access(db, lost_console_access)
 
     logger.info(
         "GitLab sync complete — groups: +%d ~%d -%d | projects: +%d ~%d -%d",
@@ -332,12 +402,13 @@ async def run_gitlab_sync_for_user(db: AsyncSession, user_id: int) -> dict:
         await db.execute(stmt)
 
     # Sync each group's member list
+    lost_console_access: set[tuple[int, int]] = set()
     group_ids = {g.id for g in gl_groups}
     res = await db.execute(
         select(GitLabGroup).where(GitLabGroup.gitlab_group_id.in_(group_ids))
     )
     for group in res.scalars().all():
-        s = await _sync_group(db, gl, group)
+        s = await _sync_group(db, gl, group, lost_console_access=lost_console_access)
         for k in total["groups"]:
             total["groups"][k] += s[k]
 
@@ -362,11 +433,12 @@ async def run_gitlab_sync_for_user(db: AsyncSession, user_id: int) -> dict:
         apps_to_sync.setdefault(app.id, app)
 
     for app in apps_to_sync.values():
-        s = await _sync_project(db, gl, app)
+        s = await _sync_project(db, gl, app, lost_console_access=lost_console_access)
         for k in total["projects"]:
             total["projects"][k] += s[k]
 
     await db.commit()
+    await _revoke_lost_console_access(db, lost_console_access)
     logger.info(
         "User sync complete (user_id=%d) — groups: +%d ~%d -%d | projects: +%d ~%d -%d",
         user_id,

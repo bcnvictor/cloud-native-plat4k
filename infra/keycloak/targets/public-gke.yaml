@@ -1,0 +1,7 @@
+profile: public
+instance_key: public-02
+context: cnp-gke
+cnp_cluster_name: cnp-gke
+namespace: keycloak-public-02
+release: keycloak
+storage_class: standard-rwo

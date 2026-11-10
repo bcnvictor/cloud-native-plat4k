@@ -1,0 +1,460 @@
+# ADR-0027 : Service d'authentification Keycloak injectable dans les apps
+
+## Statut
+
+Proposed
+- Date : 2026-09-24
+- Ticket : 4K-15
+- Mise en service : code fusionné en mode dormant (PR #51 : `KEYCLOAK_ENABLED=false`, aucune
+  instance enregistrée). Chaque instance est validée en live avant son activation (k3s, puis
+  AKS, puis GKE), voir le [guide de validation](../guides/keycloak-deployment-validation.md).
+
+## Contexte
+
+L'étape "Services" du wizard de création d'app (`frontend-new/src/pages/group/app/NewApp/Step2Services.tsx`)
+propose depuis longtemps une carte "Keycloak" grisée ("Soon") à côté de PostgreSQL (implémenté)
+et Redis (hors scope). Aucune brique Keycloak n'existe aujourd'hui côté plateforme : ni
+instance, ni provisioning backend, ni code d'auth dans les templates.
+
+Le besoin : permettre à une équipe qui crée une app CNP (scaffoldée depuis `cnp-templates/*`
+ou onboardée depuis un repo GitLab existant) d'obtenir en quelques secondes un fournisseur
+d'identité OIDC pour son app — sans que l'équipe ait à opérer elle-même un Keycloak, et sans
+que CNP ait besoin de comprendre le code de l'app.
+
+Deux familles d'apps doivent être couvertes (`Application.origin`, cf. ADR-0002/ADR-0014) :
+- `scaffolded` : CNP contrôle le repo et le chart Helm, peut embarquer du code d'auth dormant ;
+- `onboarded` : CNP ne contrôle que ce qui passe par l'infra (Vault, gitops, CI) — pas le code.
+
+Le mode d'import externe historique (`origin == "imported"`, route `POST /apps/import`,
+`ApplicationExternalImportRequest`) n'existe plus côté produit : il n'est ni concerné ni
+modifié par cet ADR.
+
+En parallèle de ce besoin, trois bugs préexistants (indépendants de Keycloak) empêchent déjà
+la chaîne "Vault → ESO → pod" de fonctionner pour n'importe quelle variable d'environnement
+applicative (ADR-0025) : le wizard n'envoie pas l'étape Services au backend, les charts
+scaffoldés ne consomment pas le Secret ESO, et les `ExternalSecret` poussés dans `cnp-gitops`
+ne sont appliqués par aucune Application ArgoCD. Ces bugs sont corrigés en prérequis de cet
+ADR (voir §"Correctifs prérequis" plus bas) : sans eux, Keycloak livrerait ses `OIDC_*` dans
+Vault sans jamais qu'ils atteignent un pod.
+
+Alternatives évaluées :
+- **Une instance Keycloak dédiée par app** (Keycloak Operator, un pod + une base par app et
+  par env) : écartée. Coût ~1-2 Go RAM par app (JVM + Postgres, ×2 environnements),
+  provisioning lent (minutes), N instances à patcher/superviser pour un gain d'isolation
+  qu'un realm offre déjà. Réservée comme option "dedicated" future sans rupture de contrat
+  côté app (les variables `OIDC_*` restent les mêmes).
+- **Un realm par groupe/équipe** (partagé entre toutes les apps de l'équipe) : écarté au
+  profit d'un realm par app **et par environnement**, pour qu'une équipe puisse expérimenter
+  en dev sans risquer la prod, et qu'une app supprimée n'emporte pas les identités d'une
+  autre app de la même équipe.
+- **Recréation automatique d'un realm supprimé** : refusée explicitement par le product
+  owner — le realm appartient à l'équipe ; une suppression (volontaire ou accidentelle) ne
+  doit pas être compensée silencieusement par la plateforme.
+- **Injection de code dans les apps importées** : jugée peu fiable sur du code arbitraire
+  (langage inconnu, structure de projet inconnue, risque de casser un repo qui n'appartient
+  pas à CNP). Choix d'un mode "credentials + documentation" pour les apps importées (mode A),
+  un mode "zéro code" par reverse-proxy (oauth2-proxy, mode B) étant reporté.
+- **Écrire les credentials Keycloak en clair dans `chart/values.yaml`** (comme le fait
+  aujourd'hui le mot de passe PostgreSQL généré au scaffold) : refusé — c'est une dette
+  connue qu'on ne veut pas reproduire. Les credentials OIDC transitent uniquement par Vault.
+
+## Décision
+
+Nous avons décidé de provisionner **une instance Keycloak partagée par cluster**, avec
+**un realm par app et par environnement** (`{app_slug}-dev`, `{app_slug}-prod`), et de livrer
+les credentials aux apps exclusivement via le pipeline Vault → ESO → Secret K8s déjà en place
+pour les variables d'environnement applicatives (ADR-0024, ADR-0025).
+
+### 1. Architecture réseau et realms
+
+La plateforme garde un registre `keycloak_instances`, associé aux clusters CNP.
+Chaque activation lie durablement l'app à `auth_instance_key` avant le premier appel
+Keycloak. Changer ensuite le cluster cible de l'app ne change pas son issuer.
+Les apps historiques activées sans association conservent la configuration globale.
+Une nouvelle activation privilégie l'instance du cluster ; une instance configurée
+mais indisponible ne déclenche pas de repli vers une autre instance.
+
+Le domaine commun utilise des préfixes :
+`https://auth.cloud-native-plat4k.me/clusters/public-01` (AKS),
+`https://auth.cloud-native-plat4k.me/clusters/public-02` (GKE) et
+`https://auth.cloud-native-plat4k.me/clusters/private-01` (k3s).
+NGINX sur la VM CNP conserve ce préfixe vers le service privé Tailscale de l'instance.
+`master` et le management sont bloqués publiquement. Les consoles des realms apps
+restent accessibles. Ce routage distribue des instances indépendantes ; aucune
+bascule ou réplication entre clouds n'est prévue.
+
+Le chart commun et la commande de bootstrap sont décrits dans
+[`infra/keycloak/README.md`](../../infra/keycloak/README.md). Les profils public/privé
+ne fixent pas de fournisseur. Le PVC et les secrets sont conservés à la relance.
+Les résultats effectivement vérifiés figurent dans le
+[guide de validation](../guides/keycloak-deployment-validation.md).
+
+
+- `realm master` : réservé aux admins plateforme et au service account backend
+  `cnp-provisioner` (client confidential, service account activé, rôle `admin` du realm
+  master — tranché par le smoke test local du Lot 7 ; le rôle est accordé par
+  `ensure_provisioner` dans `infra/keycloak/lib/keycloak_api.py`, l. 66-69).
+  **Aucun compte d'équipe ne vit dans `master`.**
+- `realm {app_slug}-{env}` : créé au provisioning. Contient :
+  - un client `{app_slug}` pour l'app elle-même (public + PKCE `S256` si le framework est une
+    SPA — `react-vite` — sinon confidential) ;
+  - un protocol mapper `oidc-audience-mapper` qui force `aud` à contenir le `client_id` (par
+    défaut Keycloak met `aud: account`, inutilisable pour la validation locale du token) ;
+  - des comptes console d'équipe créés à la demande, avec un **rôle d'équipe restreint**
+    (ci-dessous) sur **ce realm uniquement**, via `{public_url}/admin/{realm}/console/`
+    (`{public_url}` défini au §4).
+
+**Périmètre du compte console d'équipe (décision produit, option B).** Le compte reçoit
+exactement ces rôles du client `realm-management`, rien d'autre
+(`TEAM_CONSOLE_ROLES` dans `backend/keycloak/client.py`) :
+
+| Domaine | Rôles |
+|---|---|
+| Lecture du realm (nécessaire à la console) | `view-realm` |
+| Utilisateurs et groupes | `view-users`, `query-users`, `query-groups`, `manage-users` |
+| Clients (redirect URIs, web origins, rôles client, clients supplémentaires) | `view-clients`, `query-clients`, `manage-clients` |
+| Événements de connexion et d'administration | `view-events`, `manage-events` |
+| Fournisseurs d'identité (login social) | `view-identity-providers`, `manage-identity-providers` |
+
+Exclus : `realm-admin`, `manage-realm`, `impersonation`, `create-client`,
+`manage-authorization`, `view-authorization`, `query-realms` et les rôles
+`*-organizations`. Pourquoi : avec `realm-admin` (qui contient `manage-realm`), une équipe
+pouvait renommer ou supprimer son realm, ce qui ouvrait l'adoption par course d'un nom,
+le squat d'un nom libéré, l'évasion de la révocation par renommage et l'assouplissement de
+la politique de mot de passe. **La suppression et la recréation d'un realm passent
+désormais uniquement par CNP** (`deprovision` à la suppression de l'app, « Recréer » au
+§5) ou par un admin plateforme.
+
+Les rôles sont attribués directement au compte, pas par un rôle composite : un composite
+de realm ne serait modifiable qu'avec `manage-realm`, mais l'attribution directe évite un
+objet de plus à protéger. À chaque octroi d'accès console (`set_team_console_roles`), CNP
+ajoute les rôles manquants et retire tout autre rôle `realm-management` attribué
+directement au compte (par exemple un `realm-admin` donné à la main) : le résultat est
+déterministe. Un compte console créé avant ce changement garde `realm-admin` jusqu'à son
+prochain octroi : aucun n'existe en prod (Keycloak dormant) ; sur un realm de validation,
+refaire un octroi.
+
+Vérifié sur Keycloak 26.8.0 avec un compte créé par le vrai code CNP
+(`grant_console_access`), connecté par la vraie console (mot de passe temporaire changé,
+profil complété, page Users), et le jeton de la console elle-même (banc
+`infra/keycloak/verify.sh --local`, `team_role_probes` dans `infra/keycloak/tests/smoke.py`) :
+
+| Tentative | Réponse |
+|---|---|
+| Lister et créer des utilisateurs, lister et créer des clients (avec service account), lire les événements | 200 / 201 |
+| Renommer le realm (`PUT /admin/realms/{realm}` avec un autre `realm`) | 403 |
+| Supprimer le realm | 403 |
+| Assouplir la politique de mot de passe, couper la protection brute-force, changer le thème de login, modifier le user profile | 403 |
+| S'attribuer, ou attribuer à un autre utilisateur, `manage-realm`, `realm-admin` ou `impersonation` | 403 |
+| Attribuer `realm-admin` à un groupe ; ajouter `manage-realm` aux rôles par défaut du realm | 403 |
+| Ajouter `manage-realm` au composite d'un rôle de `realm-management` ; modifier le client `realm-management` | 403 |
+| Attribuer `manage-realm` au service account d'un client | 403 |
+| Se faire passer pour un autre utilisateur | 403 |
+| Lire un autre realm ou ses utilisateurs | 403 |
+
+Vérifié aussi en exploration sur la même version : un jeton obtenu par un client créé par
+l'équipe, porteur d'un mapper « hardcoded role » ou « hardcoded claim » qui ajoute
+`manage-realm`, ne permet ni de renommer ni de reconfigurer le realm (403) ; un mapper de
+fournisseur d'identité qui attribue `realm-admin` est refusé (403) ; créer un realm est
+refusé (403). Keycloak laisse le compte s'attribuer `create-client`, `query-realms` et
+`manage-authorization`, que `manage-clients` couvre déjà côté Keycloak ; même avec ces
+trois rôles en plus, renommage, suppression, réglages et escalades restent refusés, et CNP
+les retire au prochain octroi. Limite connue : avec `manage-clients`, une équipe peut
+réactiver la connexion directe par mot de passe du client `admin-cli` de son realm (§3),
+ou créer un autre client qui l'autorise, et obtenir ainsi un jeton d'administration par
+mot de passe ; cela ne concerne que son propre realm et ne donne pas plus de droits que la
+console.
+
+Ce que les équipes perdent : modifier elles-mêmes les réglages du realm (politique de mot
+de passe, protection brute-force, thèmes, email/SMTP, options de login, flux
+d'authentification, user profile, rôles de realm, clés), renommer ou supprimer leur realm.
+Ces changements passent par un admin plateforme.
+
+### 2. Droits d'accès à la console Keycloak d'une app
+
+Alignés sur les tiers CNP existants (ADR-0017, dépendance `require_tier` dans
+`backend/api/deps.py`) :
+
+| Action | Tier requis (dev) | Tier requis (prod) |
+|---|---|---|
+| Voir le statut (`GET /auth`) | Viewer+ | Viewer+ |
+| Activer Keycloak sur une app | Maintainer+ | Maintainer+ |
+| Obtenir un accès console temporaire | Maintainer+ | Maintainer+ |
+| Recréer un realm supprimé | Maintainer+ | **Owner uniquement** |
+
+Viewer et Developer voient le statut (realm actif / supprimé / non activé) mais n'ont aucune
+action, cohérent avec le fait que la console Keycloak d'un realm permet de gérer les secrets
+et l'auth de l'app — une action à réserver aux mêmes tiers que la gestion des membres et le
+déploiement prod. L'accès console et la recréation d'un realm exigent en plus que Keycloak
+soit activé sur l'app (`auth_enabled`), sinon 409 : CNP ne crée jamais de realm, de client
+ni de compte console pour une app qui n'utilise pas Keycloak.
+
+### 3. Accès console V1 : compte local, mot de passe temporaire
+
+Le login via GitLab brokering (SSO fédéré depuis le realm `master` ou depuis GitLab OAuth) est
+**reporté** — évolution documentée en fin d'ADR. En V1, l'accès console fonctionne ainsi :
+1. Un Owner/Maintainer clique "Obtenir un accès" (UI) ou lance `cnp keycloak console` (CLI)
+   pour un env donné.
+2. Le backend crée (ou réactive) un compte console local au realm, avec le rôle d'équipe
+   restreint du §1, mot de passe temporaire généré côté serveur (`temporary: true` →
+   changement imposé au 1er login).
+   **Identité du compte** — un realm contient aussi les utilisateurs finaux de l'app, CNP ne
+   doit jamais s'approprier l'un de leurs comptes :
+   - `username` = `cnp.<partie locale de l'email>.<id user CNP>` (ex. `cnp.alice.42`) :
+     unique grâce à l'id (pas de collision `alice@a.com` / `alice@b.com`), lisible, et le
+     préfixe `cnp.` est réservé aux comptes plateforme ;
+   - attributs utilisateur `cnp_user_id` et `cnp_managed=true` : **toute recherche passe par
+     `cnp_user_id`**, jamais par le username. Si le username existe déjà sans l'attribut
+     correspondant (compte créé à la main), CNP refuse (409) au lieu de réinitialiser le mot
+     de passe et donner les rôles console à ce compte ;
+   - pas d'email sur le compte console : les realms interdisent les emails en double, et le
+     développeur peut déjà avoir un compte utilisateur final avec le même email ;
+   - Keycloak 24+ (user profile déclaratif) ignore les attributs non déclarés : CNP passe la
+     politique `unmanagedAttributePolicy` du realm à `ADMIN_EDIT` (attributs visibles et
+     modifiables par les admins seulement).
+   **Connexion par la console uniquement** : dans chaque realm créé par CNP, le client
+   intégré `admin-cli` a la connexion directe par mot de passe désactivée
+   (`directAccessGrantsEnabled: false`, réappliqué à chaque `provision`). Un mot de passe
+   posté au token endpoint avec `client_id=admin-cli` et `grant_type=password` est refusé
+   (400 `unauthorized_client`, vérifié sur 26.8.0) ; la console (client
+   `security-admin-console`, code + PKCE) et le login des apps ne changent pas.
+3. La réponse contient `{console_url, username, temporary_password}` **une seule fois** — ce
+   mot de passe n'est jamais loggé, jamais mis en cache (react-query : pas de `staleTime`,
+   invalidation immédiate), jamais stocké en base côté CNP.
+
+### 4. Distribution des credentials applicatifs : uniquement via Vault
+
+Au provisioning, le backend écrit dans Vault (`vault_client.patch_secret`, jamais un
+`put_secret` qui écraserait les variables déjà posées par l'utilisateur) sur le même chemin
+que les variables d'environnement applicatives (ADR-0025) :
+
+```
+secret/apps/{group_slug}/{app_slug}/{env}
+  OIDC_ISSUER_URL     = {public_url}/realms/{app_slug}-{env}
+  OIDC_CLIENT_ID      = {app_slug}
+  OIDC_CLIENT_SECRET  = <uniquement si client confidential>
+```
+
+`{public_url}` est l'URL publique de l'instance liée à l'app, préfixe compris
+(`https://auth.cloud-native-plat4k.me/clusters/{instance_key}`, cf. §1), ou
+`KEYCLOAK_PUBLIC_URL` pour une app historique activée sans association.
+
+Ce chemin est le même que celui utilisé par le CRUD de variables d'environnement (ADR-0025) et
+par l'`ExternalSecret` généré par le backend (ADR-0024) — Keycloak ne réutilise pas seulement
+le *pattern* Vault, il écrit **dans le même secret KV** que les variables saisies par
+l'utilisateur. Conséquences :
+- aucun nouveau `SecretStore`/`ExternalSecret` à créer pour Keycloak : le Secret K8s
+  `{app_slug}-env` que l'app consomme déjà via `envFrom` reçoit aussi les clés `OIDC_*` ;
+- les clés `OIDC_*` sont réservées **pour les apps où Keycloak est activé** :
+  `EnvVarService.list_keys` les marque `managed: true` et l'API refuse (409) toute tentative de
+  les modifier ou supprimer via le CRUD variables — elles ne sont écrites que par
+  `KeycloakService`. Une app sans Keycloak (ex. app onboardée avec son propre IdP) garde le
+  contrôle de ces noms ; activer Keycloak sur une app qui les définit déjà est refusé (409)
+  plutôt que de les écraser.
+- rien n'est jamais écrit en clair dans un repo git (ni `values.yaml`, ni `cnp-gitops`) —
+  contrairement au pattern PostgreSQL actuel (mot de passe généré dans `values.yaml` commité),
+  qui reste une dette connue et n'est pas reproduit ici.
+
+### 5. Cycle de vie d'un realm
+
+- **Provisioning** (`KeycloakService.provision`) : déclenché après `_save_app` (best-effort —
+  l'app existe même si Keycloak échoue) quand `"keycloak"` est présent dans les `services`
+  demandés au scaffold/onboard. **Idempotent étape par étape** : crée le realm s'il manque
+  (`registrationAllowed=false`, protection brute-force de Keycloak activée avec ses réglages par
+  défaut — verrouillage temporaire, jamais permanent —, politique de mot de passe
+  `length(12) and notUsername`, id interne `cnp-{app_id}-{env}`, attribut `cnp_app_id`). Si
+  la création répond 409 (nom ou id déjà pris, par exemple un autre realm qui a pris le nom
+  entre la lecture et la création), CNP relit le realm et vérifie son propriétaire (id et
+  attribut) **avant** de créer le client ou d'écrire dans Vault : un realm étranger, ou l'id
+  de l'app déjà porté par un realm d'un autre nom, donne un 409 explicite. Puis CNP s'assure
+  que le client, le mapper audience et les `OIDC_*` dans Vault existent ; `provision` échoue
+  si le realm n'est pas `active` à la fin (l'activation reste alors en échec, jamais
+  `auth_provisioned=true`). Un provisioning interrompu (realm créé, client
+  ou Vault en échec, `auth_provisioned=false`) se termine donc par un simple "Retry" (UI) /
+  `cnp keycloak enable` — sans toucher au reste du realm (users, rôles, réglages). Les
+  redirect URIs du client sont dérivées de `app_hostname(slug, env)` si `app.expose` est
+  actif, plus `http://localhost:*` en dev ; `webOrigins` vaut `+` (origines déduites des
+  redirect URIs — une valeur avec chemin ou joker ne correspond jamais à un header `Origin`
+  et casserait l'échange de token CORS du template SPA).
+- **Propriété d'un realm** : chaque realm créé par CNP reçoit un id interne choisi par CNP
+  (`cnp-{app_id}-{env}`) et porte l'attribut `cnp_app_id`. Un realm du bon nom sans ces deux
+  marqueurs (réutilisation d'un slug après un cleanup raté, realm créé à la main, realm d'une
+  autre app renommé) est `foreign` : CNP ne l'adopte pas, ne le complète pas, n'y donne aucun
+  accès et ne le supprime pas (409 — un admin plateforme doit trancher). L'attribut seul ne
+  suffit pas : un compte qui a `manage-realm` (admin plateforme, ou équipe d'un realm créé
+  avant le rôle restreint du §1) peut renommer un realm et réécrire ses attributs
+  (`PUT /admin/realms/{realm}`), mais Keycloak ne change jamais l'id d'un realm, même au
+  renommage (vérifié sur 26.8.0). Le compte console d'équipe ne peut plus le faire (§1) :
+  l'id reste une défense en profondeur.
+- **Unicité de l'id CNP : une base CNP par instance Keycloak.** `cnp-{app_id}-{env}` n'est
+  unique qu'à l'intérieur d'une base CNP : deux bases (une base de dev, une base réinitialisée
+  ou restaurée d'une ancienne sauvegarde) attribuent les mêmes `app_id` à des apps
+  différentes. Une telle base pointée vers une instance de prod reconnaîtrait comme siens les
+  realms d'autres apps (accès console, `OIDC_*` dans Vault, suppression par `deprovision`).
+  **Ne jamais enregistrer une instance Keycloak de prod dans une base CNP de dev ou
+  réinitialisée** ; une instance de dev ou de test a sa propre base CNP (c'est le cas du banc
+  `verify.sh --local`).
+- **États exposés** (`KeycloakEnvStatus.state`) : `active`, `missing` (realm supprimé →
+  "Recréer" proposé), `foreign`, `unknown` (Keycloak injoignable ou désactivé). `unknown`
+  n'est jamais présenté comme une suppression : aucun bouton destructif dans ce cas.
+- **Suppression d'un realm** : les équipes ne peuvent plus supprimer leur realm (§1). Un
+  realm ne disparaît que par CNP (`deprovision` à la suppression de l'app), par un admin
+  plateforme, ou par une perte de la base Keycloak. **Aucune recréation automatique** — CNP détecte l'absence (`state == "missing"`) et affiche
+  `missing` dans l'UI/CLI, avec un bouton/commande "Recréer" explicite qui relance
+  `provision` sur un realm vierge (nouveaux users, nouveau `client_secret`, nouveau secret
+  Vault). Dev : Owner/Maintainer. Prod : Owner uniquement — cohérent avec le fait que
+  recréer un realm prod invalide tous les tokens et sessions actifs de l'app en production.
+- **Retrait d'un membre / perte de tier Owner-Maintainer** : `KeycloakService.revoke_member`
+  best-effort, supprime des deux realms de l'app le compte console portant son `cnp_user_id`
+  (robuste à un changement d'email ou de username). Limite : un compte console peut donner
+  ses propres rôles à d'autres comptes de son realm (Keycloak autorise l'attribution d'un
+  rôle que l'on détient) ; CNP ne révoque que les comptes qu'il a créés. Déclencheurs :
+  dès qu'une appartenance qui donnait Maintainer+ baisse sous ce niveau ou disparaît —
+  synchronisation des membres d'un projet (`gitlab_sync_service._sync_project`) ou du groupe
+  propriétaire (`_sync_group`), rétrogradation via `AppService.add_member` —, CNP recalcule le
+  tier effectif (`tier_service.get_effective_tier` : meilleur des deux appartenances) et ne
+  révoque que s'il est passé sous Maintainer : un membre resté Maintainer par le groupe garde
+  son accès. La désactivation d'un utilisateur CNP (`PATCH /users/{id}`, `is_active=false`)
+  révoque ses comptes console sur toutes les apps où Keycloak est actif. Un admin CNP passe
+  le contrôle de tier (`require_tier`) et peut donc obtenir un accès console sur n'importe
+  quelle app : rétrogradé (`role` admin → autre), il ne garde ses comptes console que sur les
+  apps où son tier effectif reste Maintainer+. **Toujours après le commit** : la synchronisation collecte les paires (app, utilisateur) et ne révoque qu'une
+  fois ses changements commités (`run_gitlab_sync`, `run_gitlab_sync_for_user`) ; `PATCH
+  /users/{id}` révoque dans une tâche de fond (`BackgroundTasks`, session dédiée) après sa
+  réponse. Le tier lu est donc l'état commité, et aucun verrou de ligne n'est tenu pendant un
+  appel réseau à Keycloak. Toujours best-effort : aucun appel à Keycloak tant qu'il est
+  inactif pour l'app, et un échec Keycloak ne fait jamais échouer la synchronisation ni la
+  requête.
+- **Suppression de l'app** (`AppService.delete_app`) : `KeycloakService.deprovision` supprime
+  les deux realms (seulement s'ils appartiennent à l'app : id interne et `cnp_app_id`), best-effort, comme le reste du cleanup de `delete_app` (gitops, GitLab
+  project, Vault env vars) — un échec Keycloak n'empêche pas la suppression de l'app.
+
+### 6. Apps importées (`origin == "onboarded"`) : mode A
+
+Même provisioning (realm, client, écriture Vault) que les apps scaffoldées — l'app importée
+reçoit un statut Keycloak, une console, des credentials dans Vault, exactement comme une app
+scaffoldée. La différence est qu'aucun code n'est injecté dans le repo de l'app (CNP ne
+contrôle pas ce code). À la place :
+- une documentation dédiée (`docs/guides/keycloak-app-auth.md`) explique comment consommer
+  les variables `OIDC_*` dans chaque stack (FastAPI, Express, Go, Spring, SPA) ;
+- le backend vérifie une fois, à l'onboarding avec Keycloak demandé, si le chart du repo
+  importé référence bien `envFrom` → `{slug}-env` (lecture best-effort de
+  `chart/templates/*.yaml` via le bot GitLab ; vérification non refaite ensuite). Si absent,
+  un avertissement `auth_warnings: ["chart_missing_envfrom"]` est exposé
+  par l'API et affiché dans l'UI/CLI avec un lien vers la doc — **pas de MR automatique** en
+  V1 (le mode B, oauth2-proxy en frontal, zéro code, est hors scope et pourrait lever cette
+  limitation plus tard).
+
+### 7. Templates : code d'auth dormant
+
+Les 4 templates (`python-fastapi`, `node-express`, `go`, `react-vite`) embarquent un helper de
+validation JWT (JWKS + vérif `iss`/`exp`/`aud`) et une route d'exemple protégée (`/me`),
+**activés uniquement si `OIDC_ISSUER_URL` est défini** dans l'environnement du pod — sinon le
+code reste inerte et l'app fonctionne exactement comme avant. `/health` reste toujours public.
+Un même template sert donc pour une app avec ou sans Keycloak — pas de bifurcation au moment
+du scaffold.
+
+## Correctifs prérequis (Lot 1 du plan d'exécution)
+
+Trois bugs existants et indépendants de Keycloak bloquaient déjà la chaîne de livraison des
+variables d'environnement (ADR-0025) et auraient empêché Keycloak de livrer quoi que ce soit :
+
+1. **Wizard → backend** : `Step2Services`/`index.tsx` construisait un état `step2` jamais
+   envoyé au backend (`ApplicationScaffoldRequest.scaffolding` restait `None`). Corrigé :
+   le front construit et envoie `scaffolding.services` (scaffold) / `services` (onboard,
+   nouveau champ sur `ApplicationOnboardRequest`), validés côté backend contre une liste
+   blanche `{"postgresql", "keycloak"}`. Le wizard n'envoie que `keycloak` : la tuile
+   Database y est grisée, PostgreSQL au scaffold reste disponible par la CLI et l'API.
+2. **Chart → pod** : `chart/templates/deployment.yaml` des 4 templates ne déclarait ni
+   `envFrom` vers le Secret ESO `{app_slug}-env`, ni l'annotation Reloader
+   (`reloader.stakater.com/auto: "true"`) — alors qu'ADR-0024 §3 et ADR-0025 §6 décrivaient ce
+   comportement comme déjà implémenté. Corrigé dans les 4 templates ; les apps déjà
+   scaffoldées avant ce correctif gardent leur ancien chart (le template n'est copié qu'une
+   fois) — migration manuelle ou ticket de suivi pour ces apps, non couvert automatiquement
+   ici.
+3. **Gitops → cluster** : les `ExternalSecret` poussés par le backend dans
+   `apps/{cluster}/{app}/externalsecret-{env}.yaml` n'étaient référencés par aucune Application
+   ArgoCD (la root-app ne scanne que `argocd/`, et la source `ref: gitops` des Applications
+   générées ne sert qu'à résoudre des `valueFiles`, pas à déployer des manifests). Corrigé en
+   déplaçant ces manifests vers `apps/{cluster}/{app}/platform/{env}/` et en ajoutant une 3e
+   source `path: apps/<cluster>/<app>/platform/<env>` à l'Application ArgoCD générée par
+   `update-gitops` (`cnp-ci-modules/base/pipeline.yml`), avec migration idempotente (`yq`) des
+   Applications déjà existantes. Un script one-shot
+   (`cloud-native-plat4k/scripts/migrate_externalsecrets_platform_dir.py`, `--dry-run` par
+   défaut) migre les manifests déjà présents dans `cnp-gitops` vers le nouvel emplacement — à
+   exécuter manuellement par un humain sur le vrai `cnp-gitops` (non exécuté par cet agent,
+   voir rapport d'exécution).
+
+Voir addenda courts en fin d'ADR-0024 et ADR-0025 pour le détail de ces deux derniers points.
+
+## Évolutions futures (hors scope de cet ADR)
+
+- **Login GitLab brokering** : fédérer le realm `master` (ou chaque realm d'app) sur GitLab
+  OAuth pour que les admins d'équipe se connectent à la console Keycloak avec leur compte
+  GitLab/CNP existant, sans mot de passe local temporaire.
+- **Mode B (oauth2-proxy)** : reverse-proxy devant les apps importées pour leur apporter une
+  auth Keycloak sans toucher à leur code (zéro injection), levant la limitation du mode A pour
+  les apps dont le chart ne peut pas être modifié.
+- **Instance Keycloak dédiée ("dedicated")** : via le Keycloak Operator, pour les équipes qui
+  veulent une isolation forte (leur propre instance plutôt qu'un realm partagé), sans changer
+  le contrat `OIDC_*` côté app.
+- **Auth du portail CNP lui-même** via Keycloak (ADR-0002 §8) — realm séparé, complètement
+  indépendant des realms applicatifs décrits ici.
+
+## Conséquences
+
+Positif :
+- Provisioning d'une identité OIDC en quelques secondes par API (~1s d'appel Admin REST) au
+  lieu d'un déploiement Keycloak dédié (minutes, 1-2 Go RAM par app).
+- Réutilise entièrement le pipeline Vault → ESO → Secret K8s existant (ADR-0024/0025) : aucune
+  nouvelle primitive d'infra à opérer pour livrer les credentials aux pods.
+- Couvre aussi bien les apps scaffoldées (code d'auth dormant prêt à l'emploi) que les apps
+  importées (mode A : mêmes credentials, documentation par stack) sans dépendre du langage.
+- Délégation à l'équipe de la gestion des utilisateurs, clients et fournisseurs d'identité de
+  son realm (rôle restreint, §1), sans accès aux réglages du realm, aux autres realms ni au
+  realm `master` ; CNP garde seul la création, le renommage et la suppression des realms.
+- Pas de credentials en clair dans git — rupture volontaire avec le pattern PostgreSQL actuel.
+
+Négatif / Dette :
+- Instance Keycloak partagée = point de défaillance unique pour l'auth de toutes les apps qui
+  l'utilisent ; son indisponibilité bloque `provision`/`reprovision`/`console-access` (mais pas
+  les apps déjà provisionnées, qui valident leurs tokens localement via JWKS mis en cache).
+- La passerelle publique `auth.` (NGINX, `infra/keycloak/gateway/`) tourne sur la VM
+  `cnp-control` : point unique de défaillance accepté pour la v1. Une panne de la VM coupe le
+  login OIDC de toutes les apps protégées, quelle que soit leur instance, car tous les issuers
+  passent par elle. La résilience de `cnp-control` est un chantier futur, hors de cet ADR.
+- V1 sans SSO GitLab pour la console Keycloak : mot de passe temporaire à distribuer un par un,
+  UX moins fluide que le reste de la plateforme (qui utilise déjà GitLab OAuth).
+- Mode A (apps importées) ne garantit pas que le code de l'app consomme réellement `OIDC_*` —
+  seul un avertissement best-effort sur la présence d'`envFrom` dans le chart, pas de
+  vérification que le code applicatif valide effectivement les tokens.
+- Les équipes ne peuvent plus changer elles-mêmes les réglages de leur realm (politique de
+  mot de passe, thèmes, SMTP, options de login) : chaque demande passe par un admin
+  plateforme.
+- Suppression de realm non récupérable automatiquement : un realm supprimé par erreur perd
+  tous ses users et sa config ; "Recréer" repart d'un realm vierge, jamais d'un backup.
+- Les 3 correctifs prérequis (Lot 1) touchent des chemins de code déjà en production
+  (scaffolding, CI gitops, charts) — risque de régression sur les apps existantes, mitigé par
+  le fait que les apps déjà scaffoldées ne sont pas rétroactivement modifiées (dette explicite,
+  voir §"Correctifs prérequis" point 2).
+
+Neutre :
+- Keycloak est optionnel : le reste de la plateforme fonctionne sans lui, et une app peut être
+  créée avec ou sans le service Keycloak coché, avec le même template. `KEYCLOAK_ENABLED`
+  (faux par défaut) n'active que l'instance globale historique (`KEYCLOAK_URL`,
+  `KEYCLOAK_PUBLIC_URL`, `KEYCLOAK_ADMIN_CLIENT_*`) : elle sert aux apps activées avant le
+  registre, et à une nouvelle activation quand le cluster de l'app n'a pas d'instance
+  enregistrée. Une instance enregistrée et activée sert quel que soit ce flag ; on la coupe
+  avec `enabled=false` dans le registre (`PUT /api/v1/keycloak/instances/{key}`), et ses apps
+  deviennent alors indisponibles, sans repli vers une autre instance.
+- Le rôle `admin` du service account `cnp-provisioner` a été validé de bout en bout contre
+  une vraie instance Keycloak en docker compose, d'abord par le smoke test local du Lot 7,
+  aujourd'hui par le banc `infra/keycloak/verify.sh --local` (`infra/keycloak/tests/smoke.py`) :
+  provisioning, vérification realm/client/mapper audience, obtention et
+  validation d'un vrai token, suppression puis recréation d'un realm. Ce test a aussi révélé
+  et corrigé un bug réel indépendant du choix de rôle — un token admin mis en cache avant la
+  création d'un realm ne porte pas encore les droits sur ce realm, faisant échouer l'appel
+  suivant (`create_client`) en 403 ; `KeycloakClient.create_realm` invalide maintenant son
+  token en cache après un succès (voir le commentaire de `KeycloakClient.create_realm` dans
+  `backend/keycloak/client.py` et le test de non-régression
+  `test_create_realm_invalidates_cached_token` de `backend/tests/test_keycloak_client.py`).

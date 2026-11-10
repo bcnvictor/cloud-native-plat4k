@@ -332,3 +332,13 @@ secret-tailscale.txt
 frontend/playwright-report/
 frontend/test-results/
 frontend/blob-report/
+
+# Track portable operator modules despite the generic lib/ exclusion.
+!infra/keycloak/lib/
+!infra/keycloak/lib/*.py
+
+# Generated gateway routes; keep the directory so the bind mount is not root-owned.
+infra/keycloak/gateway/generated/*
+!infra/keycloak/gateway/generated/routes/
+infra/keycloak/gateway/generated/routes/*
+!infra/keycloak/gateway/generated/routes/.gitkeep

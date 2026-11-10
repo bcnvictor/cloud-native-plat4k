@@ -12,6 +12,7 @@ import { Step1Identity } from './Step1Identity';
 import { Step2Services } from './Step2Services';
 import { Step3CiDeploy } from './Step3CiDeploy';
 import { Step4Recap } from './Step4Recap';
+import { requestedServices } from './services';
 
 const STEP_LABELS = ['Identity', 'Services', 'CI & Deploy', 'Recap'];
 
@@ -60,6 +61,8 @@ export function NewApp() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      const services = requestedServices(step2);
+
       if (step1.origin === 'scaffold') {
         return appsApi.scaffoldApp({
           name: step1.name,
@@ -68,6 +71,7 @@ export function NewApp() {
           owning_gitlab_group_id: group?.gitlab_group_id,
           expose: step3.expose,
           target_cluster_id: step3.targetClusterId ?? undefined,
+          scaffolding: services.length ? { services } : undefined,
         });
       } else {
         return appsApi.onboardApp({
@@ -76,6 +80,7 @@ export function NewApp() {
           repo_url: step1.repoUrl,
           owning_gitlab_group_id: group?.gitlab_group_id,
           expose: step3.expose,
+          services: services.length ? services : undefined,
         });
       }
     },

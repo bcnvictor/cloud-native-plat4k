@@ -1,0 +1,886 @@
+"""Disposable, real-service validation. No import-time process or network effects."""
+
+import argparse
+import json
+import os
+import secrets
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+from contextlib import contextmanager
+from dataclasses import replace
+from pathlib import Path
+
+import httpx
+import yaml
+from infra.keycloak.lib.config import ROOT, TargetConfig, load_target
+from infra.keycloak.lib.gateway import render_route
+from infra.keycloak.lib.http_api import JSONAPI, APIError
+from infra.keycloak.lib.keycloak_api import KeycloakAdmin
+from infra.keycloak.lib.vault_api import VaultAPI
+
+REPO = ROOT.parents[1]
+
+
+def free_port():
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def raw_get(base, target):
+    """Send `target` verbatim over TLS: HTTP clients drop a URL fragment before
+    sending, a raw client does not. Returns (status, body)."""
+    import ssl
+    from urllib.parse import urlsplit
+
+    url = urlsplit(base)
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    with socket.create_connection((url.hostname, url.port), timeout=15) as raw:
+        with context.wrap_socket(raw, server_hostname=url.hostname) as tls:
+            tls.sendall(
+                f"GET {target} HTTP/1.1\r\nHost: {url.hostname}\r\nConnection: close\r\n\r\n".encode()
+            )
+            data = b""
+            while chunk := tls.recv(65536):
+                data += chunk
+    head, _, body = data.partition(b"\r\n\r\n")
+    return int(head.split()[1]), body
+
+
+def checked(argv, *, env=None):
+    result = subprocess.run(argv, env=env, capture_output=True)
+    if result.returncode:
+        # Logs from live services may include tokens; preserve no exception body.
+        diagnostic = result.stderr.decode(errors="replace")
+        for key, value in (env or {}).items():
+            if (
+                any(part in key for part in ("TOKEN", "PASSWORD", "SECRET", "KEY"))
+                and len(value) > 4
+            ):
+                diagnostic = diagnostic.replace(value, "[redacted]")
+        raise RuntimeError("Integration command failed: " + argv[0] + "\n" + diagnostic[-3000:])
+    return result
+
+
+@contextmanager
+def local_stack():
+    images = yaml.safe_load((ROOT / "images.lock.yaml").read_text())
+    with tempfile.TemporaryDirectory(prefix="cnp-keycloak-real-") as folder:
+        path = Path(folder)
+        (path / "routes").mkdir()
+        certs = path / "certs/live/localhost"
+        certs.mkdir(parents=True)
+        checked(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-days",
+                "1",
+                "-subj",
+                "/CN=localhost",
+                "-addext",
+                "subjectAltName=DNS:localhost,IP:127.0.0.1",
+                "-keyout",
+                str(certs / "privkey.pem"),
+                "-out",
+                str(certs / "fullchain.pem"),
+            ]
+        )
+        ports = {name: free_port() for name in ("gateway", "public", "private", "vault", "cnp_db")}
+        credentials = {
+            "database": secrets.token_hex(16),
+            "bootstrap": secrets.token_hex(16),
+            "vault": secrets.token_hex(16),
+        }
+        env = os.environ | {
+            "TEST_DIRECTORY": folder,
+            "TEST_DB_PASSWORD": credentials["database"],
+            "TEST_BOOTSTRAP_PASSWORD": credentials["bootstrap"],
+            "TEST_VAULT_TOKEN": credentials["vault"],
+        }
+        for name, port in ports.items():
+            env[f"TEST_{name.upper()}_PORT"] = str(port)
+        for name, image in images.items():
+            env[f"TEST_{'POSTGRES' if name == 'postgresql' else name.upper()}_IMAGE"] = image
+        target = TargetConfig(
+            "public-01",
+            "public",
+            "local-test",
+            "local-test",
+            "localhost",
+            "integration.test",
+            "local-path",
+            "local-test",
+        )
+        for key in ("public-01", "private-01"):
+            (path / "routes" / f"{key}.conf").write_text(
+                render_route(replace(target, instance_key=key))
+            )
+        vhost = (
+            (ROOT / "gateway/auth.conf.template").read_text().replace("${AUTH_DOMAIN}", "localhost")
+        )
+        (path / "nginx.conf").write_text("events {} http { " + vhost + " }")
+        project = "cnp-keycloak-real-" + secrets.token_hex(5)
+        base = [
+            "docker",
+            "compose",
+            "--env-file",
+            "/dev/null",
+            "-p",
+            project,
+            "-f",
+            str(ROOT / "tests/compose.yaml"),
+        ]
+        state = {
+            "ports": ports,
+            "credentials": credentials,
+            "project": project,
+            "compose_env": {k: v for k, v in env.items() if k.startswith("TEST_")},
+            "database_url": f"postgresql+asyncpg://cnp:{credentials['database']}@127.0.0.1:{ports['cnp_db']}/cnp_keycloak_test",
+            "vault_url": f"http://127.0.0.1:{ports['vault']}",
+            "public_base": f"https://localhost:{ports['gateway']}",
+        }
+        for name, key in (("public", "public-01"), ("private", "private-01")):
+            state[name] = {
+                "key": key,
+                "admin_url": f"http://127.0.0.1:{ports[name]}/clusters/{key}",
+                "public_url": state["public_base"] + f"/clusters/{key}",
+            }
+        state_path = path / "state.json"
+        state_path.touch(mode=0o600)
+        state_path.write_text(json.dumps(state))
+        try:
+            print("Starting isolated Keycloak integration stack", flush=True)
+            checked([*base, "up", "-d"], env=env)
+            deadline = time.monotonic() + 600
+            pending = {"public", "private"}
+            while pending and time.monotonic() < deadline:
+                for name in tuple(pending):
+                    try:
+                        JSONAPI(state[name]["admin_url"]).request(
+                            "GET", "/realms/master/.well-known/openid-configuration"
+                        )
+                        pending.remove(name)
+                    except RuntimeError:
+                        pass
+                if pending:
+                    time.sleep(2)
+            if pending:
+                # Only infrastructure logs; callers may inspect containers while
+                # running. Never dump credentials in a failure traceback.
+                raise RuntimeError("Keycloak readiness timed out")
+            yield state, state_path
+        finally:
+            checked([*base, "down", "--volumes", "--remove-orphans"], env=env)
+
+
+def admin(state, name):
+    return KeycloakAdmin(
+        state[name]["admin_url"], "cnp-bootstrap", state["credentials"]["bootstrap"]
+    )
+
+
+def verify_bootstrap(state):
+    vault = VaultAPI(state["vault_url"], state["credentials"]["vault"])
+    for name in ("public", "private"):
+        from infra.keycloak.lib.http_api import APIError
+
+        key = state[name]["key"]
+        first_credentials = vault.ensure_secret(
+            f"cnp/keycloak/{key}/bootstrap",
+            {"username": "cnp-bootstrap", "password": state["credentials"]["bootstrap"]},
+        )
+        assert (
+            vault.ensure_secret(f"cnp/keycloak/{key}/bootstrap", {"password": "must-not-rotate"})
+            == first_credentials
+        )
+        token = vault.ensure_eso_token(key)
+        assert vault.ensure_eso_token(key) == token
+        reader = VaultAPI(state["vault_url"], token)
+        reader.request("GET", f"/v1/secret/data/cnp/keycloak/{key}/bootstrap")
+        for forbidden in (f"cnp/keycloak/{key}/provisioner", "apps/demo/dev", "cnp/platform"):
+            try:
+                reader.request("GET", "/v1/secret/data/" + forbidden)
+            except APIError as error:
+                assert error.status == 403
+            else:
+                raise AssertionError("ESO identity escaped its dedicated secret scope")
+        first = admin(state, name).ensure_provisioner()
+        second = admin(state, name).ensure_provisioner()
+        assert first == second
+        vault.store_provisioner(state[name]["key"], first)
+        vault.store_provisioner(state[name]["key"], second)
+        admin(state, name).verify_public_issuer(state[name]["public_url"])
+        state[name]["provisioner_secret"] = first
+    # bootstrap secrets remain private; browser setup uses the same file.
+
+
+async def verify_migration(state):
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    engine = create_async_engine(state["database_url"])
+    env = os.environ | {
+        "SECRET_KEY": "integration-only-key-32characters",
+        "POSTGRES_SERVER": "127.0.0.1",
+        "POSTGRES_PORT": str(state["ports"]["cnp_db"]),
+        "POSTGRES_USER": "cnp",
+        "POSTGRES_PASSWORD": state["credentials"]["database"],
+        "POSTGRES_DB": "cnp_keycloak_test",
+    }
+    try:
+        checked(
+            [
+                sys.executable,
+                "-m",
+                "alembic",
+                "-c",
+                "backend/alembic.ini",
+                "upgrade",
+                "b1c2d3e4f5a6",
+            ],
+            env=env,
+        )
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO applications (id,name,slug,owner,auth_enabled,last_known_status) VALUES (9900,'legacy','integration-legacy','test',true,'onboarding')"
+                )
+            )
+        checked(
+            [sys.executable, "-m", "alembic", "-c", "backend/alembic.ini", "upgrade", "head"],
+            env=env,
+        )
+        async with engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text("SELECT auth_enabled,auth_instance_key FROM applications WHERE id=9900")
+                )
+            ).one()
+            assert row.auth_enabled is True and row.auth_instance_key is None
+    finally:
+        await engine.dispose()
+
+
+async def verify_lifecycle(state, monkeypatch):
+    import hvac
+    from backend.core.config import settings
+    from backend.db.models import Application, ClusterConnection
+    from backend.services.keycloak_instance_service import KeycloakInstanceService
+    from backend.services.keycloak_service import KeycloakService
+    from backend.vault.client import vault_client
+    from shared.models import KeycloakInstanceUpsert
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    monkeypatch.setattr(settings, "KEYCLOAK_ENABLED", False)
+    monkeypatch.setattr(
+        vault_client,
+        "_client",
+        hvac.Client(url=state["vault_url"], token=state["credentials"]["vault"], timeout=10),
+    )
+    engine = create_async_engine(state["database_url"])
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            for index, name in enumerate(("public", "private"), 1):
+                cluster = ClusterConnection(
+                    id=index,
+                    name=f"integration-{name}",
+                    endpoint="https://test.invalid",
+                    kubeconfig_secret_ref="test",
+                )
+                session.add(cluster)
+            await session.commit()
+            for index, name in enumerate(("public", "private"), 1):
+                item = state[name]
+                await KeycloakInstanceService(session).upsert(
+                    item["key"],
+                    KeycloakInstanceUpsert(
+                        cluster_id=index,
+                        public_url=item["public_url"],
+                        admin_url=item["admin_url"],
+                        admin_client_id="cnp-provisioner",
+                        provisioner_secret_ref=f"cnp/keycloak/{item['key']}/provisioner",
+                        enabled=True,
+                    ),
+                )
+                framework = "react-vite" if index == 1 else "python-fastapi"
+                app = Application(
+                    id=100 + index,
+                    name=f"integration-{name}",
+                    slug=f"integration-{name}",
+                    owner="test",
+                    framework=framework,
+                    target_cluster_id=index,
+                    expose=False,
+                )
+                session.add(app)
+                await session.commit()
+                service = KeycloakService(session)
+                result = await service.activate(app)
+                assert result.auth_provisioned is True
+                assert app.auth_instance_key == item["key"]
+                variables = vault_client.get_secret(f"apps/_ungrouped/{app.slug}/dev")
+                assert (
+                    variables["OIDC_ISSUER_URL"] == item["public_url"] + f"/realms/{app.slug}-dev"
+                )
+                assert ("OIDC_CLIENT_SECRET" in variables) == (framework != "react-vite")
+                other = admin(state, "private" if name == "public" else "public")
+                assert (
+                    other.request("GET", f"/admin/realms/{app.slug}-dev", missing_ok=True) is None
+                )
+                own = admin(state, name)
+                realm = own.request("GET", f"/admin/realms/{app.slug}-dev")
+                assert realm["id"] == f"cnp-{app.id}-dev"
+                assert realm["bruteForceProtected"] is True
+                assert realm["passwordPolicy"] == "length(12) and notUsername"
+                clients = own.request(
+                    "GET", f"/admin/realms/{app.slug}-dev/clients?clientId={app.slug}"
+                )
+                assert clients[0]["publicClient"] is (framework == "react-vite")
+                if framework == "react-vite":
+                    assert clients[0]["attributes"]["pkce.code.challenge.method"] == "S256"
+                # Durable binding still routes the same issuer after app retarget.
+                app.target_cluster_id = 2 if index == 1 else 1
+                await session.commit()
+                assert (await service.status(app)).dev.issuer_url == variables["OIDC_ISSUER_URL"]
+            from jose import JWTError, jwt
+
+            private_base = state["private"]["admin_url"]
+            private_issuer = state["private"]["public_url"] + "/realms/integration-private-dev"
+            confidential = vault_client.get_secret("apps/_ungrouped/integration-private/dev")
+            token = JSONAPI(private_base).request(
+                "POST",
+                "/realms/integration-private-dev/protocol/openid-connect/token",
+                {
+                    "grant_type": "client_credentials",
+                    "client_id": "integration-private",
+                    "client_secret": confidential["OIDC_CLIENT_SECRET"],
+                },
+                form=True,
+            )["access_token"]
+            keys = JSONAPI(private_base).request(
+                "GET", "/realms/integration-private-dev/protocol/openid-connect/certs"
+            )
+            claims = jwt.decode(
+                token,
+                keys,
+                algorithms=["RS256"],
+                audience="integration-private",
+                issuer=private_issuer,
+            )
+            assert "integration-private" in claims["aud"]
+            for invalid in (
+                {"audience": "other-app", "issuer": private_issuer},
+                {
+                    "audience": "integration-private",
+                    "issuer": state["public"]["public_url"] + "/realms/integration-public-dev",
+                },
+            ):
+                try:
+                    jwt.decode(token, keys, algorithms=["RS256"], **invalid)
+                except JWTError:
+                    pass
+                else:
+                    raise AssertionError("Wrong audience/issuer JWT was accepted")
+            # Test cleanup of a distinct owned app; keep browser realms until stack teardown.
+            app = Application(
+                id=103,
+                name="cleanup",
+                slug="integration-cleanup",
+                owner="test",
+                framework="python-fastapi",
+                target_cluster_id=2,
+                expose=False,
+            )
+            session.add(app)
+            await session.commit()
+            service = KeycloakService(session)
+            assert (await service.activate(app)).auth_provisioned is True
+            await service.deprovision(app)
+            assert (
+                admin(state, "private").request(
+                    "GET", "/admin/realms/integration-cleanup-dev", missing_ok=True
+                )
+                is None
+            )
+    finally:
+        await engine.dispose()
+
+
+def create_browser_user(state, name, realm, username, password):
+    own = admin(state, name)
+    own.request(
+        "POST",
+        f"/admin/realms/{realm}/users",
+        {
+            "username": username,
+            "enabled": True,
+            "email": username + "@integration.test",
+            "emailVerified": True,
+            "firstName": "Integration",
+            "lastName": "Test",
+            "credentials": [{"type": "password", "value": password, "temporary": False}],
+        },
+    )
+
+
+def verify_browser(state):
+    password = secrets.token_hex(16)
+    create_browser_user(state, "public", "integration-public-dev", "browser-user", password)
+    vault = VaultAPI(state["vault_url"], state["credentials"]["vault"])
+    secret = vault.request("GET", "/v1/secret/data/apps/_ungrouped/integration-private/dev")[
+        "data"
+    ]["data"]["OIDC_CLIENT_SECRET"]
+    other_token = JSONAPI(state["private"]["admin_url"]).request(
+        "POST",
+        "/realms/integration-private-dev/protocol/openid-connect/token",
+        {
+            "grant_type": "client_credentials",
+            "client_id": "integration-private",
+            "client_secret": secret,
+        },
+        form=True,
+    )["access_token"]
+    payload = {
+        "otherToken": other_token,
+        "issuer": state["public"]["public_url"] + "/realms/integration-public-dev",
+        "otherIssuer": state["private"]["public_url"] + "/realms/integration-private-dev",
+        "clientId": "integration-public",
+        "username": "browser-user",
+        "password": password,
+    }
+    result = subprocess.run(
+        ["node", str(ROOT / "tests/browser-smoke.mjs")],
+        input=json.dumps(payload).encode(),
+        capture_output=True,
+        timeout=120,
+    )
+    if result.returncode:
+        # Helper emits nonsecret diagnostics only; no stdin/tokens in exception.
+        raise RuntimeError("Browser authentication smoke failed: " + result.stderr.decode()[-2000:])
+    assert json.loads(result.stdout)["passed"] is True
+
+
+def team_role_probes(own, realm, team_user_id, neighbour):
+    """Admin API calls the team console account makes with its own console token,
+    with the status Keycloak must answer (ADR-0027 §1, option B). Fixtures and ids
+    come from the bootstrap admin; none of them is a secret."""
+    base = f"/admin/realms/{realm}"
+    management = own.request("GET", f"{base}/clients?clientId=realm-management")[0]
+    roles = {
+        role["name"]: role
+        for role in own.request("GET", f"{base}/clients/{management['id']}/roles")
+    }
+    mappings = f"{base}/users/{{}}/role-mappings/clients/{management['id']}"
+    own.request("POST", f"{base}/users", {"username": "role-probe-other", "enabled": True})
+    other = own.request("GET", f"{base}/users?username=role-probe-other&exact=true")[0]["id"]
+    own.request("POST", f"{base}/groups", {"name": "role-probe-group"})
+    group = own.request("GET", f"{base}/groups?search=role-probe-group")[0]["id"]
+    own.request(
+        "POST",
+        f"{base}/clients",
+        {"clientId": "role-probe-service", "publicClient": False, "serviceAccountsEnabled": True},
+    )
+    service = own.request("GET", f"{base}/clients?clientId=role-probe-service")[0]["id"]
+    service_user = own.request("GET", f"{base}/clients/{service}/service-account-user")["id"]
+    default_roles = own.request("GET", f"{base}/roles/default-roles-{realm}")["id"]
+    return [
+        # The console is usable: users and clients of the realm.
+        ("list users", "GET", f"{base}/users", None, 200),
+        ("create a user", "POST", f"{base}/users", {"username": "made-by-team"}, 201),
+        ("list clients", "GET", f"{base}/clients", None, 200),
+        (
+            "create a client with a service account",
+            "POST",
+            f"{base}/clients",
+            {"clientId": "made-by-team", "publicClient": False, "serviceAccountsEnabled": True},
+            201,
+        ),
+        ("read login events", "GET", f"{base}/events", None, 200),
+        # Realm settings stay with CNP and platform admins.
+        ("relax the password policy", "PUT", base, {"passwordPolicy": ""}, 403),
+        ("disable brute-force protection", "PUT", base, {"bruteForceProtected": False}, 403),
+        ("change the login theme", "PUT", base, {"loginTheme": "keycloak"}, 403),
+        ("change the user profile", "PUT", f"{base}/users/profile", {"attributes": []}, 403),
+        # No escalation through manage-users.
+        *(
+            (f"give {target} {role}", "POST", mappings.format(user), [roles[role]], 403)
+            for target, user in (("itself", team_user_id), ("another user", other))
+            for role in ("manage-realm", "realm-admin", "impersonation")
+        ),
+        (
+            "give realm-admin to a group",
+            "POST",
+            f"{base}/groups/{group}/role-mappings/clients/{management['id']}",
+            [roles["realm-admin"]],
+            403,
+        ),
+        (
+            "add manage-realm to the default roles",
+            "POST",
+            f"{base}/roles-by-id/{default_roles}/composites",
+            [roles["manage-realm"]],
+            403,
+        ),
+        ("impersonate another user", "POST", f"{base}/users/{other}/impersonation", None, 403),
+        # No escalation through manage-clients.
+        (
+            "add manage-realm to a realm-management role",
+            "POST",
+            f"{base}/clients/{management['id']}/roles/view-realm/composites",
+            [roles["manage-realm"]],
+            403,
+        ),
+        (
+            "change the realm-management client",
+            "PUT",
+            f"{base}/clients/{management['id']}",
+            {**management, "description": "changed by team"},
+            403,
+        ),
+        (
+            "give manage-realm to a service account",
+            "POST",
+            mappings.format(service_user),
+            [roles["manage-realm"]],
+            403,
+        ),
+        # Confined to its realm.
+        ("read another realm", "GET", f"/admin/realms/{neighbour}", None, 403),
+        ("list users of another realm", "GET", f"/admin/realms/{neighbour}/users", None, 403),
+        # Last: would destroy the realm if Keycloak accepted them.
+        ("rename the realm", "PUT", base, {"realm": realm + "-renamed"}, 403),
+        ("delete the realm", "DELETE", base, None, 403),
+    ]
+
+
+async def verify_console(state, monkeypatch):
+    import hvac
+    from backend.db.models import Application, User
+    from backend.keycloak.client import TEAM_CONSOLE_ROLES
+    from backend.services.keycloak_service import KeycloakService
+    from backend.vault.client import vault_client
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    monkeypatch.setattr(
+        vault_client,
+        "_client",
+        hvac.Client(url=state["vault_url"], token=state["credentials"]["vault"], timeout=10),
+    )
+    engine = create_async_engine(state["database_url"])
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            app = await session.get(Application, 102)
+            user = User(
+                id=701,
+                email="console-team@integration.test",
+                hashed_password="not-used-for-keycloak",
+            )
+            session.add(user)
+            await session.commit()
+            service = KeycloakService(session)
+            access = await service.grant_console_access(app, "dev", user)
+            own = admin(state, "private")
+            realm = "integration-private-dev"
+            account = own.request(
+                "GET", f"/admin/realms/{realm}/users?username={access.username}&exact=true"
+            )[0]
+            management = own.request(
+                "GET", f"/admin/realms/{realm}/clients?clientId=realm-management"
+            )[0]["id"]
+            granted = own.request(
+                "GET",
+                f"/admin/realms/{realm}/users/{account['id']}/role-mappings/clients/{management}",
+            )
+            assert {role["name"] for role in granted} == set(TEAM_CONSOLE_ROLES)
+            neighbour = "integration-neighbour-dev"
+            own.request("POST", "/admin/realms", {"realm": neighbour, "enabled": True})
+            probes = team_role_probes(own, realm, account["id"], neighbour)
+            payload = {
+                "mode": "console",
+                "url": access.console_url,
+                "username": access.username,
+                "password": access.temporary_password,
+                "newPassword": secrets.token_hex(16),
+                "probes": [
+                    {"label": label, "method": method, "path": path, "body": body}
+                    for label, method, path, body, _ in probes
+                ],
+            }
+            result = subprocess.run(
+                ["node", str(ROOT / "tests/browser-smoke.mjs")],
+                input=json.dumps(payload).encode(),
+                capture_output=True,
+                timeout=120,
+            )
+            if result.returncode:
+                raise RuntimeError(
+                    "Team console browser smoke failed: " + result.stderr.decode()[-1500:]
+                )
+            outcome = json.loads(result.stdout)
+            assert outcome["passed"] is True
+            answered = {probe["label"]: probe["status"] for probe in outcome["probes"]}
+            unexpected = {
+                label: (answered.get(label), expected)
+                for label, _, _, _, expected in probes
+                if answered.get(label) != expected
+            }
+            assert not unexpected, f"Team role probes (got, expected): {unexpected}"
+            own.login()
+            assert own.request("GET", f"/admin/realms/{realm}")["id"] == "cnp-102-dev"
+            own.request("DELETE", f"/admin/realms/{neighbour}")
+            # N3: no direct password login through admin-cli, even with the right password.
+            admin_cli = own.request("GET", f"/admin/realms/{realm}/clients?clientId=admin-cli")[0]
+            assert admin_cli["directAccessGrantsEnabled"] is False
+            try:
+                JSONAPI(state["private"]["admin_url"]).request(
+                    "POST",
+                    f"/realms/{realm}/protocol/openid-connect/token",
+                    {
+                        "grant_type": "password",
+                        "client_id": "admin-cli",
+                        "username": access.username,
+                        "password": payload["newPassword"],
+                    },
+                    form=True,
+                )
+            except APIError as error:
+                assert error.status in (400, 401)
+            else:
+                raise AssertionError("admin-cli accepted a direct password login")
+            await service.revoke_member(app, user.id)
+            assert (
+                admin(state, "private").request(
+                    "GET", "/admin/realms/integration-private-dev/users?username=" + access.username
+                )
+                == []
+            )
+    finally:
+        await engine.dispose()
+
+    with httpx.Client(verify=False, timeout=15) as client:
+        for name in ("public", "private"):
+            base = state[name]["public_url"]
+            assert client.get(base + f"/admin/integration-{name}-dev/console/").status_code == 200
+            for suffix in (
+                "/realms/master",
+                "/admin/master",
+                "/admin/realms/master",
+                "/realms/master;x/.well-known/openid-configuration",
+                "/health/ready",
+            ):
+                assert client.get(base + suffix).status_code == 403
+    for name in ("public", "private"):
+        prefix = state[name]["public_url"][len(state["public_base"]) :]
+        status, body = raw_get(
+            state["public_base"], prefix + "/realms/x#/../master/.well-known/openid-configuration"
+        )
+        # Rejected by the gateway itself, not by Keycloak's own path normalization.
+        assert status == 400 and b"missingNormalization" not in body
+
+
+async def verify_realm_rename(state, monkeypatch):
+    """A realm is renamed to another app's realm name and retagged with that app's
+    id: CNP must treat it as foreign (ownership rests on the internal id CNP chose at
+    creation, which a rename never changes). Team console accounts can no longer
+    rename (verify_console); a platform admin in master still can, as done here."""
+    import hvac
+    from backend.db.models import Application
+    from backend.services.keycloak_service import KeycloakService
+    from backend.vault.client import vault_client
+    from hvac.exceptions import InvalidPath
+    from shared.models import KeycloakEnvState
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    monkeypatch.setattr(
+        vault_client,
+        "_client",
+        hvac.Client(url=state["vault_url"], token=state["credentials"]["vault"], timeout=10),
+    )
+    own = admin(state, "public")
+    engine = create_async_engine(state["database_url"])
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            apps = [
+                Application(
+                    id=app_id,
+                    name=slug,
+                    slug=slug,
+                    owner="test",
+                    framework="python-fastapi",
+                    target_cluster_id=1,
+                    expose=False,
+                )
+                for app_id, slug in ((104, "integration-renamer"), (105, "integration-victim"))
+            ]
+            session.add_all(apps)
+            await session.commit()
+            renamer, victim = apps
+            service = KeycloakService(session)
+            assert (await service.activate(renamer)).auth_provisioned is True
+
+            realm = "integration-renamer-dev"
+            own.login()
+            representation = own.request("GET", f"/admin/realms/{realm}")
+            representation["realm"] = "integration-victim-dev"
+            representation["id"] = "cnp-105-dev"
+            representation["attributes"] = {
+                **(representation.get("attributes") or {}),
+                "cnp_app_id": "105",
+            }
+            own.request("PUT", f"/admin/realms/{realm}", representation)
+            own.login()
+            renamed = own.request("GET", "/admin/realms/integration-victim-dev")
+            assert renamed["id"] == "cnp-104-dev"
+            assert renamed["attributes"]["cnp_app_id"] == "105"
+
+            assert (await service.status(victim)).dev.state == KeycloakEnvState.FOREIGN
+            assert (await service.activate(victim)).auth_provisioned is False
+            try:
+                vault_client.get_secret("apps/_ungrouped/integration-victim/dev")
+            except InvalidPath:
+                pass
+            else:
+                raise AssertionError("Renamed realm credentials were handed to another app")
+            await service.deprovision(victim)
+            assert own.request("GET", "/admin/realms/integration-victim-dev")["id"] == "cnp-104-dev"
+            own.request("DELETE", "/admin/realms/integration-victim-dev")
+    finally:
+        await engine.dispose()
+
+
+def verify_recovery(state, monkeypatch):
+    """Destroy only the disposable public Keycloak schema; retain real Vault/CNP."""
+    from infra.keycloak.lib import deploy as installer
+
+    vault = VaultAPI(state["vault_url"], state["credentials"]["vault"])
+    retained = vault.request("GET", "/v1/secret/data/cnp/keycloak/public-01/provisioner")["data"][
+        "data"
+    ]["client_secret"]
+    base = [
+        "docker",
+        "compose",
+        "--env-file",
+        "/dev/null",
+        "-p",
+        state["project"],
+        "-f",
+        str(ROOT / "tests/compose.yaml"),
+    ]
+    env = os.environ | state["compose_env"]
+    checked([*base, "stop", "public"], env=env)
+    checked(
+        [
+            *base,
+            "exec",
+            "-T",
+            "database-public",
+            "psql",
+            "-U",
+            "keycloak",
+            "-d",
+            "keycloak",
+            "-c",
+            "DROP SCHEMA public CASCADE; CREATE SCHEMA public;",
+        ],
+        env=env,
+    )
+    checked([*base, "start", "public"], env=env)
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline:
+        try:
+            recovered = admin(state, "public")
+            break
+        except RuntimeError:
+            time.sleep(1)
+    else:
+        raise RuntimeError("Fresh Keycloak recovery readiness timed out")
+    assert recovered.request("GET", "/admin/realms/integration-public-dev", missing_ok=True) is None
+
+    @contextmanager
+    def connection(target, credentials):
+        yield admin(state, "public")
+
+    monkeypatch.setattr(installer, "admin_connection", connection)
+    target = TargetConfig(
+        "public-01",
+        "public",
+        "recovery-test",
+        "recovery-test",
+        "localhost",
+        "integration.test",
+        "local-path",
+        "recovery-test",
+    )
+    installer.bootstrap(
+        target, vault, {"username": "cnp-bootstrap", "password": state["credentials"]["bootstrap"]}
+    )
+    assert admin(state, "public").ensure_provisioner() == retained
+    assert (
+        vault.request("GET", "/v1/secret/data/cnp/keycloak/public-01/provisioner")["data"]["data"][
+            "client_secret"
+        ]
+        == retained
+    )
+    admin(state, "public").verify_public_issuer(state["public"]["public_url"])
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--local", action="store_true")
+    group.add_argument("--target", type=Path)
+    args = parser.parse_args()
+    if args.target:
+        target = load_target(args.target)
+        from infra.keycloak.lib.deploy import preflight
+
+        preflight(target)
+        # No mutations: check the ready deployment and public master boundaries.
+        from infra.keycloak.lib.deploy import kubectl
+
+        kubectl(
+            target,
+            "-n",
+            target.namespace,
+            "rollout",
+            "status",
+            f"deployment/{target.release}-keycloak",
+            "--timeout=30s",
+        )
+        with httpx.Client(timeout=15) as client:
+            assert client.get(target.public_url + "/realms/master").status_code == 403
+        print("Read-only target checks passed; app login validation remains separate.")
+        return
+    with local_stack() as (state, path):
+        environment = os.environ | {
+            "CNP_KEYCLOAK_TEST_STATE": str(path),
+            "SSL_CERT_FILE": str(path.parent / "certs/live/localhost/fullchain.pem"),
+        }
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "backend/tests/integration/test_keycloak_real.py",
+                "-m",
+                "keycloak_integration",
+                "-q",
+                "--disable-warnings",
+            ],
+            env=environment,
+        )
+        raise SystemExit(result.returncode)
+
+
+if __name__ == "__main__":
+    main()
