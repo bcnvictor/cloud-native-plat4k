@@ -211,6 +211,29 @@ Si `cnp-mcp` est arrêté, l'UI reste disponible et seul `/mcp` répond 502.
 
 Le tunnel est géré par `cloudflared.service` (systemd). Il démarre automatiquement au boot et survit aux déconnexions SSH.
 
+Sa config (`/etc/cloudflared/config.yml`, tunnel nommé `28ef0ec5-…`) envoie tout le domaine vers le nginx du `frontend` :
+
+```yaml
+ingress:
+  - hostname: cnp.cloud-native-plat4k.me
+    service: http://localhost:80
+  - service: http_status:404
+```
+
+Les routes publiques (`/`, `/api`, `/mcp`) se règlent donc dans `frontend-new/nginx.conf`, sans toucher au tunnel.
+
+Les variables du backend propres au domaine public sont dans `~/cloud-native-plat4k/docker-compose.tunnel.yml`, chargé via `COMPOSE_FILE` dans le `.env` de la VM. Ce fichier n'existe que sur la VM : le versionner ferait échouer le `git pull` du job `deploy`, qui refuse d'écraser un fichier non suivi. Contenu au 2026-11-12 :
+
+```yaml
+services:
+  backend:
+    environment:
+      - FRONTEND_BASE_URL=https://cnp.cloud-native-plat4k.me
+      - BACKEND_CORS_ORIGINS=["https://cnp.cloud-native-plat4k.me"]
+      - CNP_API_BASE_URL=https://cnp.cloud-native-plat4k.me
+      - SECURE_COOKIES=true
+```
+
 ```bash
 # Vérifier l'état du tunnel
 sudo systemctl status cloudflared

@@ -459,7 +459,7 @@ class DeploymentResponse(BaseModel):
     app_name: str
     env: DeploymentEnv
     history_id: int  # id d'historique ArgoCD, celui attendu par /apps/{id}/rollback
-    revisions: List[str]  # SHA renvoyés par ArgoCD (probablement le commit applicatif)
+    revisions: List[str]  # SHA ArgoCD, un par source : [0] dépôt applicatif, [1] cnp-gitops
     deployed_at: datetime
     deploy_started_at: Optional[datetime] = None
     initiated_by: Optional[str] = None  # username ArgoCD ; None pour un auto-sync

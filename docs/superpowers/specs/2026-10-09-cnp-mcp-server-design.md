@@ -269,6 +269,7 @@ Chaque client MCP envoie sa propre clé CNP ; `CNP_API_KEY` reste supportée com
 
 - `initiated_by` vaut `None` (affiché `auto`) pour les déploiements auto-sync ; la question de démo §8.4 est reformulée en conséquence.
 - `revisions` reprend le SHA brut d'ArgoCD. D'après `cnp-ci-modules` (`update-gitops` crée les Applications avec `path: chart`) et le rollback qui en tire le tag d'image (`revisions[0][:8]`), `revisions[0]` est **probablement** le commit du dépôt applicatif. À confirmer dans `cnp-gitops/argocd/<cluster>/<app>/<env>.yaml` pendant l'implémentation, puis à documenter dans le docstring de `DeploymentResponse.revisions`.
+  **Vérifié le 2026-11-12** : les Applications de `cnp-gitops` sont multi-sources, `sources[0]` = dépôt applicatif (`path: chart`), `sources[1]` = `cnp-gitops` (`ref: gitops`, fichiers de values). `revisions[0]` est donc le commit applicatif, `revisions[1]` celui de `cnp-gitops`.
 - L'auteur réel (commit déclencheur via GitLab) fait l'objet d'un ticket de suivi.
 
 ### D3 — Exposition via le nginx du `frontend`, à vérifier sur la VM
@@ -279,6 +280,8 @@ Le design §5.2 est conservé. Première tâche du déploiement : vérifier sur 
 - Sinon : règle d'ingress `cloudflared` `path: ^/mcp` vers `cnp-mcp` publié sur `127.0.0.1:8080` uniquement.
 
 Dans les deux cas, `docker-compose.tunnel.yml` est versionné dans le repo et référencé dans `docs/guides/cnp-control-deployment.md`, pour que la config de prod ne soit plus implicite.
+
+**Vérifié le 2026-11-12** : l'ingress envoie `cnp.cloud-native-plat4k.me` vers `http://localhost:80` (le `frontend`), le design §5.2 s'applique tel quel. `docker-compose.tunnel.yml` n'est finalement pas versionné : présent non suivi sur la VM, il ferait échouer le `git pull` du job `deploy` au merge. Son contenu et la config de l'ingress sont recopiés dans le guide.
 
 ### D4 — `owner` conservé dans `list_apps`
 
