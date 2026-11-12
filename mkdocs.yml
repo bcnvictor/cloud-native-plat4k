@@ -110,3 +110,4 @@ nav:
       - ADR-0026 — Second cloud public GKE: adr/0026-second-cloud-public-gke.md
       - ADR-0027 — Service d'authentification Keycloak: adr/0027-keycloak-app-auth.md
       - ADR-0028 — Authentification JWT des iframes Grafana: adr/0028-grafana-embed-jwt.md
+      - ADR-0029 — Serveur MCP read-only: adr/0029-mcp-server.md

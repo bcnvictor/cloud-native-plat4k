@@ -858,6 +858,156 @@
         }
       }
     },
+    "/api/v1/apps/{app_id}/status": {
+      "get": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "Get App Runtime Status",
+        "description": "Live K8s pods/replicas + ArgoCD sync/health for an application.",
+        "operationId": "get_app_runtime_status_api_v1_apps__app_id__status_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppRuntimeStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/history": {
+      "get": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "Get App History",
+        "description": "Return ArgoCD deployment history for dev and prod environments.",
+        "operationId": "get_app_history_api_v1_apps__app_id__history_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/rollback": {
+      "post": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "Rollback App",
+        "description": "Roll back an ArgoCD application to a previous history entry (Maintainer+).",
+        "operationId": "rollback_app_api_v1_apps__app_id__rollback_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/apps/{app_id}/members": {
       "get": {
         "tags": [
@@ -1301,6 +1451,1595 @@
         }
       }
     },
+    "/api/v1/apps/{app_id}/ci-status": {
+      "post": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "Update App Ci Status",
+        "description": "CI runner callback: update pipeline status on an application.",
+        "operationId": "update_app_ci_status_api_v1_apps__app_id__ci_status_post",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          },
+          {
+            "name": "x-cnp-callback-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Cnp-Callback-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CiStatusUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/expose": {
+      "patch": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "Toggle Expose",
+        "description": "Enable or disable public internet exposure (nginx ingress) for all environments.",
+        "operationId": "toggle_expose_api_v1_apps__app_id__expose_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExposeToggleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/stop": {
+      "post": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "Stop App",
+        "description": "Manually scale an app's environment(s) to zero via a gitops commit.",
+        "operationId": "stop_app_api_v1_apps__app_id__stop_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppScaleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/resume": {
+      "post": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "Resume App",
+        "description": "Manually resume an app's environment(s) via a gitops commit (clears scheduled or manual stop).",
+        "operationId": "resume_app_api_v1_apps__app_id__resume_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppScaleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/scale": {
+      "get": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "Get App Scale State",
+        "description": "Current stop/resume state per environment (dev/prod).",
+        "operationId": "get_app_scale_state_api_v1_apps__app_id__scale_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppScaleStateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/assistant/settings": {
+      "get": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Get Assistant Settings",
+        "operationId": "get_assistant_settings_api_v1_apps__app_id__assistant_settings_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIAppSettingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Patch Assistant Settings",
+        "operationId": "patch_assistant_settings_api_v1_apps__app_id__assistant_settings_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIAppSettingsPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIAppSettingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/assistant/chat": {
+      "post": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Chat With App",
+        "operationId": "chat_with_app_api_v1_apps__app_id__assistant_chat_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/assistant/security-scans": {
+      "post": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Create Security Scan",
+        "operationId": "create_security_scan_api_v1_apps__app_id__assistant_security_scans_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateScanPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityScanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "List Security Scans",
+        "operationId": "list_security_scans_api_v1_apps__app_id__assistant_security_scans_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SecurityScanResponse"
+                  },
+                  "title": "Response List Security Scans Api V1 Apps  App Id  Assistant Security Scans Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/assistant/security-scans/{scan_id}": {
+      "get": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Get Security Scan",
+        "operationId": "get_security_scan_api_v1_apps__app_id__assistant_security_scans__scan_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          },
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Scan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityScanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/assistant/security-scans/{scan_id}/summarize": {
+      "post": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Summarize Security Scan",
+        "operationId": "summarize_security_scan_api_v1_apps__app_id__assistant_security_scans__scan_id__summarize_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          },
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Scan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SummarizeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assistant/ui-settings": {
+      "get": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Get Assistant Ui Settings",
+        "operationId": "get_assistant_ui_settings_api_v1_assistant_ui_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIUISettingsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/assistant/global-settings": {
+      "get": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Get Assistant Global Settings",
+        "operationId": "get_assistant_global_settings_api_v1_assistant_global_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIGlobalSettingsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Patch Assistant Global Settings",
+        "operationId": "patch_assistant_global_settings_api_v1_assistant_global_settings_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIGlobalSettingsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIGlobalSettingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/assistant/chat": {
+      "post": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Chat Global",
+        "operationId": "chat_global_api_v1_assistant_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/assistant/platform-kb/reindex": {
+      "post": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Reindex Platform Kb",
+        "operationId": "reindex_platform_kb_api_v1_assistant_platform_kb_reindex_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReindexResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/ai-advice": {
+      "get": {
+        "tags": [
+          "finops-advisor"
+        ],
+        "summary": "Get Ai Advice",
+        "description": "Right-sizing / cost recommendations from the app's last 24 h of Prometheus metrics.",
+        "operationId": "get_ai_advice_api_v1_apps__app_id__ai_advice_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIAdviceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/env/{env}": {
+      "get": {
+        "tags": [
+          "env-vars"
+        ],
+        "summary": "List Env Vars",
+        "description": "Keys + is_set only — values never leave Vault (ADR-0025 §2).",
+        "operationId": "list_env_vars_api_v1_apps__app_id__env__env__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          },
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Env"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvVarListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "env-vars"
+        ],
+        "summary": "Set Env Vars",
+        "operationId": "set_env_vars_api_v1_apps__app_id__env__env__put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          },
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Env"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvVarSetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvVarListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/env/{env}/{key}": {
+      "delete": {
+        "tags": [
+          "env-vars"
+        ],
+        "summary": "Delete Env Var",
+        "operationId": "delete_env_var_api_v1_apps__app_id__env__env___key__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          },
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Env"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/env/{env}/values": {
+      "get": {
+        "tags": [
+          "env-vars"
+        ],
+        "summary": "Get Env Var Values",
+        "description": "Real values, dev only — exception to the write-only rule (ADR-0025 addendum),\nneeded for `cnp env pull` (a developer reproducing their env locally). Hard-blocked\nfor prod regardless of tier or admin: there is no legitimate reason to bulk-read\nproduction secrets through this API.",
+        "operationId": "get_env_var_values_api_v1_apps__app_id__env__env__values_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          },
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Env"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Env Var Values Api V1 Apps  App Id  Env  Env  Values Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/env/{env}/{key}/status": {
+      "get": {
+        "tags": [
+          "env-vars"
+        ],
+        "summary": "Get Env Var Status",
+        "operationId": "get_env_var_status_api_v1_apps__app_id__env__env___key__status_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          },
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Env"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvVarStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/keycloak/instances": {
+      "get": {
+        "tags": [
+          "keycloak-instances"
+        ],
+        "summary": "List Instances",
+        "operationId": "list_instances_api_v1_keycloak_instances_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KeycloakInstanceResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Instances Api V1 Keycloak Instances Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/keycloak/instances/{instance_key}": {
+      "get": {
+        "tags": [
+          "keycloak-instances"
+        ],
+        "summary": "Get Instance",
+        "operationId": "get_instance_api_v1_keycloak_instances__instance_key__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "instance_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Instance Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeycloakInstanceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "keycloak-instances"
+        ],
+        "summary": "Upsert Instance",
+        "operationId": "upsert_instance_api_v1_keycloak_instances__instance_key__put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "instance_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Instance Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeycloakInstanceUpsert"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeycloakInstanceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "keycloak-instances"
+        ],
+        "summary": "Delete Instance",
+        "operationId": "delete_instance_api_v1_keycloak_instances__instance_key__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "instance_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Instance Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/auth": {
+      "get": {
+        "tags": [
+          "keycloak"
+        ],
+        "summary": "Get Auth Status",
+        "operationId": "get_auth_status_api_v1_apps__app_id__auth_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeycloakStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "keycloak"
+        ],
+        "summary": "Enable Auth",
+        "description": "Activate Keycloak on an app that wasn't scaffolded/onboarded with it (dev + prod),\nor retry after a failed provisioning (auth_provisioned == False): provisioning is\nidempotent step by step, so a retry completes a half-created setup.",
+        "operationId": "enable_auth_api_v1_apps__app_id__auth_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeycloakStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/auth/{env}/console-access": {
+      "post": {
+        "tags": [
+          "keycloak"
+        ],
+        "summary": "Get Console Access",
+        "description": "Create/reactivate a temporary console admin account for the calling user.\n\nThe temporary password is returned exactly once in this response — never\nlogged, never cached, never stored by CNP (ADR-0027 §3).",
+        "operationId": "get_console_access_api_v1_apps__app_id__auth__env__console_access_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          },
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Env"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeycloakConsoleAccessResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/auth/{env}/reprovision": {
+      "post": {
+        "tags": [
+          "keycloak"
+        ],
+        "summary": "Reprovision Auth",
+        "description": "Recreate a deleted realm from scratch — new client, new secret, new console\nusers. dev: Maintainer+. prod: Owner only (ADR-0027 §2/§5).",
+        "operationId": "reprovision_auth_api_v1_apps__app_id__auth__env__reprovision_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "App Id"
+            }
+          },
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Env"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeycloakStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/clusters/": {
       "get": {
         "tags": [
@@ -1353,6 +3092,53 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ClusterConnectionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/clusters/test": {
+      "post": {
+        "tags": [
+          "clusters"
+        ],
+        "summary": "Test Kubeconfig",
+        "description": "Teste un kubeconfig avant enregistrement (rien n'est persisté).",
+        "operationId": "test_kubeconfig_api_v1_clusters_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClusterTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterTestResult"
                 }
               }
             }
@@ -1520,13 +3306,13 @@
         }
       }
     },
-    "/api/v1/deployments/": {
-      "get": {
+    "/api/v1/clusters/{cluster_id}/test": {
+      "post": {
         "tags": [
-          "deployments"
+          "clusters"
         ],
-        "summary": "List Deployments",
-        "operationId": "list_deployments_api_v1_deployments__get",
+        "summary": "Test Cluster",
+        "operationId": "test_cluster_api_v1_clusters__cluster_id__test_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1534,51 +3320,12 @@
         ],
         "parameters": [
           {
-            "name": "application_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Application Id"
-            }
-          },
-          {
             "name": "cluster_id",
-            "in": "query",
-            "required": false,
+            "in": "path",
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
+              "type": "integer",
               "title": "Cluster Id"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/DeploymentStatus"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
             }
           }
         ],
@@ -1588,11 +3335,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/DeploymentResponse"
-                  },
-                  "title": "Response List Deployments Api V1 Deployments  Get"
+                  "$ref": "#/components/schemas/ClusterTestResult"
                 }
               }
             }
@@ -1608,36 +3351,74 @@
             }
           }
         }
-      },
-      "post": {
+      }
+    },
+    "/api/v1/deployments/": {
+      "get": {
         "tags": [
           "deployments"
         ],
-        "summary": "Create Deployment",
-        "description": "Enregistre l'intention de déploiement en base. L'orchestration Kubernetes sera branchée dans une tâche ultérieure.",
-        "operationId": "create_deployment_api_v1_deployments__post",
+        "summary": "List Deployments",
+        "description": "Recent deployments across apps, newest first (ArgoCD history window).",
+        "operationId": "list_deployments_api_v1_deployments__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeploymentCreate"
-              }
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Id"
+            }
+          },
+          {
+            "name": "env",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DeploymentEnv"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Env"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
             }
           }
-        },
+        ],
         "responses": {
-          "201": {
+          "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DeploymentResponse"
+                  "$ref": "#/components/schemas/DeploymentListResponse"
                 }
               }
             }
@@ -1661,6 +3442,7 @@
           "deployments"
         ],
         "summary": "Get Deployment",
+        "description": "One deployment by id `{app_id}:{env}:{history_id}`.",
         "operationId": "get_deployment_api_v1_deployments__deployment_id__get",
         "security": [
           {
@@ -1673,7 +3455,7 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
+              "type": "string",
               "title": "Deployment Id"
             }
           }
@@ -2077,6 +3859,59 @@
               "default": 0,
               "title": "Offset"
             }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "name": "action_prefix",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action Prefix"
+            }
           }
         ],
         "responses": {
@@ -2091,6 +3926,76 @@
                   },
                   "title": "Response List Audit Logs Api V1 Audit  Get"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit/export": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Export Audit Logs",
+        "operationId": "export_audit_logs_api_v1_audit_export_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -2353,15 +4258,142 @@
         }
       }
     },
-    "/api/v1/webhooks/gitlab": {
+    "/api/v1/groups/{gitlab_group_id}/activity": {
+      "get": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Get Group Activity",
+        "operationId": "get_group_activity_api_v1_groups__gitlab_group_id__activity_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "gitlab_group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Gitlab Group Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventResponse"
+                  },
+                  "title": "Response Get Group Activity Api V1 Groups  Gitlab Group Id  Activity Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/groups/{gitlab_group_id}/grafana-url": {
+      "get": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Get Group Grafana Url",
+        "operationId": "get_group_grafana_url_api_v1_groups__gitlab_group_id__grafana_url_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "gitlab_group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Gitlab Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Group Grafana Url Api V1 Groups  Gitlab Group Id  Grafana Url Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/gitops": {
       "post": {
         "tags": [
           "webhooks"
         ],
-        "summary": "Gitlab Pipeline Webhook",
-        "description": "Receive GitLab pipeline events and update last_pipeline_status on matching apps.",
-        "operationId": "gitlab_pipeline_webhook_api_v1_webhooks_gitlab_post",
+        "summary": "Gitops Webhook",
+        "description": "Push sur le repo GitOps → force ArgoCD sync sur toutes les apps des clusters configurés.",
+        "operationId": "gitops_webhook_api_v1_webhooks_gitops_post",
         "parameters": [
+          {
+            "name": "webhook-signature",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Webhook-Signature"
+            }
+          },
           {
             "name": "x-gitlab-token",
             "in": "header",
@@ -2401,6 +4433,107 @@
         }
       }
     },
+    "/api/v1/webhooks/argocd": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Argocd Sync Webhook",
+        "description": "Receive ArgoCD sync notifications and update deployment status.",
+        "operationId": "argocd_sync_webhook_api_v1_webhooks_argocd_post",
+        "parameters": [
+          {
+            "name": "x-argocd-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Argocd-Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/security-scan-callback": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Security Scan Callback",
+        "description": "Authenticated callback from GitLab CI — attaches scan findings to a queued/running scan.",
+        "operationId": "security_scan_callback_api_v1_webhooks_security_scan_callback_post",
+        "parameters": [
+          {
+            "name": "x-scan-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Scan-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanCallbackPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/monitoring/config": {
       "get": {
         "tags": [
@@ -2417,7 +4550,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/v1/monitoring/metrics": {
@@ -2427,12 +4565,106 @@
         ],
         "summary": "Metrics",
         "operationId": "metrics_api_v1_monitoring_metrics_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cluster_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cluster Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/monitoring/cost": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Cost",
+        "operationId": "cost_api_v1_monitoring_cost_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "cluster_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cluster Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -2446,6 +4678,11 @@
         ],
         "summary": "Logs",
         "operationId": "logs_api_v1_monitoring_logs_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "namespace",
@@ -2489,6 +4726,22 @@
               "minimum": 1,
               "default": 50,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "cluster_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cluster Id"
             }
           }
         ],
@@ -2655,10 +4908,774 @@
           }
         }
       }
+    },
+    "/api/v1/admin/finops/grafana-urls": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Finops Grafana Urls",
+        "description": "URLs d'embed du dashboard cnp-finops-overview (panels fixés sur les 30 derniers jours).",
+        "operationId": "get_finops_grafana_urls_api_v1_admin_finops_grafana_urls_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinopsGrafanaUrls"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/finops/cost-by-team": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Finops Cost By Team",
+        "description": "Coût 30j par équipe (label_cnp_io_group_id), résolu vers le nom du groupe GitLab.",
+        "operationId": "get_finops_cost_by_team_api_v1_admin_finops_cost_by_team_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TeamCostEntry"
+                  },
+                  "type": "array",
+                  "title": "Response Get Finops Cost By Team Api V1 Admin Finops Cost By Team Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/notifications/": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "List Notifications",
+        "operationId": "list_notifications_api_v1_notifications__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationResponse"
+                  },
+                  "title": "Response List Notifications Api V1 Notifications  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/count": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Count Unread",
+        "operationId": "count_unread_api_v1_notifications_count_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadCountResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/notifications/clear": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Clear All Notifications",
+        "operationId": "clear_all_notifications_api_v1_notifications_clear_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/notifications/{notification_id}": {
+      "patch": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Update Notification State",
+        "operationId": "update_notification_state_api_v1_notifications__notification_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "notification_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Notification Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/preferences": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Get Preferences",
+        "operationId": "get_preferences_api_v1_notifications_preferences_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationPreferenceResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Get Preferences Api V1 Notifications Preferences Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/notifications/preferences/{category}": {
+      "patch": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Update Preference",
+        "operationId": "update_preference_api_v1_notifications_preferences__category__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Category"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPreferenceUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferenceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AIAdviceResponse": {
+        "properties": {
+          "app_id": {
+            "type": "integer",
+            "title": "App Id"
+          },
+          "app_name": {
+            "type": "string",
+            "title": "App Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "window_hours": {
+            "type": "integer",
+            "title": "Window Hours"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/EnvSnapshotSchema"
+            },
+            "type": "array",
+            "title": "Metrics"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "recommendations": {
+            "items": {
+              "$ref": "#/components/schemas/RecommendationSchema"
+            },
+            "type": "array",
+            "title": "Recommendations"
+          },
+          "raw_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Text"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "estimated_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Cost Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "app_id",
+          "app_name",
+          "status",
+          "window_hours",
+          "generated_at",
+          "metrics",
+          "summary",
+          "recommendations",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "title": "AIAdviceResponse"
+      },
+      "AIAppSettingsPatch": {
+        "properties": {
+          "ai_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Enabled"
+          },
+          "ai_context_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AIContextMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ai_security_scan_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Security Scan Enabled"
+          },
+          "ai_security_summary_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Security Summary Enabled"
+          },
+          "accept_code_access_warning": {
+            "type": "boolean",
+            "title": "Accept Code Access Warning",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "AIAppSettingsPatch"
+      },
+      "AIAppSettingsResponse": {
+        "properties": {
+          "app_id": {
+            "type": "integer",
+            "title": "App Id"
+          },
+          "ai_enabled": {
+            "type": "boolean",
+            "title": "Ai Enabled"
+          },
+          "ai_context_mode": {
+            "$ref": "#/components/schemas/AIContextMode"
+          },
+          "ai_security_scan_enabled": {
+            "type": "boolean",
+            "title": "Ai Security Scan Enabled"
+          },
+          "ai_security_summary_enabled": {
+            "type": "boolean",
+            "title": "Ai Security Summary Enabled"
+          },
+          "code_access_warning_accepted_by_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Access Warning Accepted By User Id"
+          },
+          "code_access_warning_accepted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Access Warning Accepted At"
+          },
+          "updated_by_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By User Id"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "app_id",
+          "ai_enabled",
+          "ai_context_mode",
+          "ai_security_scan_enabled",
+          "ai_security_summary_enabled",
+          "updated_at"
+        ],
+        "title": "AIAppSettingsResponse"
+      },
+      "AIContextMode": {
+        "type": "string",
+        "enum": [
+          "metadata_only",
+          "metadata_and_code"
+        ],
+        "title": "AIContextMode"
+      },
+      "AIGlobalSettingsPatch": {
+        "properties": {
+          "assistant_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assistant Enabled"
+          },
+          "graphical_bot_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graphical Bot Enabled"
+          },
+          "platform_data_access_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform Data Access Enabled"
+          },
+          "app_data_access_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Data Access Enabled"
+          },
+          "allowed_app_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed App Ids"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          }
+        },
+        "type": "object",
+        "title": "AIGlobalSettingsPatch"
+      },
+      "AIGlobalSettingsResponse": {
+        "properties": {
+          "assistant_enabled": {
+            "type": "boolean",
+            "title": "Assistant Enabled"
+          },
+          "graphical_bot_enabled": {
+            "type": "boolean",
+            "title": "Graphical Bot Enabled"
+          },
+          "platform_data_access_enabled": {
+            "type": "boolean",
+            "title": "Platform Data Access Enabled"
+          },
+          "app_data_access_enabled": {
+            "type": "boolean",
+            "title": "App Data Access Enabled"
+          },
+          "allowed_app_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Allowed App Ids"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "api_key_set": {
+            "type": "boolean",
+            "title": "Api Key Set"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "updated_by_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By User Id"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "assistant_enabled",
+          "graphical_bot_enabled",
+          "platform_data_access_enabled",
+          "app_data_access_enabled",
+          "allowed_app_ids",
+          "provider",
+          "model",
+          "api_key_set",
+          "source"
+        ],
+        "title": "AIGlobalSettingsResponse"
+      },
+      "AIUISettingsResponse": {
+        "properties": {
+          "assistant_enabled": {
+            "type": "boolean",
+            "title": "Assistant Enabled"
+          },
+          "graphical_bot_enabled": {
+            "type": "boolean",
+            "title": "Graphical Bot Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "assistant_enabled",
+          "graphical_bot_enabled"
+        ],
+        "title": "AIUISettingsResponse"
+      },
       "APIKeyCreateResponse": {
         "properties": {
           "id": {
@@ -2751,6 +5768,196 @@
           "gitlab_user_id"
         ],
         "title": "AddMemberRequest"
+      },
+      "AppRuntimeStatus": {
+        "properties": {
+          "pods_running": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pods Running"
+          },
+          "pods_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pods Total"
+          },
+          "replicas_desired": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replicas Desired"
+          },
+          "replicas_ready": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replicas Ready"
+          },
+          "replicas_available": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replicas Available"
+          },
+          "argocd_dev": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArgoEnvStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "argocd_prod": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArgoEnvStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "k8s_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "K8S Error"
+          },
+          "argocd_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Argocd Error"
+          }
+        },
+        "type": "object",
+        "title": "AppRuntimeStatus"
+      },
+      "AppScaleRequest": {
+        "properties": {
+          "env": {
+            "type": "string",
+            "title": "Env"
+          }
+        },
+        "type": "object",
+        "required": [
+          "env"
+        ],
+        "title": "AppScaleRequest"
+      },
+      "AppScaleStateItem": {
+        "properties": {
+          "is_stopped": {
+            "type": "boolean",
+            "title": "Is Stopped"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "stopped_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped At"
+          },
+          "resumed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resumed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_stopped"
+        ],
+        "title": "AppScaleStateItem"
+      },
+      "AppScaleStateResponse": {
+        "properties": {
+          "dev": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppScaleStateItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prod": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppScaleStateItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "AppScaleStateResponse"
       },
       "ApplicationCreate": {
         "properties": {
@@ -2876,6 +6083,11 @@
               }
             ],
             "title": "Owning Gitlab Group Id"
+          },
+          "expose": {
+            "type": "boolean",
+            "title": "Expose",
+            "default": false
           }
         },
         "type": "object",
@@ -2933,6 +6145,19 @@
               }
             ],
             "title": "Owning Gitlab Group Id"
+          },
+          "expose": {
+            "type": "boolean",
+            "title": "Expose",
+            "default": false
+          },
+          "services": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Services",
+            "default": []
           }
         },
         "type": "object",
@@ -3017,7 +6242,7 @@
             "type": "string",
             "title": "Slug"
           },
-          "status": {
+          "last_known_status": {
             "$ref": "#/components/schemas/ApplicationStatus"
           },
           "target_cluster_id": {
@@ -3041,6 +6266,17 @@
               }
             ],
             "title": "Ci Injected"
+          },
+          "expose": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expose"
           },
           "last_pipeline_status": {
             "anyOf": [
@@ -3080,6 +6316,47 @@
               }
             ],
             "title": "Updated At"
+          },
+          "auth_enabled": {
+            "type": "boolean",
+            "title": "Auth Enabled",
+            "default": false
+          },
+          "auth_instance_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Instance Key"
+          },
+          "auth_provisioned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Provisioned"
+          },
+          "auth_warnings": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Warnings"
           }
         },
         "type": "object",
@@ -3088,7 +6365,7 @@
           "owner",
           "id",
           "slug",
-          "status",
+          "last_known_status",
           "created_at"
         ],
         "title": "ApplicationResponse"
@@ -3122,6 +6399,17 @@
             "title": "Skip First Deploy",
             "default": false
           },
+          "target_cluster_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Cluster Id"
+          },
           "owning_gitlab_group_id": {
             "anyOf": [
               {
@@ -3132,6 +6420,11 @@
               }
             ],
             "title": "Owning Gitlab Group Id"
+          },
+          "expose": {
+            "type": "boolean",
+            "title": "Expose",
+            "default": false
           }
         },
         "type": "object",
@@ -3221,7 +6514,7 @@
             ],
             "title": "Framework"
           },
-          "status": {
+          "last_known_status": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ApplicationStatus"
@@ -3246,6 +6539,67 @@
         "type": "object",
         "title": "ApplicationUpdate"
       },
+      "ArgoEnvStatus": {
+        "properties": {
+          "sync_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Status"
+          },
+          "health_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Status"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "title": "ArgoEnvStatus"
+      },
       "AuditLogResponse": {
         "properties": {
           "id": {
@@ -3253,8 +6607,26 @@
             "title": "Id"
           },
           "user_id": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "User Id"
+          },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email"
           },
           "action": {
             "type": "string",
@@ -3270,6 +6642,28 @@
               }
             ],
             "title": "Resource Id"
+          },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Id"
+          },
+          "app_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Name"
           },
           "cloud": {
             "anyOf": [
@@ -3296,6 +6690,18 @@
               }
             ],
             "title": "Ip Address"
+          },
+          "extra": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra"
           }
         },
         "type": "object",
@@ -3369,6 +6775,152 @@
         ],
         "title": "Body_login_api_v1_auth_login_post"
       },
+      "ChatPayload": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 8000,
+            "title": "Message"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode",
+            "default": "general"
+          },
+          "agent": {
+            "type": "string",
+            "title": "Agent",
+            "default": "default"
+          },
+          "requested_context_mode": {
+            "$ref": "#/components/schemas/AIContextMode",
+            "default": "metadata_only"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "stream": {
+            "type": "boolean",
+            "title": "Stream",
+            "default": false
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ChatTurn"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "History"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PagePayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "ChatPayload"
+      },
+      "ChatResponseSchema": {
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "citations": {
+            "items": {},
+            "type": "array",
+            "title": "Citations",
+            "default": []
+          },
+          "used_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Used Tools",
+            "default": []
+          },
+          "usage": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Usage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "answer",
+          "usage"
+        ],
+        "title": "ChatResponseSchema"
+      },
+      "ChatTurn": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 8000,
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ChatTurn"
+      },
+      "CiStatusUpdate": {
+        "properties": {
+          "pipeline_status": {
+            "type": "string",
+            "title": "Pipeline Status"
+          },
+          "app_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "pipeline_status"
+        ],
+        "title": "CiStatusUpdate"
+      },
       "CloudType": {
         "type": "string",
         "enum": [
@@ -3388,9 +6940,57 @@
             "type": "string",
             "title": "Endpoint"
           },
+          "provider": {
+            "$ref": "#/components/schemas/ClusterProvider",
+            "default": "other"
+          },
+          "prometheus_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prometheus Url"
+          },
+          "loki_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loki Url"
+          },
+          "argocd_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Argocd Url"
+          },
           "kubeconfig": {
             "type": "string",
             "title": "Kubeconfig"
+          },
+          "argocd_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Argocd Token"
           }
         },
         "type": "object",
@@ -3410,6 +7010,43 @@
           "endpoint": {
             "type": "string",
             "title": "Endpoint"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ClusterProvider",
+            "default": "other"
+          },
+          "prometheus_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prometheus Url"
+          },
+          "loki_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loki Url"
+          },
+          "argocd_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Argocd Url"
           },
           "id": {
             "type": "integer",
@@ -3451,6 +7088,11 @@
               }
             ],
             "title": "Updated At"
+          },
+          "app_count": {
+            "type": "integer",
+            "title": "App Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -3487,6 +7129,16 @@
             ],
             "title": "Endpoint"
           },
+          "provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClusterProvider"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kubeconfig": {
             "anyOf": [
               {
@@ -3497,10 +7149,67 @@
               }
             ],
             "title": "Kubeconfig"
+          },
+          "prometheus_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prometheus Url"
+          },
+          "loki_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loki Url"
+          },
+          "argocd_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Argocd Url"
+          },
+          "argocd_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Argocd Token"
           }
         },
         "type": "object",
         "title": "ClusterConnectionUpdate"
+      },
+      "ClusterProvider": {
+        "type": "string",
+        "enum": [
+          "azure",
+          "aws",
+          "gcp",
+          "openstack",
+          "oracle",
+          "other"
+        ],
+        "title": "ClusterProvider",
+        "description": "Cloud hébergeant un cluster. Stocké en String en base : ajouter une valeur ici ne demande pas de migration."
       },
       "ClusterStatus": {
         "type": "string",
@@ -3511,6 +7220,65 @@
         ],
         "title": "ClusterStatus"
       },
+      "ClusterTestRequest": {
+        "properties": {
+          "kubeconfig": {
+            "type": "string",
+            "title": "Kubeconfig"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kubeconfig"
+        ],
+        "title": "ClusterTestRequest"
+      },
+      "ClusterTestResult": {
+        "properties": {
+          "reachable": {
+            "type": "boolean",
+            "title": "Reachable"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "namespace_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Namespace Count"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reachable"
+        ],
+        "title": "ClusterTestResult"
+      },
       "CnpTier": {
         "type": "string",
         "enum": [
@@ -3520,6 +7288,22 @@
           "owner"
         ],
         "title": "CnpTier"
+      },
+      "CreateScanPayload": {
+        "properties": {
+          "ref": {
+            "type": "string",
+            "title": "Ref",
+            "default": "main"
+          },
+          "trigger_ci": {
+            "type": "boolean",
+            "title": "Trigger Ci",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "CreateScanPayload"
       },
       "CredentialCreate": {
         "properties": {
@@ -3565,54 +7349,406 @@
         ],
         "title": "CredentialResponse"
       },
-      "DeploymentCreate": {
+      "DeploymentEnv": {
+        "type": "string",
+        "enum": [
+          "dev",
+          "prod"
+        ],
+        "title": "DeploymentEnv"
+      },
+      "DeploymentListResponse": {
         "properties": {
-          "application_id": {
-            "type": "integer",
-            "title": "Application Id"
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DeploymentResponse"
+            },
+            "type": "array",
+            "title": "Items"
           },
-          "cluster_id": {
-            "type": "integer",
-            "title": "Cluster Id"
-          },
-          "version": {
-            "type": "string",
-            "title": "Version"
+          "unavailable": {
+            "items": {
+              "$ref": "#/components/schemas/DeploymentUnavailable"
+            },
+            "type": "array",
+            "title": "Unavailable"
           }
         },
         "type": "object",
         "required": [
-          "application_id",
-          "cluster_id",
-          "version"
+          "items",
+          "unavailable"
         ],
-        "title": "DeploymentCreate"
+        "title": "DeploymentListResponse"
       },
       "DeploymentResponse": {
         "properties": {
-          "application_id": {
-            "type": "integer",
-            "title": "Application Id"
-          },
-          "cluster_id": {
-            "type": "integer",
-            "title": "Cluster Id"
-          },
-          "version": {
-            "type": "string",
-            "title": "Version"
-          },
           "id": {
-            "type": "integer",
+            "type": "string",
             "title": "Id"
           },
-          "status": {
-            "$ref": "#/components/schemas/DeploymentStatus"
+          "app_id": {
+            "type": "integer",
+            "title": "App Id"
+          },
+          "app_slug": {
+            "type": "string",
+            "title": "App Slug"
+          },
+          "app_name": {
+            "type": "string",
+            "title": "App Name"
+          },
+          "env": {
+            "$ref": "#/components/schemas/DeploymentEnv"
+          },
+          "history_id": {
+            "type": "integer",
+            "title": "History Id"
+          },
+          "revisions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Revisions"
           },
           "deployed_at": {
             "type": "string",
             "format": "date-time",
             "title": "Deployed At"
+          },
+          "deploy_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deploy Started At"
+          },
+          "initiated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiated By"
+          },
+          "automated": {
+            "type": "boolean",
+            "title": "Automated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "app_id",
+          "app_slug",
+          "app_name",
+          "env",
+          "history_id",
+          "revisions",
+          "deployed_at"
+        ],
+        "title": "DeploymentResponse"
+      },
+      "DeploymentUnavailable": {
+        "properties": {
+          "app_id": {
+            "type": "integer",
+            "title": "App Id"
+          },
+          "env": {
+            "$ref": "#/components/schemas/DeploymentEnv"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "app_id",
+          "env",
+          "reason"
+        ],
+        "title": "DeploymentUnavailable"
+      },
+      "EnvSnapshotSchema": {
+        "properties": {
+          "env": {
+            "type": "string",
+            "title": "Env"
+          },
+          "pods": {
+            "type": "integer",
+            "title": "Pods"
+          },
+          "restarts": {
+            "type": "integer",
+            "title": "Restarts"
+          },
+          "coverage_hours": {
+            "type": "number",
+            "title": "Coverage Hours"
+          },
+          "cpu_avg_mcpu": {
+            "type": "number",
+            "title": "Cpu Avg Mcpu"
+          },
+          "cpu_p95_mcpu": {
+            "type": "number",
+            "title": "Cpu P95 Mcpu"
+          },
+          "cpu_max_mcpu": {
+            "type": "number",
+            "title": "Cpu Max Mcpu"
+          },
+          "ram_avg_mib": {
+            "type": "number",
+            "title": "Ram Avg Mib"
+          },
+          "ram_p95_mib": {
+            "type": "number",
+            "title": "Ram P95 Mib"
+          },
+          "ram_max_mib": {
+            "type": "number",
+            "title": "Ram Max Mib"
+          },
+          "cpu_request_mcpu": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Request Mcpu"
+          },
+          "cpu_limit_mcpu": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Limit Mcpu"
+          },
+          "ram_request_mib": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ram Request Mib"
+          },
+          "ram_limit_mib": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ram Limit Mib"
+          },
+          "reserved_cost_month_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserved Cost Month Usd"
+          },
+          "used_cost_month_usd": {
+            "type": "number",
+            "title": "Used Cost Month Usd"
+          },
+          "proposed_cpu_request_mcpu": {
+            "type": "integer",
+            "title": "Proposed Cpu Request Mcpu"
+          },
+          "proposed_ram_request_mib": {
+            "type": "integer",
+            "title": "Proposed Ram Request Mib"
+          },
+          "proposed_cost_month_usd": {
+            "type": "number",
+            "title": "Proposed Cost Month Usd"
+          },
+          "potential_savings_month_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Potential Savings Month Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "env",
+          "pods",
+          "restarts",
+          "coverage_hours",
+          "cpu_avg_mcpu",
+          "cpu_p95_mcpu",
+          "cpu_max_mcpu",
+          "ram_avg_mib",
+          "ram_p95_mib",
+          "ram_max_mib",
+          "used_cost_month_usd",
+          "proposed_cpu_request_mcpu",
+          "proposed_ram_request_mib",
+          "proposed_cost_month_usd"
+        ],
+        "title": "EnvSnapshotSchema"
+      },
+      "EnvVarKeyStatus": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "is_set": {
+            "type": "boolean",
+            "title": "Is Set"
+          },
+          "managed": {
+            "type": "boolean",
+            "title": "Managed",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "is_set"
+        ],
+        "title": "EnvVarKeyStatus"
+      },
+      "EnvVarListResponse": {
+        "properties": {
+          "env": {
+            "type": "string",
+            "title": "Env"
+          },
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/EnvVarKeyStatus"
+            },
+            "type": "array",
+            "title": "Keys"
+          }
+        },
+        "type": "object",
+        "required": [
+          "env",
+          "keys"
+        ],
+        "title": "EnvVarListResponse"
+      },
+      "EnvVarSetRequest": {
+        "properties": {
+          "variables": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "minProperties": 1,
+            "title": "Variables"
+          }
+        },
+        "type": "object",
+        "required": [
+          "variables"
+        ],
+        "title": "EnvVarSetRequest"
+      },
+      "EnvVarStatusResponse": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "is_set": {
+            "type": "boolean",
+            "title": "Is Set"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "is_set"
+        ],
+        "title": "EnvVarStatusResponse"
+      },
+      "EventResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Id"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "dedup_key": {
+            "type": "string",
+            "title": "Dedup Key"
           },
           "created_at": {
             "type": "string",
@@ -3622,25 +7758,97 @@
         },
         "type": "object",
         "required": [
-          "application_id",
-          "cluster_id",
-          "version",
           "id",
-          "status",
-          "deployed_at",
+          "type",
+          "severity",
+          "source",
+          "dedup_key",
           "created_at"
         ],
-        "title": "DeploymentResponse"
+        "title": "EventResponse"
       },
-      "DeploymentStatus": {
+      "ExposeToggleRequest": {
+        "properties": {
+          "expose": {
+            "type": "boolean",
+            "title": "Expose"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expose"
+        ],
+        "title": "ExposeToggleRequest"
+      },
+      "FindingSeverity": {
         "type": "string",
         "enum": [
-          "pending",
-          "running",
-          "succeeded",
-          "failed"
+          "critical",
+          "high",
+          "medium",
+          "low",
+          "info"
         ],
-        "title": "DeploymentStatus"
+        "title": "FindingSeverity"
+      },
+      "FindingStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "acknowledged",
+          "fixed"
+        ],
+        "title": "FindingStatus"
+      },
+      "FinopsGrafanaUrls": {
+        "properties": {
+          "total_cost_panel_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Cost Panel Url"
+          },
+          "top_apps_panel_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top Apps Panel Url"
+          },
+          "trend_panel_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trend Panel Url"
+          },
+          "dashboard_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dashboard Url"
+          }
+        },
+        "type": "object",
+        "title": "FinopsGrafanaUrls"
       },
       "GitLabCredentialCreate": {
         "properties": {
@@ -3751,9 +7959,9 @@
             "type": "string",
             "title": "Name"
           },
-          "path_with_namespace": {
+          "full_path": {
             "type": "string",
-            "title": "Path With Namespace"
+            "title": "Full Path"
           },
           "web_url": {
             "type": "string",
@@ -3775,7 +7983,7 @@
         "required": [
           "id",
           "name",
-          "path_with_namespace",
+          "full_path",
           "web_url"
         ],
         "title": "GitLabProject"
@@ -3849,6 +8057,303 @@
         ],
         "title": "InviteMemberRequest"
       },
+      "KeycloakConsoleAccessResponse": {
+        "properties": {
+          "console_url": {
+            "type": "string",
+            "title": "Console Url"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "temporary_password": {
+            "type": "string",
+            "title": "Temporary Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "console_url",
+          "username",
+          "temporary_password"
+        ],
+        "title": "KeycloakConsoleAccessResponse"
+      },
+      "KeycloakEnvState": {
+        "type": "string",
+        "enum": [
+          "active",
+          "missing",
+          "foreign",
+          "unknown"
+        ],
+        "title": "KeycloakEnvState"
+      },
+      "KeycloakEnvStatus": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "realm": {
+            "type": "string",
+            "title": "Realm"
+          },
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          },
+          "state": {
+            "$ref": "#/components/schemas/KeycloakEnvState",
+            "default": "unknown"
+          },
+          "console_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Console Url"
+          },
+          "issuer_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuer Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "realm",
+          "exists"
+        ],
+        "title": "KeycloakEnvStatus"
+      },
+      "KeycloakInstanceResponse": {
+        "properties": {
+          "instance_key": {
+            "type": "string",
+            "title": "Instance Key"
+          },
+          "cluster_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Id"
+          },
+          "public_url": {
+            "type": "string",
+            "title": "Public Url"
+          },
+          "admin_url": {
+            "type": "string",
+            "title": "Admin Url"
+          },
+          "admin_client_id": {
+            "type": "string",
+            "title": "Admin Client Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "instance_key",
+          "cluster_id",
+          "public_url",
+          "admin_url",
+          "admin_client_id",
+          "enabled",
+          "created_at"
+        ],
+        "title": "KeycloakInstanceResponse"
+      },
+      "KeycloakInstanceSummary": {
+        "properties": {
+          "instance_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Key"
+          },
+          "cluster_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Id"
+          },
+          "cluster_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Name"
+          },
+          "public_url": {
+            "type": "string",
+            "title": "Public Url"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "cluster",
+              "legacy"
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "instance_key",
+          "cluster_id",
+          "cluster_name",
+          "public_url",
+          "enabled",
+          "source"
+        ],
+        "title": "KeycloakInstanceSummary"
+      },
+      "KeycloakInstanceUpsert": {
+        "properties": {
+          "cluster_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Id"
+          },
+          "public_url": {
+            "type": "string",
+            "title": "Public Url"
+          },
+          "admin_url": {
+            "type": "string",
+            "title": "Admin Url"
+          },
+          "admin_client_id": {
+            "type": "string",
+            "title": "Admin Client Id",
+            "default": "cnp-provisioner"
+          },
+          "provisioner_secret_ref": {
+            "type": "string",
+            "title": "Provisioner Secret Ref"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "public_url",
+          "admin_url",
+          "provisioner_secret_ref"
+        ],
+        "title": "KeycloakInstanceUpsert"
+      },
+      "KeycloakStatusResponse": {
+        "properties": {
+          "instance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KeycloakInstanceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "auth_provisioned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Provisioned"
+          },
+          "dev": {
+            "$ref": "#/components/schemas/KeycloakEnvStatus"
+          },
+          "prod": {
+            "$ref": "#/components/schemas/KeycloakEnvStatus"
+          },
+          "auth_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Auth Warnings",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "dev",
+          "prod"
+        ],
+        "title": "KeycloakStatusResponse"
+      },
       "MemberRead": {
         "properties": {
           "cnp_user_id": {
@@ -3918,6 +8423,120 @@
         ],
         "title": "MyAccessResponse"
       },
+      "NotificationPreferenceResponse": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "enabled"
+        ],
+        "title": "NotificationPreferenceResponse"
+      },
+      "NotificationPreferenceUpdate": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "NotificationPreferenceUpdate"
+      },
+      "NotificationResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "event": {
+            "$ref": "#/components/schemas/EventResponse"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "event",
+          "state",
+          "created_at"
+        ],
+        "title": "NotificationResponse"
+      },
+      "PagePayload": {
+        "properties": {
+          "path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "group_slug": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Slug"
+          },
+          "app_slug": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Slug"
+          }
+        },
+        "type": "object",
+        "title": "PagePayload",
+        "description": "Où se trouve l'utilisateur dans l'UI (résolu côté serveur avec la RBAC)."
+      },
       "PostgreSQLCredentials": {
         "properties": {
           "host": {
@@ -3956,6 +8575,65 @@
         ],
         "title": "PostgreSQLCredentials"
       },
+      "RecommendationSchema": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "env": {
+            "type": "string",
+            "title": "Env"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "current": {
+            "type": "string",
+            "title": "Current"
+          },
+          "proposed": {
+            "type": "string",
+            "title": "Proposed"
+          },
+          "monthly_savings_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Savings Usd"
+          },
+          "risk": {
+            "type": "string",
+            "title": "Risk"
+          },
+          "confidence": {
+            "type": "string",
+            "title": "Confidence"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "env",
+          "action",
+          "current",
+          "proposed",
+          "risk",
+          "confidence",
+          "rationale"
+        ],
+        "title": "RecommendationSchema"
+      },
       "RefreshTokenPayload": {
         "properties": {
           "refresh_token": {
@@ -3968,6 +8646,34 @@
           "refresh_token"
         ],
         "title": "RefreshTokenPayload"
+      },
+      "ReindexResponse": {
+        "properties": {
+          "files_seen": {
+            "type": "integer",
+            "title": "Files Seen"
+          },
+          "files_indexed": {
+            "type": "integer",
+            "title": "Files Indexed"
+          },
+          "files_skipped": {
+            "type": "integer",
+            "title": "Files Skipped"
+          },
+          "chunks_written": {
+            "type": "integer",
+            "title": "Chunks Written"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files_seen",
+          "files_indexed",
+          "files_skipped",
+          "chunks_written"
+        ],
+        "title": "ReindexResponse"
       },
       "ResourceCreate": {
         "properties": {
@@ -4082,6 +8788,24 @@
         ],
         "title": "ResourceType"
       },
+      "RollbackRequest": {
+        "properties": {
+          "history_id": {
+            "type": "integer",
+            "title": "History Id"
+          },
+          "env": {
+            "type": "string",
+            "title": "Env"
+          }
+        },
+        "type": "object",
+        "required": [
+          "history_id",
+          "env"
+        ],
+        "title": "RollbackRequest"
+      },
       "ScaffoldingParams": {
         "properties": {
           "port": {
@@ -4136,6 +8860,418 @@
         "title": "ScaffoldingParams",
         "description": "Settings for generating the values.yaml file during scaffolding."
       },
+      "ScanCallbackPayload": {
+        "properties": {
+          "scan_id": {
+            "type": "integer",
+            "title": "Scan Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ScanFindingInput"
+            },
+            "type": "array",
+            "title": "Findings",
+            "default": []
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_id",
+          "status"
+        ],
+        "title": "ScanCallbackPayload"
+      },
+      "ScanFindingInput": {
+        "properties": {
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "line_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Start"
+          },
+          "line_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line End"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "remediation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remediation"
+          },
+          "raw_data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool",
+          "severity",
+          "title"
+        ],
+        "title": "ScanFindingInput"
+      },
+      "ScanStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed"
+        ],
+        "title": "ScanStatus"
+      },
+      "SecurityFindingResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "scan_id": {
+            "type": "integer",
+            "title": "Scan Id"
+          },
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/FindingSeverity"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "line_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Start"
+          },
+          "line_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line End"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "remediation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remediation"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FindingStatus"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "scan_id",
+          "tool",
+          "severity",
+          "title",
+          "status",
+          "created_at"
+        ],
+        "title": "SecurityFindingResponse"
+      },
+      "SecurityScanResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "app_id": {
+            "type": "integer",
+            "title": "App Id"
+          },
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ScanStatus"
+          },
+          "triggered_by_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggered By User Id"
+          },
+          "gitlab_pipeline_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gitlab Pipeline Id"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "ai_summary_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Summary Text"
+          },
+          "ai_summarized_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Summarized At"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/SecurityFindingResponse"
+            },
+            "type": "array",
+            "title": "Findings",
+            "default": []
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "app_id",
+          "ref",
+          "status",
+          "created_at"
+        ],
+        "title": "SecurityScanResponse"
+      },
+      "SummarizeResponse": {
+        "properties": {
+          "scan_id": {
+            "type": "integer",
+            "title": "Scan Id"
+          },
+          "ai_summary_text": {
+            "type": "string",
+            "title": "Ai Summary Text"
+          },
+          "ai_summarized_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ai Summarized At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_id",
+          "ai_summary_text",
+          "ai_summarized_at"
+        ],
+        "title": "SummarizeResponse"
+      },
+      "TeamCostEntry": {
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "title": "Group Id"
+          },
+          "group_name": {
+            "type": "string",
+            "title": "Group Name"
+          },
+          "cost_eur_month": {
+            "type": "number",
+            "title": "Cost Eur Month"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_id",
+          "group_name",
+          "cost_eur_month"
+        ],
+        "title": "TeamCostEntry"
+      },
       "Token": {
         "properties": {
           "access_token": {
@@ -4153,6 +9289,19 @@
           "token_type"
         ],
         "title": "Token"
+      },
+      "UnreadCountResponse": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "UnreadCountResponse"
       },
       "UserCreate": {
         "properties": {
