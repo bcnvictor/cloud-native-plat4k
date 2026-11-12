@@ -1,4 +1,4 @@
-# ADR-0026 : Serveur MCP read-only
+# ADR-0029 : Serveur MCP read-only
 
 ## Statut
 

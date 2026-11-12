@@ -4,7 +4,7 @@ Configuration file for the backend. Uses pydantic-settings to parse .env files.
 
 from typing import List, Optional
 
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     # POST /apps/{id}/ci-status so the CI runner can report pipeline status (see ADR-0011).
     CNP_CALLBACK_TOKEN: Optional[str] = None
 
+    # Keycloak — shared instance backing the app-auth service (4K-15/ADR-0027).
+    # Legacy global instance is disabled by default. Registered per-cluster
+    # instances are resolved independently of this compatibility switch.
+    KEYCLOAK_ENABLED: bool = False
+    KEYCLOAK_URL: str = "http://keycloak:8080"  # Admin REST API URL, backend-internal
+    KEYCLOAK_PUBLIC_URL: str = "http://localhost:8081"  # Issuer URL seen by browsers/pods
+    KEYCLOAK_ADMIN_CLIENT_ID: str = "cnp-provisioner"
+    KEYCLOAK_ADMIN_CLIENT_SECRET: Optional[str] = None
+
     # Kubernetes
     KUBECONFIG_PATH: Optional[str] = None
     K8S_TARGET_NAMESPACE: str = "default"
@@ -91,7 +100,8 @@ class Settings(BaseSettings):
     GRAFANA_URL: str = ""  # URL publique Grafana (browser-accessible). Ex: https://grafana.example.com
     GRAFANA_DASHBOARD_UID: str = ""  # UID du dashboard team-metrics dans Grafana (visible dans l'URL /d/{UID}/...)
     GRAFANA_FINOPS_DASHBOARD_UID: str = ""  # UID du dashboard FinOps global (cnp-finops-overview) dans Grafana
-    GRAFANA_EMBED_TOKEN: str = ""  # Token service account Grafana (rôle Viewer) pour l'embedding sécurisé en iframe
+    GRAFANA_JWT_PRIVATE_KEY: str = ""  # Clé EC P-256 (PEM en base64) signant les JWT des iframes Grafana (ADR-0028), dans Vault
+    GRAFANA_JWT_TTL_MINUTES: int = 480
 
     # AI Assistant
     AI_ASSISTANT_ENABLED: bool = False
@@ -134,6 +144,8 @@ class Settings(BaseSettings):
     AI_PLATFORM_KB_PRIMER_PATHS: str = "guides/platform-overview.md,guides/ui-guide.md"
     # Re-ingest docs/ at backend startup (idempotent: unchanged files are skipped).
     AI_PLATFORM_KB_SYNC_ON_STARTUP: bool = True
+    # Conseiller FinOps IA (4K-46) : fenêtre d'analyse Prometheus (heures).
+    AI_FINOPS_WINDOW_HOURS: int = 24
 
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -151,6 +163,15 @@ class Settings(BaseSettings):
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
     model_config = SettingsConfigDict(case_sensitive=True, env_file=".env", extra="ignore")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _strip_urls(cls, value, info: ValidationInfo):
+        # Une URL saisie avec un espace parasite (ex. PROMETHEUS_URL dans Vault) rend
+        # l'hôte introuvable et casse silencieusement les appels sortants.
+        if isinstance(value, str) and info.field_name and info.field_name.endswith("_URL"):
+            return value.strip()
+        return value
 
 settings = Settings()
 

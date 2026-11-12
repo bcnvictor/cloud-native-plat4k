@@ -6,10 +6,12 @@ import { useScopeStore } from '@/store/scope';
 import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { clustersApi } from '@/api/clusters';
 import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ClusterStatusBadge } from '@/components/ClusterStatusBadge';
 import { Spinner } from '@/components/ui/Spinner';
 import { timeAgo } from '@/utils/timeAgo';
+import { PROVIDER_LABELS } from '@/utils/clusterUtils';
 import type { ClusterConnection } from '@/types';
 
 const MONITORING_LINKS: Array<{ key: keyof ClusterConnection; label: string }> = [
@@ -58,19 +60,23 @@ export function Clusters() {
           {clusters.map((cluster) => (
             <Card key={cluster.id} padding="none">
               {/* Header */}
-              <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-                <div className="h-8 w-8 flex items-center justify-center rounded-md bg-background-subtle border border-border">
+              <div className="flex items-start gap-3 px-4 py-3 border-b border-border">
+                <div className="h-8 w-8 shrink-0 flex items-center justify-center rounded-md bg-background-subtle border border-border">
                   <IconServer2 size={16} className="text-muted-foreground" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium font-mono text-foreground">{cluster.name}</p>
+                  <p className="text-sm font-medium font-mono text-foreground truncate">{cluster.name}</p>
                   <p className="text-xs text-muted-foreground truncate">{cluster.endpoint}</p>
+                  {/* Badges sous le nom : sur une carte étroite ils passent à la ligne au lieu de déborder. */}
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <Badge variant="info" className="whitespace-nowrap">{PROVIDER_LABELS[cluster.provider] ?? PROVIDER_LABELS.other}</Badge>
+                    <ClusterStatusBadge status={cluster.status} />
+                  </div>
                 </div>
-                <ClusterStatusBadge status={cluster.status} />
               </div>
 
               {/* Info */}
-              <div className="px-4 py-2.5 border-b border-border flex items-center gap-4 text-xs text-muted-foreground">
+              <div className="px-4 py-2.5 border-b border-border flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                 <span>
                   Last seen{' '}
                   <span className="text-foreground">

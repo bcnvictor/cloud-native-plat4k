@@ -16,7 +16,7 @@ const STATUS_BADGE: Record<ClusterConnection['status'], {
 export function ClusterStatusBadge({ status }: { status: ClusterConnection['status'] }) {
   const s = STATUS_BADGE[status] ?? STATUS_BADGE.unknown;
   return (
-    <Badge variant={s.variant} className={`border ${s.border} gap-1.5`}>
+    <Badge variant={s.variant} className={`border ${s.border} gap-1.5 whitespace-nowrap`}>
       <span className="relative flex h-1.5 w-1.5 shrink-0">
         {s.pulse && (
           <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${s.dot} opacity-60`} />

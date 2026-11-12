@@ -64,6 +64,11 @@ export interface Application {
   target_cluster_id?: number | null;
   created_at: string;
   updated_at: string | null;
+  // Keycloak app-auth service (4K-15/ADR-0027)
+  auth_enabled?: boolean;
+  auth_provisioned?: boolean | null;
+  auth_instance_key?: string | null;
+  auth_warnings?: KeycloakAuthWarning[] | null;
 }
 
 export interface ArgoEnvStatus {
@@ -125,10 +130,14 @@ export interface DeploymentExtended {
   isCurrent: boolean;
 }
 
+// Miroir de shared.models.ClusterProvider
+export type ClusterProvider = 'azure' | 'aws' | 'gcp' | 'openstack' | 'oracle' | 'other';
+
 export interface ClusterConnection {
   id: number;
   name: string;
   endpoint: string;
+  provider: ClusterProvider;
   kubeconfig_secret_ref: string;
   prometheus_url?: string | null;
   loki_url?: string | null;
@@ -143,6 +152,7 @@ export interface ClusterConnection {
 export interface ClusterConnectionPayload {
   name?: string;
   endpoint?: string;
+  provider?: ClusterProvider;
   kubeconfig?: string;
   prometheus_url?: string | null;
   loki_url?: string | null;
@@ -199,6 +209,7 @@ export interface EnvVar {
 export interface EnvVarKeyStatus {
   key: string;
   is_set: boolean;
+  managed: boolean;
 }
 
 export interface EnvVarListResponse {
@@ -209,6 +220,52 @@ export interface EnvVarListResponse {
 export interface MyAccessResponse {
   tier: CnpTier;
   is_admin: boolean;
+}
+
+// ── Keycloak app-auth (4K-15/ADR-0027) ──────────────────────────────────────────
+
+/** active: realm OK · missing: deleted (Recreate offered) · foreign: name taken by a
+ *  realm CNP didn't create for this app · unknown: Keycloak unreachable/disabled. */
+export type KeycloakEnvState = 'active' | 'missing' | 'foreign' | 'unknown';
+
+/** Application.auth_warnings codes (shared/models.py KeycloakAuthWarning). The first
+ *  three describe the last failed activation; chart_missing_envfrom the repo's chart. */
+export type KeycloakAuthWarning =
+  | 'keycloak_instance_unavailable'
+  | 'keycloak_provisioning_failed'
+  | 'oidc_keys_conflict'
+  | 'chart_missing_envfrom';
+
+export interface KeycloakEnvStatus {
+  enabled: boolean;
+  realm: string;
+  exists: boolean;
+  state: KeycloakEnvState;
+  console_url: string | null;
+  issuer_url: string | null;
+}
+
+export interface KeycloakInstanceSummary {
+  instance_key: string | null;
+  cluster_id: number | null;
+  cluster_name: string | null;
+  public_url: string;
+  enabled: boolean;
+  source: 'cluster' | 'legacy';
+}
+
+export interface KeycloakStatusResponse {
+  instance?: KeycloakInstanceSummary | null;
+  auth_provisioned?: boolean | null;
+  dev: KeycloakEnvStatus;
+  prod: KeycloakEnvStatus;
+  auth_warnings: KeycloakAuthWarning[];
+}
+
+export interface KeycloakConsoleAccessResponse {
+  console_url: string;
+  username: string;
+  temporary_password: string;
 }
 
 export interface AppTemplate {
@@ -258,6 +315,12 @@ export interface ServiceConfig {
   database: { enabled: boolean; dbName: string; pgSize: '1Gi' | '5Gi' | '20Gi' };
   auth: { enabled: boolean };
   cache: { enabled: boolean };
+}
+
+/** Backing services requested at scaffold/onboard time (shared/models.py ScaffoldingParams.services). */
+export interface ScaffoldingServicesPayload {
+  services: string[];
+  pg_size?: string;
 }
 
 export interface CiDeployConfig {
@@ -423,4 +486,58 @@ export interface ChatResponse {
     output_tokens: number;
     estimated_cost_usd: number;
   };
+}
+
+// ── Conseiller FinOps IA (GET /apps/{id}/ai-advice, 4K-46) ───────────────────
+
+export interface FinOpsEnvSnapshot {
+  env: string;
+  pods: number;
+  restarts: number;
+  coverage_hours: number;
+  cpu_avg_mcpu: number;
+  cpu_p95_mcpu: number;
+  cpu_max_mcpu: number;
+  ram_avg_mib: number;
+  ram_p95_mib: number;
+  ram_max_mib: number;
+  cpu_request_mcpu: number | null;
+  cpu_limit_mcpu: number | null;
+  ram_request_mib: number | null;
+  ram_limit_mib: number | null;
+  reserved_cost_month_usd: number | null;
+  used_cost_month_usd: number;
+  proposed_cpu_request_mcpu: number;
+  proposed_ram_request_mib: number;
+  proposed_cost_month_usd: number;
+  potential_savings_month_usd: number | null;
+}
+
+export interface FinOpsRecommendation {
+  title: string;
+  env: string;
+  action: string;
+  current: string;
+  proposed: string;
+  monthly_savings_usd: number | null;
+  risk: 'bas' | 'moyen' | 'élevé' | string;
+  confidence: 'haute' | 'moyenne' | 'faible' | string;
+  rationale: string;
+}
+
+export interface AIFinOpsAdvice {
+  app_id: number;
+  app_name: string;
+  status: 'ok' | 'no_data' | 'metrics_unavailable';
+  window_hours: number;
+  generated_at: string;
+  metrics: FinOpsEnvSnapshot[];
+  summary: string;
+  recommendations: FinOpsRecommendation[];
+  raw_text: string | null;
+  provider: string | null;
+  model: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  estimated_cost_usd: number | null;
 }

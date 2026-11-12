@@ -5,6 +5,8 @@ from cli.core.output import print_error, print_success, print_table, print_json
 
 app = typer.Typer(help="Manage Kubernetes cluster connections.")
 
+_PROVIDER_HELP = "Cloud provider (azure, aws, gcp, openstack, oracle, other)"
+
 _STATUS_LABEL = {
     "online":  "[green]● online[/green]",
     "offline": "[red]○ offline[/red]",
@@ -21,11 +23,12 @@ def list_clusters(
         if output == "json":
             print_json(data)
         else:
-            columns = ["ID", "Name", "Endpoint", "Status", "Apps", "Vault Secret Ref", "Created At"]
+            columns = ["ID", "Name", "Provider", "Endpoint", "Status", "Apps", "Vault Secret Ref", "Created At"]
             rows = [
                 [
                     r["id"],
                     r["name"],
+                    r.get("provider", "other"),
                     r["endpoint"],
                     _STATUS_LABEL.get(r.get("status"), r.get("status", "")),
                     r.get("app_count", 0),
@@ -42,7 +45,8 @@ def list_clusters(
 def add_cluster(
     name: str = typer.Option(..., help="Unique name for the cluster"),
     endpoint: str = typer.Option(..., help="Kubernetes API server endpoint URL (e.g. https://1.2.3.4:6443)"),
-    kubeconfig: str = typer.Option(..., help="Path to the kubeconfig YAML file")
+    kubeconfig: str = typer.Option(..., help="Path to the kubeconfig YAML file"),
+    provider: str = typer.Option(None, help=f"{_PROVIDER_HELP}; defaults to other"),
 ):
     """Register a new Kubernetes cluster connection."""
     try:
@@ -62,6 +66,8 @@ def add_cluster(
             "endpoint": endpoint,
             "kubeconfig": kubeconfig_content
         }
+        if provider is not None:
+            payload["provider"] = provider
 
         data = client.post("/clusters/", json=payload)
         print_success(f"Cluster '{name}' successfully registered (ID: {data['id']}).")
@@ -73,7 +79,8 @@ def update_cluster(
     id: int = typer.Argument(..., help="ID of the cluster to update"),
     name: str = typer.Option(None, help="New name for the cluster"),
     endpoint: str = typer.Option(None, help="New Kubernetes API server endpoint URL"),
-    kubeconfig: str = typer.Option(None, help="Path to a new kubeconfig YAML file to update in Vault")
+    kubeconfig: str = typer.Option(None, help="Path to a new kubeconfig YAML file to update in Vault"),
+    provider: str = typer.Option(None, help=_PROVIDER_HELP),
 ):
     """Update an existing Kubernetes cluster connection's details or kubeconfig."""
     try:
@@ -82,6 +89,8 @@ def update_cluster(
             payload["name"] = name
         if endpoint is not None:
             payload["endpoint"] = endpoint
+        if provider is not None:
+            payload["provider"] = provider
         if kubeconfig is not None:
             if not os.path.exists(kubeconfig):
                 print_error(f"Kubeconfig file not found at path: {kubeconfig}")
@@ -94,7 +103,7 @@ def update_cluster(
                 raise typer.Exit(1)
 
         if not payload:
-            print_error("No fields to update. Please specify --name, --endpoint, or --kubeconfig.")
+            print_error("No fields to update. Please specify --name, --endpoint, --provider, or --kubeconfig.")
             raise typer.Exit(1)
 
         client.put(f"/clusters/{id}", json=payload)

@@ -1,0 +1,26 @@
+# Valeurs kube-prometheus-stack pour cnp-gke — mêmes réglages qu'AKS
+# (infra/aks/monitoring-values.yaml) + désactivation du scraping du control plane.
+#
+# helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#   --namespace monitoring --create-namespace \
+#   --values infra/gke/monitoring-values.yaml
+
+# Labels CNP exposés par kube-state-metrics (filtres par owner / groupe dans l'UI CNP)
+kube-state-metrics:
+  metricLabelsAllowlist:
+    - pods=[app.kubernetes.io/name,app.kubernetes.io/managed-by,cnp.io/owner,cnp.io/group-id]
+
+# Control plane GKE managé par Google : etcd, scheduler, controller-manager et
+# kube-proxy ne sont pas joignables depuis le cluster. Sans ça, les cibles restent
+# DOWN et les alertes *Down associées se déclenchent en permanence.
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeProxy:
+  enabled: false
+# GKE utilise kube-dns (géré par Google), pas CoreDNS : pas d'endpoint :9153/metrics
+coreDns:
+  enabled: false

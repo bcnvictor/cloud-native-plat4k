@@ -219,7 +219,7 @@ Nouveau job `mcp` : setup Python 3.11 → `pip install -r cnp-mcp/requirements-d
 ## 7. Documentation
 
 - `cnp-mcp/README.md` : rôle, variables, lancement local, configuration client (Claude Code `claude mcp add --transport http cnp https://cnp.cloud-native-plat4k.me/mcp --header "X-API-Key: <clé>"`, Cursor/VS Code `mcp.json` avec `headers`, Claude Desktop via `mcp-remote`), création d'une clé dans l'UI. Préciser que `Authorization: Bearer` attend une **clé API CNP**, pas un JWT de session, et que les réponses des tools sont transmises au LLM du client (D4).
-- `docs/adr/0026-mcp-server.md` : relais de clé vs clé de service ; `/mcp` sur le domaine existant vs sous-domaine ; endpoint `/deployments` agrégé vs table.
+- `docs/adr/0029-mcp-server.md` : relais de clé vs clé de service ; `/mcp` sur le domaine existant vs sous-domaine ; endpoint `/deployments` agrégé vs table.
 - `docs/cli.md` : commande `deployments`.
 - `docs/guides/cnp-control-deployment.md` : service `cnp-mcp`, variable `MCP_ALLOWED_HOSTS`, `docker-compose.tunnel.yml` versionné (D3).
 - `docs/api/openapi.json` : régénéré si ce fichier est produit depuis le code.

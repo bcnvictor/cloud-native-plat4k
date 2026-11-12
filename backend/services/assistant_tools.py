@@ -45,6 +45,7 @@ from backend.db.models import (
 )
 from backend.services.ai_limits_service import AILimitsService
 from backend.services.ai_settings_service import EffectiveAIConfig
+from backend.services.finops_advisor_service import analyze_usage, describe_analysis
 from backend.services.monitoring_service import get_cost_by_group, get_logs, get_metrics
 from backend.services.platform_knowledge_service import PlatformKnowledgeService
 
@@ -186,6 +187,21 @@ TOOL_DEFINITIONS: list[dict] = [
         _GROUP_ARG,
     ),
     _fn(
+        "get_finops_advice",
+        "Analyse FinOps d'une application sur les dernières 24 h (Prometheus) : CPU/RAM "
+        "consommés (moyenne, p95, max), requests/limits, coût mensuel réservé et proposition "
+        "de right-sizing chiffrée avec l'économie possible. À utiliser pour « mon app est-elle "
+        "bien dimensionnée », « comment réduire les coûts », « right-sizing », « optimiser ».",
+        {
+            **_APP_ARG,
+            "env": {
+                "type": "string",
+                "enum": ["dev", "prod"],
+                "description": "Limiter à un environnement (par défaut : tous).",
+            },
+        },
+    ),
+    _fn(
         "list_group_members",
         "Membres actifs d'un groupe avec leur rôle CNP (viewer, developer, maintainer, owner).",
         _GROUP_ARG,
@@ -302,6 +318,7 @@ class PlatformTools:
             "get_app_details": self.get_app_details,
             "get_metrics": self.get_metrics,
             "get_costs": self.get_costs,
+            "get_finops_advice": self.get_finops_advice,
             "list_group_members": self.list_group_members,
             "get_recent_activity": self.get_recent_activity,
             "search_platform_docs": self.search_platform_docs,
@@ -780,6 +797,28 @@ class PlatformTools:
         if hidden:
             lines.append(f"({hidden} application(s) non autorisée(s) pour l'assistant, détail masqué.)")
         return ToolResult("\n".join(lines))
+
+    async def get_finops_advice(
+        self, app: Optional[str] = None, env: Optional[str] = None
+    ) -> ToolResult:
+        if env and env.lower() not in ("dev", "prod"):
+            return ToolResult("Environnement inconnu : utiliser dev ou prod.")
+        a = await self._resolve_app(app)
+        if a is None:
+            return ToolResult(
+                f"Application « {app or self.page.app_slug or '?'} » introuvable ou non accessible."
+            )
+        if not self._app_allowed(a):
+            return ToolResult(_APP_NOT_ALLOWED.format(name=a.name))
+        analysis = await analyze_usage(self.db, a)
+        if env:
+            analysis.snapshots = [s for s in analysis.snapshots if s.env == env.lower()]
+            if analysis.status == "ok" and not analysis.snapshots:
+                return ToolResult(
+                    f"Aucune métrique {env} pour {a.name} sur les {analysis.window_hours} "
+                    "dernières heures (environnement non déployé ou arrêté)."
+                )
+        return ToolResult(describe_analysis(a, analysis))
 
     async def list_group_members(self, group: Optional[str] = None) -> ToolResult:
         g = await self._resolve_group(group)

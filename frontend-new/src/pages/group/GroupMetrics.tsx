@@ -15,6 +15,7 @@ import { groupsApi } from '@/api/groups';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs } from '@/components/ui/Tabs';
 import { cn } from '@/utils/cn';
+import { GRAFANA_EMBED_URLS_REFRESH_MS } from '@/utils/grafana';
 import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { FinOpsCostWidget } from '@/components/FinOpsCostWidget';
 
@@ -135,6 +136,8 @@ export function GroupMetrics() {
     queryKey: ['group-grafana-url', group?.gitlab_group_id],
     queryFn: () => groupsApi.getGrafanaUrl(group!.gitlab_group_id),
     enabled: !!group?.gitlab_group_id,
+    staleTime: GRAFANA_EMBED_URLS_REFRESH_MS,
+    refetchInterval: GRAFANA_EMBED_URLS_REFRESH_MS,
   });
 
   if (!group || isLoading) {

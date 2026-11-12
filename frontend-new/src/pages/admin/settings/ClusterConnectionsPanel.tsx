@@ -3,10 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconPencil, IconPlugConnected, IconPlus, IconServer2, IconTrash, IconWifiOff } from '@tabler/icons-react';
 import { clustersApi } from '@/api/clusters';
 import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { ClusterStatusBadge } from '@/components/ClusterStatusBadge';
 import { apiError } from '@/utils/apiError';
+import { PROVIDER_LABELS } from '@/utils/clusterUtils';
 import { timeAgo } from '@/utils/timeAgo';
 import { cn } from '@/utils/cn';
 import type { ClusterConnection, ClusterTestResult } from '@/types';
@@ -66,6 +68,7 @@ export function ClusterConnectionsPanel() {
               <thead>
                 <tr className="text-left text-xs text-muted-foreground border-b border-border">
                   <th className="font-medium px-3 py-2.5">Cluster</th>
+                  <th className="font-medium px-3 py-2.5">Provider</th>
                   <th className="font-medium px-3 py-2.5">Status</th>
                   <th className="font-medium px-3 py-2.5 hidden xl:table-cell whitespace-nowrap">Last seen</th>
                   <th className="font-medium px-3 py-2.5 hidden md:table-cell">Apps</th>
@@ -91,6 +94,7 @@ export function ClusterConnectionsPanel() {
                           </div>
                         </div>
                       </td>
+                      <td className="px-3 py-3"><Badge variant="info">{PROVIDER_LABELS[c.provider] ?? PROVIDER_LABELS.other}</Badge></td>
                       <td className="px-3 py-3"><ClusterStatusBadge status={c.status} /></td>
                       <td className="px-3 py-3 text-xs text-muted-foreground hidden xl:table-cell whitespace-nowrap">
                         {c.last_seen_at ? timeAgo(c.last_seen_at) : 'never'}

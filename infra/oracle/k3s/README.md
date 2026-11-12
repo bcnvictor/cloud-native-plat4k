@@ -138,6 +138,35 @@ kubectl --kubeconfig cnp-k3s.yaml -n argocd get applications
 > contenant `CNP_CLUSTER_NAME: "cnp-k3s"`. Son pipeline CI poussera dans `argocd/k3s/{app}/`
 > du repo gitops, que cet ArgoCD synchronisera automatiquement.
 
+## 7. Ingress nginx (Terraform)
+
+Même contrôleur et même IngressClass `nginx` qu'AKS : CNP écrit `ingress.className: nginx`
+pour toute app exposée. Terraform ne gère pas la VM ni k3s, seulement les add-ons
+plateforme du cluster (`main.tf`). L'état reste local et n'est jamais versionné, comme
+pour `infra/aks` et `infra/gke` : la personne qui applique garde le `terraform.tfstate`.
+
+```bash
+cd infra/oracle/k3s
+# Kubeconfig admin dans ~/.kube/config-cnp-k3s, contexte cnp-k3s (sinon -var kubeconfig_path=…)
+terraform init
+terraform plan    # attendu au premier passage : 1 to add (helm_release.ingress_nginx)
+terraform apply
+kubectl --kubeconfig ~/.kube/config-cnp-k3s --context cnp-k3s get ingress -A   # colonne ADDRESS remplie
+```
+
+Le `Service` `LoadBalancer` est servi par **ServiceLB** (klipper-lb, intégré à k3s : seul
+`traefik` est désactivé à l'installation). Il occupe les ports 80/443 du nœud.
+
+Pour qu'une app soit joignable depuis Internet, trois étapes restent hors Terraform :
+
+1. **Security list OCI** (comme l'étape 2) : deux règles d'entrée TCP `80` et `443`,
+   source `0.0.0.0/0`.
+2. **DNS** (Cloudflare) : le wildcard `*.cloud-native-plat4k.me` pointe vers l'ingress
+   d'AKS. Chaque app exposée sur k3s a besoin de ses enregistrements A, en DNS only :
+   `<slug>` et `dev.<slug>` vers l'IP publique de la VM.
+3. **HTTPS** : pas encore de cert-manager sur k3s. Une SPA avec Keycloak (PKCE) a besoin
+   d'une origine HTTPS (Web Crypto) : en HTTP, la page s'affiche mais le login échoue.
+
 ## Note : architecture arm64 et images multi-plateforme
 
 Le nœud k3s tourne sur un Ampere A1 (`arm64/aarch64`). Les runners GitLab CI standard

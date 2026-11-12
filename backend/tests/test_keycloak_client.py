@@ -1,0 +1,594 @@
+"""Tests for backend/keycloak/client.py (4K-15/ADR-0027) against an in-memory fake
+Keycloak Admin API (httpx.MockTransport) — no real Keycloak instance involved.
+"""
+import uuid
+
+import httpx
+import pytest
+
+from backend.keycloak.client import (
+    KeycloakClient,
+    KeycloakConflict,
+    KeycloakNotFound,
+    KeycloakUnavailable,
+)
+
+# asyncio_mode = "auto" (pyproject.toml) — no pytest.mark.asyncio needed on async defs.
+
+
+# realm-management roles of a fresh Keycloak 26.8.0 realm.
+REALM_MANAGEMENT_ROLES = (
+    "create-client", "impersonation", "manage-authorization", "manage-clients",
+    "manage-events", "manage-identity-providers", "manage-organizations", "manage-realm",
+    "manage-users", "query-clients", "query-groups", "query-organizations", "query-realms",
+    "query-users", "realm-admin", "view-authorization", "view-clients", "view-events",
+    "view-identity-providers", "view-organizations", "view-realm", "view-users",
+)
+
+
+class FakeKeycloak:
+    """Minimal in-memory stand-in for the parts of the Admin REST API this client
+    calls. Realms preseed a `realm-management` client with the roles of a real
+    Keycloak 26.8.0 realm, and an `admin-cli` client.
+    """
+
+    def __init__(self, base_path: str = ""):
+        self.base_path = base_path
+        self.requests = []
+        self.realms: dict[str, dict] = {}
+        self.token_calls = 0
+
+    def _realm_management_client(self, realm: str) -> dict:
+        for c in self.realms[realm]["clients"].values():
+            if c["clientId"] == "realm-management":
+                return c
+        raise AssertionError("test bug: realm-management client not preseeded")
+
+    def create_realm(self, name: str, attributes: dict | None = None, id: str | None = None) -> None:
+        """Like Keycloak: the internal id is the one given at creation, else generated."""
+        self.realms[name] = {
+            "id": id or str(uuid.uuid4()),
+            "attributes": dict(attributes or {}),
+            "user_profile": {"attributes": [{"name": "username"}]},
+            "clients": {
+                "rm-internal-id": {
+                    "id": "rm-internal-id",
+                    "clientId": "realm-management",
+                    "roles": {n: {"id": f"role-{n}", "name": n} for n in REALM_MANAGEMENT_ROLES},
+                },
+                "admin-cli-id": {
+                    "id": "admin-cli-id",
+                    "clientId": "admin-cli",
+                    "publicClient": True,
+                    "directAccessGrantsEnabled": True,
+                },
+            },
+            "users": {},
+        }
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if self.base_path and not request.url.path.startswith(self.base_path + "/"):
+            return httpx.Response(404)
+        method, path = request.method, request.url.path[len(self.base_path):]
+
+        if method == "POST" and path == "/realms/master/protocol/openid-connect/token":
+            self.token_calls += 1
+            return httpx.Response(200, json={"access_token": "fake-token", "expires_in": 60})
+
+        assert request.headers.get("Authorization") == "Bearer fake-token"
+
+        # /admin/realms and /admin/realms/{realm}
+        if path == "/admin/realms" and method == "POST":
+            body = _json(request)
+            name = body["realm"]
+            if name in self.realms or (
+                body.get("id") and any(r["id"] == body["id"] for r in self.realms.values())
+            ):
+                return httpx.Response(409, json={"errorMessage": "exists"})
+            self.create_realm(name, body.get("attributes"), body.get("id"))
+            self.realms[name]["settings"] = {
+                k: v for k, v in body.items() if k not in ("realm", "id", "attributes")
+            }
+            return httpx.Response(201)
+
+        if path.startswith("/admin/realms/"):
+            rest = path[len("/admin/realms/"):]
+            parts = rest.split("/")
+            realm = parts[0]
+
+            if len(parts) == 1:
+                if method == "GET":
+                    if realm not in self.realms:
+                        return httpx.Response(404)
+                    data = self.realms[realm]
+                    return httpx.Response(
+                        200, json={"id": data["id"], "realm": realm, "attributes": data["attributes"]}
+                    )
+                if method == "PUT":
+                    return self._update_realm(realm, _json(request))
+                if method == "DELETE":
+                    if realm not in self.realms:
+                        return httpx.Response(404)
+                    del self.realms[realm]
+                    return httpx.Response(204)
+
+            if realm not in self.realms:
+                return httpx.Response(404)
+            realm_data = self.realms[realm]
+
+            if len(parts) >= 2 and parts[1] == "clients":
+                return self._clients(request, realm_data, parts[2:])
+            if parts[1:] == ["users", "profile"]:
+                if method == "GET":
+                    return httpx.Response(200, json=realm_data["user_profile"])
+                if method == "PUT":
+                    realm_data["user_profile"] = _json(request)
+                    return httpx.Response(200, json=realm_data["user_profile"])
+            if len(parts) >= 2 and parts[1] == "users":
+                return self._users(request, realm_data, parts[2:])
+
+        return httpx.Response(500, json={"error": f"unhandled {method} {path}"})
+
+    def rename_realm(self, realm: str, new_name: str, attributes: dict) -> None:
+        """What an account with manage-realm can do with PUT /admin/realms/{realm}."""
+        self._update_realm(realm, {"realm": new_name, "id": "ignored", "attributes": attributes})
+
+    def _update_realm(self, realm: str, body: dict) -> httpx.Response:
+        if realm not in self.realms:
+            return httpx.Response(404)
+        # Keycloak ignores `id` on update (verified against 26.8.0): it never changes.
+        data = self.realms[realm]
+        if "attributes" in body:
+            data["attributes"] = dict(body["attributes"])
+        new_name = body.get("realm", realm)
+        if new_name != realm:
+            if new_name in self.realms:
+                return httpx.Response(409)
+            self.realms[new_name] = self.realms.pop(realm)
+        return httpx.Response(204)
+
+    def _clients(self, request: httpx.Request, realm_data: dict, rest: list[str]) -> httpx.Response:
+        method = request.method
+        if not rest:
+            if method == "POST":
+                body = _json(request)
+                client_id = body["clientId"]
+                if any(c["clientId"] == client_id for c in realm_data["clients"].values()):
+                    return httpx.Response(409)
+                internal_id = str(uuid.uuid4())
+                realm_data["clients"][internal_id] = {
+                    "id": internal_id, "clientId": client_id, "mappers": {}, **body,
+                }
+                return httpx.Response(201)
+            if method == "GET":
+                client_id = dict(request.url.params).get("clientId")
+                matches = [c for c in realm_data["clients"].values() if c["clientId"] == client_id]
+                return httpx.Response(200, json=matches)
+
+        internal_id, sub, *tail = rest + [None, None]
+        client = realm_data["clients"].get(internal_id)
+        if client is None:
+            return httpx.Response(404)
+
+        if sub == "client-secret" and method == "GET":
+            return httpx.Response(200, json={"value": f"secret-for-{client['clientId']}"})
+
+        if sub == "protocol-mappers" and tail and tail[0] == "models":
+            client.setdefault("mappers", {})
+            if method == "GET":
+                return httpx.Response(200, json=list(client["mappers"].values()))
+            if method == "POST":
+                body = _json(request)
+                client["mappers"][body["name"]] = body
+                return httpx.Response(201)
+
+        if sub == "roles" and method == "GET":
+            if not tail or tail[0] is None:
+                return httpx.Response(200, json=list(client.get("roles", {}).values()))
+            role = client.get("roles", {}).get(tail[0])
+            return httpx.Response(200, json=role) if role else httpx.Response(404)
+
+        if sub is None and method == "PUT":
+            client.update(_json(request))
+            return httpx.Response(204)
+
+        return httpx.Response(500, json={"error": "unhandled clients sub-route"})
+
+    def _users(self, request: httpx.Request, realm_data: dict, rest: list[str]) -> httpx.Response:
+        method = request.method
+        if not rest:
+            if method == "GET":
+                params = dict(request.url.params)
+                if "q" in params:
+                    key, _, value = params["q"].partition(":")
+                    matches = [
+                        u for u in realm_data["users"].values()
+                        if value in (u.get("attributes") or {}).get(key, [])
+                    ]
+                else:
+                    matches = [u for u in realm_data["users"].values() if u["username"] == params.get("username")]
+                return httpx.Response(200, json=matches)
+            if method == "POST":
+                body = _json(request)
+                # Like Keycloak 24+: attributes not declared in the user profile are
+                # dropped unless unmanagedAttributePolicy allows admins to edit them.
+                if realm_data["user_profile"].get("unmanagedAttributePolicy") != "ADMIN_EDIT":
+                    body.pop("attributes", None)
+                user_id = str(uuid.uuid4())
+                realm_data["users"][user_id] = {"id": user_id, **body}
+                return httpx.Response(201, headers={"Location": f".../users/{user_id}"})
+
+        user_id, *tail = rest + [None]
+        user = realm_data["users"].get(user_id)
+        if user is None:
+            return httpx.Response(404)
+
+        if not tail or tail[0] is None:
+            if method == "PUT":
+                user.update(_json(request))
+                return httpx.Response(204)
+            if method == "DELETE":
+                del realm_data["users"][user_id]
+                return httpx.Response(204)
+
+        if tail[0] == "role-mappings":
+            roles = user.setdefault("roles", [])
+            if method == "GET":
+                return httpx.Response(200, json=list(roles))
+            if method == "POST":
+                roles.extend(r for r in _json(request) if r not in roles)
+                return httpx.Response(204)
+            if method == "DELETE":
+                removed = {r["id"] for r in _json(request)}
+                user["roles"] = [r for r in roles if r["id"] not in removed]
+                return httpx.Response(204)
+
+        if tail[0] == "reset-password" and method == "PUT":
+            user["password"] = _json(request)
+            return httpx.Response(204)
+
+        return httpx.Response(500, json={"error": "unhandled users sub-route"})
+
+
+def _json(request: httpx.Request) -> dict:
+    import json
+    return json.loads(request.content)
+
+
+def _client(fake: FakeKeycloak) -> KeycloakClient:
+    transport = httpx.MockTransport(fake.handler)
+    return KeycloakClient(
+        base_url="http://keycloak.test", admin_client_id="cnp-provisioner",
+        admin_client_secret="s3cr3t", transport=transport,
+    )
+
+
+async def test_create_realm_conflict_is_swallowed():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    await client.create_realm("demo-dev")  # must not raise
+    assert await client.get_realm("demo-dev") is not None
+
+
+async def test_create_realm_invalidates_cached_token():
+    """Regression test (found during the 4K-15 Lot 7 smoke test against a real
+    Keycloak): a service account's admin token only carries resource_access for a
+    given realm once that realm exists AND the token was issued after it was
+    created. provision()'s create_realm -> create_client sequence reuses one
+    KeycloakClient/token across both calls, so a cached pre-existing-realm token
+    403s on create_client. create_realm must invalidate the cache so the next
+    request fetches a fresh, correctly-scoped token.
+    """
+    fake = FakeKeycloak()
+    client = _client(fake)
+
+    await client.get_realm("demo-dev")  # forces an initial token fetch
+    assert fake.token_calls == 1
+
+    await client.create_realm("demo-dev")
+    assert client._token is None, "cached token must be cleared after creating a realm"
+
+    await client.get_realm("demo-dev")
+    assert fake.token_calls == 2, "the next call must fetch a fresh token"
+
+
+async def test_create_realm_conflict_also_invalidates_token():
+    """A 409 means a realm with that name or id exists, possibly created after the
+    cached token was issued (a concurrent activation, another realm taking the name):
+    provision() re-reads it right away (N1), which needs a freshly issued token."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    await client.get_realm("demo-dev")  # re-fetch token after the invalidation above
+    calls_before = fake.token_calls
+
+    await client.create_realm("demo-dev")  # 409, swallowed
+
+    assert client._token is None
+    await client.get_realm("demo-dev")
+    assert fake.token_calls == calls_before + 1
+
+
+async def test_disable_admin_cli_password_grant_is_idempotent():
+    """N3: console accounts sign in through the admin console (code flow), never
+    with a password posted to admin-cli's token endpoint."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+
+    await client.disable_admin_cli_password_grant("demo-dev")
+    admin_cli = fake.realms["demo-dev"]["clients"]["admin-cli-id"]
+    assert admin_cli["directAccessGrantsEnabled"] is False
+    assert admin_cli["publicClient"] is True  # the rest of the client is kept
+
+    fake.requests.clear()
+    await client.disable_admin_cli_password_grant("demo-dev")
+    assert not [r for r in fake.requests if r.method == "PUT"]
+
+
+async def test_disable_admin_cli_password_grant_tolerates_a_deleted_admin_cli():
+    """A team with manage-clients can delete admin-cli: provisioning must not fail on it."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    del fake.realms["demo-dev"]["clients"]["admin-cli-id"]
+
+    await client.disable_admin_cli_password_grant("demo-dev")
+
+    assert not [r for r in fake.requests if r.method == "PUT"]
+
+
+async def test_delete_realm_missing_is_noop():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.delete_realm("does-not-exist")  # must not raise
+
+
+async def test_create_client_adds_audience_mapper_and_is_idempotent():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+
+    internal_id_1 = await client.create_client(
+        "demo-dev", "demo", public=False, redirect_uris=["https://demo.example/*"],
+    )
+    mappers = fake.realms["demo-dev"]["clients"][internal_id_1]["mappers"]
+    assert "audience" in mappers
+    assert mappers["audience"]["config"]["included.client.audience"] == "demo"
+
+    # Idempotent: calling again reuses the same client instead of erroring.
+    internal_id_2 = await client.create_client(
+        "demo-dev", "demo", public=False, redirect_uris=["https://demo.example/*"],
+    )
+    assert internal_id_1 == internal_id_2
+    assert len(fake.realms["demo-dev"]["clients"][internal_id_1]["mappers"]) == 1
+
+
+async def test_get_client_secret():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    internal_id = await client.create_client(
+        "demo-dev", "demo", public=False, redirect_uris=["http://localhost:*"],
+    )
+    secret = await client.get_client_secret("demo-dev", internal_id)
+    assert secret == "secret-for-demo"
+
+
+async def test_create_client_web_origins_are_plus_not_redirect_uris():
+    """webOrigins must be "+" (origins derived from redirect URIs): a value with a
+    path or wildcard never matches a browser Origin header -> SPA token exchange
+    blocked by CORS."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    internal_id = await client.create_client(
+        "demo-dev", "demo", public=True, redirect_uris=["https://demo.example/*"],
+    )
+    assert fake.realms["demo-dev"]["clients"][internal_id]["webOrigins"] == ["+"]
+
+    other = await client.create_client(
+        "demo-dev", "demo2", public=True, redirect_uris=["http://localhost:*"],
+        extra_web_origins=["http://localhost:5173"],
+    )
+    assert fake.realms["demo-dev"]["clients"][other]["webOrigins"] == ["+", "http://localhost:5173"]
+
+
+async def test_create_realm_with_owner_attribute():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev", attributes={"cnp_app_id": "42"})
+    realm = await client.get_realm("demo-dev")
+    assert realm["attributes"]["cnp_app_id"] == "42"
+    assert await client.get_realm("nope") is None
+
+
+async def test_create_realm_enables_brute_force_protection_and_password_policy():
+    """Every team realm starts locked down: temporary lockout after repeated failed
+    logins, and passwords of at least 12 characters, different from the username."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    created = fake.realms["demo-dev"]["settings"]
+    assert created["bruteForceProtected"] is True
+    assert created["passwordPolicy"] == "length(12) and notUsername"
+    assert created["registrationAllowed"] is False
+
+
+async def test_create_realm_with_explicit_internal_id():
+    """The realm's internal id survives a rename (Keycloak 26.8.0): CNP picks it at
+    creation so ownership never depends on what a realm's admins can rewrite."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev", realm_id="cnp-42-dev", attributes={"cnp_app_id": "42"})
+    assert (await client.get_realm("demo-dev"))["id"] == "cnp-42-dev"
+
+
+async def test_ensure_cnp_admin_user_creates_tagged_account_then_reactivates():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+
+    user_id_1 = await client.ensure_cnp_admin_user(
+        "demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice",
+    )
+    stored = fake.realms["demo-dev"]["users"][user_id_1]
+    assert stored["attributes"]["cnp_user_id"] == ["42"]
+    assert "email" not in stored  # avoids clashing with an end-user account's email
+    # The realm's user profile was opened to unmanaged attributes, else KC drops them.
+    assert fake.realms["demo-dev"]["user_profile"]["unmanagedAttributePolicy"] == "ADMIN_EDIT"
+
+    user_id_2 = await client.ensure_cnp_admin_user(
+        "demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice",
+    )
+    assert user_id_1 == user_id_2
+
+
+async def test_ensure_cnp_admin_user_never_takes_over_an_end_user_account():
+    """An end user of the app already owns the username: CNP must refuse, not grant
+    console roles / reset the password of someone else's account."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    fake.realms["demo-dev"]["users"]["end-user"] = {"id": "end-user", "username": "cnp.alice.42"}
+
+    with pytest.raises(KeycloakConflict):
+        await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice")
+
+
+async def test_ensure_cnp_admin_user_distinguishes_same_local_part():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    id_a = await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.1", cnp_user_id=1, first_name="alice")
+    id_b = await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.2", cnp_user_id=2, first_name="alice")
+    assert id_a != id_b
+
+
+def _role_names(fake: FakeKeycloak, realm: str, user_id: str) -> set[str]:
+    return {r["name"] for r in fake.realms[realm]["users"][user_id].get("roles", [])}
+
+
+def test_team_console_roles_leave_realm_control_to_cnp():
+    """Option B (ADR-0027 §1): no realm settings, no realm deletion or rename, no
+    impersonation, nothing that grants more admin roles (verified on 26.8.0)."""
+    from backend.keycloak.client import TEAM_CONSOLE_ROLES
+
+    assert set(TEAM_CONSOLE_ROLES) == {
+        "view-realm", "view-users", "query-users", "query-groups", "manage-users",
+        "view-clients", "query-clients", "manage-clients", "view-events", "manage-events",
+        "view-identity-providers", "manage-identity-providers",
+    }
+    assert not {"realm-admin", "manage-realm", "impersonation", "create-client",
+                "manage-authorization"} & set(TEAM_CONSOLE_ROLES)
+
+
+async def test_set_team_console_roles_grants_exactly_the_team_set():
+    from backend.keycloak.client import TEAM_CONSOLE_ROLES
+
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    user_id = await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice")
+
+    await client.set_team_console_roles("demo-dev", user_id)
+
+    assert _role_names(fake, "demo-dev", user_id) == set(TEAM_CONSOLE_ROLES)
+
+
+async def test_set_team_console_roles_removes_other_realm_management_roles():
+    """An account handed out before (or given more by hand) ends up with the team set
+    only: realm-admin and manage-realm go."""
+    from backend.keycloak.client import TEAM_CONSOLE_ROLES
+
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    user_id = await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice")
+    roles = fake.realms["demo-dev"]["clients"]["rm-internal-id"]["roles"]
+    fake.realms["demo-dev"]["users"][user_id]["roles"] = [roles["realm-admin"], roles["manage-realm"], roles["view-users"]]
+
+    await client.set_team_console_roles("demo-dev", user_id)
+
+    assert _role_names(fake, "demo-dev", user_id) == set(TEAM_CONSOLE_ROLES)
+
+
+async def test_set_team_console_roles_is_idempotent():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    user_id = await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice")
+    await client.set_team_console_roles("demo-dev", user_id)
+    before = len(fake.realms["demo-dev"]["users"][user_id]["roles"])
+
+    fake.requests.clear()
+    await client.set_team_console_roles("demo-dev", user_id)
+
+    assert len(fake.realms["demo-dev"]["users"][user_id]["roles"]) == before
+    assert not [r for r in fake.requests if r.method in ("POST", "DELETE") and "role-mappings" in r.url.path]
+
+
+async def test_set_temporary_password():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    user_id = await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice")
+
+    await client.set_temporary_password("demo-dev", user_id, "tmp-pw-123")
+    assert fake.realms["demo-dev"]["users"][user_id]["password"]["temporary"] is True
+
+
+async def test_delete_users_by_attribute_only_touches_tagged_account():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    user_id = await client.ensure_cnp_admin_user("demo-dev", "cnp.alice.42", cnp_user_id=42, first_name="alice")
+    fake.realms["demo-dev"]["users"]["end-user"] = {"id": "end-user", "username": "alice"}
+
+    await client.delete_users_by_attribute("demo-dev", "cnp_user_id", "42")
+    assert user_id not in fake.realms["demo-dev"]["users"]
+    assert "end-user" in fake.realms["demo-dev"]["users"]
+    await client.delete_users_by_attribute("demo-dev", "cnp_user_id", "42")  # no-op
+
+
+async def test_unreachable_server_raises_keycloak_unavailable():
+    def _boom(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = KeycloakClient(
+        base_url="http://keycloak.test", admin_client_id="cnp-provisioner",
+        admin_client_secret="s3cr3t", transport=httpx.MockTransport(_boom),
+    )
+    with pytest.raises(KeycloakUnavailable):
+        await client.get_realm("demo-dev")
+
+
+async def test_token_is_cached_across_calls():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.get_realm("a")
+    await client.get_realm("b")
+    await client.get_realm("c")
+    assert fake.token_calls == 1
+
+
+def test_not_found_and_conflict_are_distinct_exception_types():
+    assert issubclass(KeycloakNotFound, Exception)
+    assert issubclass(KeycloakConflict, Exception)
+    assert KeycloakNotFound is not KeycloakConflict
+
+
+async def test_upstream_error_does_not_echo_body():
+    from backend.keycloak.client import KeycloakError
+
+    def handle(request):
+        if request.url.path.endswith('/token'):
+            return httpx.Response(200, json={'access_token': 'safe', 'expires_in': 60})
+        return httpx.Response(500, text='reflected-provisioner-secret')
+
+    client = KeycloakClient('http://keycloak.test', 'cnp-provisioner', 'private', transport=httpx.MockTransport(handle))
+    with pytest.raises(KeycloakError) as caught:
+        await client.get_realm('demo-prod')
+    assert 'reflected-provisioner-secret' not in str(caught.value)

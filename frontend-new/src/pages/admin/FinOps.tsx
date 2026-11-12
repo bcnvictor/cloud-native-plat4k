@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FinopsCostByTeamChart } from '@/components/FinopsCostByTeamChart';
 import { cn } from '@/utils/cn';
+import { GRAFANA_EMBED_URLS_REFRESH_MS } from '@/utils/grafana';
 
 interface GrafanaPanelProps {
   src: string | null;
@@ -69,7 +70,8 @@ export function FinOps() {
   const { data: urls, isLoading } = useQuery({
     queryKey: ['finops-grafana-urls'],
     queryFn: () => finopsApi.getGrafanaUrls(),
-    staleTime: 60_000,
+    staleTime: GRAFANA_EMBED_URLS_REFRESH_MS,
+    refetchInterval: GRAFANA_EMBED_URLS_REFRESH_MS,
   });
 
   return (
