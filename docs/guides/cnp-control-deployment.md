@@ -185,6 +185,11 @@ infra/scripts/cnp-control-restore.sh db "$B/cnp-db.dump" --container <conteneur-
 infra/scripts/cnp-control-restore.sh vault "$B/vault-data.tar.gz" --volume <volume>
 ```
 
+Avec `--force` :
+
+- **Base** : tout le schéma `public` est supprimé puis restauré, dans une seule transaction. Les tables créées après la sauvegarde disparaissent donc aussi. Sans ça, une table plus récente qui référence une table du dump bloquerait le `DROP` de `pg_restore --clean`. Si quoi que ce soit échoue, la transaction est annulée et la base reste telle qu'elle était. Pensez à arrêter le backend avant : ses connexions ouvertes bloqueraient le `DROP SCHEMA`.
+- **Vault** : l'archive est relue en entier (`tar tzf`, dossier `core/` présent) avant de vider le volume. Une archive corrompue laisse le volume intact.
+
 Démarrez ensuite un Vault 1.17 sur ce volume avec le `vault.hcl` du repo. `vault status` doit afficher `Initialized: true` et `Sealed: true` ; descellez avec 3 des 5 clés, puis vérifiez la lecture d'un secret.
 
 Commandes équivalentes, sans les garde-fous du script :
