@@ -34,7 +34,7 @@ Après le déploiement du code, sur la VM :
 bash ~/cloud-native-plat4k/infra/grafana/setup-embed-jwt.sh
 ```
 
-Le script demande le root token Vault, génère une paire de clés ES256, écrit la clé privée dans Vault et la clé publique dans le `.env`, puis recrée Grafana et le backend. `--rotate` remplace la paire de clés.
+Le script demande le root token Vault, génère une paire de clés ES256, écrit la clé privée dans Vault et la clé publique dans le `.env`, puis recrée Grafana et redémarre le backend, qui ne lit Vault qu'à son démarrage. `--rotate` remplace la paire de clés.
 
 Les commandes `vault kv patch`/`curl` plus bas utilisent `GRAFANA_ADMIN_PASSWORD` depuis Vault : ce secret n'y existe pas en prod, passez le mot de passe admin directement.
 
