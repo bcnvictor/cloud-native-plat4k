@@ -18,10 +18,12 @@ Usage :
 db     Restaure le dump dans le Postgres du conteneur NOM (en cours d'exécution),
        base et utilisateur pris dans ses variables POSTGRES_DB / POSTGRES_USER.
        Une seule transaction. Refuse une base qui contient déjà des tables,
-       sauf avec --force (les objets existants sont alors supprimés).
+       sauf avec --force : le schéma public est alors supprimé et restauré dans
+       la même transaction (en cas d'échec, la base reste inchangée).
 vault  Extrait l'archive dans le volume NOM (créé s'il n'existe pas). Refuse un
        volume monté par un conteneur en cours d'exécution, et un volume non
-       vide sauf avec --force (il est alors vidé). Démarrez ensuite Vault sur ce
+       vide sauf avec --force (il est alors vidé, après vérification que
+       l'archive est lisible). Démarrez ensuite Vault sur ce
        volume : il sera initialisé et scellé, à desceller avec 3 clés sur 5.
 
 Options :
@@ -136,17 +138,24 @@ restore_db() {
     log "Cible : $target, conteneur Postgres : $container"
     [[ $(on_target "docker inspect --format '{{.State.Running}}' $container" 2>/dev/null) == true ]] \
         || die "conteneur $container absent ou arrêté"
-    local tables clean_opts=""
+    local tables
     tables=$(echo "select count(*) from pg_tables where schemaname = 'public';" | psql_in) \
         || die "impossible d'interroger la base du conteneur $container"
-    if [[ "$tables" != 0 ]]; then
+    if [[ "$tables" == 0 ]]; then
+        log "pg_restore (une seule transaction)..."
+        on_target "docker exec -i $container sh -c 'exec pg_restore -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" --no-owner --single-transaction'" \
+            < "$archive" || die "pg_restore a échoué (transaction annulée)"
+    else
         $force || die "la base contient déjà $tables tables : relancez avec --force pour l'écraser"
-        log "--force : les $tables tables existantes seront remplacées"
-        clean_opts="--clean --if-exists"
+        # pg_restore --clean ne supprime que les objets présents dans le dump : une table
+        # créée après la sauvegarde (avec une FK vers une table du dump) ferait échouer
+        # la restauration. On remplace donc tout le schéma public. Le dump est d'abord
+        # converti en SQL (archive illisible = arrêt avant toute modification), puis
+        # DROP SCHEMA + restauration passent dans une seule transaction psql.
+        log "--force : le schéma public ($tables tables) sera supprimé puis restauré, en une transaction"
+        on_target "docker exec -i $container sh -c 'f=/tmp/cnp-restore.\$\$.sql; pg_restore --no-owner -f \"\$f\" && psql -X -q -v ON_ERROR_STOP=1 --single-transaction -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -c \"DROP SCHEMA public CASCADE\" -c \"CREATE SCHEMA public\" -f \"\$f\"; rc=\$?; rm -f \"\$f\"; exit \$rc'" \
+            < "$archive" || die "restauration échouée (transaction annulée, base inchangée)"
     fi
-    log "pg_restore (une seule transaction)..."
-    on_target "docker exec -i $container sh -c 'exec pg_restore -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" --no-owner --single-transaction $clean_opts'" \
-        < "$archive" || die "pg_restore a échoué (transaction annulée)"
     tables=$(echo "select count(*) from pg_tables where schemaname = 'public';" | psql_in)
     local head
     head=$(echo "select version_num from alembic_version;" | psql_in) || head="(absent)"
@@ -158,6 +167,11 @@ restore_vault() {
     local users
     users=$(on_target "docker ps --filter volume=$volume --format '{{.Names}}'")
     [[ -z "$users" ]] || die "volume $volume monté par un conteneur en cours d'exécution ($users) : arrêtez ce Vault-là d'abord"
+    # Archive relue en entier (gzip + tar) avant de toucher au volume : une archive
+    # corrompue ne doit jamais faire vider un volume existant.
+    log "Vérification de l'archive (tar tzf)..."
+    on_target "docker run --rm -i --network none --entrypoint sh $tar_image -c 'tar -tzf - > /tmp/list && grep -Eq \"^(\\./)?core/\" /tmp/list'" \
+        < "$archive" || die "archive illisible ou sans core/ : volume laissé intact"
     if on_target "docker volume inspect $volume" >/dev/null 2>&1; then
         local first
         first=$(on_target "docker run --rm --network none -v $volume:/data:ro --entrypoint sh $tar_image -c 'ls -A /data | head -n 1'")
