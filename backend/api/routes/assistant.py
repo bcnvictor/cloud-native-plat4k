@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Literal, Optional
+from typing import Any, Awaitable, Literal, Optional
 
 import httpx
 from backend.ai.factory import get_provider
@@ -67,13 +67,18 @@ async def _check_limits(db: AsyncSession, user: User) -> None:
 
 
 async def _chat(svc: AssistantService, **kwargs):
-    """Run a chat turn, turning provider failures into readable API errors.
+    """Run a chat turn, turning provider failures into readable API errors."""
+    return await _guard_provider(svc.chat(**kwargs))
+
+
+async def _guard_provider(call: Awaitable[Any]):
+    """Await an LLM-backed call, turning provider failures into readable API errors.
 
     503 is reserved for "assistant disabled" (the UI hides the chat on it), so
     quota errors use 429 and other upstream failures 502.
     """
     try:
-        return await svc.chat(**kwargs)
+        return await call
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 429:
             raise HTTPException(
@@ -487,6 +492,43 @@ async def chat_with_app(
         app=app,
         history=[t.model_dump() for t in payload.history],
     )
+    return _build_chat_response(resp)
+
+
+# ── POST /apps/{app_id}/assistant/diagnose (CNP Doctor, POC 4K-247) ──────────
+
+
+class DiagnosePayload(BaseModel):
+    env: Literal["dev", "prod"] = "prod"
+
+
+@router.post("/{app_id}/assistant/diagnose", response_model=ChatResponseSchema)
+async def diagnose_app(
+    app_id: int,
+    payload: DiagnosePayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_tier(CnpTier.DEVELOPER)),
+):
+    cfg = await _require_ai_enabled(db)
+
+    app = (await db.execute(select(Application).where(Application.id == app_id))).scalar_one_or_none()
+    if app is None:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    ai_settings = (
+        await db.execute(select(AIAppSettings).where(AIAppSettings.app_id == app_id))
+    ).scalar_one_or_none()
+    if ai_settings is None or not ai_settings.ai_enabled:
+        raise HTTPException(status_code=400, detail="AI assistant is not enabled for this application.")
+    if not cfg.app_allowed(app_id):
+        raise HTTPException(
+            status_code=403,
+            detail="AI access to this application is not allowed by platform settings.",
+        )
+
+    await _check_limits(db, current_user)
+    svc = _build_assistant(db, cfg)
+    resp = await _guard_provider(svc.diagnose(app=app, current_user=current_user, env=payload.env))
     return _build_chat_response(resp)
 
 

@@ -123,6 +123,8 @@ Front : `askAssistant(question)` émet l'événement `plat4k:assistant-ask` ; `R
 
 Démo locale : `scripts/assistant-demo/` (comptes de test par profil + faux Loki).
 
+**Diagnostic en un appel (CNP Doctor, POC 4K-247)** : `POST /apps/{app_id}/assistant/diagnose` (`{"env": "prod"|"dev"}`, rôle developer) collecte ces trois outils plus `get_app_details`, puis fait **un seul** appel au modèle (Constat / Preuves / Cause probable / Actions), sans le laisser choisir ses outils. Audit `ai_assistant.diagnose`, usage `incident`. Choix de la direction : [ADR-0030](../adr/0030-direction-ia-cnp-doctor.md).
+
 ## Roadmap (lots suivants proposés)
 
 1. **Repo docs-only GitLab (`cnp-docs`)** : branche protégée + review MR ; CI dans le repo principal qui `mkdocs build` et publie vers `cnp-docs` (pas de doc en double). Ingestion via clone/pull read-only ou API GitLab → il suffit de changer l'origine dans `ingest_local_dir` (source `cnp-docs`). Rafraîchi par webhook.
