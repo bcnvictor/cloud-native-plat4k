@@ -6,7 +6,8 @@
 #
 # - clé privée : Vault secret/cnp/platform (GRAFANA_JWT_PRIVATE_KEY), jamais affichée ;
 # - clé publique : .env de la VM (GRAFANA_JWT_PUBLIC_KEY_B64), lue par Grafana ;
-# - recrée uniquement Grafana et le backend. Vault n'est jamais redémarré (il se rescellerait).
+# - recrée Grafana et redémarre le backend (il ne lit Vault qu'au démarrage). Vault n'est
+#   jamais redémarré (il se rescellerait).
 #
 # --rotate remplace une paire de clés existante : les tokens déjà émis deviennent invalides.
 set -euo pipefail
@@ -61,14 +62,23 @@ fi
 echo 'Clé publique écrite dans .env'
 
 # --no-deps : surtout ne pas recréer Vault.
-docker compose --profile production up -d --no-deps grafana backend
+# Grafana est recréé car son environnement change (clé publique du .env). Le backend, lui,
+# ne lit Vault qu'au démarrage et sa config compose ne change pas : `up -d` le laisserait
+# tourner sans la clé privée. On le redémarre donc explicitement.
+docker compose --profile production up -d --no-deps grafana
+docker compose --profile production restart backend
 
-health=000
-for _ in $(seq 1 24); do
-    health=$(curl -s -m 5 -o /dev/null -w '%{http_code}' http://localhost:8000/api/v1/health/ || true)
-    [[ "$health" == 200 ]] && break
-    sleep 5
-done
+wait_for() {
+    local url=$1 code=000
+    for _ in $(seq 1 24); do
+        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$url" || true)
+        [[ "$code" == 200 ]] && break
+        sleep 5
+    done
+    echo "$code"
+}
+health=$(wait_for http://localhost:8000/api/v1/health/)
+grafana=$(wait_for http://localhost:3000/api/health)
 echo "backend /health : $health"
-echo "grafana /api/health : $(curl -s -m 5 -o /dev/null -w '%{http_code}' http://localhost:3000/api/health || true)"
-[[ "$health" == 200 ]]
+echo "grafana /api/health : $grafana"
+[[ "$health" == 200 && "$grafana" == 200 ]]
