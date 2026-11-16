@@ -192,6 +192,24 @@ services:
     networks:
       - cnp_net
 
+  cnp-mcp:
+    build:
+      context: ./cnp-mcp
+    environment:
+      - CNP_API_URL=http://backend:8000/api/v1
+      - MCP_ALLOWED_HOSTS=${MCP_ALLOWED_HOSTS:-localhost,127.0.0.1}
+    depends_on:
+      backend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - cnp_net
+
   nginx-grafana:
     profiles:
       - production

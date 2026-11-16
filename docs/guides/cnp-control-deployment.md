@@ -108,6 +108,9 @@ VAULT_TOKEN=hvs.xxxxxxxxxxxx
 
 # Orchestration docker-compose
 COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.tunnel.yml
+
+# Serveur MCP (4K-77) : hosts acceptés par cnp-mcp
+MCP_ALLOWED_HOSTS=cnp.cloud-native-plat4k.me,localhost
 ```
 
 **Tout le reste** (SECRET_KEY, ENCRYPTION_KEY, GITLAB_*, PROMETHEUS_URL, etc.) est lu depuis Vault au démarrage du backend — ne pas les remettre dans `.env`.
@@ -182,9 +185,54 @@ Voir [architecture réseau](../architecture/network-tailscale.md) pour la topolo
 
 Pour la gestion des secrets Vault (rotation, policy, unseal keys), voir [`vault-runbook.md`](vault-runbook.md).
 
+## Serveur MCP (`cnp-mcp`)
+
+Le service `cnp-mcp` (4K-77) tourne dans le même compose que le backend, sans port publié. Le nginx du `frontend` l'expose en `https://cnp.cloud-native-plat4k.me/mcp`. Il n'a pas de secret : chaque client envoie sa propre clé API CNP.
+
+Variable d'infra à définir dans le `.env` de la VM (non secrète) :
+
+```bash
+MCP_ALLOWED_HOSTS=cnp.cloud-native-plat4k.me,localhost
+```
+
+`CNP_API_KEY` ne doit **pas** être défini en prod.
+
+Vérifications après déploiement :
+
+```bash
+docker compose ps cnp-mcp                     # healthy
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://cnp.cloud-native-plat4k.me/mcp   # 401 sans clé
+docker compose logs cnp-mcp --tail 50
+```
+
+Si `cnp-mcp` est arrêté, l'UI reste disponible et seul `/mcp` répond 502.
+
 ## Cloudflare Tunnel
 
 Le tunnel est géré par `cloudflared.service` (systemd). Il démarre automatiquement au boot et survit aux déconnexions SSH.
+
+Sa config (`/etc/cloudflared/config.yml`, tunnel nommé `28ef0ec5-…`) envoie tout le domaine vers le nginx du `frontend` :
+
+```yaml
+ingress:
+  - hostname: cnp.cloud-native-plat4k.me
+    service: http://localhost:80
+  - service: http_status:404
+```
+
+Les routes publiques (`/`, `/api`, `/mcp`) se règlent donc dans `frontend-new/nginx.conf`, sans toucher au tunnel.
+
+Les variables du backend propres au domaine public sont dans `~/cloud-native-plat4k/docker-compose.tunnel.yml`, chargé via `COMPOSE_FILE` dans le `.env` de la VM. Ce fichier n'existe que sur la VM : le versionner ferait échouer le `git pull` du job `deploy`, qui refuse d'écraser un fichier non suivi. Contenu au 2026-11-12 :
+
+```yaml
+services:
+  backend:
+    environment:
+      - FRONTEND_BASE_URL=https://cnp.cloud-native-plat4k.me
+      - BACKEND_CORS_ORIGINS=["https://cnp.cloud-native-plat4k.me"]
+      - CNP_API_BASE_URL=https://cnp.cloud-native-plat4k.me
+      - SECURE_COOKIES=true
+```
 
 ```bash
 # Vérifier l'état du tunnel

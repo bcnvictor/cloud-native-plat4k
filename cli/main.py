@@ -1,5 +1,5 @@
 import typer
-from cli.commands import auth, resources, credentials, gitlab, apps, clusters, env, keycloak
+from cli.commands import auth, resources, credentials, gitlab, apps, clusters, env, keycloak, deployments
 from cli.core.config import DOCS_URL
 
 app = typer.Typer(
@@ -25,6 +25,8 @@ app.add_typer(resources.app, name="resources")
 app.add_typer(credentials.app, name="credentials")
 app.add_typer(gitlab.app, name="gitlab")
 app.add_typer(clusters.app, name="clusters")
+app.add_typer(deployments.app, name="deployment")
+app.add_typer(deployments.app, name="deployments")
 
 if __name__ == "__main__":
     app()
