@@ -269,7 +269,8 @@ helm upgrade --install loki grafana/loki-stack --namespace monitoring --version 
 - `monitoring-values.yaml` désactive le scraping d'etcd, du scheduler, du
   controller-manager et de kube-proxy (embarqués dans le binaire k3s, sans métriques sur
   les ports standards). CoreDNS reste scrapé ; si sa cible est DOWN, le désactiver aussi.
-- `loki-values.yaml` : `loki.isDefault=false` (obligatoire, cf. README GKE), Promtail en
+- `loki-values.yaml` : `loki.isDefault=false` (obligatoire, cf. README GKE), image Loki
+  `2.9.17` (la 2.6.1 du chart fait échouer le « Save & test » de Grafana), Promtail en
   stage `cri` (défaut du chart), montage de `/var/log/pods` et `/var/log/containers`, et
   label Loki `cnp_io_group_id` copié du label de pod `cnp.io/group-id`.
 
