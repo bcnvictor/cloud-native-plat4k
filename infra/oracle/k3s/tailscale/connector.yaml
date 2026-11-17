@@ -1,0 +1,15 @@
+# Connector Tailscale : annonce le Service CIDR k3s à cnp-control (ADR-0019).
+# kubectl apply -f tailscale/connector.yaml --kubeconfig cnp-k3s.yaml
+# Route auto-approuvée par l'ACL ; runbook : README section 8.
+apiVersion: tailscale.com/v1alpha1
+kind: Connector
+metadata:
+  name: k3s-subnet-router
+spec:
+  hostname: k3s-subnet-router
+  tags:
+    - tag:k8s
+  subnetRouter:
+    advertiseRoutes:
+      # Service CIDR k3s uniquement (pas le Pod CIDR 10.42.0.0/16)
+      - "10.43.0.0/16"

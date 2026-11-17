@@ -84,6 +84,7 @@ Le Grafana central n'est pas encore déployé. L'état de transition :
 | Escape hatch Loki | ⏳ Masqué — nécessite `GRAFANA_URL` configuré |
 | Escape hatch Grafana Explore | ⏳ Masqué — nécessite `GRAFANA_URL` configuré |
 | Grafana central multi-sources | 🔲 Planifié — ticket 4K-90 |
+| Sources k3s (`cnp-k3s`) dans le Grafana central | ✅ Datasources `Prometheus cnp-k3s` / `Loki cnp-k3s` via Tailscale |
 
 En production actuelle, `PROMETHEUS_URL` et `LOKI_URL` pointent vers les LoadBalancer externes des clusters (`4.165.251.86:9090` et `4.225.134.29:3100`). Ce n'est pas la cible (les services de monitoring ne devraient pas être publics) — ils seront rapatriés derrière Tailscale une fois le Grafana central déployé.
 

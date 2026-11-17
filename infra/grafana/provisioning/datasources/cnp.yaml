@@ -17,3 +17,21 @@ datasources:
     editable: false
     jsonData:
       maxLines: 1000
+
+  # cnp-k3s via le Connector Tailscale ; URLs par défaut dans docker-compose.yml
+  - name: Prometheus cnp-k3s
+    type: prometheus
+    uid: prometheus-cnp-k3s
+    url: ${K3S_PROMETHEUS_URL}
+    editable: false
+    jsonData:
+      timeInterval: 30s
+      httpMethod: POST
+
+  - name: Loki cnp-k3s
+    type: loki
+    uid: loki-cnp-k3s
+    url: ${K3S_LOKI_URL}
+    editable: false
+    jsonData:
+      maxLines: 1000

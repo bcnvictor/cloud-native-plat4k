@@ -1,0 +1,24 @@
+# Valeurs kube-prometheus-stack 91.8.2 pour cnp-k3s, sur le modèle de GKE.
+# Commande et vérifications : README section 9.
+
+# Labels CNP exposés par kube-state-metrics (filtres par owner / groupe dans l'UI CNP)
+kube-state-metrics:
+  metricLabelsAllowlist:
+    - pods=[app.kubernetes.io/name,app.kubernetes.io/managed-by,cnp.io/owner,cnp.io/group-id]
+
+# k3s embarque etcd (sqlite par défaut), scheduler, controller-manager et kube-proxy dans
+# un seul binaire, sans métriques sur les ports standards : cibles DOWN sinon.
+# CoreDNS reste scrapé (k3s utilise bien CoreDNS, contrairement à GKE).
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# ClusterIP figée, joignable depuis cnp-control via le Connector Tailscale
+prometheus:
+  service:
+    clusterIP: "10.43.200.90"
