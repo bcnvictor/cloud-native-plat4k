@@ -40,13 +40,18 @@ def list_env(
     app_slug: str = typer.Option(..., "--app", "-a", help="Application slug"),
     env: str = typer.Option(..., "--env", "-e", help="Environment: dev or prod"),
 ):
-    """List environment variable keys and their set/unset status."""
+    """List environment variable keys, their set/unset status, and which ones
+    CNP manages itself (Keycloak's OIDC_* — read-only, set/unset refuse them)."""
     _validate_env(env)
     try:
         app_id = _resolve_app_id(app_slug)
         data = client.get(f"/apps/{app_id}/env/{env}")
-        rows = [[k["key"], "set" if k["is_set"] else "unset"] for k in data["keys"]]
-        print_table(f"Env vars — {app_slug} ({env})", ["Key", "Status"], rows)
+        # .get(): backends predating 4K-15 don't send `managed`.
+        rows = [
+            [k["key"], "set" if k["is_set"] else "unset", "managed by CNP" if k.get("managed", False) else ""]
+            for k in data["keys"]
+        ]
+        print_table(f"Env vars — {app_slug} ({env})", ["Key", "Status", "Managed"], rows)
     except Exception as e:
         print_error(str(e))
         raise typer.Exit(1)

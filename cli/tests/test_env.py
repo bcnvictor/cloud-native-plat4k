@@ -19,10 +19,11 @@ APP_SLUG = "my-app"
 
 
 class FakeClient:
-    def __init__(self, values=None, fail_on_delete=None):
+    def __init__(self, values=None, fail_on_delete=None, keys=None):
         self.calls: list[tuple] = []
         self.values = values or {}
         self.fail_on_delete = fail_on_delete
+        self.keys = keys if keys is not None else [{"key": "A", "is_set": True, "managed": False}]
 
     def get(self, endpoint, params=None):
         self.calls.append(("GET", endpoint))
@@ -31,7 +32,7 @@ class FakeClient:
         if endpoint == f"/apps/{APP_ID}/env/dev/values":
             return dict(self.values)
         if endpoint.startswith(f"/apps/{APP_ID}/env/"):
-            return {"env": endpoint.rsplit("/", 1)[1], "keys": [{"key": "A", "is_set": True}]}
+            return {"env": endpoint.rsplit("/", 1)[1], "keys": self.keys}
         raise AssertionError(f"unexpected GET {endpoint}")
 
     def put(self, endpoint, json=None, data=None):
@@ -66,6 +67,28 @@ class TestList:
         assert result.exit_code == 0, result.output
         assert fake_client.endpoints() == ["/apps/", f"/apps/{APP_ID}/env/{env}"]
         assert "A" in result.output
+
+    def test_list_marks_keycloak_managed_keys(self, monkeypatch):
+        fake = FakeClient(keys=[
+            {"key": "APP_KEY", "is_set": True, "managed": False},
+            {"key": "OIDC_CLIENT_ID", "is_set": True, "managed": True},
+        ])
+        monkeypatch.setattr(env_cmd, "client", fake)
+        result = _invoke("list", "-a", APP_SLUG, "-e", "dev")
+        assert result.exit_code == 0, result.output
+        lines = result.output.splitlines()
+        oidc_line = next(line for line in lines if "OIDC_CLIENT_ID" in line)
+        app_line = next(line for line in lines if "APP_KEY" in line)
+        assert "managed by CNP" in oidc_line
+        assert "managed by CNP" not in app_line
+
+    def test_list_tolerates_backend_without_managed_field(self, monkeypatch):
+        """Backends predating 4K-15 don't send `managed`: nothing is marked."""
+        fake = FakeClient(keys=[{"key": "OIDC_CLIENT_ID", "is_set": True}])
+        monkeypatch.setattr(env_cmd, "client", fake)
+        result = _invoke("list", "-a", APP_SLUG, "-e", "dev")
+        assert result.exit_code == 0, result.output
+        assert "managed by CNP" not in result.output
 
     def test_list_rejects_unknown_env_without_calling_api(self, fake_client):
         result = _invoke("list", "-a", APP_SLUG, "-e", "staging")
