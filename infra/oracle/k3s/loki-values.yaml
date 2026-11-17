@@ -1,0 +1,29 @@
+# Valeurs loki-stack 2.10.3 pour cnp-k3s (4K-101). Commande et vérifications : README section 9.
+# isDefault=false obligatoire : sinon conflit de datasource par défaut avec Prometheus.
+loki:
+  isDefault: false
+  # ClusterIP figée, joignable depuis cnp-control via le Connector Tailscale (4K-102)
+  service:
+    clusterIP: "10.43.200.100"
+
+grafana:
+  enabled: false
+
+promtail:
+  enabled: true
+  config:
+    snippets:
+      # Label Loki cnp_io_group_id, ajouté après les relabels par défaut (k3s seulement)
+      extraRelabelConfigs:
+        - action: replace
+          source_labels: [__meta_kubernetes_pod_label_cnp_io_group_id]
+          target_label: cnp_io_group_id
+  # Symlinks containerd de k3s (les cibles, /var/log/pods, sont montées par défaut)
+  extraVolumes:
+    - name: containers-log
+      hostPath:
+        path: /var/log/containers
+  extraVolumeMounts:
+    - name: containers-log
+      mountPath: /var/log/containers
+      readOnly: true
