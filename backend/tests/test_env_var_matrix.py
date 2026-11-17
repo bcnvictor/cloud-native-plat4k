@@ -176,6 +176,15 @@ def _assert_outcome(resp, principal: str, env: str, op: str, fake_vault, store_b
         assert fake_vault["writes"] == [], f"refused {op} on {env} still wrote to Vault"
         assert fake_vault["store"] == store_before
 
+    # matrix_app has Keycloak disabled (auth_enabled=False): no key is managed.
+    if op == "list" and expected == 200:
+        assert resp.json()["keys"] == [{"key": "EXISTING", "is_set": True, "managed": False}]
+    if op == "put" and expected == 200:
+        assert resp.json()["keys"] == [
+            {"key": "EXISTING", "is_set": True, "managed": False},
+            {"key": "NEW_KEY", "is_set": True, "managed": False},
+        ]
+
     if op == "values" and expected == 200:
         assert resp.json() == {"EXISTING": SECRET_VALUE}
     else:
