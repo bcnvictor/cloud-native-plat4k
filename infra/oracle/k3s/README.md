@@ -167,6 +167,122 @@ Pour qu'une app soit joignable depuis Internet, trois étapes restent hors Terra
 3. **HTTPS** : pas encore de cert-manager sur k3s. Une SPA avec Keycloak (PKCE) a besoin
    d'une origine HTTPS (Web Crypto) : en HTTP, la page s'affiche mais le login échoue.
 
+## 8. Réseau Tailscale vers les ClusterIPs (Connector, 4K-101)
+
+`cnp-control` joint les ClusterIPs de k3s (Prometheus, Loki, ArgoCD) via un `Connector`
+de l'opérateur Tailscale déjà installé pour ESO (`tailscale/operator-values.yaml`), comme
+AKS et GKE ([ADR-0019](../../../docs/adr/0019-tailscale-reseau-overlay.md)). Seul le
+Service CIDR `10.43.0.0/16` est annoncé, pas le Pod CIDR.
+
+**Pré-vérifications**
+
+```bash
+# Service CIDR k3s : doit afficher 10.43.0.1
+kubectl --kubeconfig cnp-k3s.yaml get svc kubernetes -n default
+# Sur cnp-control : aucune route existante vers 10.43.x (sortie vide attendue)
+ip route show table all | grep '10\.43\.'
+```
+
+**ACL Tailscale** (`infra/tailscale/main.tf` : `autoApprovers` + règle `cnp-control → 10.43.0.0/16`
+sur 9090 / 3100 / 443 / 6443) :
+
+```bash
+cd ../../tailscale
+terraform plan    # diff attendu : ajouts k3s + règle Keycloak tag:k8s:8080 (4K-15), rien d'autre
+terraform apply
+```
+
+`overwrite_existing_content = true` : tout autre écart dans le plan est une modification
+faite seulement dans la console, qui serait écrasée. S'arrêter et vérifier avant d'appliquer.
+Après l'apply, retirer « à appliquer avec 4K-101 » de l'en-tête de `main.tf`.
+
+**Connector**
+
+```bash
+kubectl --kubeconfig cnp-k3s.yaml apply -f tailscale/connector.yaml
+kubectl --kubeconfig cnp-k3s.yaml get connector k3s-subnet-router   # STATUS ConnectorCreated
+```
+
+Dans la console Tailscale (*Machines > k3s-subnet-router*) : route `10.43.0.0/16` approuvée
+(via `autoApprovers`) et *Key expiry* désactivée (devices taggés).
+
+**Test depuis `cnp-control`**
+
+```bash
+curl -sk -o /dev/null -w '%{http_code}\n' https://10.43.0.1:443/version   # 401 ou 200 : route OK
+```
+
+Le port UDP `41641` entre les deux VMs OCI est optionnel : sans lui, Tailscale passe par un
+relais DERP (plus lent). L'ouvrir dans la security list si `tailscale ping k3s-subnet-router`
+reste en `via DERP`.
+
+## 9. Monitoring (kube-prometheus-stack + Loki, 4K-101)
+
+Mêmes charts, versions et noms de Services que GKE (`kube-prometheus-stack-prometheus` et
+`loki` dans `monitoring`), avec des ClusterIPs figées pour que `cnp-control` les joigne via
+la section 8 : Prometheus `10.43.200.90:9090`, Loki `10.43.200.100:3100`.
+
+**Pré-vérifications**
+
+```bash
+# Stack déjà installée ? Si oui, relever ses IPs (infra/scripts/pin-clusterips.sh) et les
+# reporter dans les values, docker-compose.yml et ce README au lieu des IPs ci-dessus.
+helm --kubeconfig cnp-k3s.yaml list -n monitoring
+# IPs figées libres (sortie vide attendue)
+kubectl --kubeconfig cnp-k3s.yaml get svc -A | grep -E '10\.43\.200\.(90|100) '
+```
+
+**Installation** (depuis `infra/oracle/k3s`)
+
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
+helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace --version 91.8.2 \
+  --values monitoring-values.yaml --kubeconfig cnp-k3s.yaml
+
+helm upgrade --install loki grafana/loki-stack --namespace monitoring --version 2.10.3 \
+  --values loki-values.yaml --kubeconfig cnp-k3s.yaml
+```
+
+- `monitoring-values.yaml` désactive le scraping d'etcd, du scheduler, du
+  controller-manager et de kube-proxy (embarqués dans le binaire k3s, sans métriques sur
+  les ports standards). CoreDNS reste scrapé ; si sa cible est DOWN, le désactiver aussi.
+- `loki-values.yaml` : `loki.isDefault=false` (obligatoire, cf. README GKE), Promtail en
+  stage `cri` (défaut du chart), montage de `/var/log/pods` et `/var/log/containers`, et
+  label Loki `cnp_io_group_id` copié du label de pod `cnp.io/group-id`.
+
+**Vérifications**
+
+```bash
+kubectl --kubeconfig cnp-k3s.yaml -n monitoring get pods   # tous Running (pas d'exec format error : arm64)
+kubectl --kubeconfig cnp-k3s.yaml top nodes                 # metrics-server k3s toujours OK
+```
+
+- Prometheus, *Status > Targets* : aucune cible DOWN.
+- Loki : `{cnp_io_group_id="<id d'un groupe>"}` renvoie les logs des pods de ce groupe.
+- Depuis `cnp-control` :
+
+```bash
+curl -s http://10.43.200.90:9090/-/ready    # Prometheus Server is Ready.
+curl -s http://10.43.200.100:3100/ready     # ready
+```
+
+**Grafana central** : les datasources `Prometheus cnp-k3s` et `Loki cnp-k3s` sont
+provisionnées par `infra/grafana/provisioning/datasources/cnp.yaml`, avec les URLs
+`K3S_PROMETHEUS_URL` / `K3S_LOKI_URL` (défauts = IPs ci-dessus, dans `docker-compose.yml`).
+Sur `cnp-control`, recharger Grafana puis *Connections > Data sources > Save & test* sur
+les deux :
+
+```bash
+docker compose --profile production up -d grafana
+```
+
+> Suivi : le label Loki `cnp_io_group_id` n'existe pour l'instant que sur k3s. L'étendre à
+> AKS et GKE (même `extraRelabelConfigs`) relève d'un ticket séparé.
+
 ## Note : architecture arm64 et images multi-plateforme
 
 Le nœud k3s tourne sur un Ampere A1 (`arm64/aarch64`). Les runners GitLab CI standard
