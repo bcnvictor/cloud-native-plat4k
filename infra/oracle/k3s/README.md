@@ -174,6 +174,8 @@ de l'opérateur Tailscale déjà installé pour ESO (`tailscale/operator-values.
 AKS et GKE ([ADR-0019](../../../docs/adr/0019-tailscale-reseau-overlay.md)). Seul le
 Service CIDR `10.43.0.0/16` est annoncé, pas le Pod CIDR.
 
+Toutes les commandes des sections 8 et 9 se lancent depuis `infra/oracle/k3s`.
+
 **Pré-vérifications**
 
 ```bash
@@ -183,17 +185,31 @@ kubectl --kubeconfig cnp-k3s.yaml get svc kubernetes -n default
 ip route show table all | grep '10\.43\.'
 ```
 
+Dans la console Tailscale (*Machines*, colonne *Subnets*) : vérifier qu'aucun device
+n'annonce déjà `10.43.0.0/16` (autre k3s/k3d taggé `tag:k8s`, auto-approuvé par l'ACL).
+
 **ACL Tailscale** (`infra/tailscale/main.tf` : `autoApprovers` + règle `cnp-control → 10.43.0.0/16`
-sur 9090 / 3100 / 443 / 6443) :
+sur 9090 / 3100 / 443 / 6443). Pré-requis : `terraform.tfvars` (copié de
+`terraform.tfvars.example`) et `TAILSCALE_API_KEY` (ou le client OAuth) dans l'environnement.
+
+Le state Terraform est local et non versionné. Sans le `terraform.tfstate` de l'apply
+initial, importer d'abord l'ACL live, sinon le plan ne montre pas l'écart avec la console :
 
 ```bash
-cd ../../tailscale
-terraform plan    # diff attendu : ajouts k3s + règle Keycloak tag:k8s:8080 (4K-15), rien d'autre
-terraform apply
+(cd ../../tailscale && terraform init \
+  && { terraform state list | grep -q '^tailscale_acl.cnp$' || terraform import tailscale_acl.cnp acl; } \
+  && terraform plan -target=tailscale_acl.cnp -out=tfplan)
 ```
 
-`overwrite_existing_content = true` : tout autre écart dans le plan est une modification
-faite seulement dans la console, qui serait écrasée. S'arrêter et vérifier avant d'appliquer.
+Diff attendu : ajouts k3s + règle Keycloak `tag:k8s:8080` (4K-15), rien d'autre.
+`overwrite_existing_content = true` : tout autre écart est une modification faite seulement
+dans la console, qui serait écrasée. S'arrêter et vérifier avant d'appliquer. `-target`
+évite de créer au passage une nouvelle clé `tailscale_tailnet_key.cnp_control`.
+
+```bash
+(cd ../../tailscale && terraform apply tfplan)
+```
+
 Après l'apply, retirer « à appliquer avec 4K-101 » de l'en-tête de `main.tf`.
 
 **Connector**
@@ -225,9 +241,10 @@ la section 8 : Prometheus `10.43.200.90:9090`, Loki `10.43.200.100:3100`.
 **Pré-vérifications**
 
 ```bash
-# Stack déjà installée ? Si oui, relever ses IPs (infra/scripts/pin-clusterips.sh) et les
-# reporter dans les values, docker-compose.yml et ce README au lieu des IPs ci-dessus.
+# Stack déjà installée ? Si oui, relever ses IPs et les reporter dans les values,
+# docker-compose.yml et ce README au lieu des IPs ci-dessus.
 helm --kubeconfig cnp-k3s.yaml list -n monitoring
+KUBECONFIG=./cnp-k3s.yaml bash ../../scripts/pin-clusterips.sh   # seulement si la stack existe
 # IPs figées libres (sortie vide attendue)
 kubectl --kubeconfig cnp-k3s.yaml get svc -A | grep -E '10\.43\.200\.(90|100) '
 ```
@@ -273,8 +290,11 @@ curl -s http://10.43.200.100:3100/ready     # ready
 **Grafana central** : les datasources `Prometheus cnp-k3s` et `Loki cnp-k3s` sont
 provisionnées par `infra/grafana/provisioning/datasources/cnp.yaml`, avec les URLs
 `K3S_PROMETHEUS_URL` / `K3S_LOKI_URL` (défauts = IPs ci-dessus, dans `docker-compose.yml`).
-Sur `cnp-control`, recharger Grafana puis *Connections > Data sources > Save & test* sur
-les deux :
+Elles n'existent sur `cnp-control` qu'après le merge sur `main` : la CI de déploiement
+relance alors la stack docker-compose, Grafana compris. D'ici là elles n'apparaissent pas ;
+avant que les sections 8 et 9 soient faites, elles apparaissent mais en échec. Une fois tout
+en place, *Connections > Data sources > Save & test* sur les deux. Si Grafana n'a pas été
+recréé par la CI, le relancer à la main sur `cnp-control` :
 
 ```bash
 docker compose --profile production up -d grafana
