@@ -21,7 +21,7 @@ provider "tailscale" {
 # par les Connectors (AKS : 10.0.0.0/16, GKE : 34.118.224.0/20, k3s : 10.43.0.0/16).
 #
 # Ce fichier reflète la policy en place dans la console (corrections ESO 4K-105,
-# cf. infra/eso/README.md) + GKE (4K-244) + Keycloak 8080 (4K-15, à appliquer).
+# cf. infra/eso/README.md) + GKE (4K-244) + Keycloak 8080 (4K-15).
 # overwrite_existing_content = true : toute modification faite uniquement dans la
 # console est écrasée au prochain apply.
 
