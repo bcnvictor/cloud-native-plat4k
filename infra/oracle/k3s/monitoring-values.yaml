@@ -1,4 +1,4 @@
-# Valeurs kube-prometheus-stack 91.8.2 pour cnp-k3s (4K-101), sur le modèle de GKE.
+# Valeurs kube-prometheus-stack 91.8.2 pour cnp-k3s, sur le modèle de GKE.
 # Commande et vérifications : README section 9.
 
 # Labels CNP exposés par kube-state-metrics (filtres par owner / groupe dans l'UI CNP)
@@ -18,7 +18,7 @@ kubeControllerManager:
 kubeProxy:
   enabled: false
 
-# ClusterIP figée, joignable depuis cnp-control via le Connector Tailscale (4K-102)
+# ClusterIP figée, joignable depuis cnp-control via le Connector Tailscale
 prometheus:
   service:
     clusterIP: "10.43.200.90"

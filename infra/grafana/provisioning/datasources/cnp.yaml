@@ -18,7 +18,7 @@ datasources:
     jsonData:
       maxLines: 1000
 
-  # cnp-k3s via le Connector Tailscale (4K-101) ; URLs par défaut dans docker-compose.yml
+  # cnp-k3s via le Connector Tailscale ; URLs par défaut dans docker-compose.yml
   - name: Prometheus cnp-k3s
     type: prometheus
     uid: prometheus-cnp-k3s
