@@ -7,21 +7,25 @@ Branche : `feature/4k-101-stack-monitoring-sur-k3s-oracle-tailscale`.
 ## Intention
 
 `cnp-k3s` (VM Oracle Ampere A1, arm64, 3 OCPU / 20 GB, k3s single-node) fait tourner ArgoCD,
-ESO, Reloader et l'opérateur Tailscale, mais n'a ni stack d'observabilité ni route Tailscale
-vers ses ClusterIPs. Ce ticket pose les deux pour que :
+ESO, Reloader et l'opérateur Tailscale. D'après le ticket, il n'a ni stack d'observabilité
+ni route Tailscale vers ses ClusterIPs (état live non vérifiable depuis le poste de dev,
+cf. §4). Ce ticket pose les deux pour que :
 
 1. le cluster soit observable depuis le **Grafana central** de `cnp-control` (ADR-0020) ;
 2. Prometheus et Loki k3s aient des **ClusterIPs connues et stables**, joignables depuis
    `cnp-control` via Tailscale — c'est l'entrée de 4K-102.
 
 Le résultat doit aligner k3s sur AKS et GKE : mêmes charts, mêmes noms de Services, même
-mécanisme réseau, pour que 4K-102 traite les trois clusters de la même façon.
+mécanisme réseau, pour que 4K-102 traite les trois clusters de la même façon. Seuls écarts
+voulus : ClusterIPs figées (§4) et label Loki `cnp_io_group_id` (§3), propres à k3s pour
+l'instant.
 
 ## Objectifs
 
 - `cnp-control` joint n'importe quelle ClusterIP de `cnp-k3s` sans port-forward.
 - `kube-prometheus-stack` + `loki-stack` (Loki + Promtail) tournent sur `cnp-k3s`, sans cible
-  DOWN permanente, avec les labels CNP (`cnp.io/owner`, `cnp.io/group-id`) exploitables.
+  DOWN permanente. Labels CNP exploitables : `cnp.io/owner` et `cnp.io/group-id` dans
+  Prometheus (via `kube_pod_labels`), `cnp.io/group-id` dans Loki.
 - Datasources `Prometheus cnp-k3s` et `Loki cnp-k3s` en état OK dans le Grafana central.
 - Runbook reproductible dans `infra/oracle/k3s/README.md`.
 
@@ -33,7 +37,8 @@ mécanisme réseau, pour que 4K-102 traite les trois clusters de la même façon
   README, comme AKS/GKE). Le Terraform existant de k3s (`ingress-nginx`) n'est pas touché.
 - Pas de dashboards Grafana nouveaux, pas d'alerting, pas de persistance Prometheus/Loki
   au-delà des défauts des charts (identique AKS/GKE).
-- Pas de changement sur AKS ni GKE.
+- Pas de changement sur les clusters AKS ni GKE. Seule exception indirecte : l'apply de
+  l'ACL Tailscale (globale au tailnet) pousse aussi la règle 8080 de 4K-15 (§2).
 
 ## Anti-objectifs
 
@@ -41,7 +46,8 @@ mécanisme réseau, pour que 4K-102 traite les trois clusters de la même façon
   veut justement sortir de ce modèle.
 - Casser l'existant : la datasource par défaut `prometheus-cnp` et les dashboards qui
   l'utilisent, l'egress ESO → Vault porté par l'opérateur Tailscale k3s (4K-105).
-- Élargir l'ACL Tailscale au-delà de ce qu'AKS/GKE ont déjà.
+- Donner au CIDR k3s plus d'accès que n'en ont les CIDR AKS/GKE dans l'ACL, ou ajouter
+  des règles autres que celles décrites au §2.
 
 ## Contexte existant (à lire avant de construire)
 
@@ -82,8 +88,9 @@ utilisent un `Connector`. **Décision utilisateur : suivre le pattern AKS/GKE.**
   lent). Documenter en note dans le README ; l'ouvrir si `tailscale ping` depuis
   `cnp-control` reste en `via DERP`.
 
-**Point de risque** : un pod proxy Tailscale doit pouvoir router vers les ClusterIPs
-(flannel + kube-proxy iptables, comme AKS). Si le `curl` de validation échoue alors que la
+**Point de risque** : le pod proxy Tailscale du Connector doit pouvoir router vers les
+ClusterIPs. Sur k3s, ça repose sur flannel + kube-proxy iptables (AKS est en Azure CNI,
+GKE en VPC-native : pas de précédent exact). Si le `curl` de validation échoue alors que la
 route est distribuée, investiguer avant de contourner (piste : `tailscale.com/expose` sur
 les Services, comme mentionné dans `infra/aks/tailscale/connector.yaml`).
 
@@ -93,7 +100,8 @@ Dans `infra/tailscale/main.tf`, ajouts calqués sur GKE :
 
 - `autoApprovers.routes` : `"10.43.0.0/16" = ["tag:k8s"]  # Service CIDR k3s`.
 - Règle `accept` `src = ["tag:cnp-control"]` vers `10.43.0.0/16:9090`, `:3100`, `:443`,
-  `:6443` (443 et 6443 par cohérence avec AKS/GKE, utiles à 4K-102 pour ArgoCD).
+  `:6443`, à l'identique d'AKS/GKE. 443 sert à 4K-102 (ArgoCD en http sur 443, et API
+  server via le Service `kubernetes` `10.43.0.1:443`) ; 6443 est gardé par symétrie.
 - Mettre à jour le commentaire d'en-tête (liste des Connectors, mention 4K-101).
 
 `terraform apply` écrase la policy de la console (`overwrite_existing_content = true`).
@@ -106,9 +114,16 @@ retirer « à appliquer » de l'en-tête.
 ### 3. Stack monitoring
 
 Installation par Helm, documentée dans une nouvelle section du README k3s (numérotation à la
-suite des sections existantes), sur le modèle de la section 5 du README GKE :
+suite des sections existantes), sur le modèle de la section 5 du README GKE. Commandes
+lancées depuis `infra/oracle/k3s`, avec le kubeconfig `cnp-k3s.yaml` des sections 3 et 6 du
+README (la section 7 utilise `~/.kube/config-cnp-k3s` : ne pas mélanger, rester sur
+`cnp-k3s.yaml`) :
 
 ```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace monitoring --create-namespace --version 91.8.2 \
   --values monitoring-values.yaml --kubeconfig cnp-k3s.yaml
@@ -117,7 +132,8 @@ helm upgrade --install loki grafana/loki-stack --namespace monitoring --version 
   --values loki-values.yaml --kubeconfig cnp-k3s.yaml
 ```
 
-Mêmes versions et noms de release qu'AKS/GKE → Services `kube-prometheus-stack-prometheus`
+Mêmes versions et noms de release que GKE (les versions AKS ne sont pas versionnées dans le
+repo) → Services `kube-prometheus-stack-prometheus`
 et `loki` dans `monitoring`, comme le suppose `infra/scripts/pin-clusterips.sh`.
 
 **`infra/oracle/k3s/monitoring-values.yaml`** (nom aligné sur AKS/GKE plutôt que
@@ -129,16 +145,20 @@ et `loki` dans `monitoring`, comme le suppose `infra/scripts/pin-clusterips.sh`.
   exposées sur les ports standards).
 - `coreDns` **reste activé** (k3s utilise CoreDNS, contrairement à GKE). Si sa cible est
   DOWN après install, la désactiver et le noter.
-- `prometheus.service.clusterIP` figée (voir §4).
-- Grafana in-cluster : **conservé** (défaut du chart, identique AKS/GKE ; le ticket n'en
-  parle pas). Ne pas le désactiver dans ce ticket.
+- `prometheus.service.clusterIP` figée (voir §4) ; vérifier la clé exacte dans le
+  `values.yaml` du chart 91.8.2.
+- Grafana in-cluster de kube-prometheus-stack : **conservé** (défaut du chart, identique
+  AKS/GKE ; le ticket n'en parle pas). Ne pas le désactiver dans ce ticket.
 
 **`infra/oracle/k3s/loki-values.yaml`** (nouveau ; GKE passe tout en `--set`, ici un
 fichier car il faut aussi figer la ClusterIP — *mon choix*) :
 
-- `promtail.enabled: true`, `grafana.enabled: false`, `loki.isDefault: false`
-  (obligatoire, cf. README GKE : sinon conflit de datasource par défaut).
-- `loki.service.clusterIP` figée (voir §4).
+- `promtail.enabled: true`, `grafana.enabled: false` (Grafana propre à loki-stack, distinct
+  de celui de kube-prometheus-stack conservé ci-dessus), `loki.isDefault: false`
+  (obligatoire, cf. README GKE : sinon la datasource Loki injectée dans le Grafana
+  in-cluster entre en conflit avec Prometheus comme datasource par défaut).
+- `loki.service.clusterIP` figée (voir §4) ; clé tirée de `infra/scripts/pin-clusterips.sh`,
+  à vérifier dans le `values.yaml` du chart 2.10.3.
 - Promtail : le ticket exige le stage `cri` et le montage hostPath de `/var/log/pods` et
   `/var/log/containers`. Vérifier les défauts du sous-chart `promtail` de `loki-stack`
   2.10.3 ; ne surcharger que ce qui manque.
@@ -157,9 +177,9 @@ fichier car il faut aussi figer la ClusterIP — *mon choix*) :
 - metrics-server k3s : pas de conflit attendu (kube-prometheus-stack n'en installe pas) ;
   confirmer que `kubectl top nodes` fonctionne toujours.
 - Prometheus → *Status > Targets* : aucune cible DOWN.
-- Loki : une requête `{namespace="<ns d'une app CNP>"}` remonte des logs et le label
-  `cnp_io_group_id` (ou nom équivalent après relabel) est présent, comme sur AKS. Si
-  absent, comparer la config Promtail AKS et aligner.
+- Loki : une requête `{namespace="<ns d'une app CNP>"}` remonte des logs, et
+  `{cnp_io_group_id="<id>"}` renvoie les lignes des pods qui portent ce label. Si le label
+  manque, corriger le relabel ci-dessus (pas de référence AKS à copier).
 
 ### 4. ClusterIPs figées
 
@@ -186,7 +206,7 @@ Dans `infra/grafana/provisioning/datasources/cnp.yaml`, ajouter :
 
 Dans `docker-compose.yml`, service `grafana` : ajouter
 `K3S_PROMETHEUS_URL=${K3S_PROMETHEUS_URL:-http://10.43.200.90:9090}` et
-`K3S_LOKI_URL=${K3S_LOKI_URL:-http://10.43.200.100:3100}` (défauts = IPs figées).
+`K3S_LOKI_URL=${K3S_LOKI_URL:-http://10.43.200.100:3100}` (défauts = IPs retenues au §4).
 Documenter les deux variables dans `.env.example`.
 
 Déploiement sur `cnp-control` : redémarrer le service `grafana` pour recharger le
@@ -216,8 +236,8 @@ Réseau
 Monitoring
 - [ ] `kube-prometheus-stack` et `loki-stack` déployés avec les values versionnées.
 - [ ] Aucune cible Prometheus DOWN ; tous les pods `monitoring` `Running` sur arm64.
-- [ ] Depuis `cnp-control` : `curl http://10.43.200.90:9090/-/ready` et
-      `curl http://10.43.200.100:3100/ready` répondent.
+- [ ] Depuis `cnp-control` : `curl http://<IP Prometheus §4>:9090/-/ready` et
+      `curl http://<IP Loki §4>:3100/ready` répondent.
 - [ ] Logs des pods k3s dans Loki ; ceux des pods portant `cnp.io/group-id` ont le label
       Loki `cnp_io_group_id` (`{cnp_io_group_id="<id>"}` renvoie des lignes).
 
