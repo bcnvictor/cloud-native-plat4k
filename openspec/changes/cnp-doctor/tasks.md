@@ -2,30 +2,30 @@
 
 ## 1. Contrat partagé
 
-- [ ] 1.1 Ajouter les énumérations du Doctor (verdict, source, confiance, catégorie, type d'action, source de preuve) dans `shared/models.py` ; vérifier par import dans un test backend
-- [ ] 1.2 Ajouter les types `DoctorDiagnosis` et la méthode `assistantApi.diagnose` côté frontend ; vérifier que `tsc` passe
-- [ ] 1.3 Créer le store partagé (diagnostics par application et environnement, mode du robot) et des exemples de diagnostics pour les tests ; vérifier par un test unitaire du store
+- [x] 1.1 Ajouter les énumérations du Doctor (verdict, source, confiance, catégorie, type d'action, source de preuve) dans `shared/models.py` ; vérifier par import dans un test backend
+- [x] 1.2 Ajouter les types `DoctorDiagnosis` et la méthode `assistantApi.diagnose` côté frontend ; vérifier que `tsc` passe
+- [x] 1.3 Créer le store partagé (diagnostics par application et environnement, mode du robot) et des exemples de diagnostics pour les tests ; vérifier par un test unitaire du store
 
 ## 2. Backend : signaux
 
-- [ ] 2.1 Étendre `get_pod_diagnostics` avec les horodatages (démarrage des pods, début des événements Warning, arrêt des conteneurs) ; vérifier par le test existant étendu
-- [ ] 2.2 Ajouter `GitLabClient.compare_revisions` (20 commits, 50 fichiers, lien de comparaison) ; vérifier par un test avec client simulé
-- [ ] 2.3 Écrire la collecte parallèle des signaux avec délai par source et `missing_signals` ; vérifier par des tests où une source échoue sans faire échouer la collecte
+- [x] 2.1 Étendre `get_pod_diagnostics` avec les horodatages (démarrage des pods, début des événements Warning, arrêt des conteneurs) ; vérifier par le test existant étendu
+- [x] 2.2 Ajouter `GitLabClient.compare_revisions` (20 commits, 50 fichiers, lien de comparaison) ; vérifier par un test avec client simulé
+- [x] 2.3 Écrire la collecte parallèle des signaux avec délai par source et `missing_signals` ; vérifier par des tests où une source échoue sans faire échouer la collecte
 
 ## 3. Backend : règles et chronologie
 
-- [ ] 3.1 Écrire les règles sans IA (`not_deployed`, `cluster_offline`, `stopped`, `deploying`, `healthy`, `inconclusive`) ; vérifier par un test par verdict, dont le crash en boucle pendant `Progressing`
-- [ ] 3.2 Écrire le calcul de chronologie et de corrélation ; vérifier par des tests couvrant haute, moyenne, faible, aucune, et le cas après rollback
-- [ ] 3.3 Écrire le registre de preuves et le catalogue d'actions avec `allowed` et `required_role` ; vérifier par des tests developer et maintainer
+- [x] 3.1 Écrire les règles sans IA (`not_deployed`, `cluster_offline`, `stopped`, `deploying`, `healthy`, `inconclusive`) ; vérifier par un test par verdict, dont le crash en boucle pendant `Progressing`
+- [x] 3.2 Écrire le calcul de chronologie et de corrélation ; vérifier par des tests couvrant haute, moyenne, faible, aucune, et le cas après rollback
+- [x] 3.3 Écrire le registre de preuves et le catalogue d'actions avec `allowed` et `required_role` ; vérifier par des tests developer et maintainer
 
 ## 4. Backend : IA, vérification, route
 
-- [ ] 4.1 Écrire le prompt et l'analyse de la réponse JSON de l'IA ; vérifier par des tests d'analyse (JSON valide, clôturé, illisible)
-- [ ] 4.2 Écrire la vérification (identifiants de preuve et d'action inconnus ignorés, confiance forcée à faible) ; vérifier par tests
-- [ ] 4.3 Écrire le repli `rules_fallback` (quota, erreur, limite interne) ; vérifier par des tests où le fournisseur répond 429 puis une erreur réseau
-- [ ] 4.4 Créer la route `POST /apps/{id}/doctor/diagnose`, l'audit et l'usage ; vérifier par des tests de route (200, 403 viewer, 404, 422, 503)
-- [ ] 4.5 Retirer le POC (`AssistantService.diagnose`, route `/assistant/diagnose`, ancien test) et vérifier que toute la suite assistant passe
-- [ ] 4.6 Vérifier par test qu'un secret présent dans un log n'atteint ni le prompt ni la réponse
+- [x] 4.1 Écrire le prompt et l'analyse de la réponse JSON de l'IA ; vérifier par des tests d'analyse (JSON valide, clôturé, illisible)
+- [x] 4.2 Écrire la vérification (identifiants de preuve et d'action inconnus ignorés, confiance forcée à faible) ; vérifier par tests
+- [x] 4.3 Écrire le repli `rules_fallback` (quota, erreur, limite interne) ; vérifier par des tests où le fournisseur répond 429 puis une erreur réseau
+- [x] 4.4 Créer la route `POST /apps/{id}/doctor/diagnose`, l'audit et l'usage ; vérifier par des tests de route (200, 403 viewer, 404, 422, 503)
+- [x] 4.5 Retirer le POC (`AssistantService.diagnose`, route `/assistant/diagnose`, ancien test) et vérifier que toute la suite assistant passe
+- [x] 4.6 Vérifier par test qu'un secret présent dans un log n'atteint ni le prompt ni la réponse
 
 ## 5. Frontend : carte
 

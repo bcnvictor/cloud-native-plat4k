@@ -554,3 +554,6 @@ export interface AIFinOpsAdvice {
   output_tokens: number;
   estimated_cost_usd: number | null;
 }
+
+// ── CNP Doctor ──────────────────────────────────────────────────────────────────
+export * from './doctor';
