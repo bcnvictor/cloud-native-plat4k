@@ -202,8 +202,7 @@ initial, importer d'abord l'ACL live, sinon le plan ne montre pas l'écart avec 
   && terraform plan -target=tailscale_acl.cnp -out=tfplan)
 ```
 
-Diff attendu : ajouts k3s + règle Keycloak `tag:k8s:8080` (déjà dans `main.tf`, pas encore
-appliquée), rien d'autre.
+Diff attendu (premier déploiement) : les ajouts k3s, rien d'autre.
 `overwrite_existing_content = true` : tout autre écart est une modification faite seulement
 dans la console, qui serait écrasée. S'arrêter et vérifier avant d'appliquer. `-target`
 évite de créer au passage une nouvelle clé `tailscale_tailnet_key.cnp_control`.
@@ -211,8 +210,6 @@ dans la console, qui serait écrasée. S'arrêter et vérifier avant d'appliquer
 ```bash
 (cd ../../tailscale && terraform apply tfplan)
 ```
-
-Après l'apply, retirer « à appliquer » de l'en-tête de `main.tf`.
 
 **Connector**
 
