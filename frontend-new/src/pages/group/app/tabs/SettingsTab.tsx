@@ -18,9 +18,11 @@ import { Button } from '@/components/ui/Button';
 import { Tabs } from '@/components/ui/Tabs';
 import { Badge } from '@/components/ui/Badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { apiError } from '@/utils/apiError';
 import { appUrl } from '@/utils/appUrls';
 import { cn } from '@/utils/cn';
 import { useToast } from '@/components/ui/toast';
+import { envVarPermissions, isValidEnvVarKey } from '@/utils/envVars';
 import type { KeycloakConsoleAccessResponse, KeycloakEnvState } from '@/types';
 
 const STATE_BADGES: Record<
@@ -89,27 +91,29 @@ export function SettingsTab() {
     onError: () => setExpose(app?.expose ?? false),
   });
 
-  const { data: myAccess } = useQuery({
+  const { data: myAccess, isLoading: myAccessLoading } = useQuery({
     queryKey: ['myAccess', app?.id],
     queryFn: () => appsApi.getMyAccess(app!.id),
     enabled: !!app,
   });
 
-  const { data: envVarsData, isLoading: envVarsLoading } = useQuery({
+  const {
+    data: envVarsData,
+    isLoading: envVarsLoading,
+    isError: envVarsIsError,
+    error: envVarsError,
+  } = useQuery({
     queryKey: ['envVars', app?.id, envTab],
     queryFn: () => appsApi.listEnvVars(app!.id, envTab),
-    enabled: !!app,
+    enabled: !!app && envVarPermissions(myAccess, envTab).canRead,
   });
 
   // Rename/delete/expose require maintainer+ (mirrors require_tier(MAINTAINER) on the backend).
   const canManageApp = !!myAccess && (myAccess.is_admin || myAccess.tier === 'maintainer' || myAccess.tier === 'owner');
 
-  // Developer has zero access to prod, not even key names (ADR-0025 §3).
-  const canSeeProd = !!myAccess && (myAccess.is_admin || myAccess.tier !== 'developer');
-  const canWriteEnv = !!myAccess && (
-    myAccess.is_admin ||
-    (envTab === 'dev' ? myAccess.tier !== 'viewer' : myAccess.tier === 'maintainer' || myAccess.tier === 'owner')
-  );
+  // Only Maintainer/Owner/admin see prod at all, not even key names (ADR-0025 §3).
+  const canSeeProd = envVarPermissions(myAccess, 'prod').canRead;
+  const canWriteEnv = envVarPermissions(myAccess, envTab).canWrite;
 
   useEffect(() => {
     if (envTab === 'prod' && myAccess && !canSeeProd) setEnvTab('dev');
@@ -120,16 +124,20 @@ export function SettingsTab() {
   const setVarsMutation = useMutation({
     mutationFn: (variables: Record<string, string>) => appsApi.setEnvVars(app!.id, envTab, variables),
     onSuccess: invalidateEnvVars,
+    onError: (err) => toast({ title: 'Save failed', description: apiError(err), variant: 'destructive' }),
   });
 
   const deleteVarMutation = useMutation({
     mutationFn: (key: string) => appsApi.deleteEnvVar(app!.id, envTab, key),
     onSuccess: invalidateEnvVars,
+    onError: (err) => toast({ title: 'Delete failed', description: apiError(err), variant: 'destructive' }),
   });
+
+  const addingKeyInvalid = addingKey.trim() !== '' && !isValidEnvVarKey(addingKey.trim());
 
   function submitAddVar() {
     const key = addingKey.trim();
-    if (!key) return;
+    if (!key || !isValidEnvVarKey(key)) return;
     setVarsMutation.mutate(
       { [key]: addingValue },
       {
@@ -293,8 +301,10 @@ export function SettingsTab() {
           className="mb-3"
         />
 
-        {envVarsLoading ? (
+        {envVarsLoading || myAccessLoading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>
+        ) : envVarsIsError ? (
+          <p className="text-xs text-danger-text">Could not load variables · {apiError(envVarsError)}</p>
         ) : (envVarsData?.keys.length ?? 0) === 0 && !showAddForm ? (
           <p className="text-xs text-muted-foreground">No variables.</p>
         ) : (
@@ -375,7 +385,7 @@ export function SettingsTab() {
                   size="sm"
                   variant="primary"
                   loading={setVarsMutation.isPending}
-                  disabled={!addingKey.trim()}
+                  disabled={!addingKey.trim() || addingKeyInvalid}
                   onClick={submitAddVar}
                 >
                   Save
@@ -388,6 +398,11 @@ export function SettingsTab() {
                   Cancel
                 </Button>
               </div>
+            )}
+            {showAddForm && addingKeyInvalid && (
+              <p className="text-xs text-danger-text">
+                Use only letters, digits, &quot;-&quot;, &quot;_&quot; and &quot;.&quot; in variable names.
+              </p>
             )}
           </div>
         )}
