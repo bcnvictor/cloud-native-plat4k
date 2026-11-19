@@ -43,10 +43,30 @@ helm upgrade --install argocd argo/argo-cd --version 7.9.1 -n argocd --create-na
 kubectl --context cnp-aks -n argocd apply -f ../../../cnp-gitops/bootstrap/root-app.yaml
 ```
 
-- Les repos `gitlab.com/4k-cnp-2027/cnp-apps/*` sont privés : créer un credential template
-  ArgoCD (Secret `argocd.argoproj.io/secret-type: repo-creds`, url
-  `https://gitlab.com/4k-cnp-2027/cnp-apps`, token GitLab `read_repository`), sinon les apps
-  restent en `Unknown` (`authentication required`).
+- Les repos et images `4k-cnp-2027/cnp-apps/*` sont privés. Créer un deploy token de groupe
+  (`cnp-apps` → Settings → Repository → Deploy tokens) avec **`read_repository` +
+  `read_registry`**, puis :
+
+  ```bash
+  read -r GL_USER; read -rs GL_TOKEN
+  # ArgoCD : credential template (sinon apps en Unknown, "authentication required")
+  kubectl --context cnp-aks -n argocd create secret generic cnp-apps-repo-creds \
+    --from-literal=type=git --from-literal=url=https://gitlab.com/4k-cnp-2027/cnp-apps \
+    --from-literal=username="$GL_USER" --from-literal=password="$GL_TOKEN"
+  kubectl --context cnp-aks -n argocd label secret cnp-apps-repo-creds argocd.argoproj.io/secret-type=repo-creds
+  # Pods : pull registry.gitlab.com (sinon ImagePullBackOff, 403 sur /jwt/auth).
+  # Les Deployments n'ont pas d'imagePullSecrets : on passe par le ServiceAccount default.
+  for ns in dev prod; do
+    kubectl --context cnp-aks create ns $ns --dry-run=client -o yaml | kubectl --context cnp-aks apply -f -
+    kubectl --context cnp-aks -n $ns create secret docker-registry gitlab-registry \
+      --docker-server=registry.gitlab.com --docker-username="$GL_USER" --docker-password="$GL_TOKEN"
+    kubectl --context cnp-aks -n $ns patch serviceaccount default \
+      -p '{"imagePullSecrets":[{"name":"gitlab-registry"}]}'
+  done
+  unset GL_TOKEN
+  ```
+
+  Pods déjà en `ImagePullBackOff` : `kubectl -n <ns> rollout restart deployment`.
 - Token du compte `cnp` (`argocd account generate-token --account cnp`) → étape 6.
 
 ## 5. Tailscale, ESO, Reloader
