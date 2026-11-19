@@ -113,9 +113,9 @@ kubectl patch svc loki -n monitoring -p '{"spec": {"type": "ClusterIP"}}'
 Puis, déployez la ressource Ingress de monitoring en l'ajoutant dans le dossier `argocd/` de votre dépôt `cnp-gitops` (déjà configuré sous `cnp-gitops/argocd/monitoring-ingress.yaml`). ArgoCD appliquera automatiquement la configuration sur le cluster.
 
 **Configuration sur la VM de Production :**
-1. Sur la VM de production, associez les noms de domaine à l'IP de l'Ingress (ex: `4.166.144.120`) dans le fichier `/etc/hosts` pour contourner la propagation DNS :
+1. Sur la VM de production, associez les noms de domaine à l'IP de l'Ingress (ex: `172.135.113.113`) dans le fichier `/etc/hosts` pour contourner la propagation DNS :
    ```text
-   4.166.144.120 prometheus.cloud-native-plat4k.me loki.cloud-native-plat4k.me
+   172.135.113.113 prometheus.cloud-native-plat4k.me loki.cloud-native-plat4k.me
    ```
 2. Mettez à jour les secrets de la plateforme dans le **Vault de production** :
    * `LOKI_URL` $\rightarrow$ `http://loki.cloud-native-plat4k.me`

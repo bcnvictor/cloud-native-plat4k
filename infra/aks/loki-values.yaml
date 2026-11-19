@@ -1,0 +1,27 @@
+# Valeurs loki-stack 2.10.3 pour cnp-aks (repris de infra/oracle/k3s/loki-values.yaml).
+#
+# helm upgrade --install loki grafana/loki-stack --namespace monitoring --version 2.10.3 \
+#   --values infra/aks/loki-values.yaml --kube-context cnp-aks
+#
+# isDefault=false obligatoire : sinon conflit de datasource par défaut avec Prometheus.
+loki:
+  isDefault: false
+  # Loki 2.6.1 du chart ne gère pas vector(), requis par le test de datasource de Grafana 13
+  image:
+    tag: 2.9.17
+  # ClusterIP figée = celle de l'ancien cluster : LOKI_URL reste valable après un rebuild.
+  service:
+    clusterIP: "10.0.130.130"
+
+grafana:
+  enabled: false
+
+promtail:
+  enabled: true
+  config:
+    snippets:
+      # Label Loki cnp_io_group_id copié du label de pod cnp.io/group-id
+      extraRelabelConfigs:
+        - action: replace
+          source_labels: [__meta_kubernetes_pod_label_cnp_io_group_id]
+          target_label: cnp_io_group_id

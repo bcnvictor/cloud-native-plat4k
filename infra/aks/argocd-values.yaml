@@ -1,0 +1,23 @@
+# Valeurs argo/argo-cd 7.9.1 pour cnp-aks (même chart que k3s et GKE).
+#
+# helm upgrade --install argocd argo/argo-cd --version 7.9.1 \
+#   --namespace argocd --create-namespace \
+#   --values infra/aks/argocd-values.yaml --kube-context cnp-aks
+#
+# Puis bootstrap App of Apps (argocd/cnp-aks du repo cnp-gitops) :
+#   kubectl --context cnp-aks -n argocd apply -f ../cnp-gitops/bootstrap/root-app.yaml
+# Token du compte cnp : argocd account generate-token --account cnp, puis
+# PUT /api/v1/clusters/2 {"argocd_token": ...} (le backend l'écrit dans Vault argocd/2).
+configs:
+  params:
+    # Pas de TLS côté ArgoCD : argocd_url = http://<ClusterIP argocd-server>:443
+    # (seul 443 est ouvert vers le Service CIDR dans l'ACL Tailscale)
+    server.insecure: true
+  cm:
+    # Polling Git rapide : ArgoCD n'est pas joignable par les webhooks GitLab (docs/guides/argocd-setup.md)
+    timeout.reconciliation: 15s
+    # Compte de service CNP (le compte admin n'a pas la capacité apiKey)
+    accounts.cnp: apiKey
+  rbac:
+    policy.csv: |
+      g, cnp, role:admin
