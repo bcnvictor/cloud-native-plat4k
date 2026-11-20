@@ -388,3 +388,11 @@ async def test_route_respects_platform_ai_settings(client: AsyncClient, admin_to
 
     assert disabled.status_code == 503
     assert not_allowed.status_code == 403
+
+
+def test_action_note_does_not_repeat_the_action_label():
+    from backend.services.doctor_service import _strip_label
+    label = "Revenir à la version a1b2c3d4"
+    assert _strip_label("Revenir à la version a1b2c3d4 — dernière version en service.", label) == (
+        "Dernière version en service.")
+    assert _strip_label("Rétablit le service.", label) == "Rétablit le service."

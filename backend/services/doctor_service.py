@@ -274,9 +274,17 @@ def apply_model_answer(result: DoctorResult, answer: ModelAnswer) -> None:
     # Les actions, leur ordre et leurs cibles restent ceux de la plateforme :
     # le modèle ne fait que les commenter.
     for action in result.actions:
-        note = answer.action_notes.get(action.id)
+        note = _strip_label(answer.action_notes.get(action.id) or "", action.label)
         if note:
             action.description = note
+
+
+def _strip_label(note: str, label: str) -> str:
+    """Retire le libellé de l'action que le modèle recopie parfois en tête de sa justification."""
+    if note.lower().startswith(label.lower()):
+        note = note[len(label):].lstrip(" :—–-.,")
+        note = note[:1].upper() + note[1:]
+    return note.strip()
 
 
 def _cite_key_evidence(result: DoctorResult) -> None:
