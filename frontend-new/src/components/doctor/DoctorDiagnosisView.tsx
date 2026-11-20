@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
   IconAlertTriangle,
   IconCircleCheck,
@@ -69,6 +69,25 @@ function metaLine(d: DoctorDiagnosis): string {
  * Diagnostic terminé du CNP Doctor : verdict, cause, chronologie, preuves, changements,
  * actions. Rendu dans la carte d'Overview et, en `compact`, dans le panneau de l'assistant.
  */
+/** Largeur (px CSS) à partir de laquelle preuves et actions tiennent côte à côte. */
+const TWO_COLUMNS_MIN_PX = 760;
+
+/** true quand l'élément mesure au moins `min` px de large (false sans ResizeObserver). */
+function useWidthAtLeast(ref: RefObject<HTMLElement>, min: number): boolean {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    // offsetWidth : px CSS de la mise en page, sans le zoom de la page (body { zoom: 1.25 }).
+    const update = () => setWide((el.offsetWidth || el.getBoundingClientRect().width) >= min);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref, min]);
+  return wide;
+}
+
 export function DoctorDiagnosisView({
   diagnosis,
   appId,
@@ -86,7 +105,11 @@ export function DoctorDiagnosisView({
   const hasTimeline = !!d.timeline && d.timeline.entries.length > 0;
   const hasEvidence = d.evidence.length > 0 || d.missing_signals.length > 0;
   const hasActions = d.actions.length > 0;
-  const twoColumns = !compact && hasActions;
+  // Deux colonnes seulement quand la carte elle-même est assez large : la largeur de
+  // l'écran ne suffit pas (barre latérale, zoom de la page, tiroir de l'assistant).
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const roomy = useWidthAtLeast(layoutRef, TWO_COLUMNS_MIN_PX);
+  const twoColumns = !compact && hasActions && roomy;
 
   const deepen = () =>
     askAssistant(
@@ -119,9 +142,10 @@ export function DoctorDiagnosisView({
       </div>
 
       <div
+        ref={layoutRef}
         className={cn(
           'grid min-w-0 grid-cols-1 gap-4',
-          twoColumns && 'lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] lg:gap-6'
+          twoColumns && 'grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] gap-6'
         )}
       >
         <div className={cn('flex min-w-0 flex-col', compact ? 'gap-3' : 'gap-4')}>
@@ -165,7 +189,7 @@ export function DoctorDiagnosisView({
         {hasActions && (
           <Section
             title="Actions conseillées"
-            className={cn(twoColumns && 'lg:self-start')}
+            className={cn(twoColumns && 'self-start')}
           >
             <DoctorActions diagnosis={d} appId={appId} />
           </Section>

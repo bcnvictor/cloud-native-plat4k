@@ -14,9 +14,9 @@ faits devenus inexacts sont corrigés, dans les sections concernées :
   `openspec/changes/cnp-doctor/` ; guide utilisateur : [CNP Doctor](../guides/cnp-doctor.md).
 - **Le POC est remplacé** : `POST /api/v1/apps/{app_id}/assistant/diagnose` laisse la place à
   `POST /api/v1/apps/{app_id}/doctor/diagnose`, à réponse structurée (voir « POC »).
-- **Serveur MCP** : la PR #65 (ticket 4K-77, ADR-0029 `docs/adr/0029-mcp-server.md`) livre
-  un serveur MCP en lecture seule, `cnp-mcp`. Elle est fusionnée sur `main` le 2026-11-16,
-  après la création de la branche du Doctor. La section « Transport » est mise à jour en
+- **Serveur MCP** : la PR #65 (ticket 4K-77, [ADR-0029](0029-mcp-server.md)) livre un
+  serveur MCP en lecture seule, `cnp-mcp`. Elle est fusionnée sur `main` le 2026-11-16 et
+  la branche du Doctor est reportée dessus. La section « Transport » est mise à jour en
   conséquence.
 - **FinOps** : la PR #52 est fusionnée sur `main` (2026-11-10).
 
@@ -127,13 +127,13 @@ MCP reste une **option peu coûteuse** si la piste 4 revient. `PlatformTools` ex
 un mince wrapper qui appelle l'API avec le token CLI de l'utilisateur, sans dupliquer les outils.
 
 *Mise à jour 2026-11-17.* Un serveur MCP existe désormais, pour un autre besoin : la PR #65
-(ticket 4K-77, ADR-0029) livre `cnp-mcp`, un serveur MCP en lecture
+(ticket 4K-77, [ADR-0029](0029-mcp-server.md)) livre `cnp-mcp`, un serveur MCP en lecture
 seule qui relaie la clé d'API de l'utilisateur vers l'API REST, pour interroger la CNP depuis
 un assistant IA de développeur. La conclusion ci-dessus ne change pas pour le Doctor : l'UI web
 et la CLI passent par l'API REST (`POST /apps/{id}/doctor/diagnose`) avec l'identité de
 l'utilisateur, et le diagnostic tourne dans le backend avec ses garde-fous. Exposer le Doctor
-comme outil MCP devient en revanche une suite peu coûteuse une fois la PR #65 intégrée à la
-branche du Doctor : un outil de `cnp-mcp` qui appelle cette route avec la clé relayée, sans
+comme outil MCP devient en revanche une suite peu coûteuse, maintenant que `cnp-mcp` est sur
+`main` : un outil de `cnp-mcp` qui appelle cette route avec la clé relayée, sans
 dupliquer la collecte ni les règles. Cette suite reste hors du périmètre validé le 2026-11-16.
 
 ### POC (réalisé dans ce spike)

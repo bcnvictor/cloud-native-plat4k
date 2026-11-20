@@ -125,9 +125,9 @@ section « Transport » de l'ADR-0030, mise à jour le 2026-11-17.
 - [ ] Branche poussée le : _…_
 - [ ] PR ouverte : _#…_
 
-**Contexte.** Les commits de `feature/cnp-doctor` sont uniquement locaux. La PR #65 a été
-fusionnée sur `main` après la création de la branche : il faudra intégrer `main` avant
-d'ouvrir la PR.
+**Contexte.** Les commits de `feature/cnp-doctor` sont uniquement locaux. La branche est
+reportée sur `main` du 2026-11-20 (serveur MCP de la PR #65 compris) : elle peut être
+poussée telle quelle.
 
 **À faire.** Le développeur pousse la branche et ouvre la PR quand il est prêt (de préférence
 après la demande 5, pour nommer la branche selon la convention). Le PO est prévenu pour la
