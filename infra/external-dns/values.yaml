@@ -1,0 +1,56 @@
+# Shared values of the external-dns release (kubernetes-sigs/external-dns chart),
+# installed by Terraform on every CNP cluster (infra/aks, infra/gke,
+# infra/oracle/k3s). Each root only adds txtOwnerId = its cluster name.
+#
+# Model (docs/guides/operations.md §9): each cluster creates, in the Cloudflare
+# zone, one A record per host of its Ingresses (<slug>, dev.<slug>) pointing to
+# the address published in the Ingress status (its ingress-nginx public IP).
+# Specific records take precedence over the wildcard `*`, which stays on AKS.
+
+provider:
+  name: cloudflare
+
+# Token scoped to the zone (Zone:DNS:Edit + Zone:Zone:Read), synced from Vault
+# secret/platform/external-dns by the local chart infra/external-dns/cloudflare-token.
+env:
+  - name: CF_API_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: cloudflare-api-token
+        key: api-token
+
+# Only Ingress hosts (not Services): CNP writes an Ingress per exposed app/env.
+sources:
+  - ingress
+
+domainFilters:
+  - cloud-native-plat4k.me
+
+# sync: records are also deleted when the Ingress disappears (app unexposed or
+# deleted). Only records owned by this instance (TXT registry, txtOwnerId) are
+# ever updated or deleted: manual records (`*`, cnp, auth...) and the records of
+# the other clusters are left alone.
+policy: sync
+registry: txt
+# Ownership TXT records live in a dedicated label (e.g. _extdns-a.<slug>.<zone>)
+# instead of sharing the name of the A record. Template recommended by the
+# external-dns TXT registry docs (record type substitution, trailing dot).
+txtPrefix: "_extdns-%{record_type}."
+
+# Also reconcile on Ingress events, not only every `interval`: the record must
+# exist before cert-manager's HTTP-01 self-check can pass.
+triggerLoopOnEvent: true
+interval: 1m
+
+# DNS only (grey cloud) — also the provider default, made explicit. cert-manager
+# solves ACME HTTP-01 on the cluster ingress and apps serve their own TLS: the
+# Cloudflare proxy would terminate TLS in front of them.
+extraArgs:
+  - --no-cloudflare-proxied
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    memory: 128Mi

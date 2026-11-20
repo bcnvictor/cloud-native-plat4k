@@ -157,15 +157,24 @@ kubectl --kubeconfig ~/.kube/config-cnp-k3s --context cnp-k3s get ingress -A   #
 Le `Service` `LoadBalancer` est servi par **ServiceLB** (klipper-lb, intégré à k3s : seul
 `traefik` est désactivé à l'installation). Il occupe les ports 80/443 du nœud.
 
-Pour qu'une app soit joignable depuis Internet, trois étapes restent hors Terraform :
+ServiceLB publie l'IP **privée** du nœud (`10.0.0.115`) dans le status du `Service`. Le
+contrôleur publie donc dans le status des Ingress l'IP **publique** de la VM
+(`var.public_ip`, défaut `138.2.159.23`, NATée par OCI vers le nœud) via
+`controller.extraArgs.publish-status-address`, avec `controller.publishService.enabled=false`
+(le contrôleur refuse les deux options ensemble). C'est cette adresse qu'external-dns met
+dans les enregistrements DNS (ci-dessous).
 
-1. **Security list OCI** (comme l'étape 2) : deux règles d'entrée TCP `80` et `443`,
+Pour qu'une app soit joignable depuis Internet :
+
+1. **Security list OCI** (manuel, comme l'étape 2) : deux règles d'entrée TCP `80` et `443`,
    source `0.0.0.0/0`.
 2. **DNS** (Cloudflare) : le wildcard `*.cloud-native-plat4k.me` pointe vers l'ingress
-   d'AKS. Chaque app exposée sur k3s a besoin de ses enregistrements A, en DNS only :
-   `<slug>` et `dev.<slug>` vers l'IP publique de la VM.
+   d'AKS ; external-dns (Terraform, ci-dessous) crée les A `<slug>` et `dev.<slug>` (DNS
+   only) vers l'IP publique de la VM pour chaque Ingress exposé sur k3s.
 3. **HTTPS** : cert-manager (ci-dessous). Une SPA avec Keycloak (PKCE) a besoin d'une
-   origine HTTPS (Web Crypto) : en HTTP, la page s'affiche mais le login échoue.
+   origine HTTPS (Web Crypto) : en HTTP, la page s'affiche mais le login échoue. Si le
+   challenge HTTP-01 reste `pending` (hairpin NAT OCI) : `docs/guides/operations.md` §9,
+   « Spécificités k3s ».
 
 ### cert-manager et ClusterIssuers Let's Encrypt (Terraform)
 
@@ -198,6 +207,37 @@ appliqué, ou l'importer (n'écrit que dans le state, rien sur le cluster) avant
 terraform import helm_release.ingress_nginx ingress-nginx/ingress-nginx
 terraform plan    # ingress_nginx : au plus un update in-place (attributs Terraform), puis 2 to add
 ```
+
+### external-dns (Terraform)
+
+Même installation sur les trois clusters (`docs/guides/operations.md` §9) :
+
+- `helm_release.external_dns_token` : chart local `infra/external-dns/cloudflare-token/`
+  (`ExternalSecret` → Secret `external-dns/cloudflare-api-token`, depuis Vault
+  `secret/platform/external-dns` via le `ClusterSecretStore vault-backend`) ;
+- `helm_release.external_dns` : chart `kubernetes-sigs/external-dns`
+  (`var.external_dns_chart_version`), valeurs communes `infra/external-dns/values.yaml`
+  (Cloudflare, source `ingress`, `policy: sync`, registre TXT, DNS only),
+  `txtOwnerId = var.cluster_name` (`cnp-k3s`).
+
+Prérequis : ESO et `vault-backend` en place (`infra/eso/README.md`), token Cloudflare dans
+Vault et policy `eso-reader` à jour (`infra/eso/README.md` étapes 1 et 8). Puis, depuis le
+checkout principal (qui détient le state) :
+
+```bash
+cd infra/oracle/k3s
+terraform init -upgrade
+terraform plan    # attendu : 1 to change (helm_release.ingress_nginx : publishService / publish-status-address)
+                  #           2 to add (helm_release.external_dns_token, helm_release.external_dns)
+terraform apply
+kubectl --kubeconfig ~/.kube/config-cnp-k3s --context cnp-k3s get ingress -A   # ADDRESS = 138.2.159.23
+kubectl --kubeconfig ~/.kube/config-cnp-k3s --context cnp-k3s -n external-dns get externalsecret,pods
+kubectl --kubeconfig ~/.kube/config-cnp-k3s --context cnp-k3s -n external-dns logs deploy/external-dns
+```
+
+La mise à jour d'ingress-nginx redémarre le contrôleur (coupure de quelques secondes des
+apps servies par k3s). Sans le token dans Vault, le pod external-dns reste en
+`CreateContainerConfigError` et l'apply (`atomic`) est annulé.
 
 Les ClusterIssuers sont `READY` dès que le compte ACME est enregistré, mais **aucun certificat
 ne sera émis sur k3s tant que** les étapes 1 et 2 ci-dessus ne sont pas faites : HTTP-01 exige

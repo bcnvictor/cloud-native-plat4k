@@ -1,9 +1,11 @@
 # cnp-aks — provisioning et rebuild
 
 Cluster AKS `cnp-aks` (ClusterConnection CNP **id 2**, provider `azure`), Sweden Central.
-Terraform ne crée que le resource group, le cluster, ingress-nginx et cert-manager (+ ses
-ClusterIssuers Let's Encrypt) ; le reste est installé à la main (`helm`/`kubectl`), dans
-l'ordre ci-dessous. Dernier rebuild complet : 2026-11-19
+Terraform ne crée que le resource group, le cluster, ingress-nginx, cert-manager (+ ses
+ClusterIssuers Let's Encrypt) et external-dns (+ l'`ExternalSecret` de son token
+Cloudflare) ; le reste est installé à la main (`helm`/`kubectl`), dans l'ordre ci-dessous.
+Sur un cluster neuf, external-dns a besoin d'ESO (§5) : appliquer d'abord avec
+`-target=helm_release.cluster_issuers`, puis le reste après le §5. Dernier rebuild complet : 2026-11-19
 (subscription précédente désactivée, cluster recréé sur la subscription de `terraform.tfvars`).
 
 ## 1. Terraform
@@ -45,10 +47,39 @@ démarré (`aks-start.sh`) : les providers helm/kubernetes s'y connectent. HTTP-
 que le port 80 y soit ouvert (c'est le cas par défaut). Fonctionnement côté apps, rate limits
 et migration des apps déjà exposées : `docs/guides/operations.md` §9.
 
+### DNS des apps exposées : external-dns
+
+`helm_release.external_dns_token` (chart local partagé `infra/external-dns/cloudflare-token/` :
+`ExternalSecret` → Secret `external-dns/cloudflare-api-token`, depuis Vault
+`secret/platform/external-dns`) puis `helm_release.external_dns` (chart
+`kubernetes-sigs/external-dns` 1.23.0, valeurs communes `infra/external-dns/values.yaml`,
+`txtOwnerId=cnp-aks`). external-dns crée dans Cloudflare un A (DNS only) par host d'Ingress
+vers l'IP du LoadBalancer nginx, et le supprime quand l'Ingress disparaît. Modèle, ordre de
+mise en service et diagnostic : `docs/guides/operations.md` §9.
+
+Prérequis (opérateur Vault, une fois pour les trois clusters) : token Cloudflare dans Vault
+et policy `eso-reader` à jour (`../eso/README.md` étapes 1 et 8). Puis, depuis le checkout
+principal (state local), cluster démarré :
+
+```bash
+cd infra/aks
+terraform init -upgrade
+terraform plan -target=helm_release.external_dns   # attendu : 2 to add (external_dns_token, external_dns)
+terraform apply -target=helm_release.external_dns
+kubectl --context cnp-aks -n external-dns get externalsecret,pods   # SecretSynced, pod 1/1 Running
+kubectl --context cnp-aks -n external-dns logs deploy/external-dns  # pas d'erreur Cloudflare
+```
+
+Même règle que ci-dessus : n'appliquer que si le plan ne montre que ces 2 ajouts. Sans le
+token dans Vault, le pod reste en `CreateContainerConfigError` (Secret absent) et l'apply
+échoue au bout de 5 min.
+
 ## 2. DNS (Cloudflare)
 
 La zone `cloud-native-plat4k.me` est sur Cloudflare (pas Azure DNS). Mettre l'enregistrement
-A `*` sur `terraform output nginx_lb_ip`.
+A `*` (manuel, DNS only) sur `terraform output nginx_lb_ip` : AKS reste le cluster par défaut.
+Les A par app (`<slug>`, `dev.<slug>`) et leurs TXT `_extdns-a.*` sont gérés par
+external-dns : ne pas les modifier à la main.
 
 ## 3. Monitoring (`monitoring`)
 

@@ -22,11 +22,14 @@ préinstallés), avec ce repo cloné.
 cd infra/gke
 cp terraform.tfvars.example terraform.tfvars   # renseigner project_id
 terraform init
-terraform apply
+# Cluster neuf : external-dns a besoin d'ESO (§6), installé plus tard → s'arrêter
+# aux ClusterIssuers ; le reste s'applique au §8.
+terraform apply -target=helm_release.cluster_issuers -target=data.kubernetes_service.ingress_nginx
 ```
 
-Crée le cluster `cnp-gke` (zone `europe-west1-b`, 2 nodes `e2-standard-2`, autoscaling 2→3) et
-`ingress-nginx` derrière un Network Load Balancer GCP (`terraform output nginx_lb_ip`).
+Crée le cluster `cnp-gke` (zone `europe-west1-b`, 2 nodes `e2-standard-2`, autoscaling 2→3),
+`ingress-nginx` derrière un Network Load Balancer GCP (`terraform output nginx_lb_ip`) et
+cert-manager + ClusterIssuers Let's Encrypt (§8).
 Les nodes utilisent un compte de service dédié à droits minimaux (`cnp-gke-nodes`) et le mode
 `GKE_METADATA` : un pod ne peut pas récupérer de jeton GCP via le serveur de métadonnées.
 
@@ -170,6 +173,44 @@ curl -X PUT https://cnp.cloud-native-plat4k.me/api/v1/clusters/<ID_DE_cnp-gke> \
 
 > `argocd_url` est en **http sur le port 443** : avec `server.insecure=true` ArgoCD ne fait pas
 > de TLS, et seul le port 443 est ouvert vers le Service CIDR dans les ACL Tailscale.
+
+## 8. Apps exposées : HTTPS (cert-manager) et DNS public (external-dns)
+
+> **À appliquer par la personne qui détient le state Terraform GKE** (`terraform.tfstate`
+> local, Cloud Shell) : depuis un autre checkout, le plan proposerait de recréer tout le
+> cluster.
+
+Déclarés dans `main.tf`, comme sur AKS et `cnp-k3s` (modèle complet :
+[`docs/guides/operations.md`](../../docs/guides/operations.md) §9) :
+
+- `helm_release.cert_manager` (chart `jetstack/cert-manager` v1.21.3, CRDs installées et
+  conservées par le chart) puis `helm_release.cluster_issuers` (chart local partagé
+  `../cert-manager/cluster-issuers/` : `letsencrypt-prod` / `letsencrypt-staging`, ACME
+  HTTP-01 via la classe `nginx`, e-mail `var.letsencrypt_email`), après ingress-nginx ;
+- `helm_release.external_dns_token` (chart local partagé `../external-dns/cloudflare-token/` :
+  `ExternalSecret` → Secret `external-dns/cloudflare-api-token`, depuis Vault
+  `secret/platform/external-dns`) puis `helm_release.external_dns` (chart
+  `kubernetes-sigs/external-dns` 1.23.0, valeurs communes `../external-dns/values.yaml`,
+  `txtOwnerId=cnp-gke`) : un A Cloudflare (DNS only) par host d'Ingress du cluster vers
+  `nginx_lb_ip`, prioritaire sur le wildcard qui pointe vers AKS.
+
+Prérequis : ESO et `vault-backend` `Valid` (§6), token Cloudflare dans Vault et policy
+`eso-reader` à jour (opérateur Vault : [`infra/eso/README.md`](../eso/README.md) étapes 1 et 8).
+
+```bash
+cd infra/gke && git pull
+terraform init -upgrade
+terraform plan    # attendu : 4 to add (cert_manager, cluster_issuers, external_dns_token, external_dns), rien d'autre
+terraform apply
+kubectl get clusterissuer                                  # letsencrypt-prod / -staging READY=True
+kubectl -n external-dns get externalsecret,pods            # SecretSynced, pod 1/1 Running
+kubectl -n external-dns logs deploy/external-dns           # pas d'erreur Cloudflare
+```
+
+Si le plan montre autre chose que ces 4 ajouts (node pool, cluster…), ne pas appliquer :
+c'est une dérive à traiter à part. Le firewall GCP du Network Load Balancer ouvre déjà 80/443.
+Ensuite, l'ajout de `cnp-gke` à `PUBLIC_EXPOSURE_CLUSTERS` (`.env` de `cnp-control`) ouvre
+l'exposition dans CNP : voir `operations.md` §9, « Mise en service ».
 
 ## Coûts et arrêt
 

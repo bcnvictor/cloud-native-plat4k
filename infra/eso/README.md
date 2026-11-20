@@ -123,18 +123,18 @@ Une seule fois, sur `cnp-control` (voir conventions dans
 alloue un TTY par défaut, ce qui casse le heredoc — passer `-T` :
 
 ```bash
-cd ~/cloud-native-plat4k
+cd ~/cloud-native-plat4k && git pull   # policy-eso-reader.hcl à jour (main)
 
 docker compose exec -T -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault \
-  vault policy write eso-reader - << 'EOF'
-path "secret/data/apps/*" {
-  capabilities = ["read"]
-}
-path "secret/metadata/apps/*" {
-  capabilities = ["read", "list"]
-}
-EOF
+  vault policy write eso-reader - < infra/eso/policy-eso-reader.hcl
 ```
+
+[`policy-eso-reader.hcl`](policy-eso-reader.hcl) est la source de vérité : `secret/apps/*`
+(variables d'environnement des apps) et le seul chemin plateforme
+`secret/platform/external-dns` (token Cloudflare d'external-dns, voir étape 8).
+`vault policy write` remplace la policy entière : toujours écrire le fichier complet. La
+mise à jour s'applique immédiatement au token existant (les policies sont résolues à chaque
+requête) : pas besoin de régénérer le token ni de toucher aux Secrets `vault-eso-token`.
 
 Générer le token statique (transitoire, avant migration AppRole — voir ADR-0024 §2) :
 
@@ -302,6 +302,60 @@ kubectl delete -f infra/eso/test-external-secret.yaml --kubeconfig infra/oracle/
 docker compose exec -T -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault \
   vault kv metadata delete secret/apps/_smoke-test/eso
 ```
+
+## 8. Token Cloudflare d'external-dns (`secret/platform/external-dns`)
+
+external-dns tourne sur chaque cluster (Terraform : `infra/aks`, `infra/gke`,
+`infra/oracle/k3s`) et crée dans Cloudflare les enregistrements DNS des apps exposées
+(modèle complet : [`docs/guides/operations.md`](../../docs/guides/operations.md) §9). Son
+token API est lu dans Vault par ESO (chart local
+[`infra/external-dns/cloudflare-token`](../external-dns/cloudflare-token), `ExternalSecret`
+→ `Secret external-dns/cloudflare-api-token`, clé `api-token`). Une seule valeur, partagée
+par les trois clusters.
+
+1. **Créer le token** dans Cloudflare (My Profile → API Tokens → Create Token → modèle
+   *Edit zone DNS*) : permissions **Zone · DNS · Edit** et **Zone · Zone · Read**, ressources
+   **Include · Specific zone · `cloud-native-plat4k.me`** uniquement. Pas de proxy, pas
+   d'autre zone.
+2. **Policy `eso-reader` à jour** (étape 1, avec la version courante de
+   `policy-eso-reader.hcl`) — sinon l'`ExternalSecret` reste en `SecretSyncedError`
+   (`permission denied`). Vérifier :
+
+   ```bash
+   docker compose exec -T -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault \
+     vault policy read eso-reader | grep platform/external-dns
+   ```
+
+3. **Écrire le token dans Vault** (opérateur, token root, sur `cnp-control`). Le token est
+   saisi sans écho et passé par l'entrée standard (`cloudflare_api_token=-`) : il n'apparaît
+   ni dans l'historique du shell ni dans la ligne de commande (`ps`) :
+
+   ```bash
+   cd ~/cloud-native-plat4k
+   read -rs CF_API_TOKEN; echo          # coller le token, Entrée
+   printf '%s' "$CF_API_TOKEN" | docker compose exec -T \
+     -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault \
+     vault kv put secret/platform/external-dns cloudflare_api_token=-
+   unset CF_API_TOKEN
+
+   # Vérifier sans afficher la valeur
+   docker compose exec -T -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<root_token> vault \
+     vault kv metadata get secret/platform/external-dns
+   ```
+
+4. Après le `terraform apply` d'un cluster, vérifier la synchronisation :
+
+   ```bash
+   kubectl -n external-dns get externalsecret cloudflare-api-token   # STATUS SecretSynced, READY True
+   kubectl -n external-dns get secret cloudflare-api-token
+   ```
+
+**Rotation** : refaire l'étape 3 avec le nouveau token. ESO met le `Secret` à jour sous 1 h
+(`refreshInterval`, ou tout de suite avec
+`kubectl -n external-dns annotate externalsecret cloudflare-api-token force-sync=$(date +%s) --overwrite`),
+puis redémarrer external-dns, qui ne lit `CF_API_TOKEN` qu'au démarrage :
+`kubectl -n external-dns rollout restart deployment external-dns` (sur chaque cluster).
+Révoquer ensuite l'ancien token dans Cloudflare.
 
 ---
 

@@ -6,4 +6,4 @@ version: 0.1.0
 description: >-
   Let's Encrypt ClusterIssuers (ACME HTTP-01 via ingress-nginx) used by the
   Certificates CNP writes for exposed apps. Installed by Terraform (infra/aks,
-  infra/oracle/k3s) after the cert-manager release, which owns the CRDs.
+  infra/gke, infra/oracle/k3s) after the cert-manager release, which owns the CRDs.

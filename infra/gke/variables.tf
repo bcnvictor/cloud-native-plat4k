@@ -59,3 +59,9 @@ variable "services_cidr" {
   type        = string
   default     = "34.118.224.0/20"
 }
+
+variable "letsencrypt_email" {
+  description = "E-mail du compte ACME Let's Encrypt des ClusterIssuers (avis d'expiration/incidents)"
+  type        = string
+  default     = "contact@cloud-native-plat4k.me"
+}
