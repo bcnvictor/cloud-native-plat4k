@@ -5,6 +5,7 @@ import pytest
 from shared.models import ApplicationScaffoldRequest
 
 from backend.core.config import settings
+from backend.db.models import ClusterConnection
 from backend.services import app_service
 from backend.services.app_service import AppService
 from backend.services.scaffolding_service import ScaffoldingService
@@ -25,7 +26,12 @@ class _Bot:
 
 
 @pytest.fixture(autouse=True)
-def platform(monkeypatch):
+async def platform(monkeypatch, db_session):
+    # Exposure needs a target cluster the public DNS reaches (PUBLIC_EXPOSURE_CLUSTERS);
+    # with no explicit target, scaffolding picks the first registered cluster.
+    monkeypatch.setattr(settings, "PUBLIC_EXPOSURE_CLUSTERS", "cnp-aks")
+    db_session.add(ClusterConnection(name="cnp-aks", endpoint="https://cnp-aks", kubeconfig_secret_ref="clusters/cnp-aks"))
+    await db_session.commit()
     monkeypatch.setattr(settings, "GITOPS_REPO_URL", "https://gitlab.test/cnp/cnp-gitops.git")
     monkeypatch.setattr(settings, "GITLAB_BOT_TOKEN", "glpat-test")
 
@@ -48,8 +54,8 @@ async def test_scaffold_exposed_writes_certificates_for_both_envs(db_session, mo
 
     assert app.expose is True
     assert bot.certificates == [
-        ("cnp/cnp-gitops", "demo", "dev", True, "dev.demo.cloud-native-plat4k.me", "aks"),
-        ("cnp/cnp-gitops", "demo", "prod", True, "demo.cloud-native-plat4k.me", "aks"),
+        ("cnp/cnp-gitops", "demo", "dev", True, "dev.demo.cloud-native-plat4k.me", "cnp-aks"),
+        ("cnp/cnp-gitops", "demo", "prod", True, "demo.cloud-native-plat4k.me", "cnp-aks"),
     ]
 
 
