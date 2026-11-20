@@ -33,7 +33,9 @@ VM A1. Il ouvre aussi le port 6443 dans le firewall **local** de la VM (iptables
 ## 2. Ouvrir le port 6443 côté OCI  *(critère #2)*
 
 Le firewall local ne suffit pas : la **security list** (ou NSG) du subnet OCI filtre en
-amont. Dans la console Oracle Cloud :
+amont. Elle est désormais gérée par Terraform dans [`infra/oracle/network/`](../network/README.md),
+règle 6443 comprise ; la procédure manuelle ci-dessous ne sert plus qu'à l'installation initiale.
+Dans la console Oracle Cloud :
 
 `Networking → Virtual Cloud Networks → <VCN> → Security Lists → <subnet> → Add Ingress Rule`
 
@@ -166,8 +168,8 @@ dans les enregistrements DNS (ci-dessous).
 
 Pour qu'une app soit joignable depuis Internet :
 
-1. **Security list OCI** (manuel, comme l'étape 2) : deux règles d'entrée TCP `80` et `443`,
-   source `0.0.0.0/0`.
+1. **Security list OCI** : règles d'entrée TCP `80` et `443`, source `0.0.0.0/0`, gérées par
+   Terraform dans [`infra/oracle/network/`](../network/README.md) (clé d'API OCI requise).
 2. **DNS** (Cloudflare) : le wildcard `*.cloud-native-plat4k.me` pointe vers l'ingress
    d'AKS ; external-dns (Terraform, ci-dessous) crée les A `<slug>` et `dev.<slug>` (DNS
    only) vers l'IP publique de la VM pour chaque Ingress exposé sur k3s.
