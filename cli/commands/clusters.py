@@ -23,7 +23,7 @@ def list_clusters(
         if output == "json":
             print_json(data)
         else:
-            columns = ["ID", "Name", "Provider", "Endpoint", "Status", "Apps", "Vault Secret Ref", "Created At"]
+            columns = ["ID", "Name", "Provider", "Endpoint", "Status", "Apps", "Internet exposure", "Vault Secret Ref", "Created At"]
             rows = [
                 [
                     r["id"],
@@ -32,6 +32,7 @@ def list_clusters(
                     r["endpoint"],
                     _STATUS_LABEL.get(r.get("status"), r.get("status", "")),
                     r.get("app_count", 0),
+                    "yes" if r.get("supports_public_exposure") else "no",
                     r["kubeconfig_secret_ref"],
                     r["created_at"]
                 ]

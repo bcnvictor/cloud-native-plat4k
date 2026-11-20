@@ -418,6 +418,99 @@ class TestRevokeAndDeprovision:
         await KeycloakService(db=None).deprovision(app)  # must not raise
 
 
+def _app_client(fake, env: str, slug: str = "demo") -> dict:
+    return next(c for c in fake.realms[f"{slug}-{env}"]["clients"].values() if c["clientId"] == slug)
+
+
+class TestSyncRedirectUris:
+    """An expose toggle after provisioning: the clients' redirect URIs must follow."""
+
+    async def _provisioned(self, app):
+        service = KeycloakService(db=None)
+        await service.provision(app, "dev")
+        await service.provision(app, "prod")
+        return service
+
+    async def test_exposing_adds_the_public_url_in_both_envs(self, fake_keycloak, fake_vault):
+        app = _app(auth_enabled=True)
+        service = await self._provisioned(app)
+        assert _app_client(fake_keycloak, "prod")["redirectUris"] == ["http://localhost:*"]
+
+        app.expose = True
+        await service.sync_redirect_uris(app)
+
+        dev = _app_client(fake_keycloak, "dev")
+        assert dev["redirectUris"] == ["https://dev.demo.cloud-native-plat4k.me/*", "http://localhost:*"]
+        assert dev["webOrigins"] == ["+", "http://localhost:5173", "http://localhost:8000"]
+        assert _app_client(fake_keycloak, "prod")["redirectUris"] == ["https://demo.cloud-native-plat4k.me/*"]
+
+    async def test_unexposing_removes_only_the_public_url(self, fake_keycloak, fake_vault):
+        app = _app(auth_enabled=True, expose=True)
+        service = await self._provisioned(app)
+        # A team with manage-clients added its own URI: it must survive.
+        _app_client(fake_keycloak, "dev")["redirectUris"].append("https://staging.team.test/*")
+
+        app.expose = False
+        await service.sync_redirect_uris(app)
+
+        assert _app_client(fake_keycloak, "dev")["redirectUris"] == [
+            "http://localhost:*", "https://staging.team.test/*",
+        ]
+        # Never an empty list: same localhost fallback as at creation.
+        assert _app_client(fake_keycloak, "prod")["redirectUris"] == ["http://localhost:*"]
+
+    async def test_already_in_sync_writes_nothing(self, fake_keycloak, fake_vault):
+        app = _app(auth_enabled=True, expose=True)
+        service = await self._provisioned(app)
+        fake_keycloak.requests.clear()
+
+        await service.sync_redirect_uris(app)
+
+        assert not [r for r in fake_keycloak.requests if r.method == "PUT"]
+
+    async def test_skips_missing_and_foreign_realms(self, fake_keycloak, fake_vault):
+        app = _app(auth_enabled=True)
+        service = KeycloakService(db=None)
+        await service.provision(app, "dev")
+        # prod: a realm with the app's name CNP did not create for it.
+        fake_keycloak.create_realm("demo-prod", {"cnp_app_id": "999"})
+        fake_keycloak.realms["demo-prod"]["clients"]["x"] = {
+            "id": "x", "clientId": "demo", "redirectUris": ["https://theirs/*"],
+        }
+
+        app.expose = True
+        await service.sync_redirect_uris(app)
+
+        assert _app_client(fake_keycloak, "dev")["redirectUris"][0] == "https://dev.demo.cloud-native-plat4k.me/*"
+        assert fake_keycloak.realms["demo-prod"]["clients"]["x"]["redirectUris"] == ["https://theirs/*"]
+
+    async def test_skips_a_realm_without_the_app_client(self, fake_keycloak, fake_vault):
+        """Half-done provisioning: the retry creates the client with the current expose."""
+        fake_keycloak.create_realm("demo-dev", {"cnp_app_id": "1"}, id="cnp-1-dev")
+
+        await KeycloakService(db=None).sync_redirect_uris(_app(auth_enabled=True, expose=True))
+
+        assert not any(c["clientId"] == "demo" for c in fake_keycloak.realms["demo-dev"]["clients"].values())
+
+    async def test_keycloak_errors_propagate(self, fake_keycloak, fake_vault, monkeypatch):
+        app = _app(auth_enabled=True)
+        service = await self._provisioned(app)
+
+        def _down(self, connection):
+            from backend.keycloak.client import KeycloakClient
+
+            def refuse(request):
+                raise httpx.ConnectError("refused", request=request)
+
+            return KeycloakClient(base_url="http://keycloak.test", admin_client_id="x",
+                                  admin_client_secret="y", transport=httpx.MockTransport(refuse))
+
+        monkeypatch.setattr(KeycloakService, "_client", _down)
+        app.expose = True
+        with pytest.raises(KeycloakError):
+            await service.sync_redirect_uris(app)
+
+
 class TestHelpers:
     def test_realm_name(self):
         assert realm_name("my-app", "dev") == "my-app-dev"
@@ -455,7 +548,8 @@ class TestHelpers:
     def test_clear_activation_warnings_keeps_the_chart_warning(self):
         app = _app(auth_warnings=[w.value for w in KeycloakAuthWarning])
         clear_activation_warnings(app)
-        assert app.auth_warnings == ["chart_missing_envfrom"]
+        # Neither is about the activation: the chart and the redirect URIs sync.
+        assert app.auth_warnings == ["chart_missing_envfrom", "keycloak_redirect_uris_out_of_sync"]
 
 
 class TestEnvfromDetection:

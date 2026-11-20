@@ -2,7 +2,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Application, KeycloakInstanceSummary, KeycloakStatusResponse } from '@/types';
+import type { Application, ClusterConnection, KeycloakInstanceSummary, KeycloakStatusResponse } from '@/types';
 import { SettingsTab } from '../pages/group/app/tabs/SettingsTab';
 
 // The Keycloak card of the settings tab, rendered for real against a mocked API.
@@ -25,6 +25,16 @@ const api = vi.hoisted(() => ({
   deleteEnvVar: vi.fn(),
 }));
 vi.mock('@/api/apps', () => ({ appsApi: api }));
+
+const clustersMock = vi.hoisted(() => ({ list: vi.fn() }));
+vi.mock('@/api/clusters', () => ({ clustersApi: clustersMock }));
+
+function cluster(id: number, name: string, supports_public_exposure: boolean): ClusterConnection {
+  return {
+    id, name, endpoint: `https://${name}`, provider: 'other', kubeconfig_secret_ref: 'x',
+    status: 'online', created_at: '2026-01-01T00:00:00Z', app_count: 1, supports_public_exposure,
+  };
+}
 
 const instance: KeycloakInstanceSummary = {
   instance_key: 'private-01',
@@ -64,6 +74,7 @@ function renderTab(app: Partial<Application> = {}) {
 beforeEach(() => {
   api.getMyAccess.mockResolvedValue({ tier: 'maintainer', is_admin: false });
   api.listEnvVars.mockResolvedValue({ env: 'dev', keys: [] });
+  clustersMock.list.mockResolvedValue([cluster(1, 'cnp-aks', true), cluster(2, 'cnp-gke', false)]);
 });
 
 afterEach(() => {
@@ -169,5 +180,63 @@ describe('SettingsTab console access', () => {
 
     expect(await screen.findByText(/realm settings/i)).toBeTruthy();
     expect(screen.getByText(/platform admin/i)).toBeTruthy();
+  });
+});
+
+describe('SettingsTab internet exposure', () => {
+  /** The exposure switch once the tier and the clusters are loaded. */
+  async function exposeSwitch(client: QueryClient) {
+    await waitFor(() => {
+      expect(client.getQueryState(['myAccess', 1])?.status).toBe('success');
+      expect(client.getQueryState(['clusters'])?.status).toBe('success');
+    });
+    return screen.getByRole('switch', { name: 'Expose on internet' });
+  }
+
+  beforeEach(() => {
+    api.getAuthStatus.mockResolvedValue(status(instance));
+  });
+
+  it('allows exposing on a cluster the public DNS reaches', async () => {
+    api.toggleExpose.mockResolvedValue({});
+    const client = renderTab({ target_cluster_id: 1, expose: false });
+    const toggle = await exposeSwitch(client);
+
+    expect(toggle.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(toggle);
+    await waitFor(() => expect(api.toggleExpose).toHaveBeenCalledWith(1, true));
+  });
+
+  it('disables exposing elsewhere and says why', async () => {
+    const client = renderTab({ target_cluster_id: 2, expose: false });
+    const toggle = await exposeSwitch(client);
+
+    expect(toggle.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText(/doesn't reach it/)).toBeTruthy();
+  });
+
+  it('still allows switching off an app exposed on such a cluster', async () => {
+    api.toggleExpose.mockResolvedValue({});
+    const client = renderTab({ target_cluster_id: 2, expose: true });
+    const toggle = await exposeSwitch(client);
+
+    expect(toggle.hasAttribute('disabled')).toBe(false);
+    expect(screen.getByText(/can't be turned back on/)).toBeTruthy();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(api.toggleExpose).toHaveBeenCalledWith(1, false));
+  });
+
+  it('offers to retry a failed Keycloak redirect URIs update with the same value', async () => {
+    api.toggleExpose.mockResolvedValue({});
+    const client = renderTab({
+      target_cluster_id: 1, expose: true, auth_enabled: true, auth_provisioned: true,
+      auth_warnings: ['keycloak_redirect_uris_out_of_sync'],
+    });
+    await exposeSwitch(client);
+
+    expect(screen.getByText(/redirect URIs could not follow/)).toBeTruthy();
+    const retries = screen.getAllByRole('button', { name: 'Retry' });
+    fireEvent.click(retries[retries.length - 1]);
+    await waitFor(() => expect(api.toggleExpose).toHaveBeenCalledWith(1, true));
   });
 });
