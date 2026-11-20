@@ -129,18 +129,86 @@ En local, utilisez `scripts/forward-ports.sh` (contexte kube `cnp-aks`) et `http
 
 ## 9. Exposition internet des apps — périmètre et limites
 
-La feature **"Expose on internet"** (4K-94) permet d'exposer une app via un Ingress nginx sur `cloud-native-plat4k.me`. Elle repose sur deux prérequis d'infrastructure :
+La feature **"Expose on internet"** (4K-94) permet d'exposer une app en **HTTPS** via un Ingress nginx sur `cloud-native-plat4k.me`. Elle repose sur trois prérequis d'infrastructure :
 
 1. **nginx-ingress-controller** installé et exposé en `LoadBalancer` sur le cluster cible.
 2. **Un enregistrement DNS wildcard** pointant vers l'IP du LoadBalancer :
    - `*.cloud-native-plat4k.me` → IP publique nginx AKS (géré par Terraform dans `infra/aks/`)
+3. **cert-manager** et les ClusterIssuers `letsencrypt-prod` / `letsencrypt-staging`
+   (Terraform, `helm_release.cert_manager` + `helm_release.cluster_issuers`, chart local
+   partagé `infra/cert-manager/cluster-issuers/`), installés **après** ingress-nginx.
+
+### HTTPS (cert-manager + Let's Encrypt)
+
+HTTPS est obligatoire en pratique : les SPA se connectent à Keycloak en PKCE, qui exige une
+origine sécurisée (Web Crypto) — en HTTP simple le login échoue.
+
+Quand une app est exposée (création avec `expose`, onboarding, ou toggle), CNP écrit dans
+`cnp-gitops`, pour chaque env (`dev`, `prod`) :
+
+- `apps/{cluster}/{slug}/values-{env}.yaml` : `ingress.enabled=true`, `className: nginx`,
+  `host`, **`tls: true`** — le chart de l'app rend alors un bloc `tls` avec
+  `secretName: <slug>-tls` (pour une app scaffoldée, ces valeurs sont aussi posées dans
+  `chart/values-{env}.yaml` du repo de l'app) ;
+- `apps/{cluster}/{slug}/platform/{env}/certificate.yaml` : un `Certificate` cert-manager
+  (namespace `{env}`, `secretName: <slug>-tls`, `dnsNames: [<host>]`, `issuerRef` ClusterIssuer
+  `letsencrypt-prod`), déployé par ArgoCD via la même source `platform/{env}` que
+  l'`ExternalSecret`.
+
+cert-manager résout le challenge **ACME HTTP-01** en créant un Ingress temporaire de classe
+`nginx` pour `/.well-known/acme-challenge/…`, puis range le certificat dans le Secret
+`<slug>-tls` que l'Ingress de l'app référence. Renouvellement automatique (~30 j avant
+expiration). Désactiver l'exposition repasse `tls: false` et supprime `certificate.yaml`
+(le Secret `<slug>-tls` orphelin peut être supprimé à la main, il est inoffensif).
+
+Prérequis pour que HTTP-01 aboutisse :
+
+- l'Ingress nginx du cluster est en place et sa classe est `nginx` ;
+- le DNS du host (`<slug>.…`, `dev.<slug>.…`) pointe vers l'IP publique du LoadBalancer ;
+- le **port 80** est joignable depuis internet (Let's Encrypt valide en HTTP sur le port 80,
+  même si l'app sera servie en 443).
+
+Tant que le certificat n'est pas émis, nginx sert son certificat auto-signé par défaut
+(avertissement navigateur). Diagnostic :
+
+```bash
+kubectl -n dev get certificate,certificaterequest,order,challenge
+kubectl -n dev describe challenge   # raison d'un challenge bloqué (DNS, port 80, self-check…)
+```
+
+**Rate limits Let's Encrypt** (production) : notamment 50 certificats par domaine enregistré
+par semaine et 5 certificats identiques (même jeu de noms) par semaine ; des échecs de
+validation répétés sont aussi limités (5 par compte/host/heure). Éviter donc de basculer
+l'exposition en boucle et de tester sur la prod : pour valider la chaîne, mettre
+`TLS_CLUSTER_ISSUER=letsencrypt-staging` dans la configuration du backend (limites larges,
+certificats **non reconnus** par les navigateurs), puis revenir à `letsencrypt-prod` et
+re-pousser l'exposition des apps concernées.
+
+#### Apps déjà exposées avant cert-manager (migration manuelle, une fois)
+
+Les apps exposées avant cette évolution ont `tls: false` et pas de `certificate.yaml` : rien
+n'est migré automatiquement. Pour chaque app exposée, re-pousser l'exposition — l'appel est
+idempotent et ne coupe pas l'Ingress :
+
+```bash
+curl -X PATCH "$CNP_API/api/v1/apps/<app_id>/expose" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"expose": true}'
+```
+
+(À défaut, désactiver puis réactiver l'exposition dans l'onglet Settings — coupure de l'app
+publique le temps du resync ArgoCD.) Vérifier ensuite dans `cnp-gitops` la présence de
+`platform/{dev,prod}/certificate.yaml` et `tls: true`, puis `kubectl -n <env> get certificate`
+(`READY=True`) et `kubectl -n <env> get ingress <slug> -o yaml` (bloc `tls` présent). Pour une
+app scaffoldée, le `chart/values-{env}.yaml` de son repo garde `tls: false` : l'appel ci-dessus
+pose `tls: true` dans `cnp-gitops`, et l'Ingress rendu fait foi.
 
 ### Clusters supportés
 
-| Cluster | nginx-ingress | DNS wildcard | Expose disponible |
-|---|---|---|---|
-| `aks` | ✅ (Terraform) | ✅ (`*.cloud-native-plat4k.me`) | ✅ |
-| `cnp-k3s` | ✅ (Terraform, `infra/oracle/k3s/`) | ❌ (enregistrements par app) | ❌ (pas encore dans le frontend) |
+| Cluster | nginx-ingress | cert-manager | DNS wildcard | Expose disponible |
+|---|---|---|---|---|
+| `aks` | ✅ (Terraform) | ✅ (Terraform, après apply) | ✅ (`*.cloud-native-plat4k.me`) | ✅ |
+| `cnp-k3s` | ✅ (Terraform, `infra/oracle/k3s/`) | ✅ (Terraform, après apply) | ❌ (enregistrements par app) | ❌ (pas encore dans le frontend) |
 
 La zone `cloud-native-plat4k.me` est servie par Cloudflare (NS `*.ns.cloudflare.com`) ; le
 wildcard y pointe vers l'ingress d'AKS.
@@ -159,7 +227,9 @@ Restent, pour une exposition complète :
    VM, soit un sous-domaine par cluster (ex. `*.k3s.cloud-native-plat4k.me`). Le second impose
    de mettre à jour `app_hostname()` dans `shared/models.py` et `appUrls.ts` pour tenir compte du
    cluster cible, et le prédicat `clusterSupportsIngress` dans `frontend-new/src/utils/clusterUtils.ts`.
-3. HTTPS (cert-manager) : nécessaire aux SPA avec Keycloak, dont le login PKCE exige une origine sécurisée.
+3. HTTPS : cert-manager et les ClusterIssuers sont déclarés dans `infra/oracle/k3s/main.tf`
+   (README k3s, étape 7), mais le challenge HTTP-01 n'aboutit qu'une fois les points 1 et 2
+   en place (port 80 joignable, DNS vers l'IP publique de la VM).
 
 ---
 

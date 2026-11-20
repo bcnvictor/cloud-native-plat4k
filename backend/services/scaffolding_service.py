@@ -317,7 +317,9 @@ class ScaffoldingService:
                 "enabled": enabled,
                 "className": "nginx",
                 "host": host if enabled else "",
-                "tls": False,
+                # HTTPS via cert-manager: the matching Certificate is written to gitops
+                # (platform/{env}/certificate.yaml) by AppService.scaffold_app.
+                "tls": enabled,
             }
         }
         return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)

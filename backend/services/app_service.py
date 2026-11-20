@@ -123,6 +123,11 @@ class AppService:
             "target_cluster_id": await self._resolve_target_cluster_id(payload.target_cluster_id),
         }
         app = await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
+        if payload.expose and settings.GITOPS_REPO_URL and (bot := _get_bot_client()):
+            # Ingress values (tls=true) live in the scaffolded chart; only the
+            # Certificate goes to gitops.
+            cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
+            await self._push_certificates_to_gitops(bot, slug, cluster_name)
         services = payload.scaffolding.services if payload.scaffolding else []
         if "keycloak" in services:
             await self._provision_keycloak(app)
@@ -503,6 +508,21 @@ class AppService:
                 )
         except Exception:
             logger.exception("Failed to push ingress settings to gitops for %s", app_slug)
+
+    async def _push_certificates_to_gitops(self, bot: "GitLabClient", app_slug: str, cluster_name: str = "aks") -> None:
+        """Best-effort: write the cert-manager Certificate of an exposed app (dev and
+        prod) into gitops platform/{env}/certificate.yaml. Never raises."""
+        from shared.models import app_hostname
+        try:
+            gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
+            for env_name in ("dev", "prod"):
+                host = app_hostname(app_slug, env_name)
+                await anyio.to_thread.run_sync(
+                    lambda en=env_name, h=host: bot.upsert_gitops_certificate(gitops_path, app_slug, en, True, h, cluster_name),
+                    cancellable=True,
+                )
+        except Exception:
+            logger.exception("Failed to push TLS certificates to gitops for %s", app_slug)
 
     async def update_expose(self, app_id: int, expose: bool) -> Application:
         app = await self.get_app(app_id)
