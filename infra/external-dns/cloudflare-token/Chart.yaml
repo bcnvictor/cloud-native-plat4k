@@ -1,0 +1,11 @@
+apiVersion: v2
+name: cnp-external-dns-cloudflare-token
+# Bump on every template/values change: the Terraform helm provider only
+# re-deploys a local chart when its version (or a set value) changes.
+version: 0.1.0
+description: >-
+  ExternalSecret that syncs the Cloudflare API token used by external-dns from
+  Vault (secret/platform/external-dns) into the Secret the external-dns
+  Deployment reads. Installed by Terraform (infra/aks, infra/gke,
+  infra/oracle/k3s) before the external-dns release. Requires ESO and the
+  ClusterSecretStore vault-backend (infra/eso/README.md).

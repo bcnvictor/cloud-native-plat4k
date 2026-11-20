@@ -224,6 +224,7 @@ docker compose -f docker-compose.yml up -d backend db frontend
 | Policy `cnp-backend` créée | OK | Accès `read/create/update` sur `cnp/*`, `clusters/*` et `argocd/*` |
 | Policy `cnp-backend` étendue à `apps/*` (4K-106) | À faire | Voir section 4 — requis pour que `PUT /api/v1/apps/{id}/env/{env}` fonctionne |
 | Token applicatif en place | OK | Root token **non utilisé** par le backend |
+| Policy `eso-reader` étendue à `platform/external-dns` + token Cloudflare dans `secret/platform/external-dns` | À faire | `infra/eso/README.md` étapes 1 et 8 — requis avant le `terraform apply` d'external-dns (`docs/guides/operations.md` §9) |
 | `.env` nettoyé | OK | Seuls `POSTGRES_*`, `VAULT_ADDR`, `VAULT_TOKEN`, `COMPOSE_FILE` |
 
 ---
@@ -401,7 +402,9 @@ docker compose logs backend --tail=20
 Le backend a besoin de lire/écrire/supprimer sous `secret/apps/*` pour la gestion des
 variables d'environnement applicatives (ADR-0025). C'est distinct de la policy `eso-reader`
 (`infra/eso/policy-eso-reader.hcl`, 4K-105) : `eso-reader` est **read-only**, réservée à
-External Secrets Operator. `cnp-backend` a besoin d'écriture pour que
+External Secrets Operator (`secret/apps/*` + le seul chemin plateforme
+`secret/platform/external-dns`, token Cloudflare d'external-dns écrit à la main par un
+opérateur : `infra/eso/README.md` étape 8). `cnp-backend` a besoin d'écriture pour que
 `PUT /api/v1/apps/{id}/env/{env}` et le cleanup Vault de `DELETE /api/v1/apps/{id}` fonctionnent.
 
 Vérifier la policy actuelle :

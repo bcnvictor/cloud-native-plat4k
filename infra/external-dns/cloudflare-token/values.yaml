@@ -1,0 +1,21 @@
+# ClusterSecretStore created by infra/eso (identical on every CNP cluster). Its
+# Vault token carries the eso-reader policy (infra/eso/policy-eso-reader.hcl),
+# which grants read on this exact path only, besides secret/apps/*.
+secretStoreRef:
+  name: vault-backend
+  kind: ClusterSecretStore
+
+# Vault KV v2 path (mount "secret") and key holding the Cloudflare API token
+# (zone cloud-native-plat4k.me: Zone:DNS:Edit + Zone:Zone:Read).
+vaultKey: secret/platform/external-dns
+vaultProperty: cloudflare_api_token
+
+# Kubernetes Secret produced by ESO in the release namespace, and the key the
+# external-dns Deployment reads into CF_API_TOKEN.
+targetSecretName: cloudflare-api-token
+targetSecretKey: api-token
+
+# How often ESO re-reads Vault. external-dns reads CF_API_TOKEN at startup only:
+# after a token rotation, restart it (kubectl -n external-dns rollout restart
+# deployment external-dns) once the Secret is updated.
+refreshInterval: 1h

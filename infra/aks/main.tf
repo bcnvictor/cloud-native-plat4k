@@ -184,6 +184,44 @@ resource "helm_release" "cluster_issuers" {
 # DNS
 # ---------------------------------------------------------------------------
 # La zone cloud-native-plat4k.me est servie par Cloudflare (NS *.ns.cloudflare.com,
-# registrar Namecheap). Après un (re)provisioning, mettre à jour l'enregistrement
-# A `*` dans Cloudflare avec `terraform output nginx_lb_ip`.
+# registrar Namecheap). Le wildcard A `*` (manuel) pointe vers l'ingress d'AKS,
+# cluster par défaut : après un (re)provisioning, le mettre à jour avec
+# `terraform output nginx_lb_ip`. Chaque cluster crée en plus, via external-dns,
+# un A par host d'Ingress exposé (docs/guides/operations.md §9).
 # (L'ancienne zone Azure DNS n'était pas déléguée et a été retirée.)
+
+# Token Cloudflare (Vault secret/platform/external-dns) -> Secret
+# external-dns/cloudflare-api-token, via ESO et le ClusterSecretStore vault-backend
+# (prérequis manuels : infra/eso/README.md, policy eso-reader à jour). Chart local
+# partagé par les trois clusters plutôt que kubernetes_manifest : même raison que
+# cluster_issuers (le provider kubernetes dépend du cluster créé dans ce root, et
+# kubernetes_manifest exige l'API et la CRD dès le plan).
+resource "helm_release" "external_dns_token" {
+  name             = "cnp-external-dns-cloudflare-token"
+  chart            = "${path.module}/../external-dns/cloudflare-token"
+  namespace        = "external-dns"
+  create_namespace = true
+
+  depends_on = [azurerm_kubernetes_cluster.cnp]
+}
+
+# external-dns (fournisseur Cloudflare, source Ingress). Valeurs communes aux trois
+# clusters dans infra/external-dns/values.yaml ; txtOwnerId = nom du cluster, pour
+# qu'aucune instance ne modifie les enregistrements d'une autre.
+resource "helm_release" "external_dns" {
+  name       = "external-dns"
+  repository = "https://kubernetes-sigs.github.io/external-dns"
+  chart      = "external-dns"
+  version    = "1.23.0" # external-dns v0.23.0
+  namespace  = "external-dns"
+
+  values = [file("${path.module}/../external-dns/values.yaml")]
+
+  set {
+    name  = "txtOwnerId"
+    value = var.cluster_name
+  }
+
+  # L'IP publiée dans le status des Ingress vient d'ingress-nginx
+  depends_on = [helm_release.ingress_nginx, helm_release.external_dns_token]
+}
