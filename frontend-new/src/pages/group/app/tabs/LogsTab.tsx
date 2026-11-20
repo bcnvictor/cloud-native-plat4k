@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   IconDownload,
   IconExternalLink,
@@ -36,7 +36,9 @@ const ENV_OPTIONS = [
 
 export function LogsTab() {
   const { appSlug } = useParams<{ appSlug: string }>();
-  const [env, setEnv] = useState('dev');
+  // `?env=prod` : ouverture depuis le CNP Doctor sur l'environnement diagnostiqué.
+  const [searchParams] = useSearchParams();
+  const [env, setEnv] = useState(() => (searchParams.get('env') === 'prod' ? 'prod' : 'dev'));
   const [level, setLevel] = useState('ALL');
   const [search, setSearch] = useState('');
   const topRef = useRef<HTMLDivElement>(null);

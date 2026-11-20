@@ -1,0 +1,165 @@
+# Labo CNP Doctor : surcharge Compose du projet « cnp-doctor-lab ».
+#
+# Toujours avec -p et des -f explicites, depuis la racine du dépôt :
+#   docker compose -p cnp-doctor-lab -f docker-compose.yml -f scripts/doctor-lab/compose.lab.yml \
+#     up -d --build db backend frontend doctor-lab lab-vault
+# Les -f explicites empêchent Compose de charger docker-compose.override.yml, qui
+# branche le backend sur le Vault partagé. Les chemins relatifs sont résolus depuis
+# la racine du dépôt (dossier du premier fichier).
+#
+# Ce que le labo garantit :
+#   - base, volumes et réseau propres au projet cnp-doctor-lab (rien de commun avec la stack locale) ;
+#   - le backend ne parle qu'au Vault du labo (lab-vault, mode dev, en mémoire) ;
+#   - toutes les adresses sortantes du backend visent le serveur simulé doctor-lab ;
+#   - aucune valeur du .env racine n'atteint le backend, sauf l'IA avec --real-ai
+#     (fichier compose.lab.real-ai.yml).
+#   - ports publiés sur 127.0.0.1 seulement : 8088 (interface), 8008 (API), 9009 (labo).
+
+name: cnp-doctor-lab   # filet de sécurité si -p est oublié
+
+services:
+  db:
+    environment:
+      POSTGRES_USER: cnplab
+      POSTGRES_PASSWORD: cnplab
+      POSTGRES_DB: cnplab
+    healthcheck:
+      test: !override ["CMD-SHELL", "pg_isready -U cnplab -d cnplab"]
+
+  backend:
+    ports: !override
+      - "127.0.0.1:8008:8000"
+    depends_on:
+      doctor-lab:
+        condition: service_healthy
+      lab-vault-init:
+        condition: service_completed_successfully
+    environment:
+      # Base du labo (volume cnp-doctor-lab_postgres_data)
+      POSTGRES_SERVER: db
+      POSTGRES_USER: cnplab
+      POSTGRES_PASSWORD: cnplab
+      POSTGRES_DB: cnplab
+      SECRET_KEY: doctor-lab-only-secret-key-never-use-elsewhere
+      ENCRYPTION_KEY: ""
+      SECURE_COOKIES: "false"
+      FRONTEND_BASE_URL: http://localhost:8088
+      CLI_REDIRECT_BASE_URL: http://localhost:8765
+      BACKEND_CORS_ORIGINS: '["http://localhost:8088"]'
+      CNP_API_BASE_URL: http://localhost:8008
+      # Vault du labo uniquement. Au démarrage, le backend lit secret/cnp/platform :
+      # lab-vault-init y écrit un simple marqueur, donc rien n'écrase cet environnement
+      # et le backend ne recopie pas ses réglages dans le Vault.
+      VAULT_ADDR: http://lab-vault:8200
+      VAULT_TOKEN: lab-root-token
+      # GitLab simulé (API et dépôt GitOps lab-platform/cnp-gitops)
+      GITLAB_BASE_URL: http://doctor-lab:9000/gitlab
+      GITLAB_TOKEN: ""
+      GITLAB_NAMESPACE: ""
+      GITLAB_BOT_TOKEN: lab-gitlab-token
+      GITLAB_BOT_NAMESPACE: lab-platform
+      GITLAB_TEAMS_GROUP: ""
+      GITLAB_APPS_NAMESPACE: ""
+      GITLAB_TEMPLATES_NAMESPACE: ""
+      GITLAB_CI_PROJECT: ""
+      GITLAB_REGISTRY_URL: registry.lab.local
+      GITLAB_OAUTH_CLIENT_ID: ""
+      GITLAB_OAUTH_CLIENT_SECRET: ""
+      GITLAB_OAUTH_REDIRECT_URI: ""
+      GITLAB_OAUTH_ALLOWED_GROUP: ""
+      GITLAB_OAUTH_SCOPES: api read_user
+      GITLAB_WEBHOOK_SECRET: lab-webhook-secret
+      ARGOCD_WEBHOOK_SECRET: lab-webhook-secret
+      CNP_CALLBACK_TOKEN: lab-callback-token
+      GITLAB_SYNC_INTERVAL_MINUTES: "100000"   # le miroir des membres GitLab ne tourne jamais
+      GITOPS_REPO_URL: http://doctor-lab:9000/lab-platform/cnp-gitops.git
+      # Observabilité simulée
+      LOKI_URL: http://doctor-lab:9000
+      PROMETHEUS_URL: http://doctor-lab:9000/prometheus
+      GRAFANA_URL: ""
+      GRAFANA_DASHBOARD_UID: ""
+      GRAFANA_FINOPS_DASHBOARD_UID: ""
+      GRAFANA_JWT_PRIVATE_KEY: ""
+      # Kubernetes : seulement via le kubeconfig du cluster du labo (Vault du labo).
+      # Sans KUBECONFIG_PATH, le client global n'est pas configuré : pas de découverte
+      # de clusters ni de ConfigMap Grafana au démarrage.
+      KUBECONFIG_PATH: ""
+      KUBECONFIG_DIR: ""
+      K8S_TARGET_NAMESPACE: default
+      K8S_IMAGE_PULL_SECRET: ""
+      SCALE_SCHEDULE_ENABLED: "false"
+      # Keycloak désactivé (aucune instance dans le labo)
+      KEYCLOAK_ENABLED: "false"
+      KEYCLOAK_URL: http://doctor-lab:9000/keycloak
+      KEYCLOAK_PUBLIC_URL: http://localhost:9009/keycloak
+      KEYCLOAK_ADMIN_CLIENT_ID: cnp-provisioner
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ""
+      # IA : fournisseur simulé par défaut (start.sh --real-ai ajoute compose.lab.real-ai.yml)
+      AI_ASSISTANT_ENABLED: "true"
+      AI_PROVIDER: openai_compatible
+      AI_BASE_URL: http://doctor-lab:9000/llm/v1
+      AI_API_KEY: lab-key
+      AI_MODEL: lab-doctor
+      AI_ROUTER_ENABLED: "false"
+      AI_PLATFORM_KB_ENABLED: "false"
+      AI_PLATFORM_KB_DIR: /app/docs
+      AI_PLATFORM_KB_SYNC_ON_STARTUP: "false"
+      AI_USER_REQUESTS_PER_MINUTE: "30"
+      AI_USER_REQUESTS_PER_DAY: "1000"
+      AI_DAILY_BUDGET_USD: "5.0"
+      AI_MASK_PII_FOR_NON_EU_PROVIDERS: "true"
+
+  frontend:
+    ports: !override
+      - "127.0.0.1:8088:80"
+
+  # Serveur simulé : Loki, ArgoCD, API Kubernetes, GitLab, fournisseur IA, pilotage.
+  doctor-lab:
+    image: python:3.11-slim
+    command: ["python", "-u", "/lab/lab_server.py", "9000"]
+    environment:
+      LAB_BIND: 0.0.0.0
+      LAB_PUBLIC_URL: http://localhost:9009
+    volumes:
+      - ./scripts/doctor-lab:/lab:ro
+    ports:
+      - "127.0.0.1:9009:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/healthz', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks:
+      - cnp_net
+
+  # Vault du labo : mode dev, en mémoire, KV v2 monté sur secret/. Jamais publié sur l'hôte.
+  lab-vault:
+    image: hashicorp/vault:1.17
+    command: ["server", "-dev"]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: lab-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks:
+      - cnp_net
+
+  # Écrit le marqueur secret/cnp/platform avant le démarrage du backend (voir VAULT_ADDR).
+  lab-vault-init:
+    image: hashicorp/vault:1.17
+    entrypoint: ["vault"]
+    command: ["kv", "put", "secret/cnp/platform", "LAB_MARKER=cnp-doctor-lab"]
+    environment:
+      VAULT_ADDR: http://lab-vault:8200
+      VAULT_TOKEN: lab-root-token
+    depends_on:
+      lab-vault:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - cnp_net

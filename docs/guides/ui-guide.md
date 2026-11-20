@@ -7,7 +7,7 @@ Cette page décrit chaque écran de la console web, où trouver chaque fonctionn
 - **Barre latérale gauche (sidebar)** : sélecteur de contexte en haut, menu de navigation, bouton **AI Assistant** et menu utilisateur en bas (email, **My profile**, **Sign out**). Elle se replie avec le bouton « Collapse sidebar ».
 - **Sélecteur de contexte** (« Sélectionner un groupe ») : liste les groupes GitLab dont l'utilisateur est membre ; un administrateur voit aussi l'entrée **Platform** (badge admin) qui ouvre l'espace d'administration.
 - **Barre du haut (TopNav)** : fil d'Ariane (ex. `Team A › Apps › mon-app`) et cloche **Notifications**.
-- **Assistant Plat4k** : la mascotte en bas à droite (ou le bouton AI Assistant de la sidebar) ouvre le tiroir de chat. La mascotte peut être masquée par un administrateur ; le bouton de la sidebar reste disponible.
+- **Assistant Plat4k** : la mascotte en bas à droite (ou le bouton AI Assistant de la sidebar) ouvre le tiroir de chat. La mascotte peut être masquée par un administrateur ; le bouton de la sidebar reste disponible. Le panneau a deux modes, **Assistant** et **Doctor** (voir « Mode Doctor du panneau de l'assistant »).
 
 ## Rôles et permissions
 
@@ -16,7 +16,7 @@ Les rôles viennent de GitLab (appartenance au groupe ou au projet) :
 | Rôle CNP | Niveau GitLab | Peut faire |
 |---|---|---|
 | Viewer | Guest/Reporter | Consulter apps, logs, historique, métriques |
-| Developer | Developer | + variables d'environnement **dev** (jamais les clés prod) |
+| Developer | Developer | + variables d'environnement **dev** (jamais les clés prod), diagnostic **CNP Doctor** (sans pouvoir confirmer le rollback proposé) |
 | Maintainer | Maintainer | + renommer/supprimer une app, exposition internet, stop/resume, rollback, variables prod, réglages IA de l'app, inviter des membres |
 | Owner | Owner | Tous les droits du groupe |
 
@@ -54,14 +54,15 @@ Tout reste modifiable ensuite dans l'onglet Settings de l'application.
 
 Chemin : groupe → **Apps** → cliquer sur l'application (`/groups/<groupe>/apps/<app>`).
 
-En-tête : nom, description, lien vers le dépôt source. Si l'application est en erreur, un bandeau « The application is in error » propose d'ouvrir les logs.
+En-tête : nom, description, lien vers le dépôt source. Si l'application est en erreur, un bandeau « The application is in error » propose d'ouvrir les logs et un bouton **Diagnostiquer** (developer+, assistant IA activé) : depuis n'importe quel onglet, il ouvre l'onglet Overview, affiche la carte **CNP Doctor** et lance le diagnostic de l'environnement en erreur.
 
 Onglets : **Overview**, **Logs**, **History**, **Settings**, **Assistant**.
 
 ## Onglet Overview (état, métriques, stop/resume)
 
 - Cartes **CPU** (millicores), **RAM**, **Replicas** (prêts/désirés) et **Last sync**, avec mini-graphes ; lien vers Grafana. « Metrics unavailable » signifie que Prometheus n'est pas joignable.
-- Cartes **Production environment** et **Dev environment** : état ArgoCD **Sync** (Synced/OutOfSync), **Health** (Healthy, Progressing, Degraded, Missing, Stopped), **Image** déployée, **Last sync**.
+- Cartes **Production environment** et **Dev environment** : état ArgoCD **Sync** (Synced/OutOfSync), **Health** (Healthy, Progressing, Degraded, Missing, Stopped), **Image** déployée, **Last sync**. Une carte en état **Degraded** ou **Missing** propose **Diagnostiquer**, qui lance CNP Doctor sur cet environnement.
+- **CNP Doctor** (si l'assistant IA est activé ; diagnostic réservé au rôle developer ou plus) : diagnostic d'une application en panne. Chemin : onglet **Overview** → carte **CNP Doctor** → sélecteur **prod** / **dev** (l'environnement en erreur est présélectionné) → **Diagnostiquer**. La carte montre les étapes (collecte, chronologie, analyse, vérification), puis le **verdict** et le constat, la **source** (« IA encadrée », « Sans IA » pour un cas évident, ou « IA indisponible — diagnostic établi par la plateforme »), la **cause probable** avec sa confiance, la **chronologie** (déploiement suspect, dernière version saine, délai avant la panne), les **preuves** (les autres signaux dans une section repliée), **ce qui a changé** (commits et fichiers, lien de comparaison GitLab) et les **actions** dans l'ordre conseillé. Action **Revenir à la version …** (maintainer+) : une confirmation nomme la version et l'environnement, puis lance le rollback (le même que l'onglet History) ; un developer voit le bouton désactivé avec le rôle requis et **Copier la demande** pour un maintainer. Autres boutons : relancer le diagnostic, **Copier le diagnostic**, **Approfondir avec l'assistant**. Le Doctor n'exécute jamais rien de lui-même. Guide complet : [CNP Doctor](cnp-doctor.md).
 - **Stop / Resume** par environnement (maintainer+) : **Stop** puis **Confirm** met l'environnement à zéro réplica via un commit GitOps (*scale-to-zero*) ; **Resume** le relance. Les environnements dev peuvent aussi être arrêtés automatiquement la nuit (voir « Arrêt nocturne »).
 - **Cloud target** : cluster cible, endpoint et statut (online/offline).
 - **Quick access** : URLs prod/dev si l'app est exposée, sinon la commande `kubectl port-forward -n dev svc/<slug> 8000:8000` (port local 8000 : une des origines autorisées par le realm Keycloak dev) ; lien **GitLab repository**.
@@ -153,11 +154,22 @@ L'assistant global (mascotte ou bouton AI Assistant) :
 - connaît la page ouverte : « État des apps ? » sur la page d'un groupe porte sur ce groupe, « Ses métriques ? » sur une application porte sur cette application ;
 - consulte en direct, avec les droits de l'utilisateur, l'état des applications (statut, pipeline CI, ArgoCD dev/prod, arrêt), les métriques CPU/RAM, les coûts 30 jours, les membres d'un groupe et l'activité récente ;
 - **conseille sur les coûts** d'une application (« mon app est-elle bien dimensionnée ? », « comment réduire ses coûts ? ») : consommation des 24 dernières heures, *requests* proposées et économie mensuelle possible ;
-- **diagnostique** une application en erreur (rôle developer ou plus) : dernières lignes ERROR des logs, état des pods Kubernetes (redémarrages, CrashLoopBackOff, OOMKilled) et dernier pipeline CI en échec avec la fin de son log ;
+- **diagnostique** une application en erreur (rôle developer ou plus) : dernières lignes ERROR des logs, état des pods Kubernetes (redémarrages, CrashLoopBackOff, OOMKilled) et dernier pipeline CI en échec avec la fin de son log. Pour un diagnostic complet et vérifié (chronologie, preuves, rollback proposé), utiliser **CNP Doctor** : carte de l'onglet Overview ou mode **Doctor** du panneau ;
 - explique où trouver une fonctionnalité et comment l'utiliser, à partir de cette documentation ;
 - ne fait aucune action : il ne déploie pas, n'arrête pas, ne modifie rien — il indique le bouton à utiliser ;
 - adapte ses réponses au profil de l'utilisateur sur la page ouverte : **viewer** (réponse courte, orientée impact), **developer** (diagnostic technique, noms des variables dev), **maintainer/owner** (diagnostic + actions possibles, variables prod), **admin** (vue plateforme : clusters, anomalies, usage IA). Il ne montre jamais plus que ce que l'utilisateur peut voir dans l'interface ;
-- peut être lancé en un clic avec les boutons **Expliquer avec l'IA** : bandeau « The application is in error » et bandeau « The last CI pipeline failed » en haut d'une application, carte d'environnement **Degraded** / **Missing** (onglet Overview), bouton **Expliquer les erreurs** de l'onglet Logs quand des lignes ERROR sont affichées ;
+- peut être lancé en un clic avec les boutons **Expliquer avec l'IA** : bandeau « The last CI pipeline failed » en haut d'une application, bouton **Expliquer les erreurs** de l'onglet Logs quand des lignes ERROR sont affichées (le bandeau « The application is in error » et les cartes d'environnement **Degraded** / **Missing** proposent **Diagnostiquer**, qui lance CNP Doctor) ;
 - est limité à quelques questions par minute et par jour par utilisateur, et à un budget journalier pour la plateforme ; un message l'indique quand une limite est atteinte.
 
 Les détails d'une application (événements, statut ArgoCD, métriques, coûts) ne sont accessibles à l'assistant que si un administrateur l'a autorisée dans Platform settings → Assistant IA.
+
+## Mode Doctor du panneau de l'assistant
+
+Le panneau de l'assistant a un interrupteur **Assistant / Doctor** (utilisable au clavier) :
+
+- **Assistant** : le chat décrit ci-dessus.
+- **Doctor** : le robot porte une blouse et un stéthoscope et le panneau s'intitule « CNP Doctor ». Sur la page d'une application, il propose de diagnostiquer chaque environnement (prod, dev) et affiche le résultat dans le fil, avec les mêmes actions que la carte **CNP Doctor** de l'onglet Overview (un diagnostic lancé d'un côté apparaît de l'autre). Hors d'une application, il invite à en ouvrir une. Une question tapée librement reçoit la même réponse qu'en mode Assistant.
+- **Bascule automatique** : le robot passe en mode Doctor quand un diagnostic est lancé ou quand l'utilisateur ouvre une application en erreur. Un choix fait à la main avec l'interrupteur est respecté tant que l'utilisateur reste sur cette application ; en quittant les pages de l'application, le robot revient en mode Assistant.
+- Le changement de mode joue une animation de changement de tenue (un fondu si le système demande de réduire les animations). Si le robot graphique est masqué par un administrateur, l'interrupteur reste disponible.
+
+Pour diagnostiquer une application en ligne de commande : `cnp app doctor <id> --env prod|dev` (voir la référence CLI).

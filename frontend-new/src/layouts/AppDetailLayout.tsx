@@ -9,8 +9,11 @@ import { AppStatusBadge } from '@/components/AppStatusBadge';
 import { AppScaleBadge } from '@/components/AppScaleBadge';
 import { Button } from '@/components/ui/Button';
 import { AskAIButton } from '@/components/AskAIButton';
+import { DoctorLaunchButton } from '@/components/doctor/DoctorLaunchButton';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAppScaleState } from '@/hooks/useAppScaleState';
+import { useAppStatus } from '@/hooks/useAppStatus';
+import { defaultDoctorEnv } from '@/components/doctor/DoctorCard';
 import { getAppHealth } from '@/utils/appHealth';
 import { cn } from '@/utils/cn';
 import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
@@ -60,6 +63,9 @@ export function AppDetailLayout() {
 
   const health = app ? getAppHealth(app) : 'stopped';
   const { data: scaleState } = useAppScaleState(app?.id);
+  // Même requête que l'onglet Overview (servie depuis le cache) : le bandeau diagnostique
+  // l'environnement réellement en erreur.
+  const { data: runtimeStatus } = useAppStatus(health === 'unhealthy' ? app?.id : undefined);
   const basePath = `/groups/${slug}/apps/${appSlug}`;
 
   function activeTab(): string {
@@ -119,9 +125,14 @@ export function AppDetailLayout() {
               <span>⚠</span>
               <span>The application is in error.</span>
               <span className="ml-auto flex items-center gap-2">
-                <AskAIButton
-                  question={`L'application ${app?.name ?? appSlug} est en erreur : diagnostique la cause (état, logs d'erreur, pods, dernier pipeline) et dis-moi comment corriger.`}
-                />
+                {app && (
+                  <DoctorLaunchButton
+                    appId={app.id}
+                    env={defaultDoctorEnv(runtimeStatus)}
+                    appName={app.name}
+                    onBeforeLaunch={() => navigateTo('')}
+                  />
+                )}
                 <button className="underline" onClick={() => navigateTo('logs')}>
                   View logs
                 </button>

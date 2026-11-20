@@ -1,18 +1,28 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { IconX, IconSend } from '@tabler/icons-react';
+import { IconX, IconSend, IconStethoscope } from '@tabler/icons-react';
 import { assistantApi, toChatHistory } from '@/api/assistant';
-import { ChatTurn } from '@/types';
+import { appsApi } from '@/api/apps';
+import { ChatTurn, DoctorEnv } from '@/types';
 import {
   ASSISTANT_ASK_EVENT,
   AssistantAskDetail,
+  chatMessagesOnly,
   docSources,
+  doctorSuggestionsFor,
+  greetingFor,
+  modeNotice,
   pageContextFrom,
   suggestionsFor,
   waitHint,
 } from '@/utils/assistantContext';
+import { getAppHealth } from '@/utils/appHealth';
+import { doctorKey, useDoctorStore } from '@/store/doctor';
 import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown';
+import { BotAvatar, Mascot } from '@/components/assistant/Mascot';
+import { ModeToggle } from '@/components/assistant/ModeToggle';
+import { DoctorThreadMessage } from '@/components/assistant/DoctorThreadMessage';
 import { cn } from '@/utils/cn';
 
 interface LocalMessage {
@@ -20,6 +30,12 @@ interface LocalMessage {
   role: 'user' | 'assistant';
   content: string;
   citations?: string[];
+  /**
+   * `local` : accueil et changement de mode ; `diagnosis` : diagnostic lié au store.
+   * Ni l'un ni l'autre n'est envoyé dans l'historique du chat.
+   */
+  kind?: 'local' | 'diagnosis';
+  diagnosis?: { appId: number; env: DoctorEnv; appName?: string };
 }
 
 interface Props {
@@ -28,52 +44,24 @@ interface Props {
   onClose: () => void;
 }
 
-const GREETING =
-  "Salut 👋 Je suis l'assistant Plat4k. Pose-moi une question sur tes applications ou la plateforme.";
-
 /** La mascotte fait signe toutes les X ms quand le tiroir est fermé. */
 const ATTENTION_INTERVAL_MS = 60_000;
 const ATTENTION_DURATION_MS = 3_600;
 
-function BotAvatar() {
-  return (
-    <div className="flex h-[30px] w-[30px] flex-none items-center justify-center gap-1 rounded-[9px] bg-primary">
-      <span className="h-[5px] w-[5px] rounded-full bg-[#8fe3ee]" />
-      <span className="h-[5px] w-[5px] rounded-full bg-[#8fe3ee]" />
-    </div>
-  );
+const DOCTOR_ENVS: DoctorEnv[] = ['prod', 'dev'];
+
+function diagnosisMessage(appId: number, env: DoctorEnv, appName?: string): LocalMessage {
+  return {
+    id: `diag-${appId}-${env}-${Date.now()}`,
+    role: 'assistant',
+    content: '',
+    kind: 'diagnosis',
+    diagnosis: { appId, env, appName },
+  };
 }
 
-function Mascot() {
-  return (
-    <div className="m-robot relative h-[104px] w-[92px] drop-shadow-[0_10px_18px_rgba(31,44,84,.22)]">
-      {/* Antenne */}
-      <div className="absolute -top-0.5 left-1/2 h-4 w-[3px] -translate-x-1/2 rounded-sm bg-primary" />
-      <div className="absolute -top-[9px] left-1/2 h-[11px] w-[11px] -translate-x-1/2 rounded-full bg-primary" />
-
-      {/* Bras qui salue */}
-      <div className="m-arm absolute -left-[9px] top-11 h-[34px] w-[15px] origin-bottom rotate-[8deg] rounded-[9px] bg-primary">
-        <div className="absolute -left-1 -top-3 h-[22px] w-[22px] rounded-[50%_50%_50%_40%] bg-primary" />
-      </div>
-
-      {/* Oreilles */}
-      <div className="absolute left-0.5 top-10 h-[26px] w-[11px] rounded-md bg-primary" />
-      <div className="absolute right-0.5 top-10 h-[26px] w-[11px] rounded-md bg-primary" />
-
-      {/* Corps */}
-      <div className="absolute bottom-0 left-1/2 h-[38px] w-14 -translate-x-1/2 rounded-[16px_16px_12px_12px] border-2 border-border bg-card">
-        <div className="absolute left-1/2 top-[9px] h-4 w-[26px] -translate-x-1/2 rounded-md bg-primary-50" />
-      </div>
-
-      {/* Tête */}
-      <div className="absolute left-1/2 top-3.5 h-[60px] w-[74px] -translate-x-1/2 rounded-[26px_26px_22px_22px] border-2 border-border bg-card">
-        <div className="absolute left-1/2 top-1/2 flex h-[38px] w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-3 rounded-[20px] bg-[#2e3f73]">
-          <div className="m-eye h-[11px] w-[11px] rounded-full bg-[#8fe3ee] shadow-[0_0_8px_rgba(143,227,238,.9)]" />
-          <div className="m-eye h-[11px] w-[11px] rounded-full bg-[#8fe3ee] shadow-[0_0_8px_rgba(143,227,238,.9)] [animation-delay:.08s]" />
-        </div>
-      </div>
-    </div>
-  );
+function isDiagnosisOf(m: LocalMessage, appId: number, env: DoctorEnv): boolean {
+  return m.kind === 'diagnosis' && m.diagnosis?.appId === appId && m.diagnosis.env === env;
 }
 
 function TypingDots({ className }: { className?: string }) {
@@ -99,7 +87,15 @@ function TypingDots({ className }: { className?: string }) {
 export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
   const { pathname } = useLocation();
   const page = useMemo(() => pageContextFrom(pathname), [pathname]);
+  const appSlug = page.app_slug;
   const suggestions = useMemo(() => suggestionsFor(page), [page]);
+  const doctorSuggestions = useMemo(() => doctorSuggestionsFor(page), [page]);
+
+  const mode = useDoctorStore((s) => s.mode);
+  const runs = useDoctorStore((s) => s.runs);
+  const setModeManual = useDoctorStore((s) => s.setModeManual);
+  const isDoctor = mode === 'doctor';
+
   const conversationId = useRef<string | undefined>(undefined);
   const msgRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
@@ -108,13 +104,14 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
   const robotBtnRef = useRef<HTMLButtonElement>(null);
   const talkTimeout = useRef<ReturnType<typeof setTimeout>>();
   const attnTimeout = useRef<ReturnType<typeof setTimeout>>();
-  const [messages, setMessages] = useState<LocalMessage[]>([
-    { id: 'greeting', role: 'assistant', content: GREETING },
+  const [messages, setMessages] = useState<LocalMessage[]>(() => [
+    { id: 'greeting', role: 'assistant', content: greetingFor(mode), kind: 'local' },
   ]);
   const [input, setInput] = useState('');
   const [globallyDisabled, setGloballyDisabled] = useState(false);
   const [attn, setAttn] = useState(false);
   const [talk, setTalk] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
 
   const { data: uiSettings } = useQuery({
     queryKey: ['ai-ui-settings'],
@@ -122,6 +119,25 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     retry: false,
   });
   const graphicalBotEnabled = uiSettings?.graphical_bot_enabled ?? true;
+
+  // Application affichée : même clé que AppDetailLayout, donc servie depuis le cache.
+  const { data: app } = useQuery({
+    queryKey: ['app', appSlug],
+    queryFn: () => appsApi.getBySlug(appSlug!),
+    enabled: !!appSlug,
+  });
+  const currentApp = appSlug ? app : undefined;
+  const appUnhealthy = !!currentApp && getAppHealth(currentApp) === 'unhealthy';
+
+  // Bascule automatique. L'ordre compte : le contexte d'abord (retour au chatbot et
+  // oubli du choix manuel quand l'application change), puis le passage en docteur.
+  useEffect(() => {
+    useDoctorStore.getState().setContext(page.app_slug ?? null);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (appUnhealthy) useDoctorStore.getState().autoDoctor();
+  }, [appUnhealthy, appSlug]);
 
   useEffect(() => {
     if (uiSettings?.assistant_enabled === false) {
@@ -206,6 +222,65 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     }
   }, [open, graphicalBotEnabled]);
 
+  // Changement de mode : annonce vocale et message dans le fil (la conversation
+  // est conservée ; un fil sans échange repart simplement du nouvel accueil).
+  const previousMode = useRef(mode);
+  useEffect(() => {
+    if (previousMode.current === mode) return;
+    previousMode.current = mode;
+    setAnnouncement(mode === 'doctor' ? 'Mode Doctor activé' : 'Mode Assistant activé');
+    const consulted = currentApp?.name ?? appSlug;
+    setMessages((prev) => {
+      const id = `mode-${Date.now()}`;
+      if (prev.every((m) => m.kind === 'local')) {
+        return [{ id, role: 'assistant', content: greetingFor(mode, consulted), kind: 'local' }];
+      }
+      const notice: LocalMessage = {
+        id,
+        role: 'assistant',
+        content: modeNotice(mode, consulted),
+        kind: 'local',
+      };
+      const last = prev[prev.length - 1];
+      // Deux bascules d'affilée : on remplace l'annonce précédente au lieu d'empiler.
+      if (last?.kind === 'local' && last.id.startsWith('mode-')) {
+        return [...prev.slice(0, -1), notice];
+      }
+      return [...prev, notice];
+    });
+  }, [mode]);
+
+  // Diagnostic lancé ailleurs (carte d'Overview) pour l'application affichée : on
+  // l'ajoute au fil, il se met à jour depuis le store. Abonnement direct au store
+  // pour voir chaque lancement, même si la réponse arrive dans le même rendu.
+  const appId = currentApp?.id;
+  const appName = currentApp?.name;
+  useEffect(() => {
+    if (appId == null) return;
+    return useDoctorStore.subscribe((state, prev) => {
+      for (const env of DOCTOR_ENVS) {
+        const key = doctorKey(appId, env);
+        if (state.runs[key]?.status !== 'running' || prev.runs[key]?.status === 'running') continue;
+        setMessages((msgs) =>
+          msgs.some((m) => isDiagnosisOf(m, appId, env))
+            ? msgs
+            : [...msgs, diagnosisMessage(appId, env, appName)]
+        );
+      }
+    });
+  }, [appId, appName]);
+
+  function diagnoseFromPanel(env: DoctorEnv) {
+    if (!currentApp) return;
+    const { id, name } = currentApp;
+    // Un seul message par application et environnement : il descend en bas du fil.
+    setMessages((prev) => [
+      ...prev.filter((m) => !isDiagnosisOf(m, id, env)),
+      diagnosisMessage(id, env, name),
+    ]);
+    void useDoctorStore.getState().diagnose(id, env);
+  }
+
   const chatMutation = useMutation({
     mutationFn: ({ message, history }: { message: string; history: ChatTurn[] }) =>
       assistantApi.chatGlobal({
@@ -263,18 +338,19 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     return () => clearInterval(timer);
   }, [chatMutation.isPending]);
 
-  // Défilement auto vers le dernier message
+  // Défilement auto vers le dernier message (un diagnostic grandit en se terminant)
   useEffect(() => {
     const el = msgRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, chatMutation.isPending, hint]);
+  }, [messages, chatMutation.isPending, hint, runs]);
 
   function ask(text: string) {
     const msg = text.trim();
     if (!msg || chatMutation.isPending) return;
     setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'user', content: msg }]);
     setInput('');
-    chatMutation.mutate({ message: msg, history: toChatHistory(messages) });
+    // Diagnostics et messages locaux ne partent jamais dans l'historique du modèle.
+    chatMutation.mutate({ message: msg, history: toChatHistory(chatMessagesOnly(messages)) });
   }
 
   // Questions posées depuis un bouton « Expliquer avec l'IA » ailleurs dans l'UI.
@@ -289,6 +365,18 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     return () => window.removeEventListener(ASSISTANT_ASK_EVENT, onAsk);
   }, []);
 
+  const title = isDoctor ? 'CNP Doctor' : 'Assistant Plat4k';
+  const status = isDoctor
+    ? appSlug
+      ? `En consultation · ${currentApp?.name ?? appSlug}`
+      : 'Prêt pour un diagnostic'
+    : 'En ligne · prêt à vous aider';
+  // Robot docké, tiroir fermé, application en erreur : proposer le diagnostic.
+  const offerDiagnosis = !open && !globallyDisabled && isDoctor && appUnhealthy;
+
+  const chipClass =
+    'rounded-[20px] border border-border bg-card px-3 py-[7px] text-xs font-medium text-muted-foreground hover:border-primary hover:bg-primary-50 hover:text-primary';
+
   return (
     <div
       className={cn(
@@ -297,11 +385,17 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
         graphicalBotEnabled && ((attn && !open) || talk) && 'is-attn'
       )}
     >
+      {/* Annonce du changement de mode (hors du tiroir : audible tiroir fermé) */}
+      <div className="sr-only" aria-live="polite">
+        {announcement}
+      </div>
+
       {/* ===== Tiroir de chat (glisse depuis la droite) ===== */}
       <div
         ref={drawerRef}
         className="m-drawer fixed inset-y-0 right-0 z-40 flex w-[440px] max-w-[calc(92vw/1.25)] flex-col border-l border-border bg-background shadow-[-24px_0_60px_rgba(31,44,84,.14)]"
         aria-hidden={!open}
+        data-mode={mode}
       >
         {/* Bandeau héro : le robot vient se docker sur la gauche */}
         <div
@@ -309,7 +403,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
             'relative flex-none border-b border-border',
             graphicalBotEnabled
               ? 'h-[150px] bg-gradient-to-b from-primary-50 to-background'
-              : 'h-[92px] bg-background'
+              : 'h-[132px] bg-background'
           )}
         >
           {/* Cible du vol du robot (mesurée par measureDockFlight) */}
@@ -330,16 +424,22 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
           <div
             className={cn(
               'absolute right-4',
-              graphicalBotEnabled ? 'left-[150px] top-11' : 'left-5 top-6'
+              graphicalBotEnabled ? 'left-[150px] top-11 max-sm:left-[112px]' : 'left-5 top-6'
             )}
           >
-            <div className="text-[17px] font-bold text-foreground">Assistant Plat4k</div>
-            <div className="mt-1.5 flex items-center gap-1.5">
-              <span className="h-[7px] w-[7px] rounded-full bg-success shadow-[0_0_0_3px_rgba(34,197,94,.16)]" />
-              <span className="text-xs font-medium text-muted-foreground">
-                En ligne · prêt à vous aider
-              </span>
+            <div
+              className={cn(
+                'truncate text-[17px] font-bold text-foreground',
+                !graphicalBotEnabled && 'pr-10'
+              )}
+            >
+              {title}
             </div>
+            <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+              <span className="h-[7px] w-[7px] flex-none rounded-full bg-success shadow-[0_0_0_3px_rgba(34,197,94,.16)]" />
+              <span className="truncate text-xs font-medium text-muted-foreground">{status}</span>
+            </div>
+            <ModeToggle className="mt-3" mode={mode} onChange={setModeManual} />
           </div>
         </div>
 
@@ -358,7 +458,16 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
             {/* Fil de messages */}
             <div ref={msgRef} className="min-h-0 flex-1 overflow-y-auto px-[18px] pb-2 pt-5">
               {messages.map((m) =>
-                m.role === 'assistant' ? (
+                m.kind === 'diagnosis' && m.diagnosis ? (
+                  <DoctorThreadMessage
+                    key={m.id}
+                    appId={m.diagnosis.appId}
+                    env={m.diagnosis.env}
+                    appName={m.diagnosis.appName}
+                    showAvatar={graphicalBotEnabled}
+                    mode={mode}
+                  />
+                ) : m.role === 'assistant' ? (
                   <div
                     key={m.id}
                     className={cn(
@@ -366,7 +475,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
                       graphicalBotEnabled && 'gap-[9px]'
                     )}
                   >
-                    {graphicalBotEnabled && <BotAvatar />}
+                    {graphicalBotEnabled && <BotAvatar mode={mode} />}
                     <div className={cn(graphicalBotEnabled ? 'max-w-[76%]' : 'max-w-[88%]')}>
                       <div className="rounded-[4px_15px_15px_15px] bg-muted px-3.5 py-[11px] text-[13.5px] leading-relaxed text-foreground">
                         <SimpleMarkdown content={m.content} />
@@ -397,7 +506,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
                     graphicalBotEnabled && 'gap-[9px]'
                   )}
                 >
-                  {graphicalBotEnabled && <BotAvatar />}
+                  {graphicalBotEnabled && <BotAvatar mode={mode} />}
                   <div className="rounded-[4px_15px_15px_15px] bg-muted px-[15px] py-[13px]">
                     {/* Pas de modificateur d'opacité : les couleurs sont des var() CSS */}
                     <div className="flex gap-[5px]" aria-label="L'assistant réfléchit">
@@ -412,17 +521,46 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
             </div>
 
             {/* Puces de suggestions */}
-            <div className="flex flex-wrap gap-2 px-[18px] pb-0.5 pt-1.5">
-              {suggestions.map(({ label, question }) => (
-                <button
-                  key={label}
-                  onClick={() => ask(question)}
-                  className="rounded-[20px] border border-border bg-card px-3 py-[7px] text-xs font-medium text-muted-foreground hover:border-primary hover:bg-primary-50 hover:text-primary"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            {isDoctor ? (
+              <div className="px-[18px] pb-0.5 pt-1.5">
+                {doctorSuggestions.hint && (
+                  <p className="mb-2 text-xs text-muted-foreground">{doctorSuggestions.hint}</p>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {doctorSuggestions.items.map((s) =>
+                    s.kind === 'diagnose' ? (
+                      <button
+                        key={s.label}
+                        type="button"
+                        onClick={() => diagnoseFromPanel(s.env)}
+                        disabled={!currentApp}
+                        className="inline-flex items-center gap-1.5 rounded-[20px] border border-primary-border bg-primary-subtle px-3 py-[7px] text-xs font-medium text-primary hover:border-primary disabled:opacity-50"
+                      >
+                        <IconStethoscope size={13} aria-hidden="true" />
+                        {s.label}
+                      </button>
+                    ) : (
+                      <button
+                        key={s.label}
+                        type="button"
+                        onClick={() => ask(s.question)}
+                        className={chipClass}
+                      >
+                        {s.label}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2 px-[18px] pb-0.5 pt-1.5">
+                {suggestions.map(({ label, question }) => (
+                  <button key={label} onClick={() => ask(question)} className={chipClass}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Barre de saisie */}
             <div className="flex-none border-t border-border px-4 pb-[18px] pt-3.5">
@@ -451,10 +589,22 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
       {/* ===== Dock du robot (lanceur en coin → se docke dans le bandeau) ===== */}
       {graphicalBotEnabled && (
         <div ref={dockRef} className="m-dock fixed bottom-[26px] right-[30px] z-50 flex flex-col items-end gap-[11px]">
-          {attn && !open && (
-            <div className="flex items-center gap-[5px] rounded-[14px_14px_4px_14px] border border-primary-border bg-primary-50 px-3.5 py-[9px] shadow-[0_8px_20px_rgba(31,44,84,.12)] animate-[bubblePop_.3s_cubic-bezier(.2,1.3,.5,1)_both]">
-              <TypingDots className="bg-primary" />
-            </div>
+          {offerDiagnosis ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              className="flex items-center gap-1.5 rounded-[14px_14px_4px_14px] border border-danger-border bg-card px-3.5 py-[9px] text-xs font-medium text-foreground shadow-[0_8px_20px_rgba(31,44,84,.12)] animate-[bubblePop_.3s_cubic-bezier(.2,1.3,.5,1)_both] hover:border-primary"
+            >
+              <IconStethoscope size={14} aria-hidden="true" className="text-danger" />
+              Besoin d'un diagnostic ?
+            </button>
+          ) : (
+            attn &&
+            !open && (
+              <div className="flex items-center gap-[5px] rounded-[14px_14px_4px_14px] border border-primary-border bg-primary-50 px-3.5 py-[9px] shadow-[0_8px_20px_rgba(31,44,84,.12)] animate-[bubblePop_.3s_cubic-bezier(.2,1.3,.5,1)_both]">
+                <TypingDots className="bg-primary" />
+              </div>
+            )
           )}
 
           <button
@@ -464,7 +614,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
             className="relative cursor-pointer border-none bg-transparent p-0 animate-[mascotPop_.5s_cubic-bezier(.2,1.3,.5,1)_both]"
           >
             <span className="m-ring absolute inset-x-1.5 bottom-1 top-1.5 rounded-full bg-primary opacity-0" />
-            <Mascot />
+            <Mascot mode={mode} />
           </button>
         </div>
       )}
