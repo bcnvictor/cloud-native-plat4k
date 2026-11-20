@@ -11,6 +11,8 @@ export const AUTH_WARNING_LABELS: Record<KeycloakAuthWarning, string> = {
     'Not activated: this app already defines OIDC_* variables (its own identity provider?). Remove them to enable Keycloak.',
   chart_missing_envfrom:
     "This app's chart doesn't appear to consume its env Secret via envFrom — OIDC variables may never reach the pod.",
+  keycloak_redirect_uris_out_of_sync:
+    "Keycloak's redirect URIs could not follow the last exposure change: login from the app's public URL may fail. Retry once Keycloak is back.",
 };
 
 // Codes left by a failed activation, the one to fix first ahead.

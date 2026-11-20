@@ -1,11 +1,12 @@
 import { IconChevronDown, IconChevronUp, IconCloud, IconPlus, IconServer, IconTrash } from '@tabler/icons-react';
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CiDeployConfig } from '@/types';
 import { clustersApi } from '@/api/clusters';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { cn } from '@/utils/cn';
-import { clusterSupportsIngress, isPrivateCluster } from '@/utils/clusterUtils';
+import { clusterSupportsExposure, effectiveTargetCluster, isPrivateCluster } from '@/utils/clusterUtils';
 
 interface Props {
   data: CiDeployConfig;
@@ -25,8 +26,14 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
     queryFn: clustersApi.list,
   });
 
-  const selectedCluster = clusters.find((c) => c.id === data.targetClusterId) ?? null;
-  const exposeSupported = selectedCluster === null || clusterSupportsIngress(selectedCluster);
+  // The backend decides (supports_public_exposure) and refuses expose=true elsewhere.
+  const targetCluster = effectiveTargetCluster(clusters, data.targetClusterId);
+  const exposeSupported = clusterSupportsExposure(targetCluster);
+  const exposableNames = clusters.filter(clusterSupportsExposure).map((c) => c.name);
+
+  useEffect(() => {
+    if (!exposeSupported && data.expose) onChange({ expose: false });
+  }, [exposeSupported, data.expose, onChange]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -43,7 +50,7 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
                 key={c.id}
                 onClick={() => onChange({
                   targetClusterId: c.id,
-                  ...(clusterSupportsIngress(c) ? {} : { expose: false }),
+                  ...(clusterSupportsExposure(c) ? {} : { expose: false }),
                 })}
                 className={cn(
                   'flex items-center gap-3 p-4 rounded-md border-2 text-left transition-colors bg-card',
@@ -139,7 +146,9 @@ export function Step3CiDeploy({ data, onChange, onNext, onBack }: Props) {
             <p className="text-sm font-medium text-foreground">Expose on internet</p>
             {!exposeSupported ? (
               <p className="text-xs text-muted-foreground mt-0.5">
-                Not available on this cluster — nginx-ingress is only configured on AKS.
+                Not available on {targetCluster ? 'this cluster' : 'the default cluster'}: the public DNS
+                doesn&apos;t reach it
+                {exposableNames.length > 0 ? ` (available on ${exposableNames.join(', ')})` : ''}.
               </p>
             ) : data.expose ? (
               <div className="flex flex-col gap-0.5 mt-1">

@@ -396,6 +396,36 @@ async def test_create_client_web_origins_are_plus_not_redirect_uris():
     assert fake.realms["demo-dev"]["clients"][other]["webOrigins"] == ["+", "http://localhost:5173"]
 
 
+async def test_get_client_returns_none_when_missing():
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    assert await client.get_client("demo-dev", "demo") is None
+
+
+async def test_set_client_redirect_uris_keeps_the_rest_of_the_client():
+    """Only redirectUris changes: webOrigins keeps "+" and the local dev origins
+    (the "+" follows the new redirect URIs), the rest of the client stays."""
+    fake = FakeKeycloak()
+    client = _client(fake)
+    await client.create_realm("demo-dev")
+    internal_id = await client.create_client(
+        "demo-dev", "demo", public=True, redirect_uris=["http://localhost:*"],
+        extra_web_origins=["http://localhost:5173"],
+    )
+    rep = await client.get_client("demo-dev", "demo")
+
+    await client.set_client_redirect_uris(
+        "demo-dev", rep, ["https://dev.demo.example/*", "http://localhost:*"]
+    )
+
+    stored = fake.realms["demo-dev"]["clients"][internal_id]
+    assert stored["redirectUris"] == ["https://dev.demo.example/*", "http://localhost:*"]
+    assert stored["webOrigins"] == ["+", "http://localhost:5173"]
+    assert stored["publicClient"] is True
+    assert stored["attributes"] == {"pkce.code.challenge.method": "S256"}
+
+
 async def test_create_realm_with_owner_attribute():
     fake = FakeKeycloak()
     client = _client(fake)

@@ -202,6 +202,14 @@ class ClusterConnection(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
 
+    @property
+    def supports_public_exposure(self) -> bool:
+        """Computed from settings.PUBLIC_EXPOSURE_CLUSTERS, never stored: whether
+        apps on this cluster can be exposed on the public domain."""
+        from backend.core.config import settings
+
+        return settings.cluster_supports_public_exposure(self.name)
+
 
 # ── GitLab membership mirror (ADR-0013) ───────────────────────────────────────
 

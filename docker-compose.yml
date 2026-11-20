@@ -54,6 +54,7 @@ services:
       - GITLAB_WEBHOOK_SECRET=${GITLAB_WEBHOOK_SECRET:-}
       - ARGOCD_WEBHOOK_SECRET=${ARGOCD_WEBHOOK_SECRET:-}
       - GITOPS_REPO_URL=${GITOPS_REPO_URL:-}
+      - PUBLIC_EXPOSURE_CLUSTERS=${PUBLIC_EXPOSURE_CLUSTERS:-cnp-aks}
       - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus-operated.monitoring.svc.cluster.local:9090}
       - LOKI_URL=${LOKI_URL:-http://loki.monitoring.svc.cluster.local:3100}
       - VAULT_ADDR=${VAULT_ADDR:-http://vault:8200}

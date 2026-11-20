@@ -147,6 +147,9 @@ export interface ClusterConnection {
   created_at: string;
   updated_at?: string;
   app_count: number;
+  /** Computed by the backend (PUBLIC_EXPOSURE_CLUSTERS): the public DNS reaches this
+   *  cluster, so its apps can be exposed on internet. */
+  supports_public_exposure: boolean;
 }
 
 export interface ClusterConnectionPayload {
@@ -229,12 +232,14 @@ export interface MyAccessResponse {
 export type KeycloakEnvState = 'active' | 'missing' | 'foreign' | 'unknown';
 
 /** Application.auth_warnings codes (shared/models.py KeycloakAuthWarning). The first
- *  three describe the last failed activation; chart_missing_envfrom the repo's chart. */
+ *  three describe the last failed activation; chart_missing_envfrom the repo's chart;
+ *  keycloak_redirect_uris_out_of_sync a failed redirect URIs update after an expose toggle. */
 export type KeycloakAuthWarning =
   | 'keycloak_instance_unavailable'
   | 'keycloak_provisioning_failed'
   | 'oidc_keys_conflict'
-  | 'chart_missing_envfrom';
+  | 'chart_missing_envfrom'
+  | 'keycloak_redirect_uris_out_of_sync';
 
 export interface KeycloakEnvStatus {
   enabled: boolean;
@@ -339,6 +344,14 @@ export interface ApiKey {
   created_at: string;
   last_used_at: string | null;
   is_active: boolean;
+}
+
+/** POST /auth/apikeys (shared/models.py APIKeyCreateResponse): the raw key, shown once. */
+export interface ApiKeyCreated {
+  id: number;
+  label: string;
+  api_key: string;
+  created_at: string;
 }
 
 export interface AuditLog {

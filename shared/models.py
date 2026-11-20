@@ -455,12 +455,16 @@ class KeycloakEnvState(str, Enum):
 class KeycloakAuthWarning(str, Enum):
     """Codes stored in Application.auth_warnings. The API returns them as strings.
     The first three describe the last activation attempt and are cleared when an
-    activation succeeds; the envFrom one is about the onboarded repo's chart.
+    activation succeeds; the envFrom one is about the onboarded repo's chart; the
+    last one about the redirect URIs update that follows an expose toggle.
     """
     INSTANCE_UNAVAILABLE = "keycloak_instance_unavailable"  # no usable instance, or Vault unreachable
     PROVISIONING_FAILED = "keycloak_provisioning_failed"    # realm/client/Vault write failed — retry completes it
     OIDC_KEYS_CONFLICT = "oidc_keys_conflict"               # the app already defines OIDC_* itself
     CHART_MISSING_ENVFROM = "chart_missing_envfrom"         # chart doesn't consume {app_slug}-env (onboarded)
+    # The clients' redirect URIs could not follow an expose toggle (Keycloak down):
+    # login from the public URL may fail. Cleared by the next successful sync.
+    REDIRECT_URIS_OUT_OF_SYNC = "keycloak_redirect_uris_out_of_sync"
 
 
 class KeycloakEnvStatus(BaseModel):
@@ -593,6 +597,9 @@ class ClusterConnectionResponse(ClusterConnectionBase):
     updated_at: Optional[datetime] = None
     # Nombre d'applications qui ciblent ce cluster (bloque la suppression si > 0).
     app_count: int = 0
+    # Calculé par le backend (PUBLIC_EXPOSURE_CLUSTERS) : le DNS public atteint-il ce
+    # cluster ? Sinon, l'exposition internet (expose=true) y est refusée.
+    supports_public_exposure: bool = False
 
     @field_validator("provider", mode="before")
     @classmethod

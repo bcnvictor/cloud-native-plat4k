@@ -15,7 +15,7 @@ import { useAppMetrics } from '@/hooks/useAppMetrics';
 import { useAppStatus } from '@/hooks/useAppStatus';
 import { useAppScaleState } from '@/hooks/useAppScaleState';
 import { useMetricUrl } from '@/hooks/useMonitoringConfig';
-import { appUrl } from '@/utils/appUrls';
+import { appUrl, portForwardCommand } from '@/utils/appUrls';
 import { clustersApi } from '@/api/clusters';
 import { isPrivateCluster } from '@/utils/clusterUtils';
 import { cn } from '@/utils/cn';
@@ -310,7 +310,7 @@ export function OverviewTab() {
                 Local access via port-forward:
               </p>
               <code className="text-xs font-mono bg-background-subtle border border-border px-2.5 py-1.5 rounded block text-foreground select-all">
-                kubectl port-forward svc/{app?.slug ?? '<slug>'} 8080:80
+                {portForwardCommand(app?.slug)}
               </code>
             </div>
           )}
