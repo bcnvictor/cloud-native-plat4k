@@ -19,7 +19,8 @@ import { appUrl, portForwardCommand } from '@/utils/appUrls';
 import { clustersApi } from '@/api/clusters';
 import { isPrivateCluster } from '@/utils/clusterUtils';
 import { cn } from '@/utils/cn';
-import { AskAIButton } from '@/components/AskAIButton';
+import { DoctorCard } from '@/components/doctor/DoctorCard';
+import { DoctorLaunchButton } from '@/components/doctor/DoctorLaunchButton';
 import type { ArgoEnvStatus, AppScaleStateItem } from '@/types';
 
 function SyncBadge({ status }: { status: string | null | undefined }) {
@@ -93,7 +94,7 @@ function EnvCard({ title, envKey, appId, appName, argo, scaleState }: EnvCardPro
     ? `Stopped${scaleState?.stop_reason ? ` (${scaleState.stop_reason})` : ''}${scaleState?.stopped_at ? ` · ${timeAgo(scaleState.stopped_at)}` : ''}`
     : 'Running';
 
-  // Santé ArgoCD anormale (hors arrêt volontaire) : proposer un diagnostic IA.
+  // Santé ArgoCD anormale (hors arrêt volontaire) : proposer le CNP Doctor sur cet environnement.
   const unhealthy =
     !isStopped && !!argo?.health_status && ['Degraded', 'Missing'].includes(argo.health_status);
 
@@ -104,12 +105,7 @@ function EnvCard({ title, envKey, appId, appName, argo, scaleState }: EnvCardPro
           <IconRefresh size={14} />
           {title}
         </span>
-        {unhealthy && (
-          <AskAIButton
-            label="Expliquer"
-            question={`Pourquoi l'environnement ${envKey} de ${appName} est-il ${argo?.health_status} ? Diagnostique avec les logs et les pods.`}
-          />
-        )}
+        {unhealthy && <DoctorLaunchButton appId={appId} env={envKey} appName={appName} />}
       </h2>
       {!argo || (argo.error && !argo.sync_status) ? (
         <p className="text-xs text-muted-foreground flex items-center gap-1.5 mb-3">
@@ -245,6 +241,9 @@ export function OverviewTab() {
           <EnvCard title="Dev environment" envKey="dev" appId={app.id} appName={app.name} argo={runtimeStatus?.argocd_dev} scaleState={scale?.dev} />
         </div>
       )}
+
+      {/* CNP Doctor : diagnostic guidé d'un environnement */}
+      {app?.id && <DoctorCard appId={app.id} appName={app.name} />}
 
       {/* Cloud target */}
       {cluster && (

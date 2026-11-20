@@ -44,6 +44,8 @@ interface DoctorState {
   diagnose: (appId: number, env: DoctorEnv) => Promise<void>;
   reset: (appId: number, env: DoctorEnv) => void;
   requestFocus: (appId: number, env: DoctorEnv) => void;
+  /** La carte a traité la demande `nonce` : elle ne sera pas rejouée au prochain affichage. */
+  clearFocus: (nonce: number) => void;
 
   /** Choix manuel (interrupteur du panneau) : prioritaire sur la bascule automatique. */
   setModeManual: (mode: RobotMode) => void;
@@ -107,6 +109,10 @@ export const useDoctorStore = create<DoctorState>((set, get) => ({
     }),
 
   requestFocus: (appId, env) => set({ focus: { appId, env, nonce: Date.now() } }),
+
+  clearFocus: (nonce) => {
+    if (get().focus?.nonce === nonce) set({ focus: null });
+  },
 
   setModeManual: (mode) => set({ mode, manual: true }),
 

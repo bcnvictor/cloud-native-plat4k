@@ -80,6 +80,17 @@ describe('store du CNP Doctor', () => {
     expect(useDoctorStore.getState().mode).toBe('doctor');
   });
 
+  it("n'efface la demande de focus que si c'est celle qui a été traitée", () => {
+    vi.spyOn(Date, 'now').mockReturnValueOnce(10).mockReturnValueOnce(20);
+    const s = useDoctorStore.getState();
+    s.requestFocus(7, 'prod');
+    s.requestFocus(7, 'dev');                // une nouvelle demande arrive entre-temps
+    s.clearFocus(10);
+    expect(useDoctorStore.getState().focus?.env).toBe('dev');
+    s.clearFocus(20);
+    expect(useDoctorStore.getState().focus).toBeNull();
+  });
+
   it('émet une nouvelle demande de focus à chaque appel', () => {
     vi.spyOn(Date, 'now').mockReturnValueOnce(1).mockReturnValueOnce(2);
     useDoctorStore.getState().requestFocus(7, 'prod');

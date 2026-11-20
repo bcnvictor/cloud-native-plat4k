@@ -1,9 +1,21 @@
 import { matchPath } from 'react-router-dom';
-import type { ChatPageContext } from '@/types';
+import type { ChatPageContext, DoctorEnv } from '@/types';
+import type { RobotMode } from '@/store/doctor';
 
 export interface Suggestion {
   label: string;
   question: string;
+}
+
+/** Puce du mode docteur : lancer un diagnostic, ou poser une question au chat. */
+export type DoctorSuggestion =
+  | { kind: 'diagnose'; label: string; env: DoctorEnv }
+  | ({ kind: 'ask' } & Suggestion);
+
+export interface DoctorSuggestions {
+  /** Phrase d'explication affichée au-dessus des puces (hors page d'application). */
+  hint: string | null;
+  items: DoctorSuggestion[];
 }
 
 /** Déduit groupe / app courants de l'URL (le panneau vit hors des routes filles). */
@@ -44,6 +56,73 @@ export function suggestionsFor(page: ChatPageContext): Suggestion[] {
     { label: 'État des apps', question: 'Quel est l’état de mes applications ?' },
     { label: 'Créer une app', question: 'Comment créer une nouvelle application ?' },
   ];
+}
+
+/**
+ * Suggestions du mode docteur : sur une application, un diagnostic par environnement
+ * plus une question au chat ; ailleurs, comment lancer un diagnostic.
+ */
+export function doctorSuggestionsFor(page: ChatPageContext): DoctorSuggestions {
+  if (page.app_slug) {
+    return {
+      hint: null,
+      items: [
+        { kind: 'diagnose', label: 'Diagnostiquer prod', env: 'prod' },
+        { kind: 'diagnose', label: 'Diagnostiquer dev', env: 'dev' },
+        {
+          kind: 'ask',
+          label: "Que s'est-il passé récemment ?",
+          question: "Que s'est-il passé récemment sur cette application ?",
+        },
+      ],
+    };
+  }
+  return {
+    hint: 'Ouvre une application pour lancer un diagnostic.',
+    items: [
+      {
+        kind: 'ask',
+        label: 'Quelles apps sont en erreur ?',
+        question: 'Quelles applications sont en erreur en ce moment ?',
+      },
+    ],
+  };
+}
+
+export const CHAT_GREETING =
+  "Salut 👋 Je suis l'assistant Plat4k. Pose-moi une question sur tes applications ou la plateforme.";
+
+export const DOCTOR_GREETING =
+  'Bonjour, je suis le CNP Doctor. Ouvre une application et je cherche ce qui ne va pas : ' +
+  'je regarde les déploiements, les conteneurs, les logs et le pipeline.';
+
+/** Premier message du fil selon le mode du robot. */
+export function greetingFor(mode: RobotMode, appName?: string | null): string {
+  if (mode === 'chat') return CHAT_GREETING;
+  return appName ? modeNotice('doctor', appName) : DOCTOR_GREETING;
+}
+
+/** Message ajouté au fil quand le robot change de mode (la conversation est conservée). */
+export function modeNotice(mode: RobotMode, appName?: string | null): string {
+  if (mode === 'chat') {
+    return 'Retour en mode assistant. Pose-moi une question sur tes applications ou la plateforme.';
+  }
+  if (appName) {
+    return (
+      `CNP Doctor en consultation sur **${appName}**. Choisis l'environnement à diagnostiquer : ` +
+      'je regarde les déploiements, les conteneurs, les logs et le pipeline.'
+    );
+  }
+  return DOCTOR_GREETING;
+}
+
+/**
+ * Messages réellement échangés avec le modèle : on écarte les messages locaux
+ * (accueil, changement de mode) et les diagnostics, qui ne doivent jamais partir
+ * dans l'historique du chat. À appliquer avant `toChatHistory`.
+ */
+export function chatMessagesOnly<T extends { kind?: string }>(messages: T[]): T[] {
+  return messages.filter((m) => m.kind !== 'local' && m.kind !== 'diagnosis');
 }
 
 /** Une source par fichier (les sections d'une même page sont regroupées). */
