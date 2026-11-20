@@ -321,3 +321,31 @@ def test_degraded_event_before_the_deploy_lowers_confidence():
                                       at=deployed - timedelta(hours=1), payload={})])
     _, timeline = _verdict(s)
     assert timeline.correlation == DoctorConfidence.MOYENNE
+
+
+def test_errors_left_by_the_previous_version_do_not_make_a_rollback_unstable():
+    """Après un rollback, Loki garde une heure les erreurs des anciens pods : elles ne comptent plus."""
+    rolled_back_at = NOW - timedelta(minutes=10)
+    s = _healthy(
+        argo=ArgoState(available=True, sync="Synced", health="Healthy", image_tag="a1b2c3d4",
+                       history=[_dep(11, GOOD, NOW - timedelta(days=3)), _dep(12, BAD, NOW - timedelta(minutes=30)),
+                                _dep(13, GOOD, rolled_back_at)]),
+        logs=LogsState(available=True, total=50, errors=[
+            LogLine(at=rolled_back_at - timedelta(minutes=5), level="ERROR", msg="KeyError: 'PAYMENT_API_URL'")]),
+    )
+    s.k8s.warnings = [WarningEvent(reason="BackOff", message="old pod", count=9, object="demo-shop-old",
+                                   first_seen=rolled_back_at - timedelta(minutes=19),
+                                   last_seen=rolled_back_at - timedelta(minutes=4))]
+    verdict, timeline = _verdict(s)
+    assert verdict == DoctorVerdict.HEALTHY
+    labels = [e.label for e in build_ledger(s, verdict, timeline, None)]
+    assert "Aucune ligne d'erreur depuis le dernier déploiement" in labels
+    assert not any("PAYMENT_API_URL" in label or "BackOff" in label for label in labels)
+
+
+def test_a_deployment_on_another_day_reads_naturally():
+    s = _healthy(argo=ArgoState(available=True, sync="Synced", health="Healthy", image_tag="a1b2c3d4",
+                                history=[_dep(11, GOOD, NOW - timedelta(days=3))]))
+    labels = [e.label for e in build_ledger(s, DoctorVerdict.UNSTABLE, build_timeline(s, False), None)]
+    deploy = next(label for label in labels if label.startswith("Dernier déploiement"))
+    assert " à le " not in deploy and " le 13/11 à " in deploy

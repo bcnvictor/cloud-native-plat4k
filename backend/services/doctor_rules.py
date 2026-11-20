@@ -168,6 +168,12 @@ def fmt_clock(dt: datetime, now: Optional[datetime] = None) -> str:
     return clock if local.date() == today else f"le {local.day:02d}/{local.month:02d} à {clock}"
 
 
+def at_clock(dt: datetime, now: Optional[datetime] = None) -> str:
+    """« à 14 h 01 » aujourd'hui, « le 17/11 à 18 h 31 » un autre jour."""
+    text = fmt_clock(dt, now)
+    return text if text.startswith("le ") else f"à {text}"
+
+
 def fmt_duration(seconds: float) -> str:
     seconds = max(0, int(seconds))
     if seconds < 90:
@@ -206,12 +212,33 @@ def is_failing(signals: Signals) -> bool:
     return signals.argo.available and signals.argo.health in ("Degraded", "Missing")
 
 
+def _since_current_deploy(signals: Signals) -> Optional[datetime]:
+    """Début de la version en service (dernier déploiement), à la tolérance d'horloge près."""
+    history = signals.argo.history
+    return history[-1].deployed_at - timedelta(seconds=_CLOCK_SKEW_S) if history else None
+
+
+def current_errors(signals: Signals) -> list:
+    """Lignes d'erreur émises depuis le dernier déploiement (toutes, sans historique)."""
+    since = _since_current_deploy(signals)
+    return [line for line in signals.logs.errors if since is None or line.at >= since]
+
+
+def current_warnings(signals: Signals) -> list:
+    """Événements Warning encore actifs depuis le dernier déploiement."""
+    since = _since_current_deploy(signals)
+    return [
+        w for w in signals.k8s.warnings
+        if since is None or (w.last_seen or w.first_seen) is None or (w.last_seen or w.first_seen) >= since
+    ]
+
+
 def _restarts(signals: Signals) -> int:
     return sum(c.restarts for p in signals.k8s.pods for c in p.containers)
 
 
 def _is_instable(signals: Signals) -> bool:
-    return bool(signals.logs.errors) or _restarts(signals) > 0
+    return bool(current_errors(signals)) or _restarts(signals) > 0
 
 
 def _is_deploying(signals: Signals) -> bool:
@@ -389,7 +416,7 @@ def decide_verdict(signals: Signals, timeline: Optional[Timeline]) -> DoctorVerd
 def _log_groups(signals: Signals) -> list[tuple[str, int, datetime]]:
     """Messages d'erreur distincts : (message, occurrences, première apparition), les plus fréquents d'abord."""
     groups: dict[str, list] = {}
-    for line in signals.logs.errors:
+    for line in current_errors(signals):
         key = line.msg.strip()[:300]
         entry = groups.setdefault(key, [0, line.at])
         entry[0] += 1
@@ -430,7 +457,7 @@ def build_ledger(
             if timeline.onset_delay_s is not None else ""
         )
         add(Evidence(DoctorEvidenceSource.DEPLOYMENTS,
-                     f"Déploiement de {dep.revision} en {env} à {fmt_clock(dep.deployed_at, now)}{delay}",
+                     f"Déploiement de {dep.revision} en {env} {at_clock(dep.deployed_at, now)}{delay}",
                      at=dep.deployed_at, key=True))
         if timeline.last_healthy is not None and timeline.last_healthy_ran_for_s is not None:
             prev = timeline.last_healthy
@@ -441,7 +468,7 @@ def build_ledger(
     elif timeline is not None and signals.argo.history:
         dep = signals.argo.history[-1]
         add(Evidence(DoctorEvidenceSource.DEPLOYMENTS,
-                     f"Dernier déploiement en {env} : {dep.revision} à {fmt_clock(dep.deployed_at, now)}",
+                     f"Dernier déploiement en {env} : {dep.revision} {at_clock(dep.deployed_at, now)}",
                      at=dep.deployed_at))
 
     # Kubernetes.
@@ -452,7 +479,7 @@ def build_ledger(
         if c.waiting_message:
             parts.append(c.waiting_message)
         if c.last_terminated_reason:
-            when = f" à {fmt_clock(c.last_finished_at, now)}" if c.last_finished_at else ""
+            when = f" {at_clock(c.last_finished_at, now)}" if c.last_finished_at else ""
             parts.append(f"Dernier arrêt : {c.last_terminated_reason} (code {c.last_exit_code}){when}.")
         hint = _REASON_HINTS.get(reason)
         if hint:
@@ -468,7 +495,7 @@ def build_ledger(
         add(Evidence(DoctorEvidenceSource.KUBERNETES,
                      f"{k8s.replicas_ready}/{k8s.replicas_desired} réplicas prêts, {suffix}",
                      key=verdict in (DoctorVerdict.HEALTHY, DoctorVerdict.DEPLOYING) or (restarts > 0 and not failing)))
-        for w in k8s.warnings[:3]:
+        for w in current_warnings(signals)[:3]:
             add(Evidence(DoctorEvidenceSource.KUBERNETES,
                          f"Événement {w.reason} ×{w.count} sur {w.object or 'le déploiement'}",
                          detail=w.message or None, at=w.first_seen))
@@ -478,10 +505,11 @@ def build_ledger(
     if logs.available:
         groups = _log_groups(signals)
         if not groups:
-            add(Evidence(DoctorEvidenceSource.LOGS, "Aucune ligne d'erreur sur la dernière heure",
+            quiet = "depuis le dernier déploiement" if _since_current_deploy(signals) else "sur la dernière heure"
+            add(Evidence(DoctorEvidenceSource.LOGS, f"Aucune ligne d'erreur {quiet}",
                          key=verdict == DoctorVerdict.HEALTHY))
         tail = "\n".join(
-            f"{fmt_clock(line.at, now)} [{line.level}] {line.msg}" for line in logs.errors[-8:]
+            f"{fmt_clock(line.at, now)} [{line.level}] {line.msg}" for line in current_errors(signals)[-8:]
         )
         for i, (msg, count, first) in enumerate(groups[:4]):
             add(Evidence(DoctorEvidenceSource.LOGS,
@@ -539,7 +567,7 @@ def build_ledger(
     for event in signals.events:
         if event.type in labels and event.at is not None and shown < 3:
             add(Evidence(DoctorEvidenceSource.EVENTS,
-                         f"{labels[event.type]} à {fmt_clock(event.at, now)}", at=event.at))
+                         f"{labels[event.type]} {at_clock(event.at, now)}", at=event.at))
             shown += 1
 
     out = out[:_MAX_EVIDENCE]
