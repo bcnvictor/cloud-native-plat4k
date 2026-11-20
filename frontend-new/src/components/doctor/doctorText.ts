@@ -285,3 +285,41 @@ export function prefersReducedMotion(): boolean {
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
   );
 }
+
+/** Premier ancêtre qui défile verticalement (la zone `main` de l'application), ou null. */
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if (/(auto|scroll)/.test(overflowY) && node.scrollHeight > node.clientHeight) return node;
+  }
+  return null;
+}
+
+/** Position verticale d'un élément dans la mise en page (px CSS, sans le défilement). */
+function layoutTop(el: HTMLElement): number {
+  let top = 0;
+  for (let node: HTMLElement | null = el; node; node = node.offsetParent as HTMLElement | null) {
+    top += node.offsetTop;
+  }
+  return top;
+}
+
+/**
+ * Amène `el` sous l'en-tête collant de sa zone de défilement.
+ *
+ * `scrollIntoView` se trompe sous `body { zoom: 1.25 }` (il défile 1,25 fois trop peu) :
+ * la position est calculée ici en px CSS de mise en page, comme `scrollTop`.
+ */
+export function bringIntoView(el: HTMLElement, behavior: ScrollBehavior): void {
+  const container = scrollParent(el);
+  if (!container) {
+    if (typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'start', behavior });
+    return;
+  }
+  const sticky = [...container.querySelectorAll<HTMLElement>('.sticky')].find(
+    (node) => getComputedStyle(node).position === 'sticky' && !node.contains(el)
+  );
+  const offset = (sticky?.offsetHeight ?? 0) + 16;
+  const top = layoutTop(el) - layoutTop(container) - offset;
+  container.scrollTo({ top: Math.max(0, top), behavior });
+}

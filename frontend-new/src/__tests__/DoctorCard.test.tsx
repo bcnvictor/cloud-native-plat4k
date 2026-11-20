@@ -144,7 +144,7 @@ describe('DoctorCard', () => {
 
     act(() => useDoctorStore.getState().requestFocus(7, 'dev'));
     await waitFor(() => expect(radio('dev').getAttribute('aria-checked')).toBe('true'));
-    expect(scroll).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' });
+    expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
     expect(document.activeElement).toBe(heading);
     expect(useDoctorStore.getState().focus).toBeNull();
   });
@@ -160,7 +160,7 @@ describe('DoctorCard', () => {
     await screen.findByRole('heading', { name: 'CNP Doctor' });
 
     act(() => useDoctorStore.getState().requestFocus(7, 'prod'));
-    await waitFor(() => expect(scroll).toHaveBeenCalledWith({ block: 'center', behavior: 'auto' }));
+    await waitFor(() => expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'auto' }));
     Reflect.deleteProperty(window, 'matchMedia');
   });
 });

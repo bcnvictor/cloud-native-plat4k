@@ -504,6 +504,7 @@ def build_ledger(
     logs = signals.logs
     if logs.available:
         groups = _log_groups(signals)
+        window = "depuis le dernier déploiement" if _since_current_deploy(signals) else "sur la dernière heure"
         if not groups:
             quiet = "depuis le dernier déploiement" if _since_current_deploy(signals) else "sur la dernière heure"
             add(Evidence(DoctorEvidenceSource.LOGS, f"Aucune ligne d'erreur {quiet}",
@@ -513,7 +514,7 @@ def build_ledger(
         )
         for i, (msg, count, first) in enumerate(groups[:4]):
             add(Evidence(DoctorEvidenceSource.LOGS,
-                         f"{msg} (×{count} sur la dernière heure)" if count > 1 else msg,
+                         f"{msg} (×{count} {window})" if count > 1 else msg,
                          detail=tail if i == 0 else None, at=first, key=i == 0))
 
     # ArgoCD.

@@ -144,7 +144,11 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
           ? { title: `Rollback ${env} lancé`, description: `La version ${target} est en cours de déploiement.` }
           : { title: `Relance de ${env} lancée`, description: 'Les réplicas sont remis en service.' }
       );
-      queryClient.invalidateQueries({ queryKey: ['app-status', appId] });
+      // L'état live (/status) met à jour le statut enregistré de l'application ; on relit
+      // ensuite l'application pour que l'en-tête et le bandeau d'erreur suivent sans attendre.
+      void queryClient
+        .invalidateQueries({ queryKey: ['app-status', appId] })
+        .then(() => queryClient.invalidateQueries({ queryKey: ['app'] }));
       queryClient.invalidateQueries({ queryKey: ['app-history', appId] });
       if (!isRollback) queryClient.invalidateQueries({ queryKey: ['app-scale-state', appId] });
       setError(null);

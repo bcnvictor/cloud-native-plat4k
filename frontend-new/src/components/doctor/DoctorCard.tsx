@@ -11,7 +11,7 @@ import type { AppRuntimeStatus, ArgoEnvStatus, DoctorEnv } from '@/types';
 import { cn } from '@/utils/cn';
 import { DoctorDiagnosisView } from './DoctorDiagnosisView';
 import { DoctorProgress } from './DoctorProgress';
-import { prefersReducedMotion } from './doctorText';
+import { bringIntoView, prefersReducedMotion } from './doctorText';
 
 const ENVS: DoctorEnv[] = ['prod', 'dev'];
 
@@ -115,9 +115,7 @@ export function DoctorCard({ appId, appName }: { appId: number; appName: string 
     if (!visible || !focus || focus.appId !== appId) return;
     setChosen(focus.env);
     const el = wrapper.current;
-    if (el && typeof el.scrollIntoView === 'function') {
-      el.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-    }
+    if (el) bringIntoView(el, prefersReducedMotion() ? 'auto' : 'smooth');
     titleRef.current?.focus({ preventScroll: true });
     // Demande traitée : ne pas la rejouer au prochain affichage de l'onglet.
     useDoctorStore.getState().clearFocus(focus.nonce);
