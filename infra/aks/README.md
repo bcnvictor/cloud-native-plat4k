@@ -1,8 +1,9 @@
 # cnp-aks — provisioning et rebuild
 
 Cluster AKS `cnp-aks` (ClusterConnection CNP **id 2**, provider `azure`), Sweden Central.
-Terraform ne crée que le resource group, le cluster et ingress-nginx ; le reste est installé
-à la main (`helm`/`kubectl`), dans l'ordre ci-dessous. Dernier rebuild complet : 2026-11-19
+Terraform ne crée que le resource group, le cluster, ingress-nginx et cert-manager (+ ses
+ClusterIssuers Let's Encrypt) ; le reste est installé à la main (`helm`/`kubectl`), dans
+l'ordre ci-dessous. Dernier rebuild complet : 2026-11-19
 (subscription précédente désactivée, cluster recréé sur la subscription de `terraform.tfvars`).
 
 ## 1. Terraform
@@ -16,6 +17,33 @@ az aks get-credentials -g cnp-rg -n cnp-aks --overwrite-existing   # contexte cn
 - State local (`terraform.tfstate`, non commité) : le garder chez la personne qui a appliqué.
 - Quota Azure for Students : 6 vCPU par région → `node_max_count = 3` avec des B2ls_v2.
 - Coût : ~90 $/mois allumé. Arrêter hors usage : `infra/scripts/aks-stop.sh` / `aks-start.sh`.
+
+### HTTPS des apps exposées : cert-manager
+
+Ordre imposé par les `depends_on` : ingress-nginx → `helm_release.cert_manager` (chart
+`jetstack/cert-manager`, CRDs installées et conservées par le chart : `crds.enabled`,
+`crds.keep`) → `helm_release.cluster_issuers` (chart local partagé
+`infra/cert-manager/cluster-issuers/` : ClusterIssuers `letsencrypt-prod` et
+`letsencrypt-staging`, ACME HTTP-01 via la classe `nginx`, e-mail `var.letsencrypt_email`).
+Chart local plutôt que `kubernetes_manifest` : la CRD `ClusterIssuer` n'existe pas au plan.
+Modifier ce chart impose d'incrémenter `version` dans son `Chart.yaml`.
+
+Sur un cluster existant (state local de la personne qui a appliqué) :
+
+```bash
+cd infra/aks
+terraform init -upgrade
+terraform plan -target=helm_release.cluster_issuers   # attendu : 2 to add (cert_manager, cluster_issuers)
+terraform apply -target=helm_release.cluster_issuers
+kubectl --context cnp-aks get clusterissuer           # letsencrypt-prod / -staging READY=True
+```
+
+`-target` embarque aussi toutes les dépendances de `cluster_issuers` (cert-manager, mais
+aussi ingress-nginx, le cluster et le resource group) : n'appliquer que si le plan ne montre
+**que** ces 2 ajouts — toute autre ligne est une dérive à traiter à part. Le cluster doit être
+démarré (`aks-start.sh`) : les providers helm/kubernetes s'y connectent. HTTP-01 exige que le wildcard DNS (§2) pointe sur l'IP du LoadBalancer et
+que le port 80 y soit ouvert (c'est le cas par défaut). Fonctionnement côté apps, rate limits
+et migration des apps déjà exposées : `docs/guides/operations.md` §9.
 
 ## 2. DNS (Cloudflare)
 

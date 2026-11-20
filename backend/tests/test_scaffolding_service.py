@@ -55,4 +55,17 @@ def test_values_yaml_with_keycloak_service_does_not_add_postgresql():
     assert "postgresql" not in values
 
 
+def test_ingress_values_enable_tls_when_exposed():
+    """Exposed apps are served over HTTPS (cert-manager Certificate written to gitops)."""
+    values = yaml.safe_load(_service()._build_ingress_values(True, "dev.my-api.example.me"))
+    assert values["ingress"] == {
+        "enabled": True, "className": "nginx", "host": "dev.my-api.example.me", "tls": True,
+    }
+
+
+def test_ingress_values_disable_tls_when_not_exposed():
+    values = yaml.safe_load(_service()._build_ingress_values(False, "dev.my-api.example.me"))
+    assert values["ingress"] == {"enabled": False, "className": "nginx", "host": "", "tls": False}
+
+
 

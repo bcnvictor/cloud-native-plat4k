@@ -365,7 +365,12 @@ class GitLabClient:
         cluster_name: str = "aks",
         branch: str = "main",
     ) -> None:
-        """Patch ingress.{enabled,host,tls} in apps/{cluster_name}/{app_slug}/values-{env_name}.yaml in the gitops repo."""
+        """Patch ingress.{enabled,host,tls} in apps/{cluster_name}/{app_slug}/values-{env_name}.yaml
+        in the gitops repo, and keep the app's cert-manager Certificate in sync in the same
+        commit: written to platform/{env}/certificate.yaml when exposed (ingress.tls=true —
+        HTTPS is required by the Keycloak PKCE login of SPAs), deleted when exposure is
+        turned off.
+        """
         file_path = f"apps/{cluster_name}/{app_slug}/values-{env_name}.yaml"
         project = self.get_project(project_path)
         action = "update"
@@ -379,16 +384,93 @@ class GitLabClient:
         data["ingress"]["enabled"] = enabled
         data["ingress"]["className"] = "nginx"
         data["ingress"]["host"] = host if enabled else ""
-        data["ingress"]["tls"] = False
+        data["ingress"]["tls"] = enabled
+        actions = [{
+            "action": action,
+            "file_path": file_path,
+            "content": yaml.safe_dump(data, default_flow_style=False, sort_keys=False),
+        }]
+        actions += self._gitops_certificate_actions(
+            project_path, app_slug, env_name, enabled, host, cluster_name, branch,
+        )
         project.commits.create({
             "branch": branch,
             "commit_message": f"chore(gitops): {'enable' if enabled else 'disable'} ingress for {app_slug} ({env_name})",
-            "actions": [{
-                "action": action,
-                "file_path": file_path,
-                "content": yaml.safe_dump(data, default_flow_style=False, sort_keys=False),
-            }],
+            "actions": actions,
         })
+
+    def upsert_gitops_certificate(
+        self,
+        project_path: str,
+        app_slug: str,
+        env_name: str,
+        enabled: bool,
+        host: str,
+        cluster_name: str = "aks",
+        branch: str = "main",
+    ) -> None:
+        """Write (enabled) or delete (disabled) apps/{cluster}/{app}/platform/{env}/certificate.yaml
+        on its own, for flows that set the ingress values elsewhere (scaffolding writes them
+        into the app repo's chart/values-{env}.yaml). No-op when there is nothing to change.
+        """
+        actions = self._gitops_certificate_actions(
+            project_path, app_slug, env_name, enabled, host, cluster_name, branch,
+        )
+        if not actions:
+            return
+        self.get_project(project_path).commits.create({
+            "branch": branch,
+            "commit_message": f"chore(gitops): {'add' if enabled else 'remove'} TLS certificate for {app_slug} ({env_name})",
+            "actions": actions,
+        })
+
+    @staticmethod
+    def build_certificate_manifest(app_slug: str, env_name: str, host: str) -> dict:
+        """cert-manager Certificate for an exposed app, issued over ACME HTTP-01 by a
+        ClusterIssuer from infra/cert-manager/cluster-issuers. secretName {app_slug}-tls is
+        the Secret the app chart's Ingress references when ingress.tls=true
+        ({{ include "app.name" . }}-tls, app.name being the slug — same convention as the
+        {app_slug}-env Secret of the ExternalSecret)."""
+        return {
+            "apiVersion": "cert-manager.io/v1",
+            "kind": "Certificate",
+            "metadata": {
+                "name": f"{app_slug}-tls",
+                "namespace": env_name,
+            },
+            "spec": {
+                "secretName": f"{app_slug}-tls",
+                "dnsNames": [host],
+                "issuerRef": {
+                    "name": settings.TLS_CLUSTER_ISSUER,
+                    "kind": "ClusterIssuer",
+                    "group": "cert-manager.io",
+                },
+            },
+        }
+
+    def _gitops_certificate_actions(
+        self,
+        project_path: str,
+        app_slug: str,
+        env_name: str,
+        enabled: bool,
+        host: str,
+        cluster_name: str,
+        branch: str,
+    ) -> list[dict]:
+        """Commit actions for platform/{env}/certificate.yaml — the ArgoCD-synced directory
+        that already holds externalsecret.yaml (see upsert_externalsecret)."""
+        file_path = f"apps/{cluster_name}/{app_slug}/platform/{env_name}/certificate.yaml"
+        exists = self.file_exists(project_path, file_path, ref=branch)
+        if not enabled or not host:
+            return [{"action": "delete", "file_path": file_path}] if exists else []
+        manifest = self.build_certificate_manifest(app_slug, env_name, host)
+        return [{
+            "action": "update" if exists else "create",
+            "file_path": file_path,
+            "content": yaml.safe_dump(manifest, default_flow_style=False, sort_keys=False),
+        }]
 
     def upsert_externalsecret(
         self,

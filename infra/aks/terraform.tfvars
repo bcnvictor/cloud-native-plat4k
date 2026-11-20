@@ -12,4 +12,4 @@ node_vm_size        = "Standard_B2ls_v2"
 node_count          = 2
 node_min_count      = 2
 # 3 x 2 vCPU = 6 = quota régional ; 4 nœuds dépasserait le quota
-node_max_count      = 3
+node_max_count = 3

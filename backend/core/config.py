@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     GITLAB_CI_PROJECT: Optional[str] = None     # chemin complet du repo CI (ex: 4k-cnp-2027/cnp-ci-modules)
     # GitOps — URL du dépôt cnp-gitops (injecté dans les .gitlab-ci.yml générés)
     GITOPS_REPO_URL: str = ""  # URL of the cnp-gitops repo; must be set to enable GitOps provisioning
+    # cert-manager ClusterIssuer referenced by the Certificate written for every exposed
+    # app (infra/cert-manager/cluster-issuers). "letsencrypt-staging" to test without
+    # hitting Let's Encrypt production rate limits (untrusted certificates).
+    TLS_CLUSTER_ISSUER: str = "letsencrypt-prod"
 
     # CNP API public URL (used in webhook registration)
     CNP_API_BASE_URL: str = "http://localhost:8000"

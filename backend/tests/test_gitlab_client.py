@@ -124,3 +124,111 @@ def test_upsert_externalsecret_tolerates_missing_vault_path():
 
     target = yaml.safe_load(project.commits.payload["actions"][0]["content"])["spec"]["target"]
     assert target == {"name": "my-app-env", "creationPolicy": "Owner", "deletionPolicy": "Delete"}
+
+
+# --- Ingress + cert-manager Certificate (HTTPS for exposed apps) -------------
+
+_VALUES_DEV = "apps/aks/my-app/values-dev.yaml"
+_CERT_DEV = "apps/aks/my-app/platform/dev/certificate.yaml"
+
+
+def _ingress_client(project, values_yaml: str | None):
+    client = _client_for(project)
+
+    def read_file(_project_path, _file_path, ref="main"):
+        if values_yaml is None:
+            raise GitlabGetError(response_code=404, error_message="not found")
+        return values_yaml
+
+    client.read_file = read_file
+    return client
+
+
+def test_upsert_gitops_ingress_enabled_sets_tls_and_writes_certificate():
+    project = _FakeProjectWithFiles(existing_paths={_VALUES_DEV})
+    client = _ingress_client(project, "replicas: 2\n")
+
+    client.upsert_gitops_ingress("group/gitops", "my-app", "dev", True, "dev.my-app.example.me", cluster_name="aks")
+
+    actions = project.commits.payload["actions"]
+    assert [(a["action"], a["file_path"]) for a in actions] == [
+        ("update", _VALUES_DEV),
+        ("create", _CERT_DEV),
+    ]
+    values = yaml.safe_load(actions[0]["content"])
+    assert values["replicas"] == 2
+    assert values["ingress"] == {
+        "enabled": True, "className": "nginx", "host": "dev.my-app.example.me", "tls": True,
+    }
+    cert = yaml.safe_load(actions[1]["content"])
+    assert cert["apiVersion"] == "cert-manager.io/v1"
+    assert cert["kind"] == "Certificate"
+    assert cert["metadata"] == {"name": "my-app-tls", "namespace": "dev"}
+    # secretName must match the chart's Ingress tls block ({{ include "app.name" . }}-tls)
+    assert cert["spec"]["secretName"] == "my-app-tls"
+    assert cert["spec"]["dnsNames"] == ["dev.my-app.example.me"]
+    assert cert["spec"]["issuerRef"] == {
+        "name": "letsencrypt-prod", "kind": "ClusterIssuer", "group": "cert-manager.io",
+    }
+
+
+def test_upsert_gitops_ingress_enabled_updates_existing_certificate():
+    project = _FakeProjectWithFiles(existing_paths={_VALUES_DEV, _CERT_DEV})
+    client = _ingress_client(project, "ingress: {}\n")
+
+    client.upsert_gitops_ingress("group/gitops", "my-app", "dev", True, "dev.my-app.example.me", cluster_name="aks")
+
+    assert ("update", _CERT_DEV) in [(a["action"], a["file_path"]) for a in project.commits.payload["actions"]]
+
+
+def test_upsert_gitops_ingress_disabled_clears_tls_and_deletes_certificate():
+    project = _FakeProjectWithFiles(existing_paths={_VALUES_DEV, _CERT_DEV})
+    client = _ingress_client(project, "ingress:\n  enabled: true\n  host: dev.my-app.example.me\n  tls: true\n")
+
+    client.upsert_gitops_ingress("group/gitops", "my-app", "dev", False, "", cluster_name="aks")
+
+    actions = project.commits.payload["actions"]
+    assert yaml.safe_load(actions[0]["content"])["ingress"] == {
+        "enabled": False, "host": "", "tls": False, "className": "nginx",
+    }
+    assert actions[1] == {"action": "delete", "file_path": _CERT_DEV}
+
+
+def test_upsert_gitops_ingress_disabled_without_certificate_only_touches_values():
+    project = _FakeProjectWithFiles(existing_paths=set())
+    client = _ingress_client(project, None)
+
+    client.upsert_gitops_ingress("group/gitops", "my-app", "dev", False, "", cluster_name="aks")
+
+    actions = project.commits.payload["actions"]
+    assert [(a["action"], a["file_path"]) for a in actions] == [("create", _VALUES_DEV)]
+
+
+def test_certificate_uses_configured_cluster_issuer(monkeypatch):
+    from backend.core.config import settings
+
+    monkeypatch.setattr(settings, "TLS_CLUSTER_ISSUER", "letsencrypt-staging")
+    manifest = GitLabClient.build_certificate_manifest("my-app", "prod", "my-app.example.me")
+    assert manifest["spec"]["issuerRef"]["name"] == "letsencrypt-staging"
+    assert manifest["metadata"]["namespace"] == "prod"
+
+
+def test_upsert_gitops_certificate_writes_only_the_certificate():
+    project = _FakeProjectWithFiles(existing_paths=set())
+    client = _client_for(project)
+
+    client.upsert_gitops_certificate("group/gitops", "my-app", "prod", True, "my-app.example.me", cluster_name="k3s")
+
+    actions = project.commits.payload["actions"]
+    assert len(actions) == 1
+    assert actions[0]["action"] == "create"
+    assert actions[0]["file_path"] == "apps/k3s/my-app/platform/prod/certificate.yaml"
+
+
+def test_upsert_gitops_certificate_disabled_and_absent_is_a_noop():
+    project = _FakeProjectWithFiles(existing_paths=set())
+    client = _client_for(project)
+
+    client.upsert_gitops_certificate("group/gitops", "my-app", "dev", False, "", cluster_name="aks")
+
+    assert project.commits.payload is None

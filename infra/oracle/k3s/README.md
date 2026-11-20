@@ -164,8 +164,49 @@ Pour qu'une app soit joignable depuis Internet, trois étapes restent hors Terra
 2. **DNS** (Cloudflare) : le wildcard `*.cloud-native-plat4k.me` pointe vers l'ingress
    d'AKS. Chaque app exposée sur k3s a besoin de ses enregistrements A, en DNS only :
    `<slug>` et `dev.<slug>` vers l'IP publique de la VM.
-3. **HTTPS** : pas encore de cert-manager sur k3s. Une SPA avec Keycloak (PKCE) a besoin
-   d'une origine HTTPS (Web Crypto) : en HTTP, la page s'affiche mais le login échoue.
+3. **HTTPS** : cert-manager (ci-dessous). Une SPA avec Keycloak (PKCE) a besoin d'une
+   origine HTTPS (Web Crypto) : en HTTP, la page s'affiche mais le login échoue.
+
+### cert-manager et ClusterIssuers Let's Encrypt (Terraform)
+
+Même installation qu'AKS, dans le même root que ingress-nginx (`main.tf`), **après** lui :
+
+- `helm_release.cert_manager` : chart `jetstack/cert-manager` (`var.cert_manager_chart_version`),
+  namespace `cert-manager`, CRDs installées par le chart (`crds.enabled=true`,
+  `crds.keep=true` : elles survivent à un `helm uninstall`) ;
+- `helm_release.cluster_issuers` : chart local `infra/cert-manager/cluster-issuers/`
+  (partagé avec `infra/aks`), qui crée `letsencrypt-prod` et `letsencrypt-staging`
+  (ACME HTTP-01, solver Ingress de classe `nginx`, e-mail `var.letsencrypt_email`). Chart
+  local plutôt que `kubernetes_manifest` : la CRD `ClusterIssuer` n'existe pas au moment du
+  plan. Modifier ce chart impose d'incrémenter `version` dans son `Chart.yaml`, sinon
+  Terraform ne voit pas le changement.
+
+```bash
+cd infra/oracle/k3s
+terraform init -upgrade
+terraform plan    # attendu : 2 to add (helm_release.cert_manager, helm_release.cluster_issuers)
+terraform apply
+kubectl --kubeconfig ~/.kube/config-cnp-k3s --context cnp-k3s get clusterissuer   # READY=True x2
+```
+
+Si le plan propose aussi `helm_release.ingress_nginx` **to add** alors que le contrôleur tourne
+déjà (`helm list -n ingress-nginx`), c'est que votre state local ne le connaît pas : l'apply
+échouerait (release déjà existante). Récupérer le `terraform.tfstate` de la personne qui l'a
+appliqué, ou l'importer (n'écrit que dans le state, rien sur le cluster) avant de replanifier :
+
+```bash
+terraform import helm_release.ingress_nginx ingress-nginx/ingress-nginx
+terraform plan    # ingress_nginx : au plus un update in-place (attributs Terraform), puis 2 to add
+```
+
+Les ClusterIssuers sont `READY` dès que le compte ACME est enregistré, mais **aucun certificat
+ne sera émis sur k3s tant que** les étapes 1 et 2 ci-dessus ne sont pas faites : HTTP-01 exige
+que Let's Encrypt joigne `http://<host>/.well-known/acme-challenge/…` sur le **port 80** de
+l'IP publique de la VM, via un DNS qui pointe dessus. cert-manager fait aussi un *self-check*
+depuis le cluster vers cette IP publique : si les `Challenge` restent `pending` avec une erreur
+de self-check alors que l'URL répond depuis l'extérieur, c'est le hairpin NAT OCI (pod → IP
+publique de son propre nœud) qu'il faut examiner. Fonctionnement côté apps et rate limits :
+`docs/guides/operations.md` §9.
 
 ## 8. Réseau Tailscale vers les ClusterIPs (Connector)
 

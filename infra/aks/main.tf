@@ -89,7 +89,7 @@ resource "azurerm_kubernetes_cluster" "cnp" {
   # Réseau : kubenet est suffisant pour un cluster de dev/démo
   # Azure CNI serait nécessaire pour des intégrations réseau Azure avancées
   network_profile {
-    network_plugin = "kubenet"
+    network_plugin    = "kubenet"
     load_balancer_sku = "standard"
   }
 
@@ -108,7 +108,7 @@ resource "helm_release" "ingress_nginx" {
   name             = "ingress-nginx"
   repository       = "https://kubernetes.github.io/ingress-nginx"
   chart            = "ingress-nginx"
-  version          = "4.15.1"  # >= 4.12.1 : CVE-2025-1974 (IngressNightmare), aligné sur k3s
+  version          = "4.15.1" # >= 4.12.1 : CVE-2025-1974 (IngressNightmare), aligné sur k3s
   namespace        = "ingress-nginx"
   create_namespace = true
 
@@ -132,6 +132,52 @@ data "kubernetes_service" "ingress_nginx" {
     namespace = "ingress-nginx"
   }
   depends_on = [helm_release.ingress_nginx]
+}
+
+# ---------------------------------------------------------------------------
+# cert-manager (HTTPS pour les apps exposées)
+# ---------------------------------------------------------------------------
+
+# CNP écrit un Certificate (apps/{cluster}/{app}/platform/{env}/certificate.yaml)
+# pour chaque app exposée ; cert-manager l'obtient de Let's Encrypt en HTTP-01 via
+# ingress-nginx et le range dans le Secret {app}-tls référencé par l'Ingress de
+# l'app. Les CRDs sont installées (et conservées à la désinstallation) par le chart.
+resource "helm_release" "cert_manager" {
+  name             = "cert-manager"
+  repository       = "https://charts.jetstack.io"
+  chart            = "cert-manager"
+  version          = "v1.21.3"
+  namespace        = "cert-manager"
+  create_namespace = true
+
+  set {
+    name  = "crds.enabled"
+    value = "true"
+  }
+
+  set {
+    name  = "crds.keep"
+    value = "true"
+  }
+
+  depends_on = [helm_release.ingress_nginx]
+}
+
+# ClusterIssuers letsencrypt-prod / letsencrypt-staging, livrés en chart local
+# (partagé avec infra/oracle/k3s) : la CRD ClusterIssuer n'existe pas au plan,
+# kubernetes_manifest est donc inutilisable. Le hook startupapicheck de
+# cert-manager fait attendre la release ci-dessus que le webhook réponde.
+resource "helm_release" "cluster_issuers" {
+  name      = "cnp-cluster-issuers"
+  chart     = "${path.module}/../cert-manager/cluster-issuers"
+  namespace = "cert-manager"
+
+  set {
+    name  = "email"
+    value = var.letsencrypt_email
+  }
+
+  depends_on = [helm_release.cert_manager]
 }
 
 # ---------------------------------------------------------------------------
