@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     K8S_IMAGE_PULL_SECRET: Optional[str] = None
     GITLAB_SYNC_INTERVAL_MINUTES: int = 15  # cadence du polling GitLab (membership mirror)
 
+    # Exposition internet (Ingress <slug>.cloud-native-plat4k.me) : noms des clusters
+    # (ClusterConnection.name, séparés par des virgules) que le wildcard DNS public
+    # *.cloud-native-plat4k.me atteint. Sur les autres, un Ingress serait injoignable :
+    # expose=true y est refusé (scaffold, onboard, import, PATCH /apps/{id}/expose).
+    PUBLIC_EXPOSURE_CLUSTERS: str = "cnp-aks"
+
     CLUSTER_HEALTH_INTERVAL: int = 300      # secondes entre deux sondes
     CLUSTER_HEALTH_FAILURE_THRESHOLD: int = 2  # sondes échouées consécutives avant de marquer OFFLINE (grace period)
     KUBECONFIG_DIR: Optional[str] = None    # répertoire de kubeconfigs, optionnel
@@ -157,6 +163,14 @@ class Settings(BaseSettings):
     # Frontend
     FRONTEND_BASE_URL: str = "http://localhost"
     CLI_REDIRECT_BASE_URL: str = "http://localhost:8765"
+
+    @property
+    def public_exposure_clusters(self) -> frozenset[str]:
+        return frozenset(n.strip().lower() for n in self.PUBLIC_EXPOSURE_CLUSTERS.split(",") if n.strip())
+
+    def cluster_supports_public_exposure(self, cluster_name: str | None) -> bool:
+        """Whether the public DNS reaches this cluster's ingress (PUBLIC_EXPOSURE_CLUSTERS)."""
+        return bool(cluster_name) and cluster_name.strip().lower() in self.public_exposure_clusters
 
     @property
     def sync_database_uri(self) -> str:

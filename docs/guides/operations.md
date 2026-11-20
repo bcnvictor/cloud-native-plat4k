@@ -207,15 +207,27 @@ pose `tls: true` dans `cnp-gitops`, et l'Ingress rendu fait foi.
 
 | Cluster | nginx-ingress | cert-manager | DNS wildcard | Expose disponible |
 |---|---|---|---|---|
-| `aks` | ✅ (Terraform) | ✅ (Terraform, après apply) | ✅ (`*.cloud-native-plat4k.me`) | ✅ |
-| `cnp-k3s` | ✅ (Terraform, `infra/oracle/k3s/`) | ✅ (Terraform, après apply) | ❌ (enregistrements par app) | ❌ (pas encore dans le frontend) |
+| `cnp-aks` | ✅ (Terraform) | ✅ (Terraform, après apply) | ✅ (`*.cloud-native-plat4k.me`) | ✅ |
+| `cnp-k3s` | ✅ (Terraform, `infra/oracle/k3s/`) | ✅ (Terraform, après apply) | ❌ (enregistrements par app) | ❌ |
+| `cnp-gke` | ✅ | ❌ | ❌ | ❌ |
 
 La zone `cloud-native-plat4k.me` est servie par Cloudflare (NS `*.ns.cloudflare.com`) ; le
 wildcard y pointe vers l'ingress d'AKS.
 
-Le frontend désactive l'option pour les clusters k3s (détection par le nom), mais pas le toggle
-de l'onglet Settings. Le backend accepte le flag `expose` mais ne génère pas de sous-domaine différent selon le cluster — **ne pas activer manuellement `expose` via l'API pour une app sur k3s**
-tant que son DNS et son HTTPS ne sont pas en place.
+Le backend est la source de vérité : le réglage `PUBLIC_EXPOSURE_CLUSTERS` (noms de
+`ClusterConnection` séparés par des virgules, défaut `cnp-aks`, surchargeable par variable
+d'environnement ou dans Vault `secret/cnp/platform`) liste les clusters que le DNS public
+atteint. Ailleurs, `expose=true` est refusé avec une 422 (scaffold, onboard, import,
+`PATCH /apps/{id}/expose`), et réassigner une app exposée vers un tel cluster donne une 409 ;
+désactiver l'exposition reste toujours possible. L'API clusters renvoie le booléen calculé
+`supports_public_exposure`, que le frontend utilise (assistant de création, toggle de l'onglet
+Settings). Ajouter un cluster à la liste seulement une fois son DNS et son HTTPS en place.
+
+Quand l'exposition d'une app avec Keycloak change, CNP met à jour les redirect URIs des clients
+des deux realms (URL publique ajoutée ou retirée, les autres URIs conservées). En cas d'échec
+(Keycloak injoignable), le toggle réussit quand même et l'app porte l'avertissement
+`keycloak_redirect_uris_out_of_sync` ; renvoyer la même valeur (bouton *Retry* de l'onglet
+Settings) relance la synchronisation.
 
 ### Support sur k3s : ce qui reste
 

@@ -124,16 +124,39 @@ def _is_public_client(framework: str | None) -> bool:
 LOCAL_DEV_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:8000"]
 
 
+# Never ship an empty redirectUris — falls back to a harmless localhost entry
+# (unusable in practice until the app is exposed or run locally, but keeps the
+# client calls well-formed instead of erroring on an edge case).
+_FALLBACK_REDIRECT_URIS = ["http://localhost:*"]
+
+
+def _public_redirect_uri(app: Application, env: str) -> str:
+    """The redirect URI CNP manages for an exposed app: its public URL."""
+    return f"{app_internet_url(app.slug, env)}/*"
+
+
 def _redirect_uris(app: Application, env: str) -> list[str]:
     uris: list[str] = []
     if app.expose:
-        uris.append(f"{app_internet_url(app.slug, env)}/*")
+        uris.append(_public_redirect_uri(app, env))
     if env == "dev":
         uris.append("http://localhost:*")
-    # Never ship an empty redirectUris — falls back to a harmless localhost entry
-    # (unusable in practice until the app is exposed or run locally, but keeps the
-    # client creation call well-formed instead of erroring on an edge case).
-    return uris or ["http://localhost:*"]
+    return uris or list(_FALLBACK_REDIRECT_URIS)
+
+
+def _synced_redirect_uris(current: list[str], app: Application, env: str) -> list[str]:
+    """`current` with the public URL added (exposed app) or removed (not exposed).
+    Every other URI stays, in order: a team with manage-clients may have added its own.
+    Outside dev, the localhost fallback only stood in for an empty list: it goes once
+    the public URL is there, as if the client had been created exposed.
+    """
+    public = _public_redirect_uri(app, env)
+    uris = [uri for uri in current if uri != public]
+    if app.expose:
+        if env != "dev":
+            uris = [uri for uri in uris if uri not in _FALLBACK_REDIRECT_URIS]
+        uris.insert(0, public)
+    return uris or list(_FALLBACK_REDIRECT_URIS)
 
 
 # What an activation attempt can leave behind: a successful activation clears them,
@@ -401,6 +424,31 @@ class KeycloakService:
             # a failure: provision is idempotent, the next status read settles it.
             raise KeycloakError(f"Realm {realm} is {result.state.value} after provisioning")
         return result
+
+    async def sync_redirect_uris(self, app: Application) -> None:
+        """Make each env client's redirect URIs follow app.expose (called after an
+        expose toggle): the public URL is only set at client creation otherwise, so
+        login from it would fail with invalid redirect_uri. Only touches realms CNP
+        created for this app; an env whose realm or client is missing is skipped —
+        provisioning it later uses the current app.expose. Raises on Keycloak errors
+        (callers decide whether that is fatal).
+        """
+        connection = await KeycloakInstanceService(self.db).resolve_for_app(app)
+        client = self._client(connection)
+        for env in VALID_ENVS:
+            realm = realm_name(app.slug, env)
+            repr_ = await client.get_realm(realm)
+            if repr_ is None or not _owned_by(repr_, app, env):
+                logger.info("Skipping redirect URIs of realm %s: missing or not owned by app %s", realm, app.id)
+                continue
+            app_client = await client.get_client(realm, app.slug)
+            if app_client is None:
+                logger.info("Skipping redirect URIs in realm %s: no client %s", realm, app.slug)
+                continue
+            current = list(app_client.get("redirectUris") or [])
+            wanted = _synced_redirect_uris(current, app, env)
+            if wanted != current:
+                await client.set_client_redirect_uris(realm, app_client, wanted)
 
     async def status(self, app: Application) -> KeycloakStatusResponse:
         instances = KeycloakInstanceService(self.db)

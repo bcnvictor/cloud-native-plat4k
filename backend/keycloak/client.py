@@ -248,6 +248,25 @@ class KeycloakClient:
         await self._ensure_audience_mapper(realm, internal_id, client_id)
         return internal_id
 
+    async def get_client(self, realm: str, client_id: str) -> dict | None:
+        """The client's representation (looked up by clientId), None if it doesn't exist."""
+        resp = await self._request(
+            "GET", f"/admin/realms/{realm}/clients", params={"clientId": client_id}
+        )
+        clients = resp.json()
+        return clients[0] if clients else None
+
+    async def set_client_redirect_uris(self, realm: str, client: dict, redirect_uris: list[str]) -> None:
+        """Replace the redirectUris of `client` (a representation from get_client),
+        keeping the rest of it as is — webOrigins included: its "+" already allows
+        the origins of the new redirect URIs (see create_client).
+        """
+        await self._request(
+            "PUT",
+            f"/admin/realms/{realm}/clients/{client['id']}",
+            json={**client, "redirectUris": redirect_uris},
+        )
+
     async def _get_client_internal_id(self, realm: str, client_id: str) -> str:
         resp = await self._request(
             "GET", f"/admin/realms/{realm}/clients", params={"clientId": client_id}

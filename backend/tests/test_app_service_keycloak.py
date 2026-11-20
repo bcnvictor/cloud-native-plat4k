@@ -13,7 +13,7 @@ from hvac.exceptions import InvalidPath, VaultDown
 from shared.models import ApplicationOnboardRequest, ApplicationScaffoldRequest, ScaffoldingParams
 
 from backend.core.config import settings
-from backend.db.models import Application
+from backend.db.models import Application, ClusterConnection
 from backend.keycloak.client import KeycloakClient
 from backend.services import app_service
 from backend.services.app_service import AppService
@@ -369,3 +369,91 @@ class TestDelete:
         await AppService(db_session).delete_app(app_id)
 
         assert await db_session.get(Application, app_id) is None
+
+
+class _GitopsBot:
+    """GitLab bot for update_expose: records the ingress values it would commit."""
+
+    def __init__(self):
+        self.ingress: list[tuple[str, bool]] = []
+
+    def upsert_gitops_ingress(self, project_path, app_slug, env_name, enabled, host, cluster_name="aks"):
+        self.ingress.append((env_name, enabled))
+
+    def upsert_externalsecret(self, *args, **kwargs):
+        pass
+
+
+@pytest.fixture
+def gitops_bot(monkeypatch):
+    bot = _GitopsBot()
+    monkeypatch.setattr(settings, "GITOPS_REPO_URL", "https://gitlab.test/g/cnp-gitops.git")
+    monkeypatch.setattr(app_service, "_get_bot_client", lambda: bot)
+    monkeypatch.setattr(app_service, "inject_ci", lambda **kwargs: None)
+    return bot
+
+
+async def _exposable_app(db_session, services: list[str]) -> Application:
+    db_session.add(ClusterConnection(name="cnp-aks", endpoint="https://aks", kubeconfig_secret_ref="x"))
+    await db_session.commit()
+    return await AppService(db_session).scaffold_app(_scaffold_request(services))
+
+
+def _redirect_uris(fake: FakeKeycloak, env: str) -> list[str]:
+    client = next(c for c in fake.realms[f"demo-{env}"]["clients"].values() if c["clientId"] == "demo")
+    return client["redirectUris"]
+
+
+class TestExposeToggle:
+    """The clients' redirect URIs are set at creation: an expose toggle must update
+    them, best-effort (the toggle itself never fails because of Keycloak)."""
+
+    async def test_exposing_then_unexposing_updates_redirect_uris(self, db_session, fake_keycloak, gitops_bot):
+        app = await _exposable_app(db_session, ["keycloak"])
+        service = AppService(db_session)
+
+        await service.update_expose(app.id, True)
+
+        assert _redirect_uris(fake_keycloak, "prod") == ["https://demo.cloud-native-plat4k.me/*"]
+        assert _redirect_uris(fake_keycloak, "dev")[0] == "https://dev.demo.cloud-native-plat4k.me/*"
+
+        await service.update_expose(app.id, False)
+
+        assert _redirect_uris(fake_keycloak, "prod") == ["http://localhost:*"]
+        assert _redirect_uris(fake_keycloak, "dev") == ["http://localhost:*"]
+        assert gitops_bot.ingress == [("dev", True), ("prod", True), ("dev", False), ("prod", False)]
+
+    async def test_keycloak_outage_records_a_warning_without_failing_the_toggle(
+        self, db_session, fake_keycloak, gitops_bot, monkeypatch, caplog
+    ):
+        app = await _exposable_app(db_session, ["keycloak"])
+        working_client = KeycloakService._client
+
+        def down(self, connection):
+            def refuse(request):
+                raise httpx.ConnectError("refused", request=request)
+
+            return KeycloakClient(base_url=connection.admin_url, admin_client_id="x",
+                                  admin_client_secret="y", transport=httpx.MockTransport(refuse))
+
+        monkeypatch.setattr(KeycloakService, "_client", down)
+        app = await AppService(db_session).update_expose(app.id, True)
+
+        assert app.expose is True
+        assert app.auth_warnings == ["keycloak_redirect_uris_out_of_sync"]
+        assert "redirect URIs not updated" in caplog.text
+
+        # Retry = the same value again: the sync succeeds and clears the warning.
+        monkeypatch.setattr(KeycloakService, "_client", working_client)
+        app = await AppService(db_session).update_expose(app.id, True)
+
+        assert app.auth_warnings == []
+        assert _redirect_uris(fake_keycloak, "prod") == ["https://demo.cloud-native-plat4k.me/*"]
+
+    async def test_app_without_keycloak_never_calls_it(self, db_session, fake_keycloak, gitops_bot):
+        app = await _exposable_app(db_session, [])
+
+        app = await AppService(db_session).update_expose(app.id, True)
+
+        assert app.expose is True
+        assert fake_keycloak.requests == []

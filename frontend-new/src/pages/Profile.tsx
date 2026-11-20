@@ -204,7 +204,7 @@ export function Profile() {
     mutationFn: () => authApi.createApiKey(newKeyLabel),
     onSuccess: (data) => {
       setNewKeyLabel('');
-      setRevealedKey(data.key);
+      setRevealedKey(data.api_key);
       qc.invalidateQueries({ queryKey: ['api-keys'] });
     },
   });

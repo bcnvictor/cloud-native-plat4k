@@ -10,19 +10,24 @@ export const PROVIDER_LABELS: Record<ClusterProvider, string> = {
 };
 
 /**
- * Returns true if the cluster has nginx-ingress configured and can expose apps on
- * cloud-native-plat4k.me subdomains.
- *
- * Currently only AKS satisfies this: its Terraform provisions nginx-ingress + the
- * wildcard DNS record. k3s clusters do not have nginx-ingress yet — expose must be
- * disabled for them at the UI level so the backend never writes an ingress that
- * would silently not resolve.
- *
- * Detection: k3s clusters are identified by "k3s" in their name (the canonical name
- * set at registration time). Update this predicate when k3s gains ingress support.
+ * Whether apps on this cluster can be exposed on cloud-native-plat4k.me subdomains,
+ * i.e. the public DNS reaches its ingress. Decided by the backend
+ * (PUBLIC_EXPOSURE_CLUSTERS), which refuses expose=true anywhere else.
  */
-export function clusterSupportsIngress(cluster: ClusterConnection): boolean {
-  return !cluster.name.toLowerCase().includes('k3s');
+export function clusterSupportsExposure(cluster: ClusterConnection | null | undefined): boolean {
+  return cluster?.supports_public_exposure === true;
+}
+
+/**
+ * The cluster an app lands on: the selected one, else the backend's default (the
+ * first registered cluster, lowest id — AppService._resolve_target_cluster_id).
+ */
+export function effectiveTargetCluster(
+  clusters: readonly ClusterConnection[],
+  targetClusterId: number | null | undefined
+): ClusterConnection | null {
+  if (targetClusterId != null) return clusters.find((c) => c.id === targetClusterId) ?? null;
+  return clusters.reduce<ClusterConnection | null>((first, c) => (first === null || c.id < first.id ? c : first), null);
 }
 
 /** Returns true for clusters running on private infra (non-managed, e.g. k3s on Oracle). */

@@ -80,6 +80,7 @@ export function NewApp() {
           repo_url: step1.repoUrl,
           owning_gitlab_group_id: group?.gitlab_group_id,
           expose: step3.expose,
+          target_cluster_id: step3.targetClusterId ?? undefined,
           services: services.length ? services : undefined,
         });
       }
@@ -89,8 +90,10 @@ export function NewApp() {
       toast({ title: 'App created', description: `${app.name} is being provisioned.` });
       navigate(`/groups/${slug}/apps/${app.slug}`);
     },
-    onError: () => {
-      setSubmitError('Creation failed. Please try again.');
+    onError: (error: unknown) => {
+      // e.g. 422 when exposure is refused on the target cluster: show the backend's reason.
+      const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      setSubmitError(typeof detail === 'string' ? detail : 'Creation failed. Please try again.');
       toast({ title: 'Erreur', variant: 'destructive' });
     },
   });

@@ -1,5 +1,5 @@
 import { api } from './client';
-import { UserMe, ApiKey } from '@/types';
+import { UserMe, ApiKey, ApiKeyCreated } from '@/types';
 
 export const authApi = {
   async login(email: string, password: string): Promise<{ access_token: string }> {
@@ -33,8 +33,8 @@ export const authApi = {
     return res.data;
   },
 
-  async createApiKey(label: string): Promise<ApiKey & { key: string }> {
-    const res = await api.post<ApiKey & { key: string }>(`/auth/apikeys?label=${encodeURIComponent(label)}`);
+  async createApiKey(label: string): Promise<ApiKeyCreated> {
+    const res = await api.post<ApiKeyCreated>(`/auth/apikeys?label=${encodeURIComponent(label)}`);
     return res.data;
   },
 
