@@ -18,6 +18,8 @@ terraform {
 
 provider "azurerm" {
   features {}
+  # Subscription explicite : ne dépend pas de la subscription par défaut de la CLI `az`
+  subscription_id = var.subscription_id
 }
 
 provider "kubernetes" {
@@ -106,7 +108,7 @@ resource "helm_release" "ingress_nginx" {
   name             = "ingress-nginx"
   repository       = "https://kubernetes.github.io/ingress-nginx"
   chart            = "ingress-nginx"
-  version          = "4.10.1"
+  version          = "4.15.1"  # >= 4.12.1 : CVE-2025-1974 (IngressNightmare), aligné sur k3s
   namespace        = "ingress-nginx"
   create_namespace = true
 
@@ -133,28 +135,9 @@ data "kubernetes_service" "ingress_nginx" {
 }
 
 # ---------------------------------------------------------------------------
-# Azure DNS zone — cloud-native-plat4k.me
+# DNS
 # ---------------------------------------------------------------------------
-
-resource "azurerm_dns_zone" "cnp" {
-  name                = "cloud-native-plat4k.me"
-  resource_group_name = azurerm_resource_group.cnp.name
-}
-
-# Wildcard A record : *.cloud-native-plat4k.me → IP nginx LB
-resource "azurerm_dns_a_record" "wildcard" {
-  name                = "*"
-  zone_name           = azurerm_dns_zone.cnp.name
-  resource_group_name = azurerm_resource_group.cnp.name
-  ttl                 = 300
-  records             = [data.kubernetes_service.ingress_nginx.status[0].load_balancer[0].ingress[0].ip]
-}
-
-# Apex A record (cloud-native-plat4k.me direct)
-resource "azurerm_dns_a_record" "apex" {
-  name                = "@"
-  zone_name           = azurerm_dns_zone.cnp.name
-  resource_group_name = azurerm_resource_group.cnp.name
-  ttl                 = 300
-  records             = [data.kubernetes_service.ingress_nginx.status[0].load_balancer[0].ingress[0].ip]
-}
+# La zone cloud-native-plat4k.me est servie par Cloudflare (NS *.ns.cloudflare.com,
+# registrar Namecheap). Après un (re)provisioning, mettre à jour l'enregistrement
+# A `*` dans Cloudflare avec `terraform output nginx_lb_ip`.
+# (L'ancienne zone Azure DNS n'était pas déléguée et a été retirée.)

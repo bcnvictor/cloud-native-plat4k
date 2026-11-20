@@ -1,3 +1,9 @@
+variable "subscription_id" {
+  description = "Subscription Azure qui héberge le cluster (null = subscription par défaut de la CLI az)"
+  type        = string
+  default     = null
+}
+
 variable "location" {
   description = "Région Azure où déployer les ressources"
   type        = string

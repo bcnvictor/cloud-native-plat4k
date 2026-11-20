@@ -1,4 +1,26 @@
-USER-SUPPLIED VALUES:
+# Valeurs kube-prometheus-stack 91.8.2 pour cnp-aks (mêmes chart/version que GKE et k3s).
+#
+# helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#   --namespace monitoring --create-namespace --version 91.8.2 \
+#   --values infra/aks/monitoring-values.yaml --kube-context cnp-aks
+
+# Labels CNP exposés par kube-state-metrics (filtres par owner / groupe dans l'UI CNP)
 kube-state-metrics:
   metricLabelsAllowlist:
-  - pods=[app.kubernetes.io/name,app.kubernetes.io/managed-by,cnp.io/owner,cnp.io/group-id]
+    - pods=[app.kubernetes.io/name,app.kubernetes.io/managed-by,cnp.io/owner,cnp.io/group-id]
+
+# Control plane AKS managé par Azure : etcd, scheduler et controller-manager ne sont pas
+# joignables depuis le cluster (cibles DOWN + alertes *Down permanentes sinon).
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+
+# ClusterIP figée = celle de l'ancien cluster : PROMETHEUS_URL (Vault secret/cnp/platform,
+# .env de cnp-control pour Grafana, ClusterConnection id 2) reste valable après un rebuild.
+# Joignable depuis cnp-control via le Connector Tailscale (Service CIDR 10.0.0.0/16).
+prometheus:
+  service:
+    clusterIP: "10.0.152.88"

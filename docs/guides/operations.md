@@ -110,18 +110,17 @@ kubectl patch svc kube-prometheus-stack-prometheus -n monitoring -p '{"spec": {"
 kubectl patch svc loki -n monitoring -p '{"spec": {"type": "ClusterIP"}}'
 ```
 
-Puis, déployez la ressource Ingress de monitoring en l'ajoutant dans le dossier `argocd/` de votre dépôt `cnp-gitops` (déjà configuré sous `cnp-gitops/argocd/monitoring-ingress.yaml`). ArgoCD appliquera automatiquement la configuration sur le cluster.
+Pas d'Ingress public pour Prometheus / Loki (ils n'ont pas d'authentification) : `cnp-control` les joint par leurs **ClusterIPs figées**, via le Connector Tailscale (voir `infra/aks/README.md` §3).
 
 **Configuration sur la VM de Production :**
-1. Sur la VM de production, associez les noms de domaine à l'IP de l'Ingress (ex: `4.166.144.120`) dans le fichier `/etc/hosts` pour contourner la propagation DNS :
-   ```text
-   4.166.144.120 prometheus.cloud-native-plat4k.me loki.cloud-native-plat4k.me
-   ```
-2. Mettez à jour les secrets de la plateforme dans le **Vault de production** :
-   * `LOKI_URL` $\rightarrow$ `http://loki.cloud-native-plat4k.me`
-   * `PROMETHEUS_URL` $\rightarrow$ `http://prometheus.cloud-native-plat4k.me`
-   * `PROMETHEUS_PUBLIC_URL` $\rightarrow$ `http://prometheus.cloud-native-plat4k.me`
-3. Redémarrez le backend pour prendre en compte les modifications (`docker restart <backend-container>`).
+1. Mettez à jour les secrets de la plateforme dans le **Vault de production** (`secret/cnp/platform`) :
+   * `PROMETHEUS_URL` $\rightarrow$ `http://10.0.152.88:9090`
+   * `LOKI_URL` $\rightarrow$ `http://10.0.130.130:3100`
+2. Mêmes valeurs dans le `.env` de la VM (lu par Grafana pour les datasources `prometheus-cnp` / `loki-cnp`), puis `docker compose --profile production up -d grafana`.
+3. Redémarrez le backend (`docker compose restart backend`) : Vault n'est lu qu'au démarrage.
+4. Aucune entrée `/etc/hosts` n'est nécessaire.
+
+En local, utilisez `scripts/forward-ports.sh` (contexte kube `cnp-aks`) et `http://host.docker.internal:9090` / `:3100`.
 
 ### 3. Déployer la CNP elle-même (backend + frontend) dans le namespace `cnp`
 ### 4. Créer les namespaces `dev` et `prod` pour les apps utilisateurs
