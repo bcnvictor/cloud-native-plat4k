@@ -29,40 +29,40 @@
 
 ## 5. Frontend : carte
 
-- [ ] 5.1 Construire la vue du diagnostic (verdict, constat, cause, chronologie, preuves, commits, actions) ; vérifier par des tests de rendu sur les exemples
-- [ ] 5.2 Construire la carte d'Overview (repos, progression, résultat, erreur, sélecteur d'environnement) ; vérifier par tests
-- [ ] 5.3 Ajouter le rollback avec confirmation nommée, l'état de succès et la revérification ; vérifier par des tests confirmer, annuler, échec
-- [ ] 5.4 Ajouter l'action non autorisée et « Copier la demande », « Copier le diagnostic », « Approfondir » ; vérifier par tests
-- [ ] 5.5 Brancher la carte dans `OverviewTab` et « Diagnostiquer » dans le bandeau d'erreur de `AppDetailLayout` ; vérifier par test de navigation
+- [x] 5.1 Construire la vue du diagnostic (verdict, constat, cause, chronologie, preuves, commits, actions) ; vérifier par des tests de rendu sur les exemples
+- [x] 5.2 Construire la carte d'Overview (repos, progression, résultat, erreur, sélecteur d'environnement) ; vérifier par tests
+- [x] 5.3 Ajouter le rollback avec confirmation nommée, l'état de succès et la revérification ; vérifier par des tests confirmer, annuler, échec
+- [x] 5.4 Ajouter l'action non autorisée et « Copier la demande », « Copier le diagnostic », « Approfondir » ; vérifier par tests
+- [x] 5.5 Brancher la carte dans `OverviewTab` et « Diagnostiquer » dans le bandeau d'erreur de `AppDetailLayout` ; vérifier par test de navigation
 
 ## 6. Frontend : robot
 
-- [ ] 6.1 Extraire la mascotte et lui ajouter la tenue de docteur ; vérifier par test de rendu des deux modes
-- [ ] 6.2 Ajouter l'animation de changement de tenue et le repli pour mouvements réduits ; vérifier à l'écran et par test de classes
-- [ ] 6.3 Ajouter l'interrupteur Assistant / Doctor et la bascule automatique respectant le choix manuel ; vérifier par tests
-- [ ] 6.4 Adapter le panneau en mode docteur (titre, accueil, suggestions, diagnostic dans le fil) ; vérifier par tests
+- [x] 6.1 Extraire la mascotte et lui ajouter la tenue de docteur ; vérifier par test de rendu des deux modes
+- [x] 6.2 Ajouter l'animation de changement de tenue et le repli pour mouvements réduits ; vérifier à l'écran et par test de classes
+- [x] 6.3 Ajouter l'interrupteur Assistant / Doctor et la bascule automatique respectant le choix manuel ; vérifier par tests
+- [x] 6.4 Adapter le panneau en mode docteur (titre, accueil, suggestions, diagnostic dans le fil) ; vérifier par tests
 
 ## 7. CLI
 
-- [ ] 7.1 Ajouter la commande `doctor` avec `--env` et `--output json` ; vérifier par des tests de commande avec client simulé
-- [ ] 7.2 Documenter la commande dans `docs/cli.md` ; vérifier que la page se construit
+- [x] 7.1 Ajouter la commande `doctor` avec `--env` et `--output json` ; vérifier par des tests de commande avec client simulé
+- [x] 7.2 Documenter la commande dans `docs/cli.md` ; vérifier que la page se construit
 
 ## 8. Labo de démo
 
-- [ ] 8.1 Écrire le serveur simulé à état (Loki, ArgoCD, Kubernetes, GitLab, fournisseur IA) ; vérifier chaque point d'entrée par un appel direct
-- [ ] 8.2 Écrire le fichier Compose du labo, le Vault de dev, les données de démo et les scripts démarrer, casser, remettre à zéro, arrêter ; vérifier que la stack démarre et que l'application de démo est saine
-- [ ] 8.3 Rédiger le README du labo avec le scénario pas à pas ; vérifier en le suivant une fois
+- [x] 8.1 Écrire le serveur simulé à état (Loki, ArgoCD, Kubernetes, GitLab, fournisseur IA) ; vérifier chaque point d'entrée par un appel direct
+- [x] 8.2 Écrire le fichier Compose du labo, le Vault de dev, les données de démo et les scripts démarrer, casser, remettre à zéro, arrêter ; vérifier que la stack démarre et que l'application de démo est saine
+- [x] 8.3 Rédiger le README du labo avec le scénario pas à pas ; vérifier en le suivant une fois
 
 ## 9. Documentation et demandes au PO
 
 - [ ] 9.1 Écrire le guide utilisateur du Doctor et l'ajouter à la navigation et au guide de l'interface ; vérifier que `mkdocs build` passe
-- [ ] 9.2 Corriger l'ADR-0030 (serveur MCP livré par la PR #65, FinOps fusionné, nouvelle route) ; vérifier par relecture
-- [ ] 9.3 Créer le dossier des demandes au PO (accès, secrets, validations) dans le change ; vérifier que chaque demande dit quoi, pourquoi et à qui
+- [x] 9.2 Corriger l'ADR-0030 (serveur MCP livré par la PR #65, FinOps fusionné, nouvelle route) ; vérifier par relecture
+- [x] 9.3 Créer le dossier des demandes au PO (accès, secrets, validations) dans le change ; vérifier que chaque demande dit quoi, pourquoi et à qui
 
 ## 10. Vérification d'ensemble
 
-- [ ] 10.1 Lancer les tests backend, les tests frontend, `tsc`, `eslint` et `ruff` ; tout doit passer
-- [ ] 10.2 Rejouer le scénario dans le labo au navigateur : casser, diagnostiquer, rollback, retour à la normale, en mode simulé
-- [ ] 10.3 Faire au plus 5 diagnostics avec le fournisseur IA réel et noter ce qui diffère du mode simulé
+- [x] 10.1 Lancer les tests backend, les tests frontend, `tsc`, `eslint` et `ruff` ; tout doit passer
+- [x] 10.2 Rejouer le scénario dans le labo au navigateur : casser, diagnostiquer, rollback, retour à la normale, en mode simulé
+- [x] 10.3 Faire au plus 5 diagnostics avec le fournisseur IA réel et noter ce qui diffère du mode simulé
 - [ ] 10.4 Passer la carte et le robot à l'audit d'interface (clavier, contrastes, mouvements réduits) et corriger
-- [ ] 10.5 Mettre à jour le graphe du projet et commiter par étapes
+- [x] 10.5 Mettre à jour le graphe du projet et commiter par étapes
