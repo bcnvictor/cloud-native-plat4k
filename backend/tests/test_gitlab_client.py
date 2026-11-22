@@ -232,3 +232,24 @@ def test_upsert_gitops_certificate_disabled_and_absent_is_a_noop():
     client.upsert_gitops_certificate("group/gitops", "my-app", "dev", False, "", cluster_name="aks")
 
     assert project.commits.payload is None
+
+
+# ── Environnements éphémères (4K-286) ─────────────────────────────────────────
+
+class _FakeBranches:
+    def __init__(self, existing):
+        self._existing = existing
+
+    def get(self, name):
+        if name not in self._existing:
+            raise GitlabGetError(response_code=404, error_message="not found")
+        return object()
+
+
+def test_branch_exists():
+    project = _FakeProject([])
+    project.branches = _FakeBranches({"feat/login"})
+    client = _client_for(project)
+
+    assert client.branch_exists("group/app", "feat/login") is True
+    assert client.branch_exists("group/app", "feat/missing") is False

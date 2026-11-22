@@ -20,6 +20,7 @@ from backend.api.routes import (
     credentials,
     deployments,
     env_vars,
+    ephemeral_envs,
     finops_advisor,
     gitlab,
     groups,
@@ -150,6 +151,7 @@ app.include_router(assistant.router, prefix=f"{settings.API_V1_STR}/apps", tags=
 app.include_router(assistant.global_router, prefix=f"{settings.API_V1_STR}", tags=["assistant"])
 app.include_router(finops_advisor.router, prefix=f"{settings.API_V1_STR}/apps", tags=["finops-advisor"])
 app.include_router(env_vars.router, prefix=f"{settings.API_V1_STR}/apps", tags=["env-vars"])
+app.include_router(ephemeral_envs.router, prefix=f"{settings.API_V1_STR}/apps", tags=["ephemeral-envs"])
 app.include_router(keycloak_instances.router, prefix=f"{settings.API_V1_STR}/keycloak/instances", tags=["keycloak-instances"])
 app.include_router(keycloak.router, prefix=f"{settings.API_V1_STR}/apps", tags=["keycloak"])
 app.include_router(clusters.router, prefix=f"{settings.API_V1_STR}/clusters", tags=["clusters"])

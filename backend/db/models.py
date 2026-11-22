@@ -8,6 +8,7 @@ from shared.models import (
     ApplicationStatus,
     CloudType,
     ClusterStatus,
+    EphemeralEnvStatus,
     MemberStatus,
     ResourceStatus,
     ResourceType,
@@ -21,6 +22,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -28,7 +30,7 @@ from sqlalchemy import (
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, text
 
 Base = declarative_base()
 
@@ -178,6 +180,45 @@ class AppScaleState(Base):
 
     __table_args__ = (
         UniqueConstraint("app_id", "env", name="uq_app_scale_state_app_env"),
+    )
+
+
+class EphemeralEnvironment(Base):
+    """Environnement éphémère créé depuis une branche (ADR-0030 §2).
+
+    Le statut ArgoCD (Synced, Healthy) n'est pas stocké : il est lu à la volée.
+    Les lignes détruites sont gardées pour l'historique.
+    """
+
+    __tablename__ = "ephemeral_environments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    app_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    slug = Column(String(20), nullable=False)
+    branch = Column(String, nullable=False)
+    status = Column(
+        SQLEnum(EphemeralEnvStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=EphemeralEnvStatus.PROVISIONING,
+    )
+    image_tag = Column(String, nullable=True)
+    pipeline_id = Column(BigInteger, nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+    destroyed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        # Un seul env non détruit par slug et par app
+        Index(
+            "uq_ephemeral_env_app_slug_alive",
+            "app_id",
+            "slug",
+            unique=True,
+            postgresql_where=text("status <> 'destroyed'"),
+            sqlite_where=text("status <> 'destroyed'"),
+        ),
     )
 
 

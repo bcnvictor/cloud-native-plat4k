@@ -176,6 +176,27 @@ class GitLabClient:
         except GitlabGetError:
             return False
 
+    def branch_exists(self, project_path: str, branch: str) -> bool:
+        project = self.get_project(project_path)
+        try:
+            project.branches.get(branch)
+            return True
+        except GitlabGetError:
+            return False
+
+    def trigger_pipeline(self, gitlab_project_id: int, ref: str) -> int:
+        """Run a pipeline on ref and return its id. Raises on failure."""
+        project = self._gl.projects.get(gitlab_project_id)
+        return project.pipelines.create({"ref": ref}).id
+
+    def get_pipeline_status(self, gitlab_project_id: int, pipeline_id: int) -> str | None:
+        """GitLab pipeline status (running, success, failed…), None if unavailable."""
+        try:
+            return self._gl.projects.get(gitlab_project_id).pipelines.get(pipeline_id).status
+        except Exception as e:
+            logger.warning("Failed to read pipeline %s of project %s: %s", pipeline_id, gitlab_project_id, e)
+            return None
+
     def trigger_scan_pipeline(self, gitlab_project_id: int, ref: str, variables: dict) -> int | None:
         """Trigger a GitLab CI pipeline for security scan. Returns pipeline ID or None on failure."""
         try:
