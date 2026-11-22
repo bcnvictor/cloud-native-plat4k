@@ -3,6 +3,10 @@
 Création : le backend vérifie la branche, déclare l'env et ses ressources plateforme
 dans cnp-gitops en un commit, puis déclenche un pipeline sur la branche. update-gitops
 génère l'Application de l'app après le build de l'image (ADR-0014).
+
+Destruction (4K-288) : l'env passe en destroying, puis ses fichiers cnp-gitops sont
+supprimés en un commit. ArgoCD purge alors le namespace (finalizer). Si la suppression
+échoue, l'env reste en destroying et le worker TTL la reprend.
 """
 
 import logging
@@ -28,7 +32,7 @@ from backend.ci.detector import extract_project_path
 from backend.core.config import settings
 from backend.db.models import Application, ClusterConnection, EphemeralEnvironment, User
 from backend.gitlab.client import GitLabClient
-from backend.gitops.ephemeral import EphemeralTarget, declaration_files
+from backend.gitops.ephemeral import EphemeralTarget, declaration_files, destroy_paths
 from backend.services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
@@ -289,3 +293,52 @@ class EphemeralEnvService:
         argocd_status = await self._refresh(env, app)
         await self.db.commit()
         return to_response(env, app.slug, argocd_status)
+
+    async def destroy(self, app_id: int, env_id: int, user: User) -> EphemeralEnvResponse:
+        app = await self._get_app(app_id)
+        env = await self.db.get(EphemeralEnvironment, env_id)
+        if env is None or env.app_id != app.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ephemeral environment not found")
+        return await self.destroy_env(env, app, actor_user_id=user.id, reason="manual")
+
+    async def destroy_env(
+        self, env: EphemeralEnvironment, app: Application, actor_user_id: int | None, reason: str
+    ) -> EphemeralEnvResponse:
+        """Idempotent : un env déjà détruit est renvoyé tel quel, des fichiers déjà
+        supprimés sont ignorés. dev, prod, le repo et la ligne de l'app ne sont pas touchés."""
+        if env.status == EphemeralEnvStatus.DESTROYED:
+            return to_response(env, app.slug)
+
+        # L'intention est enregistrée avant d'agir : un échec laisse un env à reprendre,
+        # jamais un env à moitié détruit que personne ne retrouve.
+        env.status = EphemeralEnvStatus.DESTROYING
+        await self.db.commit()
+
+        name = ephemeral_env_name(app.slug, env.slug)
+        files, directories = destroy_paths(env.cluster_name, app.slug, env.slug)
+        try:
+            bot = _get_bot_client()
+            gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
+            await anyio.to_thread.run_sync(
+                lambda: bot.delete_paths(gitops_path, files, directories, f"chore(gitops): destroy ephemeral env {name}"),
+                cancellable=True,
+            )
+        except Exception:
+            logger.exception("Failed to remove ephemeral env %s from gitops — will retry", name)
+            return to_response(env, app.slug)
+
+        env.status = EphemeralEnvStatus.DESTROYED
+        env.destroyed_at = datetime.now(timezone.utc)
+        action = "expire" if reason == "expired" else "destroy"
+        await AuditService(self.db).log_action(
+            actor_user_id, f"ephemeral:{action}:{env.slug}", app_id=app.id,
+            extra={"branch": env.branch, "reason": reason},
+        )
+        await emit_event(
+            self.db, EventType.APP_EPHEMERAL_DESTROYED, "info", "ephemeral_env",
+            app_id=app.id, payload={"env": name, "branch": env.branch, "reason": reason},
+            actor_user_id=actor_user_id,
+        )
+        await self.db.commit()
+        await self.db.refresh(env)
+        return to_response(env, app.slug)

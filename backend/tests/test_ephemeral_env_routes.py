@@ -34,6 +34,8 @@ class FakeBot:
         self.pipeline_status = "running"
         self.fail_push = False
         self.fail_trigger = False
+        self.fail_delete = False
+        self.deleted: list[tuple[list[str], list[str]]] = []
 
     def branch_exists(self, project_path, branch):
         return branch in self.branches
@@ -54,6 +56,12 @@ class FakeBot:
 
     def get_pipeline_status(self, gitlab_project_id, pipeline_id):
         return self.pipeline_status
+
+    def delete_paths(self, project_path, files, directories, commit_message, branch="main"):
+        if self.fail_delete:
+            raise RuntimeError("gitlab down")
+        self.deleted.append((files, directories))
+        return len(files)
 
 
 class FakeArgoCD:
@@ -318,3 +326,78 @@ class TestLecture:
         await db_session.commit()
         resp = await client.get(f"/api/v1/apps/{app_row.id}/ephemeral-envs", headers=_auth(developer))
         assert resp.json() == []
+
+
+async def _destroy(client, app_id, env_id, token):
+    return await client.delete(f"/api/v1/apps/{app_id}/ephemeral-envs/{env_id}", headers=_auth(token))
+
+
+class TestDestruction:
+    async def test_developer_detruit_un_env(self, client, db_session, app_row, developer, bot, argocd_apps):
+        env_id = (await _create(client, app_row.id, developer)).json()["id"]
+
+        resp = await _destroy(client, app_row.id, env_id, developer)
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "destroyed"
+        files, directories = bot.deleted[0]
+        assert files == [
+            "argocd/cnp-aks/my-app/ephemeral/feat-login.yaml",
+            "argocd/cnp-aks/my-app/ephemeral/feat-login-platform.yaml",
+        ]
+        assert directories == ["apps/cnp-aks/my-app/ephemeral/feat-login"]
+        actions = (await db_session.execute(select(AuditLog.action))).scalars().all()
+        assert "ephemeral:destroy:feat-login" in actions
+        listed = await client.get(f"/api/v1/apps/{app_row.id}/ephemeral-envs", headers=_auth(developer))
+        assert listed.json() == []
+
+    async def test_destruction_ciblee_ne_touche_ni_l_app_ni_les_autres_envs(
+        self, client, db_session, app_row, developer, bot, argocd_apps
+    ):
+        first = (await _create(client, app_row.id, developer, branch="feat/login")).json()["id"]
+        await _create(client, app_row.id, developer, branch="feat/other")
+
+        await _destroy(client, app_row.id, first, developer)
+
+        assert await db_session.get(Application, app_row.id) is not None
+        listed = await client.get(f"/api/v1/apps/{app_row.id}/ephemeral-envs", headers=_auth(developer))
+        assert [e["slug"] for e in listed.json()] == ["feat-other"]
+        # Aucun chemin dev/prod ni d'un autre env dans la suppression
+        files, directories = bot.deleted[0]
+        assert all("feat-login" in p for p in files + directories)
+
+    async def test_viewer_ne_peut_pas_detruire(self, client, app_row, developer, viewer, bot, argocd_apps):
+        env_id = (await _create(client, app_row.id, developer)).json()["id"]
+        resp = await _destroy(client, app_row.id, env_id, viewer)
+        assert resp.status_code == 403
+        assert bot.deleted == []
+
+    async def test_destruction_idempotente(self, client, app_row, developer, bot, argocd_apps):
+        env_id = (await _create(client, app_row.id, developer)).json()["id"]
+        assert (await _destroy(client, app_row.id, env_id, developer)).status_code == 200
+        resp = await _destroy(client, app_row.id, env_id, developer)
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "destroyed"
+        assert len(bot.deleted) == 1
+
+    async def test_env_inconnu(self, client, app_row, developer, bot):
+        resp = await _destroy(client, app_row.id, 9999, developer)
+        assert resp.status_code == 404
+
+    async def test_echec_gitops_laisse_l_env_en_destroying(self, client, db_session, app_row, developer, bot, argocd_apps):
+        env_id = (await _create(client, app_row.id, developer)).json()["id"]
+        bot.fail_delete = True
+
+        resp = await _destroy(client, app_row.id, env_id, developer)
+
+        assert resp.status_code == 202
+        assert resp.json()["status"] == "destroying"
+        env = await db_session.get(EphemeralEnvironment, env_id)
+        assert env.status == EphemeralEnvStatus.DESTROYING
+
+    async def test_la_branche_peut_avoir_un_nouvel_env_apres_destruction(self, client, app_row, developer, bot, argocd_apps):
+        env_id = (await _create(client, app_row.id, developer)).json()["id"]
+        await _destroy(client, app_row.id, env_id, developer)
+        resp = await _create(client, app_row.id, developer)
+        assert resp.status_code == 201
+        assert resp.json()["slug"] == "feat-login"

@@ -1,14 +1,14 @@
 """Environnements éphémères d'une app (4K-286, ADR-0030 §10).
 
-Viewer : lecture. Developer et plus : création.
+Viewer : lecture. Developer et plus : création et destruction.
 """
 
 from backend.api.deps import require_tier
 from backend.db.models import User
 from backend.db.session import get_db
 from backend.services.ephemeral_env_service import EphemeralEnvService
-from fastapi import APIRouter, Depends
-from shared.models import CnpTier, EphemeralEnvCreate, EphemeralEnvResponse
+from fastapi import APIRouter, Depends, Response
+from shared.models import CnpTier, EphemeralEnvCreate, EphemeralEnvResponse, EphemeralEnvStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
@@ -41,3 +41,18 @@ async def get_ephemeral_env(
     current_user: User = Depends(require_tier(CnpTier.VIEWER)),
 ):
     return await EphemeralEnvService(db).get(app_id, env_id)
+
+
+@router.delete("/{app_id}/ephemeral-envs/{env_id}", response_model=EphemeralEnvResponse)
+async def destroy_ephemeral_env(
+    app_id: int,
+    env_id: int,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_tier(CnpTier.DEVELOPER)),
+):
+    """200 si l'env est détruit, 202 s'il reste en destroying (reprise par le worker TTL)."""
+    env = await EphemeralEnvService(db).destroy(app_id, env_id, current_user)
+    if env.status != EphemeralEnvStatus.DESTROYED:
+        response.status_code = 202
+    return env

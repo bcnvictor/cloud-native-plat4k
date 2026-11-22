@@ -137,3 +137,15 @@ def test_nom_de_l_application_plateforme_dans_la_limite_argocd():
     assert len(t.name) == 53
     app = next(yaml.safe_load(f["content"]) for f in declaration_files(t) if f["file_path"].startswith("argocd/"))
     assert len(app["metadata"]["name"]) <= 63
+
+
+def test_chemins_de_destruction_couvrent_ce_que_cree_la_creation():
+    from backend.gitops.ephemeral import destroy_paths
+
+    files, directories = destroy_paths("cnp-aks", "my-app", "feat-login")
+    created = {f["file_path"] for f in declaration_files(_target())}
+    # Tout fichier créé par le backend est supprimé, soit directement soit avec son dossier
+    for path in created:
+        assert path in files or any(path.startswith(d + "/") for d in directories)
+    # L'Application de l'app (créée par la CI) aussi
+    assert "argocd/cnp-aks/my-app/ephemeral/feat-login.yaml" in files

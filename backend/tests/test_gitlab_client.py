@@ -253,3 +253,58 @@ def test_branch_exists():
 
     assert client.branch_exists("group/app", "feat/login") is True
     assert client.branch_exists("group/app", "feat/missing") is False
+
+
+class _TreeProject(_FakeProject):
+    """Projet dont repository_tree filtre par chemin, comme l'API GitLab."""
+
+    def __init__(self, paths):
+        super().__init__([])
+        self._paths = paths
+
+    def repository_tree(self, path="", **_kwargs):
+        prefix = path.rstrip("/") + "/"
+        return [{"type": "blob", "path": p} for p in self._paths if p.startswith(prefix)]
+
+
+def _client_with_files(paths):
+    project = _TreeProject(paths)
+    client = _client_for(project)
+    client.file_exists = lambda _project, file_path, ref="main": file_path in paths
+    return client, project
+
+
+def test_delete_paths_supprime_fichiers_et_dossier_en_un_commit():
+    client, project = _client_with_files([
+        "argocd/c/app/ephemeral/s.yaml",
+        "argocd/c/app/ephemeral/s-platform.yaml",
+        "apps/c/app/ephemeral/s/env.yaml",
+        "apps/c/app/ephemeral/s/platform/namespace.yaml",
+        "apps/c/app/ephemeral/other/env.yaml",
+    ])
+
+    deleted = client.delete_paths(
+        "cnp/cnp-gitops",
+        files=["argocd/c/app/ephemeral/s.yaml", "argocd/c/app/ephemeral/s-platform.yaml"],
+        directories=["apps/c/app/ephemeral/s"],
+        commit_message="destroy",
+    )
+
+    assert deleted == 4
+    paths = sorted(a["file_path"] for a in project.commits.payload["actions"])
+    assert paths == [
+        "apps/c/app/ephemeral/s/env.yaml",
+        "apps/c/app/ephemeral/s/platform/namespace.yaml",
+        "argocd/c/app/ephemeral/s-platform.yaml",
+        "argocd/c/app/ephemeral/s.yaml",
+    ]
+    assert {a["action"] for a in project.commits.payload["actions"]} == {"delete"}
+
+
+def test_delete_paths_sans_rien_a_supprimer_ne_commit_pas():
+    client, project = _client_with_files([])
+
+    deleted = client.delete_paths("cnp/cnp-gitops", files=["a.yaml"], directories=["apps/x"], commit_message="m")
+
+    assert deleted == 0
+    assert project.commits.payload is None

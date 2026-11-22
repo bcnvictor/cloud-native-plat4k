@@ -147,3 +147,19 @@ def declaration_files(t: EphemeralTarget) -> list[dict]:
         {"file_path": f"{t.root}/platform/serviceaccount.yaml", "content": _dump(_service_account(t))},
         {"file_path": t.platform_app_path, "content": _dump(_platform_application(t))},
     ]
+
+
+def argocd_app_names(app_slug: str, env_slug: str) -> tuple[str, str]:
+    """Noms des deux Applications ArgoCD de l'env : celle de l'app (CI) et la plateforme."""
+    name = ephemeral_env_name(app_slug, env_slug)
+    return name, f"{name}{PLATFORM_SUFFIX}"
+
+
+def destroy_paths(cluster: str, app_slug: str, env_slug: str) -> tuple[list[str], list[str]]:
+    """(fichiers, dossiers) de l'env dans cnp-gitops : les deux Applications et tout son
+    dossier apps/. Supprimer les Applications laisse ArgoCD purger le namespace (finalizer)."""
+    argocd_dir = f"argocd/{cluster}/{app_slug}/ephemeral"
+    return (
+        [f"{argocd_dir}/{env_slug}.yaml", f"{argocd_dir}/{env_slug}{PLATFORM_SUFFIX}.yaml"],
+        [f"apps/{cluster}/{app_slug}/ephemeral/{env_slug}"],
+    )
