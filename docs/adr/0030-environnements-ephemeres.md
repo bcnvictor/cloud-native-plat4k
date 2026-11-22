@@ -2,7 +2,11 @@
 
 ## Statut
 
-Proposed : 2026-11-17 (4K-285, epic 4K-284)
+Accepted : 2026-11-21 (4K-285, epic 4K-284)
+
+Amendé le 2026-11-22 : le §8 (URL et TLS) suit désormais le socle livré entre-temps par
+les PR #73 (cert-manager, HTTP-01) et #76 (external-dns par cluster). Le modèle
+« wildcard par cluster et DNS-01 » de la première version est abandonné.
 
 ## Contexte
 
@@ -50,6 +54,7 @@ Le modèle actuel suppose deux environnements partout :
 | Namespaces | ArgoCD ne supprime pas un namespace créé par `CreateNamespace=true` quand l'Application est supprimée. |
 | CI | `docker-build` tourne sur toutes les branches et tague `$CI_COMMIT_SHORT_SHA`. Dans un pipeline de MR, `CI_COMMIT_BRANCH` est vide, et la règle `workflow` coupe le pipeline de branche quand une MR est ouverte. |
 | Slugs d'app | `compute_slug` donne au plus 50 caractères, commence par une lettre et ne contient jamais `--`. |
+| Mise à jour du 22/11 | Depuis le spike, les PR #73 et #76 ont livré cert-manager et des ClusterIssuers `letsencrypt-prod`/`-staging` en **HTTP-01** sur AKS, k3s et GKE, un `Certificate` par host dans `platform/<env>/`, et **external-dns** sur chaque cluster (Cloudflare, DNS only, un A par host d'Ingress, prioritaire sur le wildcard). L'exposition publique est limitée aux clusters de `PUBLIC_EXPOSURE_CLUSTERS` (PR #74). Les constats « TLS » et « LB » ci-dessus décrivent l'état d'avant ces PR. Sur GKE, la partie cert-manager et external-dns de `infra/gke` reste à appliquer (tfstate local, cluster en pause). |
 
 ## Décision
 
@@ -131,8 +136,9 @@ construite.
      `chart/values-dev.yaml`, sinon de `chart/values.yaml`) s'ils manquent, puis écrit
      `image.tag` et `ingress.host`.
    - Les pushs suivants sur la branche mettent à jour le tag : l'env suit la branche.
-4. Le backend passe l'env en `active` quand l'Application est Synced et Healthy, ou en
-   `failed` si le pipeline échoue (`last_pipeline_status`).
+4. Le backend passe l'env en `active` quand l'Application est Synced et Healthy et le
+   `Certificate` `Ready` (§8), ou en `failed` si le pipeline échoue
+   (`last_pipeline_status`).
 
 L'Application de l'app suit la branche : le chart est en `targetRevision: <branche>`, pour
 qu'un changement de chart soit testable. Ce choix demande l'isolation du §6.
@@ -148,11 +154,12 @@ ClusterSecretStore, ou des ressources cluster-scoped (ClusterRoleBinding).
   - `destinations` : namespaces `*--*` du cluster local uniquement ;
   - `clusterResourceWhitelist` vide, aucune ressource cluster-scoped ;
   - `namespaceResourceBlacklist` : `ExternalSecret`, `SecretStore`, `PushSecret`
-    (groupe `external-secrets.io`), plus `ResourceQuota` et `LimitRange`, que la
-    plateforme garde pour elle ;
+    (groupe `external-secrets.io`), `Certificate` et `Issuer` (groupe
+    `cert-manager.io`, pour que seule la plateforme consomme le quota Let's Encrypt), plus
+    `ResourceQuota` et `LimitRange`, que la plateforme garde pour elle ;
   - `sourceRepos` : le groupe GitLab `4k-cnp-2027` et `cnp-gitops`.
 - Les ressources plateforme (Namespace, ExternalSecrets, SA `default` avec
-  `imagePullSecrets`) sont appliquées par une 2ᵉ Application `<app>--<slug>-platform`
+  `imagePullSecrets`, `Certificate` cert-manager) sont appliquées par une 2ᵉ Application `<app>--<slug>-platform`
   dans un AppProject `cnp-platform` dont la seule source est `cnp-gitops`. Seul le
   backend écrit dans ce chemin.
 - Le Namespace est un manifeste géré (pas `CreateNamespace=true`). Supprimer
@@ -179,46 +186,42 @@ le ClusterSecretStore est une dette notée en Conséquences.
   `dev` et `prod` (procédure dans `infra/aks/README.md`). Cette approche remplace cette
   étape manuelle pour les envs éphémères.
 
-### 8. URL et TLS : un sous-domaine wildcard par cluster
+### 8. URL et TLS : external-dns et cert-manager déjà en place
 
-La feature doit marcher sur les deux clouds publics, AKS et GKE. Le wildcard actuel
-n'atteint que le LB d'AKS. Chaque cluster reçoit donc son propre sous-domaine.
+Ce paragraphe réutilise le socle de l'exposition publique (PR #73, #74 et #76,
+`docs/guides/operations.md` §9). Aucune brique d'infrastructure nouvelle n'est nécessaire.
 
-- **DNS** : un enregistrement wildcard par cluster chez Cloudflare, en DNS only, vers le LB
-  ingress du cluster. Ça fait `*.aks.cloud-native-plat4k.me` vers le LB AKS et
-  `*.gke.cloud-native-plat4k.me` vers le LB GKE. C'est un enregistrement statique par
-  cluster, pas un par env, donc pas d'external-dns ni de token d'écriture DNS dans le
-  routage. Ces enregistrements spécifiques ont priorité sur `*.cloud-native-plat4k.me`,
-  qui reste en place pour les hosts existants.
-- **IP fixe** : l'IP du LB GKE doit être réservée (`google_compute_address` régionale et
-  `controller.service.loadBalancerIP` dans `infra/gke`), sinon l'enregistrement casse à
-  la recréation du Service. Pour AKS, l'IP publique du LB est à figer de la même façon.
-- **Domaine en base** : `cluster_connections` reçoit une colonne `apps_domain`
-  (`aks.cloud-native-plat4k.me`, `gke.cloud-native-plat4k.me`). La création d'un env est
-  refusée (409) si le cluster cible n'en a pas. Ajouter un cluster revient à créer son
-  wildcard et renseigner ce champ, sans toucher au code.
-- **Host** : `<app>--<slug>.<apps_domain>`, par exemple
-  `my-app--feat-login.gke.cloud-native-plat4k.me`. Il n'y a qu'un label sous le
-  sous-domaine du cluster (au plus 63 caractères), donc le certificat wildcard le couvre.
-  `<slug>.<app>.<apps_domain>` serait hors certificat. La CI reçoit le host déjà calculé
-  dans `env.yaml`, ce qui lui évite de connaître le domaine.
-- **TLS** : cert-manager sur chaque cluster, avec un ClusterIssuer Let's Encrypt en
-  **DNS-01 Cloudflare** (token API restreint à `Zone:DNS:Edit` sur la zone, stocké dans
-  Vault et livré par ESO). Un certificat `*.<apps_domain>` par cluster, déclaré comme
-  `--default-ssl-certificate` d'ingress-nginx. Les Ingress des envs éphémères activent
-  `tls` sans `secretName`. On a un certificat par cluster, avec des ensembles de noms
-  distincts, quel que soit le nombre d'envs : on reste loin des limites Let's Encrypt.
-- Rejeté :
-  - external-dns : un enregistrement par env et un token d'écriture DNS dans chaque
-    cluster, pour un gain nul par rapport à un wildcard par cluster ;
-  - un certificat HTTP-01 par env : 50 par semaine sur le domaine, et impossible en
-    wildcard ;
-  - Cloudflare en proxy orange : TLS coupé entre Cloudflare et le cluster, et le
-    certificat universel gratuit ne couvre qu'un niveau sous l'apex. Déjà écarté par
-    l'ADR-0021.
-- k3s (cloud privé) : le même mécanisme s'appliquera quand son ingress sera joignable
-  publiquement. C'est hors du périmètre de l'epic.
-- Cas limite : une app au slug de 2 caractères produirait `ab--…`, forme réservée
+- **Host** : `<app>--<slug>.cloud-native-plat4k.me`, par exemple
+  `my-app--feat-login.cloud-native-plat4k.me`. Le même domaine sert pour tous les
+  clusters, ce qui supprime le besoin d'un sous-domaine par cluster. Le backend calcule le
+  host et l'écrit dans `env.yaml` : la CI n'a pas à connaître le domaine.
+- **DNS** : external-dns tourne sur chaque cluster et publie chez Cloudflare un A pour
+  chaque host d'Ingress, vers l'ingress de ce cluster. Cet enregistrement l'emporte sur le
+  wildcard qui pointe vers AKS. Un env éphémère sur GKE ou k3s est donc joignable sans
+  rien ajouter. À la destruction, la politique `sync` retire l'enregistrement.
+- **TLS** : la plateforme écrit un `Certificate` cert-manager dans
+  `apps/<cluster>/<app>/ephemeral/<slug>/platform/` (ClusterIssuer `TLS_CLUSTER_ISSUER`,
+  secret `<app>--<slug>-tls`), déployé par l'Application plateforme comme le reste du
+  namespace. Le challenge HTTP-01 passe par l'ingress nginx du cluster. L'Ingress de
+  l'app active `tls`, exactement comme pour une app exposée.
+- **Clusters éligibles** : la création d'un env est refusée (422, même règle que
+  l'exposition) si le cluster cible n'est pas dans `PUBLIC_EXPOSURE_CLUSTERS`. La colonne
+  `cluster_connections.apps_domain` envisagée dans la première version n'est plus utile.
+- **Limites Let's Encrypt** : chaque création d'env émet un nouveau certificat, compté dans
+  la limite de 50 par semaine du domaine enregistré, partagée avec toutes les apps
+  exposées. Les renouvellements en sont exemptés. Cette limite reste confortable à notre
+  échelle, mais elle impose :
+  - un garde-fou côté backend : un nombre maximal d'envs éphémères actifs par app
+    (`EPHEMERAL_MAX_PER_APP`, 3 par défaut) ;
+  - de tester avec `TLS_CLUSTER_ISSUER=letsencrypt-staging`.
+
+  Si la limite devient gênante, un certificat wildcard en DNS-01 (le token Cloudflare
+  d'external-dns le permet) prendra le relais : il faudra alors un host à un seul label
+  sous le wildcard, ce que `<app>--<slug>` respecte déjà.
+- **Délai** : au premier déploiement, le certificat n'est émis qu'une fois l'enregistrement
+  publié (environ une minute) et le cache du wildcard expiré (TTL de 5 minutes). Le statut
+  `active` attend donc aussi que le `Certificate` soit `Ready`.
+- **Cas limite** : une app au slug de 2 caractères produirait `ab--…`, forme réservée
   (`xn--`). Le backend refuse ce cas.
 
 ### 9. TTL et destruction
@@ -271,7 +274,8 @@ tranchés pour 4K-317 :
 | `workflow` du pipeline | Pas de changement prévu. Exception `$CI_PIPELINE_SOURCE == "api"` si le point ci-dessus échoue. |
 | Chemin Vault | Aucun nouveau chemin : l'env lit `secret/apps/{group}/{app}/dev`. Le pull secret registry est ajouté sous `secret/apps/`, lisible par `eso-reader` sans changer la policy (§7). |
 | Matrice RBAC | Ajout des actions sur les envs éphémères (§10). La matrice des variables de l'ADR-0025 est inchangée, et `prod` reste réservée aux Maintainer/Owner. |
-| `ingress.host` | `app_hostname()` n'est pas modifiée pour `dev`/`prod`. Nouveau calcul `<app>--<slug>.<apps_domain>` pour les envs éphémères, nouvelle colonne `cluster_connections.apps_domain` (§8). |
+| `ingress.host` | `app_hostname()` n'est pas modifiée pour `dev`/`prod`. Nouveau calcul `<app>--<slug>.cloud-native-plat4k.me` pour les envs éphémères, avec `tls: true` et un `Certificate` dans le `platform/` de l'env (§8). |
+| Exposition publique | Même garde-fou que l'exposition : cluster cible dans `PUBLIC_EXPOSURE_CLUSTERS` (§8). |
 | Suppression d'app (ADR-0014) | Inchangée : elle retire déjà `apps/<cluster>/<app>/` et `argocd/<cluster>/<app>/`, et la FK en cascade retire les lignes (§4). Nouvelle suppression ciblée d'un env (§9). |
 | Code `dev`/`prod` en dur | Non touché : les envs éphémères ont leurs propres endpoints (§1). |
 | ArgoCD | Deux AppProjects ajoutés (`cnp-ephemeral`, `cnp-platform`). `default` reste en place pour `dev`/`prod` (§6). |
@@ -282,13 +286,13 @@ tranchés pour 4K-317 :
 - **4K-286 Provisionnement** : table et migration, endpoint de création, règle
   `update-gitops`, AppProjects `cnp-ephemeral`/`cnp-platform`, Namespace géré, **pull
   secret** (sans lui, l'env reste en `ImagePullBackOff`).
-- **4K-287 Secrets et URL** : `ExternalSecret` hérité de `dev`, host, extension RBAC. **Le
-  TLS et le DNS dépendent d'un prérequis infra à sortir en ticket séparé, sur AKS et
-  GKE** : IP fixes des LB, wildcards `*.aks`/`*.gke` chez Cloudflare, cert-manager,
-  ClusterIssuer DNS-01 et token Cloudflare (accès Cloudflare requis), colonne
-  `apps_domain`.
-- **Prérequis GKE** : relancer le cluster (en pause pour économiser l'essai GCP). ESO y
-  est opérationnel depuis le 20/11.
+- **4K-287 Secrets et URL** : `ExternalSecret` hérité de `dev`, host, `Certificate`
+  cert-manager, contrôle `PUBLIC_EXPOSURE_CLUSTERS`, extension RBAC. Le DNS et le TLS
+  reposent sur le socle des PR #73 et #76 : aucun prérequis infra propre à l'epic.
+- **Prérequis GKE** (4K-321, réduit) : appliquer la partie cert-manager et external-dns de
+  `infra/gke` (le tfstate est local), puis ajouter `cnp-gke` à `PUBLIC_EXPOSURE_CLUSTERS`
+  sur `cnp-control`. Le cluster est en pause pour économiser l'essai GCP, et ESO y est
+  opérationnel depuis le 20/11.
 - **4K-288 Destruction et TTL** : inchangé, avec le Namespace géré du §6.
 - **4K-289 UI et CLI** : `cnp env` sert déjà aux variables d'environnement (ADR-0025). Les
   commandes deviennent `cnp ephemeral create|list|destroy`.
@@ -321,9 +325,8 @@ Positif :
 - Le flux reste GitOps et sans race condition : la CI génère les Applications après le
   build (ADR-0014).
 - Un namespace par env, un AppProject restrictif et aucune copie de secret.
-- Disponible sur AKS et GKE avec le même code. Un nouveau cluster demande un
-  enregistrement DNS et un champ en base.
-- Un seul certificat par cluster, quel que soit le nombre d'envs.
+- Disponible sur AKS et GKE (et k3s une fois exposé) avec le même code. Le DNS et le TLS
+  reprennent le socle de l'exposition publique, sans brique propre à l'epic.
 - Le TTL limite le coût des envs oubliés (axe FinOps).
 
 Négatif / Dette :
@@ -334,13 +337,13 @@ Négatif / Dette :
   `conditions` : un chart mergé sur la branche par défaut peut toujours lire n'importe quel
   chemin `secret/apps/*`. À traiter dans un ticket sécurité dédié (policies Vault par
   groupe, ou SecretStore par namespace).
-- Un wildcard DNS et une IP de LB fixe à maintenir par cluster public. Un cluster sans
-  `apps_domain` ne peut pas héberger d'env éphémère.
+- Un certificat Let's Encrypt par env créé, compté dans la limite de 50 par semaine du
+  domaine, partagée avec les apps exposées : il faut un quota d'envs par app et l'issuer
+  de staging pour les tests (§8).
+- Le premier accès HTTPS d'un env attend la publication DNS et l'émission du certificat,
+  soit quelques minutes.
 - Tant que GKE est en pause pour économiser l'essai GCP, les envs éphémères n'y sont
   disponibles que lorsque le cluster est relancé.
-- Les hosts `dev.<app>` existants ont deux niveaux et ne seront pas couverts par le
-  certificat wildcard. Une migration vers un seul label reste à faire si on veut du TLS
-  en `dev`.
 - À vérifier pendant 4K-286 : qu'un pipeline déclenché par API sur une branche avec une MR
   ouverte n'est pas coupé par la règle `workflow` (sinon, ajouter une exception
   `$CI_PIPELINE_SOURCE == "api"`).
