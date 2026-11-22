@@ -58,6 +58,7 @@ def to_response(env: EphemeralEnvironment, app_slug: str, argocd_status: dict | 
         slug=env.slug,
         name=ephemeral_env_name(app_slug, env.slug),
         branch=env.branch,
+        cluster_name=env.cluster_name,
         status=env.status,
         image_tag=env.image_tag,
         expires_at=env.expires_at,
@@ -153,6 +154,7 @@ class EphemeralEnvService:
             app_id=app.id,
             slug=slug,
             branch=branch,
+            cluster_name=cluster.name,
             status=EphemeralEnvStatus.PROVISIONING,
             expires_at=datetime.now(timezone.utc) + timedelta(hours=ttl),
             created_by_user_id=user.id,
@@ -204,12 +206,17 @@ class EphemeralEnvService:
         await self.db.refresh(env)
         return to_response(env, app.slug)
 
-    async def _refresh(self, env: EphemeralEnvironment, app: Application, cluster: ClusterConnection | None) -> dict:
+    async def _cluster_by_name(self, name: str) -> ClusterConnection | None:
+        result = await self.db.execute(select(ClusterConnection).where(ClusterConnection.name == name))
+        return result.scalar_one_or_none()
+
+    async def _refresh(self, env: EphemeralEnvironment, app: Application) -> dict:
         """Lit le statut ArgoCD et fait avancer provisioning → active / failed. Best effort."""
         argocd_status: dict = {}
         if env.status in (EphemeralEnvStatus.DESTROYING, EphemeralEnvStatus.DESTROYED):
             return argocd_status
 
+        cluster = await self._cluster_by_name(env.cluster_name)
         if cluster is not None and cluster.argocd_url:
             try:
                 argocd = get_argocd_client_for_cluster(cluster)
@@ -240,11 +247,10 @@ class EphemeralEnvService:
 
     async def list(self, app_id: int) -> list[EphemeralEnvResponse]:
         app = await self._get_app(app_id)
-        cluster = await self.db.get(ClusterConnection, app.target_cluster_id) if app.target_cluster_id else None
         envs = await self._alive(app.id)
         responses = []
         for env in envs:
-            argocd_status = await self._refresh(env, app, cluster)
+            argocd_status = await self._refresh(env, app)
             responses.append(to_response(env, app.slug, argocd_status))
         await self.db.commit()
         return responses
@@ -254,7 +260,6 @@ class EphemeralEnvService:
         env = await self.db.get(EphemeralEnvironment, env_id)
         if env is None or env.app_id != app.id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ephemeral environment not found")
-        cluster = await self.db.get(ClusterConnection, app.target_cluster_id) if app.target_cluster_id else None
-        argocd_status = await self._refresh(env, app, cluster)
+        argocd_status = await self._refresh(env, app)
         await self.db.commit()
         return to_response(env, app.slug, argocd_status)

@@ -485,6 +485,7 @@ class EphemeralEnvResponse(BaseModel):
     slug: str
     name: str
     branch: str
+    cluster_name: str
     status: EphemeralEnvStatus
     image_tag: Optional[str] = None
     expires_at: datetime

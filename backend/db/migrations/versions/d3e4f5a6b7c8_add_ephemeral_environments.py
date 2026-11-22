@@ -16,6 +16,7 @@ def upgrade():
         sa.Column("app_id", sa.Integer(), sa.ForeignKey("applications.id", ondelete="CASCADE"), nullable=False),
         sa.Column("slug", sa.String(20), nullable=False),
         sa.Column("branch", sa.String(), nullable=False),
+        sa.Column("cluster_name", sa.String(), nullable=False),
         sa.Column(
             "status",
             sa.Enum("provisioning", "active", "failed", "destroying", "destroyed", name="ephemeralenvstatus"),

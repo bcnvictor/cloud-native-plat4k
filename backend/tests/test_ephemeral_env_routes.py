@@ -155,6 +155,7 @@ class TestCreation:
         assert body["slug"] == "feat-login"
         assert body["name"] == "my-app--feat-login"
         assert body["status"] == "provisioning"
+        assert body["cluster_name"] == "cnp-aks"
 
         # Un seul commit gitops, avec la déclaration et l'Application plateforme
         assert len(bot.pushed) == 1

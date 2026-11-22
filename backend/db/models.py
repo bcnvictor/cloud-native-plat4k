@@ -196,6 +196,9 @@ class EphemeralEnvironment(Base):
     app_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True)
     slug = Column(String(20), nullable=False)
     branch = Column(String, nullable=False)
+    # Figé à la création : les chemins gitops de l'env en dépendent, même si l'app
+    # change de cluster ou si le cluster est supprimé.
+    cluster_name = Column(String, nullable=False)
     status = Column(
         SQLEnum(EphemeralEnvStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
