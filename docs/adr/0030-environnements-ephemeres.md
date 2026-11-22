@@ -107,8 +107,8 @@ Les root apps observent déjà `argocd/<cluster>/` en récursif (ADR-0012). Il s
 d'ajouter des fichiers :
 
 ```
-argocd/<cluster>/<app>/ephemeral/<slug>.yaml            # Application de l'app (chart + values)
-argocd/<cluster>/<app>/ephemeral/<slug>-platform.yaml   # Application plateforme
+argocd/<cluster>/<app>/ephemeral/<slug>.yaml            # Application de l'app (créée par la CI)
+argocd/<cluster>/<app>/ephemeral/<slug>-platform.yaml   # Application plateforme (écrite par le backend)
 apps/<cluster>/<app>/ephemeral/<slug>/env.yaml          # déclaration : branche, slug, host (écrite par le backend)
 apps/<cluster>/<app>/ephemeral/<slug>/values.yaml       # values (créées par la CI)
 apps/<cluster>/<app>/ephemeral/<slug>/platform/         # Namespace, ExternalSecrets, SA (écrits par le backend)
@@ -125,16 +125,22 @@ construite.
 
 1. Le backend vérifie que la branche existe et contient `.gitlab-ci.yml`, `Dockerfile` et
    `chart/` (409 sinon). Une branche créée avant l'injection CI n'a pas de pipeline CNP.
-2. Il crée la ligne (`provisioning`), écrit en un seul commit `env.yaml` et `platform/`,
-   puis déclenche un pipeline sur la branche via l'API GitLab.
-3. `update-gitops` reçoit une règle de plus : sur une branche autre que `main` et
-   `release-dev-*`, il clone `cnp-gitops` et cherche une déclaration dont `branch`
+2. Il crée la ligne (`provisioning`), écrit en un seul commit `env.yaml`, `platform/` et
+   l'Application plateforme, puis déclenche un pipeline sur la branche via l'API GitLab.
+   L'Application plateforme ne dépend pas de l'image : le namespace et le pull secret sont
+   prêts avant le premier déploiement.
+3. Un job `update-gitops-ephemeral`, séparé d'`update-gitops` qui reste inchangé, tourne
+   sur les branches autres que `main` et `release-dev-*`. Il clone `cnp-gitops` et
+   cherche une déclaration dont `branch`
    correspond à la branche courante (`${CI_COMMIT_BRANCH:-$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}`).
    - S'il n'en trouve pas, il sort en succès sans rien faire. Les apps existantes ne
      voient aucune différence, ce qui compte car `cnp-ci-modules` est inclus en `ref: main`.
-   - S'il en trouve une, il génère les deux Applications et `values.yaml` (copie de
+   - S'il en trouve une, il génère l'Application de l'app et `values.yaml` (copie de
      `chart/values-dev.yaml`, sinon de `chart/values.yaml`) s'ils manquent, puis écrit
      `image.tag` et `ingress.host`.
+   - La règle `workflow` du pipeline laisse passer les pipelines déclenchés par l'API
+     (`$CI_PIPELINE_SOURCE == "api"`), sinon celui de CNP serait filtré dès qu'une MR
+     est ouverte sur la branche.
    - Les pushs suivants sur la branche mettent à jour le tag : l'env suit la branche.
 4. Le backend passe l'env en `active` quand l'Application est Synced et Healthy et le
    `Certificate` `Ready` (§8), ou en `failed` si le pipeline échoue
@@ -270,8 +276,8 @@ tranchés pour 4K-317 :
 
 | Élément | Impact |
 |---|---|
-| `update-gitops` | Nouvelle règle sur les branches autres que `main`/`release-dev-*` : cherche une déclaration, ne fait rien s'il n'y en a pas (§5). La boucle `dev prod` est inchangée. À valider : pipeline déclenché par API avec une MR ouverte. |
-| `workflow` du pipeline | Pas de changement prévu. Exception `$CI_PIPELINE_SOURCE == "api"` si le point ci-dessus échoue. |
+| `update-gitops` | Inchangé. Nouveau job `update-gitops-ephemeral` sur les branches autres que `main`/`release-dev-*` : cherche une déclaration, ne fait rien s'il n'y en a pas (§5). |
+| `workflow` du pipeline | Exception `$CI_PIPELINE_SOURCE == "api"` avant la règle qui coupe les pipelines de branche quand une MR est ouverte (§5). |
 | Chemin Vault | Aucun nouveau chemin : l'env lit `secret/apps/{group}/{app}/dev`. Le pull secret registry est ajouté sous `secret/apps/`, lisible par `eso-reader` sans changer la policy (§7). |
 | Matrice RBAC | Ajout des actions sur les envs éphémères (§10). La matrice des variables de l'ADR-0025 est inchangée, et `prod` reste réservée aux Maintainer/Owner. |
 | `ingress.host` | `app_hostname()` n'est pas modifiée pour `dev`/`prod`. Nouveau calcul `<app>--<slug>.cloud-native-plat4k.me` pour les envs éphémères, avec `tls: true` et un `Certificate` dans le `platform/` de l'env (§8). |
@@ -344,9 +350,9 @@ Négatif / Dette :
   soit quelques minutes.
 - Tant que GKE est en pause pour économiser l'essai GCP, les envs éphémères n'y sont
   disponibles que lorsque le cluster est relancé.
-- À vérifier pendant 4K-286 : qu'un pipeline déclenché par API sur une branche avec une MR
-  ouverte n'est pas coupé par la règle `workflow` (sinon, ajouter une exception
-  `$CI_PIPELINE_SOURCE == "api"`).
+- L'exception `workflow` pour les pipelines déclenchés par l'API vaut pour toutes les
+  apps : un pipeline lancé par CNP (env éphémère, scan de sécurité) tourne désormais même
+  si une MR est ouverte sur la branche.
 - ESO fonctionne sur les trois clusters, mais avec un token statique partagé
   (`period=720h`) à renouveler à la main (ADR-0024 §2). Son expiration coupe les secrets
   de tous les envs, éphémères compris.
