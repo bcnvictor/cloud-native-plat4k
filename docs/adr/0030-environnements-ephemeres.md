@@ -108,11 +108,15 @@ d'ajouter des fichiers :
 
 ```
 argocd/<cluster>/<app>/ephemeral/<slug>.yaml            # Application de l'app (créée par la CI)
-argocd/<cluster>/<app>/ephemeral/<slug>-platform.yaml   # Application plateforme (écrite par le backend)
+argocd/<cluster>/<app>/ephemeral/<slug>--platform.yaml  # Application plateforme (écrite par le backend)
 apps/<cluster>/<app>/ephemeral/<slug>/env.yaml          # déclaration : branche, slug, host (écrite par le backend)
 apps/<cluster>/<app>/ephemeral/<slug>/values.yaml       # values (créées par la CI)
 apps/<cluster>/<app>/ephemeral/<slug>/platform/         # Namespace, ExternalSecrets, SA (écrits par le backend)
 ```
+
+Le suffixe de l'Application plateforme est `--platform` : `--` n'apparaît jamais dans un
+slug, donc les branches `x` et `x-platform` d'une même app n'ont ni fichier ni nom
+d'Application en commun. Le nom fait au plus 53 + 10 = 63 caractères, la limite des labels.
 
 La suppression d'une app (ADR-0014) retire déjà `apps/<cluster>/<app>/` et
 `argocd/<cluster>/<app>/`, et la FK en cascade retire les lignes. Les envs éphémères
@@ -165,11 +169,13 @@ ClusterSecretStore, ou des ressources cluster-scoped (ClusterRoleBinding).
     `ResourceQuota` et `LimitRange`, que la plateforme garde pour elle ;
   - `sourceRepos` : le groupe GitLab `4k-cnp-2027` et `cnp-gitops`.
 - Les ressources plateforme (Namespace, ExternalSecrets, SA `default` avec
-  `imagePullSecrets`, `Certificate` cert-manager) sont appliquées par une 2ᵉ Application `<app>--<slug>-platform`
+  `imagePullSecrets`, `Certificate` cert-manager) sont appliquées par une 2ᵉ Application `<app>--<slug>--platform`
   dans un AppProject `cnp-platform` dont la seule source est `cnp-gitops`. Seul le
   backend écrit dans ce chemin.
 - Le Namespace est un manifeste géré (pas `CreateNamespace=true`). Supprimer
   l'Application plateforme supprime donc le namespace et tout ce qu'il contient.
+- Les deux Applications ont un `retry` de synchro : la synchro peut échouer tant qu'un
+  ancien namespace du même nom est encore en `Terminating`.
 - Les AppProjects sont versionnés dans `cnp-gitops` (`argocd/<cluster>/_projects/`).
 
 `dev` et `prod` restent sur `project: default` pour l'instant. Leur chart vient de la
@@ -187,8 +193,12 @@ le ClusterSecretStore est une dette notée en Conséquences.
 - Aucun manifeste plateforme d'un env éphémère ne référence un chemin `prod`, et le §6
   empêche le chart d'en ajouter un.
 - Le pull secret registry est fourni par un `ExternalSecret` de type
-  `kubernetes.io/dockerconfigjson` (identifiants du bot dans Vault, sous `secret/apps/`,
-  que la policy `eso-reader` lit déjà). Aujourd'hui, ce secret est créé à la main dans
+  `kubernetes.io/dockerconfigjson` (identifiants dans Vault sous
+  `secret/apps/_platform/gitlab-registry`, que la policy `eso-reader` lit déjà). Le chart
+  vient d'une branche non relue : un Developer peut monter ce Secret dans un pod et le
+  lire. Il ne contient donc qu'un **deploy token de groupe (`cnp-apps`) limité à
+  `read_registry`**, jamais le token du bot ni un PAT (token `cnp-ephemeral-registry`,
+  posé le 23/11/2026). Aujourd'hui, ce secret est créé à la main dans
   `dev` et `prod` (procédure dans `infra/aks/README.md`). Cette approche remplace cette
   étape manuelle pour les envs éphémères.
 
@@ -234,14 +244,25 @@ Ce paragraphe réutilise le socle de l'exposition publique (PR #73, #74 et #76,
 
 - TTL par défaut `EPHEMERAL_DEFAULT_TTL_HOURS=24`, maximum
   `EPHEMERAL_MAX_TTL_HOURS=168`, choisi à la création. `expires_at` est en base.
-- La destruction ciblée passe l'env en `destroying`, puis supprime en un seul commit les
-  deux Applications et `apps/<cluster>/<app>/ephemeral/<slug>/`. Les 404 sont ignorés,
-  donc l'opération est idempotente. L'env passe ensuite en `destroyed`. Le finalizer
-  ArgoCD et le Namespace géré libèrent toutes les ressources.
+- La destruction ciblée passe l'env en `destroying`, en enregistrant la raison (`manual`,
+  `expired`) et l'auteur, puis :
+  1. annule le pipeline de l'env, pour que `update-gitops-ephemeral` ne repousse pas
+     l'Application après la suppression ;
+  2. supprime en un commit les deux Applications et `apps/<cluster>/<app>/ephemeral/<slug>/`,
+     et répète jusqu'à une passe vide : un fichier poussé par la CI entre le listage et le
+     commit est rattrapé. Les fichiers déjà absents sont ignorés, donc l'opération est
+     idempotente ;
+  3. passe en `destroyed` seulement quand ArgoCD n'a plus aucune des deux Applications.
+     Le finalizer et le Namespace géré ont alors libéré toutes les ressources, et le slug
+     peut être réutilisé sans tomber sur un namespace en `Terminating`. D'ici là, l'API
+     répond 202 et une recréation sur la même branche est refusée (409).
 - Un worker de fond (`run_ephemeral_ttl_worker`, même modèle que `run_scale_worker`)
-  détruit les envs expirés et les envs bloqués en `destroying`, et trace dans l'audit log.
+  détruit les envs expirés et fait avancer ceux en `destroying`. L'audit log garde la
+  raison et l'auteur du premier passage. Le worker ne démarre que si GitOps est configuré.
 - `dev`, `prod`, le repo et la ligne de l'app ne sont pas touchés.
-- Si le cluster est arrêté, le commit est fait quand même : ArgoCD purge au rallumage.
+- Si le cluster est arrêté, le commit est fait quand même, mais l'env reste en
+  `destroying` jusqu'au rallumage et à la purge par ArgoCD. Si le cluster a été supprimé
+  de la CNP, il n'y a rien à attendre et l'env passe en `destroyed`.
 
 ### 10. RBAC
 
