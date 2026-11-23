@@ -159,21 +159,28 @@ Le chart est figé sur le commit construit, pas sur la tête de la branche : un 
 n'est pas encore construit ne change ni le chart ni l'image déployés. Un changement de
 chart reste testable, ce qui demande l'isolation du §6.
 
-### 6. Isolation : AppProject `cnp-ephemeral` et Application plateforme séparée
+### 6. Isolation : un AppProject par env et Application plateforme séparée
 
 Le chart déployé vient d'une branche et n'est donc pas relu : tout Developer qui
 pousse une branche choisit ce qu'ArgoCD applique. Sans garde-fou, il pourrait ajouter un
 `ExternalSecret` vers `secret/apps/<autre-groupe>/<autre-app>/prod` via le
 ClusterSecretStore, ou des ressources cluster-scoped (ClusterRoleBinding).
 
-- L'Application de l'app passe dans un AppProject **`cnp-ephemeral`** :
-  - `destinations` : namespaces `*--*` du cluster local uniquement ;
+- L'Application de l'app passe dans un **AppProject propre à l'env**, nommé `<app>--<slug>`,
+  que le backend écrit dans le commit de déclaration
+  (`argocd/<cluster>/<app>/ephemeral/<slug>--project.yaml`) :
+  - `destinations` : le seul namespace de l'env, sur le cluster local. Un projet commun
+    (`*--*`) laisserait le chart de l'app A déployer dans le namespace d'un env de B, et
+    y monter le Secret de ses variables de dev ;
   - `clusterResourceWhitelist` vide, aucune ressource cluster-scoped ;
   - `namespaceResourceBlacklist` : `ExternalSecret`, `SecretStore`, `PushSecret`
-    (groupe `external-secrets.io`), `Certificate` et `Issuer` (groupe
-    `cert-manager.io`, pour que seule la plateforme consomme le quota Let's Encrypt), plus
-    `ResourceQuota` et `LimitRange`, que la plateforme garde pour elle ;
-  - `sourceRepos` : le groupe GitLab `4k-cnp-2027` et `cnp-gitops`.
+    (groupe `external-secrets.io`), `Certificate`, `CertificateRequest`, `Issuer`
+    (`cert-manager.io`) et `Order`, `Challenge` (`acme.cert-manager.io`), pour que seule la
+    plateforme consomme le quota Let's Encrypt, plus `ResourceQuota` et `LimitRange`, que
+    la plateforme garde pour elle ;
+  - `sourceRepos` : le seul repo de l'app et `cnp-gitops`.
+- À la destruction, l'AppProject est supprimé **après** les deux Applications : sans lui,
+  ArgoCD ne pourrait plus finaliser l'Application de l'app.
 - Les ressources plateforme (Namespace, ExternalSecrets, SA `default` avec
   `imagePullSecrets`, `Certificate` cert-manager) sont appliquées par une 2ᵉ Application `<app>--<slug>--platform`
   dans un AppProject `cnp-platform` dont la seule source est `cnp-gitops`. Seul le
@@ -182,7 +189,9 @@ ClusterSecretStore, ou des ressources cluster-scoped (ClusterRoleBinding).
   l'Application plateforme supprime donc le namespace et tout ce qu'il contient.
 - Les deux Applications ont un `retry` de synchro : la synchro peut échouer tant qu'un
   ancien namespace du même nom est encore en `Terminating`.
-- Les AppProjects sont versionnés dans `cnp-gitops` (`argocd/<cluster>/_projects/`).
+- `cnp-platform` est versionné dans `cnp-gitops` (`argocd/<cluster>/_projects/`).
+- Une `ValidatingAdmissionPolicy` (`argocd/<cluster>/_policies/`) borne les Ingress des
+  namespaces éphémères (§8).
 
 `dev` et `prod` restent sur `project: default` pour l'instant. Leur chart vient de la
 branche par défaut, relue en MR. Restreindre aussi `default` et poser des `conditions` sur
@@ -222,10 +231,20 @@ Ce paragraphe réutilise le socle de l'exposition publique (PR #73, #74 et #76,
   wildcard qui pointe vers AKS. Un env éphémère sur GKE ou k3s est donc joignable sans
   rien ajouter. À la destruction, la politique `sync` retire l'enregistrement.
 - **TLS** : la plateforme écrit un `Certificate` cert-manager dans
-  `apps/<cluster>/<app>/ephemeral/<slug>/platform/` (ClusterIssuer `TLS_CLUSTER_ISSUER`,
-  secret `<app>--<slug>-tls`), déployé par l'Application plateforme comme le reste du
-  namespace. Le challenge HTTP-01 passe par l'ingress nginx du cluster. L'Ingress de
-  l'app active `tls`, exactement comme pour une app exposée.
+  `apps/<cluster>/<app>/ephemeral/<slug>/platform/` (ClusterIssuer
+  `EPHEMERAL_TLS_CLUSTER_ISSUER`, sinon `TLS_CLUSTER_ISSUER`), déployé par l'Application
+  plateforme comme le reste du namespace. Son secret est `<app>-tls`, celui que l'Ingress
+  du chart référence quand `ingress.tls=true` : le chart nomme ses ressources d'après le
+  slug de l'app, et chaque env a son namespace. Le challenge HTTP-01 passe par l'ingress
+  nginx du cluster. L'Ingress de l'app active `tls`, exactement comme pour une app exposée.
+- **Garde-fou sur les Ingress** : le chart vient d'une branche non relue et pourrait
+  déclarer n'importe quel host, qu'external-dns publierait, ou faire émettre un certificat
+  par annotation, hors du `Certificate` de la plateforme et de son quota. La
+  `ValidatingAdmissionPolicy` `cnp-ephemeral-ingress` refuse, dans un namespace
+  `cnp.io/env-type=ephemeral`, tout Ingress dont un host (règle ou TLS) diffère de
+  `<namespace>.cloud-native-plat4k.me`, ou qui porte une annotation `cert-manager.io/*`,
+  `acme.cert-manager.io/*` ou `external-dns.alpha.kubernetes.io/*`. Le chart ne peut pas
+  retirer ce label : le Namespace est cluster-scoped, donc hors de son AppProject.
 - **Clusters éligibles** : la création d'un env est refusée (422, même règle que
   l'exposition) si le cluster cible n'est pas dans `PUBLIC_EXPOSURE_CLUSTERS`. La colonne
   `cluster_connections.apps_domain` envisagée dans la première version n'est plus utile.
@@ -311,21 +330,21 @@ tranchés pour 4K-317 :
 | Exposition publique | Même garde-fou que l'exposition : cluster cible dans `PUBLIC_EXPOSURE_CLUSTERS` (§8). |
 | Suppression d'app (ADR-0014) | Inchangée : elle retire déjà `apps/<cluster>/<app>/` et `argocd/<cluster>/<app>/`, et la FK en cascade retire les lignes (§4). Nouvelle suppression ciblée d'un env (§9). |
 | Code `dev`/`prod` en dur | Non touché : les envs éphémères ont leurs propres endpoints (§1). |
-| ArgoCD | Deux AppProjects ajoutés (`cnp-ephemeral`, `cnp-platform`). `default` reste en place pour `dev`/`prod` (§6). |
+| ArgoCD | AppProject `cnp-platform` ajouté, plus un AppProject par env écrit par le backend, et la `ValidatingAdmissionPolicy` `cnp-ephemeral-ingress`. `default` reste en place pour `dev`/`prod` (§6). |
 | CLI | Nouveau groupe `cnp ephemeral`, car `cnp env` est déjà pris par les variables (§13). |
 
 ### 13. Découpage confirmé et ajusté
 
 - **4K-286 Provisionnement** : table et migration, endpoint de création, déploiement
-  par le worker après le build, règle `workflow` de la CI, AppProjects `cnp-ephemeral`/`cnp-platform`, Namespace géré, **pull
+  par le worker après le build, règle `workflow` de la CI, AppProject `cnp-platform`, Namespace géré, **pull
   secret** (sans lui, l'env reste en `ImagePullBackOff`).
 - **4K-287 Secrets et URL** : `ExternalSecret` hérité de `dev`, host, `Certificate`
-  cert-manager, contrôle `PUBLIC_EXPOSURE_CLUSTERS`, extension RBAC. Le DNS et le TLS
+  cert-manager, contrôle `PUBLIC_EXPOSURE_CLUSTERS`, extension RBAC, AppProject par env et
+  `ValidatingAdmissionPolicy` des Ingress (§6 et §8). Le DNS et le TLS
   reposent sur le socle des PR #73 et #76 : aucun prérequis infra propre à l'epic.
-- **Prérequis GKE** (4K-321, réduit) : appliquer la partie cert-manager et external-dns de
-  `infra/gke` (le tfstate est local), puis ajouter `cnp-gke` à `PUBLIC_EXPOSURE_CLUSTERS`
-  sur `cnp-control`. Le cluster est en pause pour économiser l'essai GCP, et ESO y est
-  opérationnel depuis le 20/11.
+- **Prérequis GKE** (4K-321) : fait le 23/11/2026. external-dns et cert-manager tournent
+  sur les trois clusters, et `PUBLIC_EXPOSURE_CLUSTERS=cnp-aks,cnp-gke,cnp-k3s` est actif
+  sur `cnp-control`.
 - **4K-288 Destruction et TTL** : inchangé, avec le Namespace géré du §6.
 - **4K-289 UI et CLI** : `cnp env` sert déjà aux variables d'environnement (ADR-0025). Les
   commandes deviennent `cnp ephemeral create|list|destroy`.
