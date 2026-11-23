@@ -105,6 +105,13 @@ class GitLabClient:
         project = self.get_project(project_path)
         return getattr(project, "default_branch", None) or "main"
 
+    def list_branches(self, project_path: str, limit: int = 100) -> list[str]:
+        """Branch names, most recently updated first (at most `limit`)."""
+        project = self.get_project(project_path)
+        branches = project.branches.list(per_page=limit, get_all=False)
+        branches.sort(key=lambda b: (b.commit or {}).get("committed_date") or "", reverse=True)
+        return [b.name for b in branches]
+
     def list_tree(self, project_path: str, path: str = "", ref: str = "HEAD") -> list[dict]:
         """List files/dirs at the root (or given path) of a project."""
         project = self.get_project(project_path)
