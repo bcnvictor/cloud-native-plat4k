@@ -55,6 +55,12 @@ def test_namespace_gere_et_etiquete():
     assert labels["cnp.io/owner"] == "team-a"
 
 
+def test_namespace_pod_security_baseline():
+    # Chart non relu : Pod Security Admission refuse les pods privilégiés et les accès à l'hôte
+    labels = _files()[f"{ROOT}/platform/namespace.yaml"]["metadata"]["labels"]
+    assert labels["pod-security.kubernetes.io/enforce"] == "baseline"
+
+
 def test_pull_secret_dockerconfigjson_depuis_vault():
     es = _files()[f"{ROOT}/platform/registry-pull-secret.yaml"]
     assert es["kind"] == "ExternalSecret"

@@ -70,6 +70,9 @@ def _namespace(t: EphemeralTarget) -> dict:
                 "cnp.io/env": t.env_slug,
                 "cnp.io/env-type": "ephemeral",
                 "cnp.io/owner": sanitize_k8s_label_value(t.owner),
+                # Le chart vient d'une branche non relue (§6) : pas de pod privilégié, ni
+                # hostPath, ni hostNetwork, qui donneraient la main sur le nœud.
+                "pod-security.kubernetes.io/enforce": "baseline",
             },
         },
     }
