@@ -111,6 +111,15 @@ class EnvVarService:
                 status_code=409, detail=f"Key '{key}' is managed by Keycloak, cannot be deleted manually"
             )
         path = await self._vault_path(app, env)
+        try:
+            present = key in vault_client.get_secret(path)
+        except InvalidPath:
+            present = False
+        if not present:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Variable '{key}' is not set in '{env}'",
+            )
         vault_client.delete_secret_key(path, key)
 
     async def get_values(self, app_id: int, env: str) -> dict[str, str]:

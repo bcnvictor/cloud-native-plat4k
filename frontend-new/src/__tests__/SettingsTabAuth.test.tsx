@@ -240,3 +240,16 @@ describe('SettingsTab internet exposure', () => {
     await waitFor(() => expect(api.toggleExpose).toHaveBeenCalledWith(1, true));
   });
 });
+
+describe('SettingsTab env vars when the access check fails', () => {
+  it('shows an error instead of "No variables."', async () => {
+    api.getAuthStatus.mockResolvedValue(status(null));
+    api.getMyAccess.mockRejectedValue({ response: { data: { detail: 'Service unavailable' } } });
+    renderTab();
+    expect(await screen.findByText(/Could not load your access to this app/)).toBeTruthy();
+    expect(screen.getByText(/Service unavailable/)).toBeTruthy();
+    expect(screen.queryByText('No variables.')).toBeNull();
+    // Permissions are unknown: the variable list is never requested.
+    expect(api.listEnvVars).not.toHaveBeenCalled();
+  });
+});
