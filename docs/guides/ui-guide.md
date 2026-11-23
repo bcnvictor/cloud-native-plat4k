@@ -45,7 +45,7 @@ Chemin : groupe → **Apps** → bouton **New app** (`/groups/<groupe>/apps/new`
 
 1. **Identity** : choisir l'origine — **Scaffold** (crée un nouveau projet GitLab depuis un template) ou **Onboard** (référence un repo GitLab existant) —, le **App name** (le slug est calculé automatiquement), le **Framework** (template, ex. FastAPI, Next.js, Django, Express) ou le **GitLab repo** à importer.
 2. **Services** : injecter des services managés — **Database** (PostgreSQL in-cluster, nom de base et taille 1/5/20 Gi), **Authentication** (Keycloak), **Cache** (Redis).
-3. **CI & Deploy** : **Target cloud** (cluster cible ; sans cluster enregistré, celui par défaut est utilisé), **Deploy trigger** (**On every commit** sur main, ou **On tag**), **Internet exposure** (sous-domaines `<slug>.cloud-native-plat4k.me` en prod et `dev.<slug>.cloud-native-plat4k.me` en dev ; disponible seulement sur les clusters avec nginx-ingress, sinon accès par port-forward), **Advanced options** (variables d'environnement, **Replica count**).
+3. **CI & Deploy** : **Target cloud** (cluster cible ; sans cluster enregistré, celui par défaut est utilisé), **Deploy trigger** (**On every commit** sur main, ou **On tag**), **Internet exposure** (sous-domaines `<slug>.cloud-native-plat4k.me` en prod et `dev.<slug>.cloud-native-plat4k.me` en dev ; disponible seulement sur les clusters que le DNS public atteint — aujourd'hui `cnp-aks` —, sinon accès par port-forward), **Advanced options** (variables d'environnement, **Replica count**).
 4. **Recap** : vérifier puis **Create app**. L'application passe en statut *onboarding* pendant le provisioning (repo, CI, ArgoCD).
 
 Tout reste modifiable ensuite dans l'onglet Settings de l'application.
@@ -64,7 +64,7 @@ Onglets : **Overview**, **Logs**, **History**, **Settings**, **Assistant**.
 - Cartes **Production environment** et **Dev environment** : état ArgoCD **Sync** (Synced/OutOfSync), **Health** (Healthy, Progressing, Degraded, Missing, Stopped), **Image** déployée, **Last sync**.
 - **Stop / Resume** par environnement (maintainer+) : **Stop** puis **Confirm** met l'environnement à zéro réplica via un commit GitOps (*scale-to-zero*) ; **Resume** le relance. Les environnements dev peuvent aussi être arrêtés automatiquement la nuit (voir « Arrêt nocturne »).
 - **Cloud target** : cluster cible, endpoint et statut (online/offline).
-- **Quick access** : URLs prod/dev si l'app est exposée, sinon la commande `kubectl port-forward svc/<slug> 8080:80` ; lien **GitLab repository**.
+- **Quick access** : URLs prod/dev si l'app est exposée, sinon la commande `kubectl port-forward -n dev svc/<slug> 8000:8000` (port local 8000 : une des origines autorisées par le realm Keycloak dev) ; lien **GitLab repository**.
 - **Conseiller FinOps IA** (si l'assistant IA est activé) : bouton **Analyser la consommation** — analyse des 24 dernières heures de CPU/RAM (Prometheus), *requests* proposées, coût mensuel réservé → proposé et recommandations de right-sizing (conseils uniquement, à reporter dans le chart Helm). **Approfondir avec l'assistant** poursuit l'analyse dans l'assistant.
 
 ## Onglet Logs
@@ -83,7 +83,7 @@ Onglets : **Overview**, **Logs**, **History**, **Settings**, **Assistant**.
 
 - **Identity** : **Display name**, **Slug** (immuable), **Description**, bouton **Save** (maintainer+).
 - **Environment variables** : onglets **dev** / **prod**, bouton **Add** (clé + valeur), **Edit**, suppression. Les valeurs ne sont jamais réaffichées après enregistrement ; elles sont stockées dans Vault et synchronisées vers le cluster en quelques minutes (redémarrage des pods). Developer : dev uniquement ; prod : maintainer+.
-- **Internet exposure** : interrupteur *Exposed on internet* / *Port-forward only* (maintainer+).
+- **Internet exposure** : interrupteur *Exposed on internet* / *Port-forward only* (maintainer+). Désactivé sur un cluster que le DNS public n'atteint pas, sauf pour couper l'exposition d'une app déjà exposée. Avec Keycloak, les redirect URIs suivent l'exposition ; si leur mise à jour a échoué, un avertissement propose **Retry**.
 - Le **cluster cible** n'est pas modifiable ici : il se choisit à la création (New app → étape CI & Deploy → Target cloud).
 - **Danger zone** : **Delete this app** (maintainer+, irréversible ; pour une app scaffoldée le repo GitLab est aussi supprimé).
 

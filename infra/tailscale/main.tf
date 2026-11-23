@@ -18,10 +18,10 @@ provider "tailscale" {
 # ACL policy
 # ---------------------------------------------------------------------------
 # autoApprovers évite de devoir approuver manuellement chaque route annoncée
-# par les Connectors (AKS : 10.0.0.0/16, GKE : 34.118.224.0/20) dans l'admin console.
+# par les Connectors (AKS : 10.0.0.0/16, GKE : 34.118.224.0/20, k3s : 10.43.0.0/16).
 #
 # Ce fichier reflète la policy en place dans la console (corrections ESO 4K-105,
-# cf. infra/eso/README.md) + GKE (4K-244) + Keycloak 8080 (4K-15, à appliquer).
+# cf. infra/eso/README.md) + GKE (4K-244) + Keycloak 8080 (4K-15).
 # overwrite_existing_content = true : toute modification faite uniquement dans la
 # console est écrasée au prochain apply.
 
@@ -40,6 +40,7 @@ resource "tailscale_acl" "cnp" {
       routes = {
         "10.0.0.0/16"     = ["tag:k8s"] # Service CIDR AKS
         "34.118.224.0/20" = ["tag:k8s"] # Service CIDR GKE
+        "10.43.0.0/16"    = ["tag:k8s"] # Service CIDR k3s
       }
     }
 
@@ -65,6 +66,17 @@ resource "tailscale_acl" "cnp" {
           "34.118.224.0/20:3100", # Loki ClusterIP
           "34.118.224.0/20:443",  # ArgoCD HTTPS
           "34.118.224.0/20:6443", # Kubernetes API server
+        ]
+      },
+      # cnp-control → k3s ClusterIPs via Connector (10.43.0.0/16)
+      {
+        action = "accept"
+        src    = ["tag:cnp-control"]
+        dst = [
+          "10.43.0.0/16:9090", # Prometheus ClusterIP
+          "10.43.0.0/16:3100", # Loki ClusterIP
+          "10.43.0.0/16:443",  # ArgoCD HTTPS
+          "10.43.0.0/16:6443", # Kubernetes API server
         ]
       },
       # cnp-control → nodes Tailscale AKS directement (subnet router + operator)

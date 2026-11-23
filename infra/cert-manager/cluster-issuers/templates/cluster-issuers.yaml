@@ -1,0 +1,23 @@
+{{- $email := required "email is required (ACME account e-mail)" .Values.email }}
+{{- range $name, $issuer := .Values.issuers }}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ $.Chart.Name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+spec:
+  acme:
+    server: {{ required (printf "issuers.%s.server is required" $name) $issuer.server | quote }}
+    email: {{ $email | quote }}
+    # ACME account key, stored in the cert-manager namespace (cluster resource namespace).
+    privateKeySecretRef:
+      name: {{ $name }}-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: {{ $.Values.ingressClassName | quote }}
+{{- end }}

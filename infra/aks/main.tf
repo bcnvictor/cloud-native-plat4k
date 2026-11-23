@@ -18,6 +18,8 @@ terraform {
 
 provider "azurerm" {
   features {}
+  # Subscription explicite : ne dépend pas de la subscription par défaut de la CLI `az`
+  subscription_id = var.subscription_id
 }
 
 provider "kubernetes" {
@@ -87,7 +89,7 @@ resource "azurerm_kubernetes_cluster" "cnp" {
   # Réseau : kubenet est suffisant pour un cluster de dev/démo
   # Azure CNI serait nécessaire pour des intégrations réseau Azure avancées
   network_profile {
-    network_plugin = "kubenet"
+    network_plugin    = "kubenet"
     load_balancer_sku = "standard"
   }
 
@@ -106,7 +108,7 @@ resource "helm_release" "ingress_nginx" {
   name             = "ingress-nginx"
   repository       = "https://kubernetes.github.io/ingress-nginx"
   chart            = "ingress-nginx"
-  version          = "4.10.1"
+  version          = "4.15.1" # >= 4.12.1 : CVE-2025-1974 (IngressNightmare), aligné sur k3s
   namespace        = "ingress-nginx"
   create_namespace = true
 
@@ -133,28 +135,93 @@ data "kubernetes_service" "ingress_nginx" {
 }
 
 # ---------------------------------------------------------------------------
-# Azure DNS zone — cloud-native-plat4k.me
+# cert-manager (HTTPS pour les apps exposées)
 # ---------------------------------------------------------------------------
 
-resource "azurerm_dns_zone" "cnp" {
-  name                = "cloud-native-plat4k.me"
-  resource_group_name = azurerm_resource_group.cnp.name
+# CNP écrit un Certificate (apps/{cluster}/{app}/platform/{env}/certificate.yaml)
+# pour chaque app exposée ; cert-manager l'obtient de Let's Encrypt en HTTP-01 via
+# ingress-nginx et le range dans le Secret {app}-tls référencé par l'Ingress de
+# l'app. Les CRDs sont installées (et conservées à la désinstallation) par le chart.
+resource "helm_release" "cert_manager" {
+  name             = "cert-manager"
+  repository       = "https://charts.jetstack.io"
+  chart            = "cert-manager"
+  version          = "v1.21.3"
+  namespace        = "cert-manager"
+  create_namespace = true
+
+  set {
+    name  = "crds.enabled"
+    value = "true"
+  }
+
+  set {
+    name  = "crds.keep"
+    value = "true"
+  }
+
+  depends_on = [helm_release.ingress_nginx]
 }
 
-# Wildcard A record : *.cloud-native-plat4k.me → IP nginx LB
-resource "azurerm_dns_a_record" "wildcard" {
-  name                = "*"
-  zone_name           = azurerm_dns_zone.cnp.name
-  resource_group_name = azurerm_resource_group.cnp.name
-  ttl                 = 300
-  records             = [data.kubernetes_service.ingress_nginx.status[0].load_balancer[0].ingress[0].ip]
+# ClusterIssuers letsencrypt-prod / letsencrypt-staging, livrés en chart local
+# (partagé avec infra/oracle/k3s) : la CRD ClusterIssuer n'existe pas au plan,
+# kubernetes_manifest est donc inutilisable. Le hook startupapicheck de
+# cert-manager fait attendre la release ci-dessus que le webhook réponde.
+resource "helm_release" "cluster_issuers" {
+  name      = "cnp-cluster-issuers"
+  chart     = "${path.module}/../cert-manager/cluster-issuers"
+  namespace = "cert-manager"
+
+  set {
+    name  = "email"
+    value = var.letsencrypt_email
+  }
+
+  depends_on = [helm_release.cert_manager]
 }
 
-# Apex A record (cloud-native-plat4k.me direct)
-resource "azurerm_dns_a_record" "apex" {
-  name                = "@"
-  zone_name           = azurerm_dns_zone.cnp.name
-  resource_group_name = azurerm_resource_group.cnp.name
-  ttl                 = 300
-  records             = [data.kubernetes_service.ingress_nginx.status[0].load_balancer[0].ingress[0].ip]
+# ---------------------------------------------------------------------------
+# DNS
+# ---------------------------------------------------------------------------
+# La zone cloud-native-plat4k.me est servie par Cloudflare (NS *.ns.cloudflare.com,
+# registrar Namecheap). Le wildcard A `*` (manuel) pointe vers l'ingress d'AKS,
+# cluster par défaut : après un (re)provisioning, le mettre à jour avec
+# `terraform output nginx_lb_ip`. Chaque cluster crée en plus, via external-dns,
+# un A par host d'Ingress exposé (docs/guides/operations.md §9).
+# (L'ancienne zone Azure DNS n'était pas déléguée et a été retirée.)
+
+# Token Cloudflare (Vault secret/platform/external-dns) -> Secret
+# external-dns/cloudflare-api-token, via ESO et le ClusterSecretStore vault-backend
+# (prérequis manuels : infra/eso/README.md, policy eso-reader à jour). Chart local
+# partagé par les trois clusters plutôt que kubernetes_manifest : même raison que
+# cluster_issuers (le provider kubernetes dépend du cluster créé dans ce root, et
+# kubernetes_manifest exige l'API et la CRD dès le plan).
+resource "helm_release" "external_dns_token" {
+  name             = "cnp-external-dns-cloudflare-token"
+  chart            = "${path.module}/../external-dns/cloudflare-token"
+  namespace        = "external-dns"
+  create_namespace = true
+
+  depends_on = [azurerm_kubernetes_cluster.cnp]
+}
+
+# external-dns (fournisseur Cloudflare, source Ingress). Valeurs communes aux trois
+# clusters dans infra/external-dns/values.yaml ; txtOwnerId = nom du cluster, pour
+# qu'aucune instance ne modifie les enregistrements d'une autre.
+resource "helm_release" "external_dns" {
+  name       = "external-dns"
+  repository = "https://kubernetes-sigs.github.io/external-dns"
+  chart      = "external-dns"
+  version    = "1.23.0" # external-dns v0.23.0
+  namespace  = "external-dns"
+
+  values = [file("${path.module}/../external-dns/values.yaml")]
+
+  set {
+    name  = "txtOwnerId"
+    value = var.cluster_name
+  }
+
+  # L'IP publiée dans le status des Ingress vient d'ingress-nginx
+  depends_on = [helm_release.ingress_nginx, helm_release.external_dns_token]
 }

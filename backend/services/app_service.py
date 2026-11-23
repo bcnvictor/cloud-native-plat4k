@@ -4,6 +4,7 @@ from functools import partial
 import anyio
 from fastapi import HTTPException, status
 from shared.models import (
+    CNP_BASE_DOMAIN,
     ApplicationCreate,
     ApplicationExternalImportRequest,
     ApplicationOnboardRequest,
@@ -67,6 +68,23 @@ class AppService:
         cluster = result.scalar_one_or_none()
         return cluster.id if cluster else None
 
+    async def _assert_exposable(self, cluster_id: int | None) -> None:
+        """422 unless the public DNS reaches the cluster (PUBLIC_EXPOSURE_CLUSTERS):
+        elsewhere the app's Ingress would be written but never reachable. Only for
+        turning exposure ON — turning it off is always allowed."""
+        cluster = await self.db.get(ClusterConnection, cluster_id) if cluster_id else None
+        if cluster is not None and cluster.supports_public_exposure:
+            return
+        allowed = ", ".join(sorted(settings.public_exposure_clusters)) or "none"
+        target = f"cluster '{cluster.name}'" if cluster is not None else "an app without a target cluster"
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Internet exposure is not available on {target}: the public DNS "
+                f"(*.{CNP_BASE_DOMAIN}) does not reach it. Clusters supporting exposure: {allowed}."
+            ),
+        )
+
     async def _resolve_cluster_name(self, cluster_id: int | None) -> str:
         if not cluster_id:
             return "aks"
@@ -87,6 +105,10 @@ class AppService:
 
     async def scaffold_app(self, payload: ApplicationScaffoldRequest) -> Application:
         slug = _validated_slug(payload.name)
+        target_cluster_id = await self._resolve_target_cluster_id(payload.target_cluster_id)
+        # Before creating anything on GitLab.
+        if payload.expose:
+            await self._assert_exposable(target_cluster_id)
         target_namespace = await self._resolve_group_namespace(payload.owning_gitlab_group_id)
 
         group_path: str | None = None
@@ -120,9 +142,14 @@ class AppService:
             "framework": payload.template,
             "owning_gitlab_group_id": payload.owning_gitlab_group_id,
             "expose": payload.expose,
-            "target_cluster_id": await self._resolve_target_cluster_id(payload.target_cluster_id),
+            "target_cluster_id": target_cluster_id,
         }
         app = await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
+        if payload.expose and settings.GITOPS_REPO_URL and (bot := _get_bot_client()):
+            # Ingress values (tls=true) live in the scaffolded chart; only the
+            # Certificate goes to gitops.
+            cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
+            await self._push_certificates_to_gitops(bot, slug, cluster_name)
         services = payload.scaffolding.services if payload.scaffolding else []
         if "keycloak" in services:
             await self._provision_keycloak(app)
@@ -141,6 +168,9 @@ class AppService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Repository already onboarded (app id={existing.id}, name='{existing.name}')",
             )
+        target_cluster_id = await self._resolve_target_cluster_id(payload.target_cluster_id)
+        if payload.expose:
+            await self._assert_exposable(target_cluster_id)
 
         bot = _get_bot_client()
         if not bot:
@@ -175,7 +205,7 @@ class AppService:
             "repo_url": normalized_url,
             "origin": "onboarded",
             "framework": framework or "generic",
-            "target_cluster_id": await self._resolve_target_cluster_id(payload.target_cluster_id),
+            "target_cluster_id": target_cluster_id,
             "owning_gitlab_group_id": payload.owning_gitlab_group_id,
             "expose": payload.expose,
         }
@@ -195,6 +225,9 @@ class AppService:
         slug = _validated_slug(payload.name)
         from backend.core.config import settings
         from backend.gitlab.importer import import_external_repo
+
+        if payload.expose:
+            await self._assert_exposable(payload.target_cluster_id)
 
         bot = _get_bot_client()
         if not bot:
@@ -504,8 +537,25 @@ class AppService:
         except Exception:
             logger.exception("Failed to push ingress settings to gitops for %s", app_slug)
 
+    async def _push_certificates_to_gitops(self, bot: "GitLabClient", app_slug: str, cluster_name: str = "aks") -> None:
+        """Best-effort: write the cert-manager Certificate of an exposed app (dev and
+        prod) into gitops platform/{env}/certificate.yaml. Never raises."""
+        from shared.models import app_hostname
+        try:
+            gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
+            for env_name in ("dev", "prod"):
+                host = app_hostname(app_slug, env_name)
+                await anyio.to_thread.run_sync(
+                    lambda en=env_name, h=host: bot.upsert_gitops_certificate(gitops_path, app_slug, en, True, h, cluster_name),
+                    cancellable=True,
+                )
+        except Exception:
+            logger.exception("Failed to push TLS certificates to gitops for %s", app_slug)
+
     async def update_expose(self, app_id: int, expose: bool) -> Application:
         app = await self.get_app(app_id)
+        if expose:
+            await self._assert_exposable(app.target_cluster_id)
         bot = _get_bot_client()
         if not bot or not settings.GITOPS_REPO_URL:
             raise HTTPException(
@@ -531,7 +581,39 @@ class AppService:
         app.expose = expose
         await self.db.commit()
         await self.db.refresh(app)
+        await self._sync_keycloak_redirect_uris(app)
         return app
+
+    async def _sync_keycloak_redirect_uris(self, app: Application) -> None:
+        """Best-effort (like _provision_keycloak): after an expose toggle, the app's
+        Keycloak clients must accept (or stop accepting) its public URL as redirect
+        URI. Never fails the toggle: a failure is logged and recorded as the
+        keycloak_redirect_uris_out_of_sync warning, which the next successful sync
+        (toggling again, even to the same value) clears.
+        """
+        if not app.auth_enabled:
+            return
+        from backend.services.keycloak_service import KeycloakService, add_auth_warnings
+
+        warning = KeycloakAuthWarning.REDIRECT_URIS_OUT_OF_SYNC
+        try:
+            await KeycloakService(self.db).sync_redirect_uris(app)
+        except Exception as e:
+            # Only the type is logged (same as _provision_keycloak).
+            logger.warning("Keycloak redirect URIs not updated for app %s (%s)", app.slug, type(e).__name__)
+            add_auth_warnings(app, warning)
+        else:
+            if warning.value not in (app.auth_warnings or []):
+                return
+            app.auth_warnings = [w for w in app.auth_warnings if w != warning.value]
+        try:
+            await self.db.commit()
+            await self.db.refresh(app)
+        except Exception as record_error:
+            logger.error(
+                "Could not record the Keycloak redirect URIs outcome for app %s (%s)",
+                app.slug, type(record_error).__name__,
+            )
 
     async def update_app(self, app_id: int, payload: ApplicationUpdate) -> Application:
         app = await self.get_app(app_id)
@@ -551,6 +633,14 @@ class AppService:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Cluster '{target_cluster.name}' is currently offline",
+                )
+            if app.expose and not target_cluster.supports_public_exposure:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"The app is exposed on internet and cluster '{target_cluster.name}' "
+                        "does not support exposure — turn exposure off first"
+                    ),
                 )
 
         for field, value in payload.model_dump(exclude_unset=True).items():

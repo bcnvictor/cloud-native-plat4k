@@ -54,6 +54,7 @@ services:
       - GITLAB_WEBHOOK_SECRET=${GITLAB_WEBHOOK_SECRET:-}
       - ARGOCD_WEBHOOK_SECRET=${ARGOCD_WEBHOOK_SECRET:-}
       - GITOPS_REPO_URL=${GITOPS_REPO_URL:-}
+      - PUBLIC_EXPOSURE_CLUSTERS=${PUBLIC_EXPOSURE_CLUSTERS:-cnp-aks}
       - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus-operated.monitoring.svc.cluster.local:9090}
       - LOKI_URL=${LOKI_URL:-http://loki.monitoring.svc.cluster.local:3100}
       - VAULT_ADDR=${VAULT_ADDR:-http://vault:8200}
@@ -148,6 +149,8 @@ services:
       - GF_SERVER_ROOT_URL=${GRAFANA_URL:-http://localhost:3000}
       - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus-operated.monitoring.svc.cluster.local:9090}
       - LOKI_URL=${LOKI_URL:-http://loki.monitoring.svc.cluster.local:3100}
+      - K3S_PROMETHEUS_URL=${K3S_PROMETHEUS_URL:-http://10.43.200.90:9090}
+      - K3S_LOKI_URL=${K3S_LOKI_URL:-http://10.43.200.100:3100}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

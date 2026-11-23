@@ -176,10 +176,12 @@ resource "google_container_node_pool" "system" {
 # ---------------------------------------------------------------------------
 
 resource "helm_release" "ingress_nginx" {
-  name             = "ingress-nginx"
-  repository       = "https://kubernetes.github.io/ingress-nginx"
-  chart            = "ingress-nginx"
-  version          = "4.10.1"
+  name       = "ingress-nginx"
+  repository = "https://kubernetes.github.io/ingress-nginx"
+  chart      = "ingress-nginx"
+  # 4.15.1 = contrôleur v1.15.1, aligné sur AKS et k3s. < v1.11.5 est vulnérable à
+  # CVE-2025-1974 (« IngressNightmare », RCE via le webhook d'admission).
+  version          = "4.15.1"
   namespace        = "ingress-nginx"
   create_namespace = true
 
@@ -199,4 +201,92 @@ data "kubernetes_service" "ingress_nginx" {
     namespace = "ingress-nginx"
   }
   depends_on = [helm_release.ingress_nginx]
+}
+
+# ---------------------------------------------------------------------------
+# cert-manager (HTTPS pour les apps exposées)
+# ---------------------------------------------------------------------------
+
+# Identique à infra/aks : CNP écrit un Certificate
+# (apps/{cluster}/{app}/platform/{env}/certificate.yaml) pour chaque app exposée ;
+# cert-manager l'obtient de Let's Encrypt en HTTP-01 via ingress-nginx et le range
+# dans le Secret {app}-tls référencé par l'Ingress de l'app. Les CRDs sont
+# installées (et conservées à la désinstallation) par le chart.
+resource "helm_release" "cert_manager" {
+  name             = "cert-manager"
+  repository       = "https://charts.jetstack.io"
+  chart            = "cert-manager"
+  version          = "v1.21.3"
+  namespace        = "cert-manager"
+  create_namespace = true
+
+  set {
+    name  = "crds.enabled"
+    value = "true"
+  }
+
+  set {
+    name  = "crds.keep"
+    value = "true"
+  }
+
+  depends_on = [helm_release.ingress_nginx]
+}
+
+# ClusterIssuers letsencrypt-prod / letsencrypt-staging, chart local partagé avec
+# infra/aks et infra/oracle/k3s : la CRD ClusterIssuer n'existe pas au plan,
+# kubernetes_manifest est donc inutilisable. Le hook startupapicheck de
+# cert-manager fait attendre la release ci-dessus que le webhook réponde.
+resource "helm_release" "cluster_issuers" {
+  name      = "cnp-cluster-issuers"
+  chart     = "${path.module}/../cert-manager/cluster-issuers"
+  namespace = "cert-manager"
+
+  set {
+    name  = "email"
+    value = var.letsencrypt_email
+  }
+
+  depends_on = [helm_release.cert_manager]
+}
+
+# ---------------------------------------------------------------------------
+# DNS public des apps exposées (external-dns, Cloudflare)
+# ---------------------------------------------------------------------------
+# Le wildcard `*.cloud-native-plat4k.me` pointe vers AKS : external-dns crée un A
+# par host d'Ingress de ce cluster (<slug>, dev.<slug>) vers l'IP du LoadBalancer
+# nginx, prioritaire sur le wildcard (docs/guides/operations.md §9).
+
+# Token Cloudflare (Vault secret/platform/external-dns) -> Secret
+# external-dns/cloudflare-api-token, via ESO et le ClusterSecretStore vault-backend
+# (prérequis manuels : README §6, policy eso-reader à jour). Chart local partagé
+# avec infra/aks et infra/oracle/k3s, comme cluster_issuers.
+resource "helm_release" "external_dns_token" {
+  name             = "cnp-external-dns-cloudflare-token"
+  chart            = "${path.module}/../external-dns/cloudflare-token"
+  namespace        = "external-dns"
+  create_namespace = true
+
+  depends_on = [google_container_node_pool.system]
+}
+
+# Valeurs communes aux trois clusters dans infra/external-dns/values.yaml ;
+# txtOwnerId = nom du cluster, pour qu'aucune instance ne modifie les
+# enregistrements d'une autre.
+resource "helm_release" "external_dns" {
+  name       = "external-dns"
+  repository = "https://kubernetes-sigs.github.io/external-dns"
+  chart      = "external-dns"
+  version    = "1.23.0" # external-dns v0.23.0
+  namespace  = "external-dns"
+
+  values = [file("${path.module}/../external-dns/values.yaml")]
+
+  set {
+    name  = "txtOwnerId"
+    value = var.cluster_name
+  }
+
+  # L'IP publiée dans le status des Ingress vient d'ingress-nginx
+  depends_on = [helm_release.ingress_nginx, helm_release.external_dns_token]
 }

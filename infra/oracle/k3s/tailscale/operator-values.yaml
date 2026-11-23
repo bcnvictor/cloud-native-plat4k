@@ -7,10 +7,9 @@
 #   --set oauth.clientSecret=$TS_OAUTH_CLIENT_SECRET \
 #   --kubeconfig infra/oracle/k3s/cnp-k3s.yaml
 #
-# Installé uniquement pour le mécanisme d'egress (pods -> cnp-control, 4K-105 /
-# ADR-0024) : pas de Connector/subnet-router sur k3s ici, seul l'opérateur est
-# nécessaire pour provisionner le Service egress (voir
-# infra/eso/vault-egress-service.yaml).
+# Installé pour l'egress (pods -> cnp-control, 4K-105 / ADR-0024, voir
+# infra/eso/vault-egress-service.yaml) et le Connector subnet-router qui expose
+# les ClusterIPs à cnp-control (tailscale/connector.yaml).
 
 operatorConfig:
   hostname: k3s-cnp-operator

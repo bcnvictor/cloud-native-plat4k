@@ -275,7 +275,10 @@ l'utilisateur. Conséquences :
   redirect URIs du client sont dérivées de `app_hostname(slug, env)` si `app.expose` est
   actif, plus `http://localhost:*` en dev ; `webOrigins` vaut `+` (origines déduites des
   redirect URIs — une valeur avec chemin ou joker ne correspond jamais à un header `Origin`
-  et casserait l'échange de token CORS du template SPA).
+  et casserait l'échange de token CORS du template SPA). Un toggle d'exposition ultérieur
+  ajoute ou retire l'URL publique des redirect URIs des clients existants (les autres URIs et
+  `webOrigins` restent tels quels) ; en best-effort, un échec laisse l'avertissement
+  `keycloak_redirect_uris_out_of_sync` sans faire échouer le toggle.
 - **Propriété d'un realm** : chaque realm créé par CNP reçoit un id interne choisi par CNP
   (`cnp-{app_id}-{env}`) et porte l'attribut `cnp_app_id`. Un realm du bon nom sans ces deux
   marqueurs (réutilisation d'un slug après un cleanup raté, realm créé à la main, realm d'une

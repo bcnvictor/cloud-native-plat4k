@@ -1,0 +1,17 @@
+# ACME account e-mail (Let's Encrypt expiry / incident notices). Required —
+# set by Terraform from var.letsencrypt_email.
+email: ""
+
+# IngressClass of the temporary solver Ingress cert-manager creates for each
+# HTTP-01 challenge. Must match the class CNP writes for exposed apps
+# (ingress.className=nginx, backend/gitlab/client.py).
+ingressClassName: nginx
+
+# One ClusterIssuer per entry. letsencrypt-prod issues trusted certificates
+# (strict rate limits); letsencrypt-staging has generous limits but issues
+# untrusted certificates — use it to test the chain end to end.
+issuers:
+  letsencrypt-prod:
+    server: https://acme-v02.api.letsencrypt.org/directory
+  letsencrypt-staging:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory

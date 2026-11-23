@@ -26,8 +26,3 @@ output "nginx_lb_ip" {
   description = "IP publique du LoadBalancer nginx-ingress"
   value       = data.kubernetes_service.ingress_nginx.status[0].load_balancer[0].ingress[0].ip
 }
-
-output "dns_nameservers" {
-  description = "Nameservers Azure DNS à configurer chez le registrar pour cloud-native-plat4k.me"
-  value       = azurerm_dns_zone.cnp.name_servers
-}

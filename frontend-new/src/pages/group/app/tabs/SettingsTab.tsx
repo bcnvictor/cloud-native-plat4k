@@ -1,9 +1,10 @@
 import { AuthInstanceInfo, canActivateAuth } from './AuthInstanceInfo';
-import { EnvFromWarning, activationProblem } from './AuthWarnings';
+import { AUTH_WARNING_LABELS, EnvFromWarning, activationProblem } from './AuthWarnings';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
+  IconAlertTriangle,
   IconExternalLink,
   IconPlus,
   IconTrash,
@@ -12,6 +13,8 @@ import {
 } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { appsApi, EnvName } from '@/api/apps';
+import { clustersApi } from '@/api/clusters';
+import { clusterSupportsExposure } from '@/utils/clusterUtils';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -40,6 +43,7 @@ export function SettingsTab() {
   const { slug, appSlug } = useParams<{ slug: string; appSlug: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { toast } = useToast();
 
   const [name, setName] = useState(app?.name ?? '');
   const [description, setDescription] = useState(app?.description ?? '');
@@ -88,8 +92,24 @@ export function SettingsTab() {
   const exposeMutation = useMutation({
     mutationFn: (newExpose: boolean) => appsApi.toggleExpose(app!.id, newExpose),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['app', appSlug] }),
-    onError: () => setExpose(app?.expose ?? false),
+    onError: (error: unknown) => {
+      setExpose(app?.expose ?? false);
+      const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      toast({
+        title: 'Exposure change failed',
+        description: typeof detail === 'string' ? detail : 'The request failed.',
+        variant: 'destructive',
+      });
+    },
   });
+
+  // Exposure is only possible where the public DNS reaches the cluster: the backend
+  // decides (supports_public_exposure) and refuses expose=true elsewhere.
+  const { data: clusters = [] } = useQuery({ queryKey: ['clusters'], queryFn: clustersApi.list });
+  const targetCluster = clusters.find((c) => c.id === app?.target_cluster_id) ?? null;
+  const exposeSupported = clusterSupportsExposure(targetCluster);
+  // Switching an exposed app off is always allowed, even on a cluster that can't expose.
+  const exposeLocked = !app?.expose && !exposeSupported;
 
   const { data: myAccess, isLoading: myAccessLoading } = useQuery({
     queryKey: ['myAccess', app?.id],
@@ -176,7 +196,6 @@ export function SettingsTab() {
   // react-query v5 keeps the last data when a refetch fails: isError is what says the
   // status can no longer be trusted.
   const canActivate = canManageApp && !authStatusFailed && canActivateAuth(authStatus?.instance);
-  const { toast } = useToast();
 
   function toastAuthError(title: string) {
     return (error: unknown) => {
@@ -535,12 +554,15 @@ export function SettingsTab() {
         <h2 className="text-sm font-medium text-foreground mb-4">Internet exposure</h2>
         <div className="flex items-start gap-3">
           <button
+            role="switch"
+            aria-checked={expose}
+            aria-label="Expose on internet"
             onClick={() => {
               const next = !expose;
               setExpose(next);
               exposeMutation.mutate(next);
             }}
-            disabled={!canManageApp || exposeMutation.isPending}
+            disabled={!canManageApp || exposeMutation.isPending || exposeLocked}
             className={cn(
               'relative mt-0.5 h-5 w-9 shrink-0 rounded-full border-2 transition-colors disabled:opacity-50',
               expose ? 'bg-info border-info' : 'bg-border border-border'
@@ -578,10 +600,39 @@ export function SettingsTab() {
                   <IconExternalLink size={10} />
                 </a>
               </div>
+            ) : exposeLocked ? (
+              <p className="text-xs text-muted-foreground">
+                Not available on {targetCluster ? <span className="font-mono">{targetCluster.name}</span> : 'this app (no target cluster)'}:
+                the public DNS of <span className="font-mono">cloud-native-plat4k.me</span> doesn&apos;t reach it.
+              </p>
             ) : (
               <p className="text-xs text-muted-foreground">
                 Enable to expose the app on <span className="font-mono">cloud-native-plat4k.me</span> subdomains.
               </p>
+            )}
+            {app.expose && !exposeSupported && clusters.length > 0 && (
+              <p className="text-xs text-warning-text">
+                This cluster doesn&apos;t support exposure: once turned off, it can&apos;t be turned back on here.
+              </p>
+            )}
+            {app.auth_warnings?.includes('keycloak_redirect_uris_out_of_sync') && (
+              <div className="flex items-start gap-2 mt-1 p-2 bg-warning-subtle rounded-md">
+                <IconAlertTriangle size={14} className="text-warning-text shrink-0 mt-0.5" />
+                <p className="flex-1 text-xs text-warning-text">
+                  {AUTH_WARNING_LABELS.keycloak_redirect_uris_out_of_sync}
+                </p>
+                {canManageApp && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={exposeMutation.isPending}
+                    // Same value again: the backend re-syncs the redirect URIs.
+                    onClick={() => exposeMutation.mutate(app.expose ?? false)}
+                  >
+                    Retry
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         </div>

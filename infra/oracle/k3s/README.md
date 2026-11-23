@@ -157,15 +157,233 @@ kubectl --kubeconfig ~/.kube/config-cnp-k3s --context cnp-k3s get ingress -A   #
 Le `Service` `LoadBalancer` est servi par **ServiceLB** (klipper-lb, intégré à k3s : seul
 `traefik` est désactivé à l'installation). Il occupe les ports 80/443 du nœud.
 
-Pour qu'une app soit joignable depuis Internet, trois étapes restent hors Terraform :
+ServiceLB publie l'IP **privée** du nœud (`10.0.0.115`) dans le status du `Service`. Le
+contrôleur publie donc dans le status des Ingress l'IP **publique** de la VM
+(`var.public_ip`, défaut `138.2.159.23`, NATée par OCI vers le nœud) via
+`controller.extraArgs.publish-status-address`, avec `controller.publishService.enabled=false`
+(le contrôleur refuse les deux options ensemble). C'est cette adresse qu'external-dns met
+dans les enregistrements DNS (ci-dessous).
 
-1. **Security list OCI** (comme l'étape 2) : deux règles d'entrée TCP `80` et `443`,
+Pour qu'une app soit joignable depuis Internet :
+
+1. **Security list OCI** (manuel, comme l'étape 2) : deux règles d'entrée TCP `80` et `443`,
    source `0.0.0.0/0`.
 2. **DNS** (Cloudflare) : le wildcard `*.cloud-native-plat4k.me` pointe vers l'ingress
-   d'AKS. Chaque app exposée sur k3s a besoin de ses enregistrements A, en DNS only :
-   `<slug>` et `dev.<slug>` vers l'IP publique de la VM.
-3. **HTTPS** : pas encore de cert-manager sur k3s. Une SPA avec Keycloak (PKCE) a besoin
-   d'une origine HTTPS (Web Crypto) : en HTTP, la page s'affiche mais le login échoue.
+   d'AKS ; external-dns (Terraform, ci-dessous) crée les A `<slug>` et `dev.<slug>` (DNS
+   only) vers l'IP publique de la VM pour chaque Ingress exposé sur k3s.
+3. **HTTPS** : cert-manager (ci-dessous). Une SPA avec Keycloak (PKCE) a besoin d'une
+   origine HTTPS (Web Crypto) : en HTTP, la page s'affiche mais le login échoue. Si le
+   challenge HTTP-01 reste `pending` (hairpin NAT OCI) : `docs/guides/operations.md` §9,
+   « Spécificités k3s ».
+
+### cert-manager et ClusterIssuers Let's Encrypt (Terraform)
+
+Même installation qu'AKS, dans le même root que ingress-nginx (`main.tf`), **après** lui :
+
+- `helm_release.cert_manager` : chart `jetstack/cert-manager` (`var.cert_manager_chart_version`),
+  namespace `cert-manager`, CRDs installées par le chart (`crds.enabled=true`,
+  `crds.keep=true` : elles survivent à un `helm uninstall`) ;
+- `helm_release.cluster_issuers` : chart local `infra/cert-manager/cluster-issuers/`
+  (partagé avec `infra/aks`), qui crée `letsencrypt-prod` et `letsencrypt-staging`
+  (ACME HTTP-01, solver Ingress de classe `nginx`, e-mail `var.letsencrypt_email`). Chart
+  local plutôt que `kubernetes_manifest` : la CRD `ClusterIssuer` n'existe pas au moment du
+  plan. Modifier ce chart impose d'incrémenter `version` dans son `Chart.yaml`, sinon
+  Terraform ne voit pas le changement.
+
+```bash
+cd infra/oracle/k3s
+terraform init -upgrade
+terraform plan    # attendu : 2 to add (helm_release.cert_manager, helm_release.cluster_issuers)
+terraform apply
+kubectl --kubeconfig ~/.kube/config-cnp-k3s --context cnp-k3s get clusterissuer   # READY=True x2
+```
+
+Si le plan propose aussi `helm_release.ingress_nginx` **to add** alors que le contrôleur tourne
+déjà (`helm list -n ingress-nginx`), c'est que votre state local ne le connaît pas : l'apply
+échouerait (release déjà existante). Récupérer le `terraform.tfstate` de la personne qui l'a
+appliqué, ou l'importer (n'écrit que dans le state, rien sur le cluster) avant de replanifier :
+
+```bash
+terraform import helm_release.ingress_nginx ingress-nginx/ingress-nginx
+terraform plan    # ingress_nginx : au plus un update in-place (attributs Terraform), puis 2 to add
+```
+
+### external-dns (Terraform)
+
+Même installation sur les trois clusters (`docs/guides/operations.md` §9) :
+
+- `helm_release.external_dns_token` : chart local `infra/external-dns/cloudflare-token/`
+  (`ExternalSecret` → Secret `external-dns/cloudflare-api-token`, depuis Vault
+  `secret/platform/external-dns` via le `ClusterSecretStore vault-backend`) ;
+- `helm_release.external_dns` : chart `kubernetes-sigs/external-dns`
+  (`var.external_dns_chart_version`), valeurs communes `infra/external-dns/values.yaml`
+  (Cloudflare, source `ingress`, `policy: sync`, registre TXT, DNS only),
+  `txtOwnerId = var.cluster_name` (`cnp-k3s`).
+
+Prérequis : ESO et `vault-backend` en place (`infra/eso/README.md`), token Cloudflare dans
+Vault et policy `eso-reader` à jour (`infra/eso/README.md` étapes 1 et 8). Puis, depuis le
+checkout principal (qui détient le state) :
+
+```bash
+cd infra/oracle/k3s
+terraform init -upgrade
+terraform plan    # attendu : 1 to change (helm_release.ingress_nginx : publishService / publish-status-address)
+                  #           2 to add (helm_release.external_dns_token, helm_release.external_dns)
+terraform apply
+kubectl --kubeconfig ~/.kube/config-cnp-k3s --context cnp-k3s get ingress -A   # ADDRESS = 138.2.159.23
+kubectl --kubeconfig ~/.kube/config-cnp-k3s --context cnp-k3s -n external-dns get externalsecret,pods
+kubectl --kubeconfig ~/.kube/config-cnp-k3s --context cnp-k3s -n external-dns logs deploy/external-dns
+```
+
+La mise à jour d'ingress-nginx redémarre le contrôleur (coupure de quelques secondes des
+apps servies par k3s). Sans le token dans Vault, le pod external-dns reste en
+`CreateContainerConfigError` et l'apply (`atomic`) est annulé.
+
+Les ClusterIssuers sont `READY` dès que le compte ACME est enregistré, mais **aucun certificat
+ne sera émis sur k3s tant que** les étapes 1 et 2 ci-dessus ne sont pas faites : HTTP-01 exige
+que Let's Encrypt joigne `http://<host>/.well-known/acme-challenge/…` sur le **port 80** de
+l'IP publique de la VM, via un DNS qui pointe dessus. cert-manager fait aussi un *self-check*
+depuis le cluster vers cette IP publique : si les `Challenge` restent `pending` avec une erreur
+de self-check alors que l'URL répond depuis l'extérieur, c'est le hairpin NAT OCI (pod → IP
+publique de son propre nœud) qu'il faut examiner. Fonctionnement côté apps et rate limits :
+`docs/guides/operations.md` §9.
+
+## 8. Réseau Tailscale vers les ClusterIPs (Connector)
+
+`cnp-control` joint les ClusterIPs de k3s (Prometheus, Loki, ArgoCD) via un `Connector`
+de l'opérateur Tailscale déjà installé pour ESO (`tailscale/operator-values.yaml`), comme
+AKS et GKE ([ADR-0019](../../../docs/adr/0019-tailscale-reseau-overlay.md)). Seul le
+Service CIDR `10.43.0.0/16` est annoncé, pas le Pod CIDR.
+
+Les commandes des sections 8 et 9 se lancent depuis `infra/oracle/k3s`, sauf celles
+marquées « sur `cnp-control` ».
+
+**Pré-vérifications**
+
+```bash
+# Service CIDR k3s : doit afficher 10.43.0.1
+kubectl --kubeconfig cnp-k3s.yaml get svc kubernetes -n default
+# Sur cnp-control : aucune route existante vers 10.43.x (sortie vide attendue)
+ip route show table all | grep '10\.43\.'
+```
+
+Dans la console Tailscale (*Machines*, colonne *Subnets*) : vérifier qu'aucun device
+n'annonce déjà `10.43.0.0/16` (autre k3s/k3d taggé `tag:k8s`, auto-approuvé par l'ACL).
+
+**ACL Tailscale** (`infra/tailscale/main.tf` : `autoApprovers` + règle
+`cnp-control → 10.43.0.0/16` sur 9090 / 3100 / 443 / 6443). Pré-requis : `terraform.tfvars` (copié de
+`terraform.tfvars.example`) et `TAILSCALE_API_KEY` (ou le client OAuth) dans l'environnement.
+
+Le state Terraform est local et non versionné. Sans le `terraform.tfstate` de l'apply
+initial, importer d'abord l'ACL live, sinon le plan ne montre pas l'écart avec la console :
+
+```bash
+(cd ../../tailscale && terraform init \
+  && { terraform state list | grep -q '^tailscale_acl.cnp$' || terraform import tailscale_acl.cnp acl; } \
+  && terraform plan -target=tailscale_acl.cnp -out=tfplan)
+```
+
+Diff attendu (premier déploiement) : les ajouts k3s, rien d'autre.
+`overwrite_existing_content = true` : tout autre écart est une modification faite seulement
+dans la console, qui serait écrasée. S'arrêter et vérifier avant d'appliquer. `-target`
+évite de créer au passage une nouvelle clé `tailscale_tailnet_key.cnp_control`.
+
+```bash
+(cd ../../tailscale && terraform apply tfplan)
+```
+
+**Connector**
+
+```bash
+kubectl --kubeconfig cnp-k3s.yaml apply -f tailscale/connector.yaml
+kubectl --kubeconfig cnp-k3s.yaml get connector k3s-subnet-router   # STATUS ConnectorCreated
+```
+
+Dans la console Tailscale (*Machines > k3s-subnet-router*) : route `10.43.0.0/16` approuvée
+(via `autoApprovers`) et *Key expiry* désactivée (devices taggés).
+
+**Test sur `cnp-control`**
+
+```bash
+curl -sk -o /dev/null -w '%{http_code}\n' https://10.43.0.1:443/version   # 401 ou 200 : route OK
+```
+
+Le port UDP `41641` entre les deux VMs OCI est optionnel : sans lui, Tailscale passe par un
+relais DERP (plus lent). L'ouvrir dans la security list si `tailscale ping k3s-subnet-router`
+reste en `via DERP`.
+
+## 9. Monitoring (kube-prometheus-stack + Loki)
+
+Mêmes charts, versions et noms de Services que GKE (`kube-prometheus-stack-prometheus` et
+`loki` dans `monitoring`), avec des ClusterIPs figées pour que `cnp-control` les joigne via
+la section 8 : Prometheus `10.43.200.90:9090`, Loki `10.43.200.100:3100`.
+
+**Pré-vérifications**
+
+```bash
+# Stack déjà installée ? Si oui, relever ses IPs et les reporter dans les values,
+# docker-compose.yml et ce README au lieu des IPs ci-dessus.
+helm --kubeconfig cnp-k3s.yaml list -n monitoring
+KUBECONFIG=./cnp-k3s.yaml bash ../../scripts/pin-clusterips.sh   # seulement si la stack existe
+# IPs figées libres (sortie vide attendue)
+kubectl --kubeconfig cnp-k3s.yaml get svc -A | grep -E '10\.43\.200\.(90|100) '
+```
+
+**Installation** (depuis `infra/oracle/k3s`)
+
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
+helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace --version 91.8.2 \
+  --values monitoring-values.yaml --kubeconfig cnp-k3s.yaml
+
+helm upgrade --install loki grafana/loki-stack --namespace monitoring --version 2.10.3 \
+  --values loki-values.yaml --kubeconfig cnp-k3s.yaml
+```
+
+- `monitoring-values.yaml` désactive le scraping d'etcd, du scheduler, du
+  controller-manager et de kube-proxy (embarqués dans le binaire k3s, sans métriques sur
+  les ports standards). CoreDNS reste scrapé ; si sa cible est DOWN, le désactiver aussi.
+- `loki-values.yaml` : `loki.isDefault=false` (obligatoire, cf. README GKE), image Loki
+  `2.9.17` (la 2.6.1 du chart fait échouer le « Save & test » de Grafana), Promtail en
+  stage `cri` (défaut du chart), montage de `/var/log/pods` et `/var/log/containers`, et
+  label Loki `cnp_io_group_id` copié du label de pod `cnp.io/group-id`.
+
+**Vérifications**
+
+```bash
+kubectl --kubeconfig cnp-k3s.yaml -n monitoring get pods   # tous Running (pas d'exec format error : arm64)
+kubectl --kubeconfig cnp-k3s.yaml top nodes                 # metrics-server k3s toujours OK
+```
+
+- Prometheus, *Status > Targets* : aucune cible DOWN.
+- Loki : `{namespace="<namespace d'une app>"}` renvoie des logs (collecte OK), puis
+  `{cnp_io_group_id="<id d'un groupe>"}` renvoie ceux des pods de ce groupe (relabel OK).
+- Sur `cnp-control` :
+
+```bash
+curl -s http://10.43.200.90:9090/-/ready    # Prometheus Server is Ready.
+curl -s http://10.43.200.100:3100/ready     # ready
+```
+
+**Grafana central** : les datasources `Prometheus cnp-k3s` et `Loki cnp-k3s` sont
+provisionnées par `infra/grafana/provisioning/datasources/cnp.yaml`, avec les URLs
+`K3S_PROMETHEUS_URL` / `K3S_LOKI_URL` (défauts = IPs ci-dessus, dans `docker-compose.yml`).
+Elles n'existent sur `cnp-control` qu'après le merge sur `main` : la CI de déploiement
+relance alors la stack docker-compose, Grafana compris. D'ici là elles n'apparaissent pas ;
+avant que les sections 8 et 9 soient faites, elles apparaissent mais en échec. Une fois tout
+en place, *Connections > Data sources > Save & test* sur les deux. Si Grafana n'a pas été
+recréé par la CI, le relancer à la main sur `cnp-control` :
+
+```bash
+docker compose --profile production up -d grafana
+```
+
+> Le label Loki `cnp_io_group_id` n'existe pour l'instant que sur k3s. Pour l'avoir sur AKS
+> et GKE, reprendre le même `extraRelabelConfigs` dans leur installation de `loki-stack`.
 
 ## Note : architecture arm64 et images multi-plateforme
 

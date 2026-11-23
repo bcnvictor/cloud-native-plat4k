@@ -110,18 +110,17 @@ kubectl patch svc kube-prometheus-stack-prometheus -n monitoring -p '{"spec": {"
 kubectl patch svc loki -n monitoring -p '{"spec": {"type": "ClusterIP"}}'
 ```
 
-Puis, déployez la ressource Ingress de monitoring en l'ajoutant dans le dossier `argocd/` de votre dépôt `cnp-gitops` (déjà configuré sous `cnp-gitops/argocd/monitoring-ingress.yaml`). ArgoCD appliquera automatiquement la configuration sur le cluster.
+Pas d'Ingress public pour Prometheus / Loki (ils n'ont pas d'authentification) : `cnp-control` les joint par leurs **ClusterIPs figées**, via le Connector Tailscale (voir `infra/aks/README.md` §3).
 
 **Configuration sur la VM de Production :**
-1. Sur la VM de production, associez les noms de domaine à l'IP de l'Ingress (ex: `4.166.144.120`) dans le fichier `/etc/hosts` pour contourner la propagation DNS :
-   ```text
-   4.166.144.120 prometheus.cloud-native-plat4k.me loki.cloud-native-plat4k.me
-   ```
-2. Mettez à jour les secrets de la plateforme dans le **Vault de production** :
-   * `LOKI_URL` $\rightarrow$ `http://loki.cloud-native-plat4k.me`
-   * `PROMETHEUS_URL` $\rightarrow$ `http://prometheus.cloud-native-plat4k.me`
-   * `PROMETHEUS_PUBLIC_URL` $\rightarrow$ `http://prometheus.cloud-native-plat4k.me`
-3. Redémarrez le backend pour prendre en compte les modifications (`docker restart <backend-container>`).
+1. Mettez à jour les secrets de la plateforme dans le **Vault de production** (`secret/cnp/platform`) :
+   * `PROMETHEUS_URL` $\rightarrow$ `http://10.0.152.88:9090`
+   * `LOKI_URL` $\rightarrow$ `http://10.0.130.130:3100`
+2. Mêmes valeurs dans le `.env` de la VM (lu par Grafana pour les datasources `prometheus-cnp` / `loki-cnp`), puis `docker compose --profile production up -d grafana`.
+3. Redémarrez le backend (`docker compose restart backend`) : Vault n'est lu qu'au démarrage.
+4. Aucune entrée `/etc/hosts` n'est nécessaire.
+
+En local, utilisez `scripts/forward-ports.sh` (contexte kube `cnp-aks`) et `http://host.docker.internal:9090` / `:3100`.
 
 ### 3. Déployer la CNP elle-même (backend + frontend) dans le namespace `cnp`
 ### 4. Créer les namespaces `dev` et `prod` pour les apps utilisateurs
@@ -130,37 +129,220 @@ Puis, déployez la ressource Ingress de monitoring en l'ajoutant dans le dossier
 
 ## 9. Exposition internet des apps — périmètre et limites
 
-La feature **"Expose on internet"** (4K-94) permet d'exposer une app via un Ingress nginx sur `cloud-native-plat4k.me`. Elle repose sur deux prérequis d'infrastructure :
+La feature **"Expose on internet"** (4K-94) permet d'exposer une app en **HTTPS** via un Ingress nginx sur `cloud-native-plat4k.me`. Elle repose sur trois prérequis d'infrastructure :
 
 1. **nginx-ingress-controller** installé et exposé en `LoadBalancer` sur le cluster cible.
-2. **Un enregistrement DNS wildcard** pointant vers l'IP du LoadBalancer :
-   - `*.cloud-native-plat4k.me` → IP publique nginx AKS (géré par Terraform dans `infra/aks/`)
+2. **Le DNS public** de chaque host d'app (`<slug>.cloud-native-plat4k.me`,
+   `dev.<slug>.cloud-native-plat4k.me`, cf. `app_hostname()` dans `shared/models.py`) vers
+   l'IP publique de l'ingress **du cluster qui héberge l'app** : enregistrements créés par
+   **external-dns** sur chaque cluster (voir « DNS public : external-dns » ci-dessous).
+3. **cert-manager** et les ClusterIssuers `letsencrypt-prod` / `letsencrypt-staging`
+   (Terraform, `helm_release.cert_manager` + `helm_release.cluster_issuers`, chart local
+   partagé `infra/cert-manager/cluster-issuers/`), installés **après** ingress-nginx.
+
+### DNS public : external-dns (un enregistrement par app, par cluster)
+
+La zone `cloud-native-plat4k.me` est servie par Cloudflare. Elle contient :
+
+- le **wildcard `*`** (manuel) → ingress d'AKS (`172.135.113.113`), conservé comme cluster
+  par défaut : un host sans enregistrement propre arrive sur AKS ;
+- des enregistrements **manuels** hors Kubernetes (`cnp`, `auth`, …) ;
+- un **A par host d'Ingress** de chaque cluster, créé par **external-dns** (chart
+  `kubernetes-sigs/external-dns` 1.23.0, Terraform `helm_release.external_dns` dans
+  `infra/aks`, `infra/gke` et `infra/oracle/k3s`, valeurs communes
+  `infra/external-dns/values.yaml`). Un enregistrement précis l'emporte sur le wildcard :
+  une app exposée sur `cnp-k3s` ou `cnp-gke` garde donc **le même hostname** qu'une app
+  sur AKS, sans changement du backend.
+
+Fonctionnement :
+
+- source `ingress` uniquement : external-dns lit les hosts des Ingress du cluster et
+  l'adresse publiée dans leur `status` (l'IP publique de l'ingress-nginx du cluster ;
+  sur k3s, forcée à l'IP publique de la VM, voir plus bas) ;
+- **DNS only** (proxy Cloudflare désactivé, `--no-cloudflare-proxied`) : cert-manager
+  valide en HTTP-01 sur l'ingress du cluster et les apps/Keycloak font leur propre TLS ;
+- `policy: sync` + registre TXT : quand une app n'est plus exposée ou est supprimée,
+  l'Ingress disparaît et ses enregistrements aussi ;
+- **propriété par cluster** : `txtOwnerId` = nom du cluster (`cnp-aks`, `cnp-gke`,
+  `cnp-k3s`). Chaque A est accompagné d'un TXT de propriété
+  (`_extdns-a.<host>`, préfixe `txtPrefix: "_extdns-%{record_type}."`). Une instance ne
+  modifie ni ne supprime jamais un enregistrement qu'elle ne possède pas : ni ceux des
+  autres clusters, ni les enregistrements manuels (`*`, `cnp`, `auth`, ou un A créé à la
+  main pour une app — le supprimer à la main pour qu'external-dns prenne le relais) ;
+- si une app change de cluster, l'instance du nouveau cluster ignore le host tant que
+  l'ancienne en est propriétaire, puis le reprend une fois l'Ingress supprimé de l'ancien
+  cluster (au plus une boucle, 1 min) ;
+- le token API Cloudflare (zone `cloud-native-plat4k.me`, *Zone:DNS:Edit* +
+  *Zone:Zone:Read*) est dans Vault `secret/platform/external-dns` (clé
+  `cloudflare_api_token`), synchronisé par ESO (`ClusterSecretStore vault-backend`, policy
+  `eso-reader`) dans le Secret `external-dns/cloudflare-api-token` par le chart local
+  `infra/external-dns/cloudflare-token`. Procédure : `infra/eso/README.md` étape 8.
+
+Juste après l'exposition, tant que le A précis n'existe pas, le host résout encore via le
+wildcard vers AKS (TTL Cloudflare *auto*, 5 min) : le self-check HTTP-01 de cert-manager
+échoue puis réessaie tout seul, compter quelques minutes avant `READY=True`.
+
+Diagnostic :
+
+```bash
+kubectl -n external-dns logs deploy/external-dns          # "Desired change: CREATE <host> A", erreurs API Cloudflare
+kubectl -n external-dns get externalsecret cloudflare-api-token   # SecretSynced
+kubectl get ingress -A                                    # colonne ADDRESS = IP publique du cluster
+dig +short <slug>.cloud-native-plat4k.me @1.1.1.1         # IP de l'ingress du cluster de l'app
+dig +short TXT _extdns-a.<slug>.cloud-native-plat4k.me @1.1.1.1   # ...external-dns/owner=<cluster>
+```
+
+#### Mise en service (ordre, une fois)
+
+1. **Token Cloudflare dans Vault** — opérateur avec le token root, sur `cnp-control` :
+   `infra/eso/README.md` étape 8 (création du token, `read -s` puis
+   `vault kv put secret/platform/external-dns cloudflare_api_token=-`).
+2. **Policy `eso-reader`** mise à jour depuis `infra/eso/policy-eso-reader.hcl` (même
+   opérateur : `infra/eso/README.md` étape 1, `vault policy write eso-reader - < …`). Le token
+   ESO existant en profite immédiatement, sur tous les clusters.
+3. **`terraform apply` par root**, chacun par la personne qui détient son state local :
+   - `infra/aks` et `infra/oracle/k3s` : depuis le checkout principal (states locaux) ;
+   - `infra/gke` : **par la personne qui détient le state GKE** (Cloud Shell) — installe
+     aussi cert-manager et les ClusterIssuers, absents jusqu'ici sur GKE.
+
+   Commandes et plans attendus : READMEs de [`infra/aks`](../../infra/aks/README.md),
+   [`infra/gke`](../../infra/gke/README.md), [`infra/oracle/k3s`](../../infra/oracle/k3s/README.md).
+4. **Vérifier external-dns** sur chaque cluster : `ExternalSecret` `SecretSynced`, logs sans
+   erreur Cloudflare, et — pour les apps déjà exposées sur AKS — les A/TXT créés
+   (`dig`, ou le tableau DNS Cloudflare : `<slug>`, `dev.<slug>`, `_extdns-a.*`).
+5. **Ouvrir l'exposition** du cluster dans le backend : ajouter son nom à
+   `PUBLIC_EXPOSURE_CLUSTERS` dans le `.env` de `cnp-control` (ex.
+   `PUBLIC_EXPOSURE_CLUSTERS=cnp-aks,cnp-k3s,cnp-gke`, lu par `docker-compose.yml`), puis
+   recréer le conteneur backend (`docker compose up -d backend`). Le défaut du code reste
+   `cnp-aks`. Prérequis k3s : security list OCI ouverte (voir plus bas).
+6. **Tester** : exposer une app de test sur le cluster, puis
+   `dig +short <slug>.cloud-native-plat4k.me` (IP du cluster),
+   `kubectl -n dev get certificate` (`READY=True`) et `curl -I https://dev.<slug>.cloud-native-plat4k.me`.
+   Désexposer : les enregistrements disparaissent à la boucle suivante.
+
+### HTTPS (cert-manager + Let's Encrypt)
+
+HTTPS est obligatoire en pratique : les SPA se connectent à Keycloak en PKCE, qui exige une
+origine sécurisée (Web Crypto) — en HTTP simple le login échoue.
+
+Quand une app est exposée (création avec `expose`, onboarding, ou toggle), CNP écrit dans
+`cnp-gitops`, pour chaque env (`dev`, `prod`) :
+
+- `apps/{cluster}/{slug}/values-{env}.yaml` : `ingress.enabled=true`, `className: nginx`,
+  `host`, **`tls: true`** — le chart de l'app rend alors un bloc `tls` avec
+  `secretName: <slug>-tls` (pour une app scaffoldée, ces valeurs sont aussi posées dans
+  `chart/values-{env}.yaml` du repo de l'app) ;
+- `apps/{cluster}/{slug}/platform/{env}/certificate.yaml` : un `Certificate` cert-manager
+  (namespace `{env}`, `secretName: <slug>-tls`, `dnsNames: [<host>]`, `issuerRef` ClusterIssuer
+  `letsencrypt-prod`), déployé par ArgoCD via la même source `platform/{env}` que
+  l'`ExternalSecret`.
+
+cert-manager résout le challenge **ACME HTTP-01** en créant un Ingress temporaire de classe
+`nginx` pour `/.well-known/acme-challenge/…`, puis range le certificat dans le Secret
+`<slug>-tls` que l'Ingress de l'app référence. Renouvellement automatique (~30 j avant
+expiration). Désactiver l'exposition repasse `tls: false` et supprime `certificate.yaml`
+(le Secret `<slug>-tls` orphelin peut être supprimé à la main, il est inoffensif).
+
+Prérequis pour que HTTP-01 aboutisse :
+
+- l'Ingress nginx du cluster est en place et sa classe est `nginx` ;
+- le DNS du host (`<slug>.…`, `dev.<slug>.…`) pointe vers l'IP publique du LoadBalancer ;
+- le **port 80** est joignable depuis internet (Let's Encrypt valide en HTTP sur le port 80,
+  même si l'app sera servie en 443).
+
+Tant que le certificat n'est pas émis, nginx sert son certificat auto-signé par défaut
+(avertissement navigateur). Diagnostic :
+
+```bash
+kubectl -n dev get certificate,certificaterequest,order,challenge
+kubectl -n dev describe challenge   # raison d'un challenge bloqué (DNS, port 80, self-check…)
+```
+
+**Rate limits Let's Encrypt** (production) : notamment 50 certificats par domaine enregistré
+par semaine et 5 certificats identiques (même jeu de noms) par semaine ; des échecs de
+validation répétés sont aussi limités (5 par compte/host/heure). Éviter donc de basculer
+l'exposition en boucle et de tester sur la prod : pour valider la chaîne, mettre
+`TLS_CLUSTER_ISSUER=letsencrypt-staging` dans la configuration du backend (limites larges,
+certificats **non reconnus** par les navigateurs), puis revenir à `letsencrypt-prod` et
+re-pousser l'exposition des apps concernées.
+
+#### Apps déjà exposées avant cert-manager (migration manuelle, une fois)
+
+Les apps exposées avant cette évolution ont `tls: false` et pas de `certificate.yaml` : rien
+n'est migré automatiquement. Pour chaque app exposée, re-pousser l'exposition — l'appel est
+idempotent et ne coupe pas l'Ingress :
+
+```bash
+curl -X PATCH "$CNP_API/api/v1/apps/<app_id>/expose" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"expose": true}'
+```
+
+(À défaut, désactiver puis réactiver l'exposition dans l'onglet Settings — coupure de l'app
+publique le temps du resync ArgoCD.) Vérifier ensuite dans `cnp-gitops` la présence de
+`platform/{dev,prod}/certificate.yaml` et `tls: true`, puis `kubectl -n <env> get certificate`
+(`READY=True`) et `kubectl -n <env> get ingress <slug> -o yaml` (bloc `tls` présent). Pour une
+app scaffoldée, le `chart/values-{env}.yaml` de son repo garde `tls: false` : l'appel ci-dessus
+pose `tls: true` dans `cnp-gitops`, et l'Ingress rendu fait foi.
 
 ### Clusters supportés
 
-| Cluster | nginx-ingress | DNS wildcard | Expose disponible |
-|---|---|---|---|
-| `aks` | ✅ (Terraform) | ✅ (`*.cloud-native-plat4k.me`) | ✅ |
-| `cnp-k3s` | ✅ (Terraform, `infra/oracle/k3s/`) | ❌ (enregistrements par app) | ❌ (pas encore dans le frontend) |
+| Cluster | nginx-ingress | cert-manager | DNS des apps | Expose disponible |
+|---|---|---|---|---|
+| `cnp-aks` | ✅ (Terraform, `infra/aks/`) | ✅ (Terraform) | external-dns (Terraform, après apply) + wildcard `*` (défaut) | ✅ |
+| `cnp-k3s` | ✅ (Terraform, `infra/oracle/k3s/`, publie l'IP publique `138.2.159.23`) | ✅ (Terraform) | external-dns (Terraform, après apply) | après rollout + security list OCI, puis ajout à `PUBLIC_EXPOSURE_CLUSTERS` |
+| `cnp-gke` | ✅ (Terraform, `infra/gke/`) | ✅ (Terraform, après apply) | external-dns (Terraform, après apply) | après rollout, puis ajout à `PUBLIC_EXPOSURE_CLUSTERS` |
 
 La zone `cloud-native-plat4k.me` est servie par Cloudflare (NS `*.ns.cloudflare.com`) ; le
-wildcard y pointe vers l'ingress d'AKS.
+wildcard y pointe vers l'ingress d'AKS, les apps des autres clusters ont leurs
+enregistrements propres (external-dns, ci-dessus).
 
-Le frontend désactive l'option pour les clusters k3s (détection par le nom), mais pas le toggle
-de l'onglet Settings. Le backend accepte le flag `expose` mais ne génère pas de sous-domaine différent selon le cluster — **ne pas activer manuellement `expose` via l'API pour une app sur k3s**
-tant que son DNS et son HTTPS ne sont pas en place.
+Le backend est la source de vérité : le réglage `PUBLIC_EXPOSURE_CLUSTERS` (noms de
+`ClusterConnection` séparés par des virgules, défaut `cnp-aks`, surchargeable par variable
+d'environnement ou dans Vault `secret/cnp/platform`) liste les clusters que le DNS public
+atteint. Ailleurs, `expose=true` est refusé avec une 422 (scaffold, onboard, import,
+`PATCH /apps/{id}/expose`), et réassigner une app exposée vers un tel cluster donne une 409 ;
+désactiver l'exposition reste toujours possible. L'API clusters renvoie le booléen calculé
+`supports_public_exposure`, que le frontend utilise (assistant de création, toggle de l'onglet
+Settings). Ajouter un cluster à la liste seulement une fois son DNS et son HTTPS en place.
 
-### Support sur k3s : ce qui reste
+Quand l'exposition d'une app avec Keycloak change, CNP met à jour les redirect URIs des clients
+des deux realms (URL publique ajoutée ou retirée, les autres URIs conservées). En cas d'échec
+(Keycloak injoignable), le toggle réussit quand même et l'app porte l'avertissement
+`keycloak_redirect_uris_out_of_sync` ; renvoyer la même valeur (bouton *Retry* de l'onglet
+Settings) relance la synchronisation.
 
-Le contrôleur est déclaré dans `infra/oracle/k3s/main.tf` (procédure : README k3s, étape 7).
-Restent, pour une exposition complète :
+### Spécificités k3s (Oracle)
 
-1. Ouvrir 80/443 dans la security list OCI du subnet de la VM.
-2. DNS : soit des enregistrements A par app (`<slug>`, `dev.<slug>`) vers l'IP publique de la
-   VM, soit un sous-domaine par cluster (ex. `*.k3s.cloud-native-plat4k.me`). Le second impose
-   de mettre à jour `app_hostname()` dans `shared/models.py` et `appUrls.ts` pour tenir compte du
-   cluster cible, et le prédicat `clusterSupportsIngress` dans `frontend-new/src/utils/clusterUtils.ts`.
-3. HTTPS (cert-manager) : nécessaire aux SPA avec Keycloak, dont le login PKCE exige une origine sécurisée.
+ingress-nginx, cert-manager, les ClusterIssuers et external-dns sont déclarés dans
+`infra/oracle/k3s/main.tf` (README k3s, étape 7). Particularités :
+
+1. **Adresse publiée** : le `Service` ingress-nginx est servi par ServiceLB, qui publie l'IP
+   **privée** du nœud (`10.0.0.115`) ; l'IP publique `138.2.159.23` est NATée par OCI. Le
+   contrôleur publie donc dans le status des Ingress l'IP publique
+   (`--publish-status-address=var.public_ip`, avec `controller.publishService.enabled=false`,
+   les deux options étant exclusives) : c'est elle qu'external-dns met dans les A.
+   À changer (`-var public_ip=…`) si la VM change d'IP publique.
+2. **Security list OCI** (manuel, console OCI, subnet de la VM) : règles d'entrée TCP `80` et
+   `443`, source `0.0.0.0/0`. Sans le port 80, HTTP-01 échoue ; sans 443, l'app est
+   injoignable.
+3. **HTTP-01 et hairpin OCI** : le self-check de cert-manager résout le host depuis le pod,
+   obtient l'IP publique de la VM et doit revenir sur le nœud par cette IP. Si le NAT OCI ne
+   gère pas ce retour (hairpin), le challenge reste `pending` alors que l'URL répond depuis
+   l'extérieur. Diagnostic :
+
+   ```bash
+   kubectl -n dev get challenge                    # STATE pending qui ne bouge pas
+   kubectl -n dev describe challenge               # "Waiting for HTTP-01 challenge propagation: failed to perform self check GET request ..."
+   kubectl -n cert-manager logs deploy/cert-manager | grep -i "self check"
+   curl -I http://dev.<slug>.cloud-native-plat4k.me/.well-known/acme-challenge/<token>   # depuis l'extérieur : 200 attendu
+   ```
+
+   Un timeout uniquement depuis le cluster désigne le hairpin. Piste de contournement (non
+   implémentée, rien n'est requis tant que le problème n'est pas observé) : faire résoudre
+   les hosts de la zone vers l'IP privée du nœud (`10.0.0.115`) à l'intérieur du cluster
+   seulement (bloc `hosts` ou `template` dans le CoreDNS de k3s), le DNS public restant sur
+   l'IP publique.
 
 ---
 

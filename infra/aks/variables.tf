@@ -1,3 +1,9 @@
+variable "subscription_id" {
+  description = "Subscription Azure qui héberge le cluster (null = subscription par défaut de la CLI az)"
+  type        = string
+  default     = null
+}
+
 variable "location" {
   description = "Région Azure où déployer les ressources"
   type        = string
@@ -44,4 +50,10 @@ variable "node_max_count" {
   description = "Nombre maximum de nodes (autoscaler)"
   type        = number
   default     = 4
+}
+
+variable "letsencrypt_email" {
+  description = "E-mail du compte ACME Let's Encrypt des ClusterIssuers (avis d'expiration/incidents)"
+  type        = string
+  default     = "contact@cloud-native-plat4k.me"
 }

@@ -49,6 +49,22 @@ resource "helm_release" "ingress_nginx" {
     name  = "controller.service.type"
     value = "LoadBalancer"
   }
+
+  # ServiceLB publishes the node's private OCI address (10.0.0.115) in the
+  # Service status, so --publish-service would copy it into every Ingress status
+  # and external-dns would create records to a private IP. Publish the public IP
+  # (NATed by OCI to the node) instead. The controller rejects
+  # --publish-service together with --publish-status-address (mutually
+  # exclusive flags), hence publishService.enabled=false.
+  set {
+    name  = "controller.publishService.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "controller.extraArgs.publish-status-address"
+    value = var.public_ip
+  }
 }
 
 data "kubernetes_service" "ingress_nginx" {
@@ -57,4 +73,99 @@ data "kubernetes_service" "ingress_nginx" {
     namespace = "ingress-nginx"
   }
   depends_on = [helm_release.ingress_nginx]
+}
+
+# ---------------------------------------------------------------------------
+# cert-manager (HTTPS for exposed apps)
+# ---------------------------------------------------------------------------
+
+# CNP writes a Certificate (apps/{cluster}/{app}/platform/{env}/certificate.yaml)
+# for every exposed app; cert-manager obtains it from Let's Encrypt over HTTP-01
+# through ingress-nginx and stores it in the {app}-tls Secret the app's Ingress
+# references. CRDs are installed (and kept on uninstall) by the chart itself.
+resource "helm_release" "cert_manager" {
+  name             = "cert-manager"
+  repository       = "https://charts.jetstack.io"
+  chart            = "cert-manager"
+  version          = var.cert_manager_chart_version
+  namespace        = "cert-manager"
+  create_namespace = true
+  atomic           = true
+  timeout          = 600
+
+  set {
+    name  = "crds.enabled"
+    value = "true"
+  }
+
+  set {
+    name  = "crds.keep"
+    value = "true"
+  }
+
+  depends_on = [helm_release.ingress_nginx]
+}
+
+# ClusterIssuers letsencrypt-prod / letsencrypt-staging, shipped as a local chart
+# (shared with infra/aks): the ClusterIssuer CRD does not exist at plan time, so
+# kubernetes_manifest cannot be used. cert-manager's startupapicheck hook makes
+# the release above wait for a working webhook before this one is installed.
+resource "helm_release" "cluster_issuers" {
+  name      = "cnp-cluster-issuers"
+  chart     = "${path.module}/../../cert-manager/cluster-issuers"
+  namespace = "cert-manager"
+  atomic    = true
+  timeout   = 300
+
+  set {
+    name  = "email"
+    value = var.letsencrypt_email
+  }
+
+  depends_on = [helm_release.cert_manager]
+}
+
+# ---------------------------------------------------------------------------
+# Public DNS of exposed apps (external-dns, Cloudflare)
+# ---------------------------------------------------------------------------
+
+# The wildcard *.cloud-native-plat4k.me points to AKS: external-dns creates one A
+# record per Ingress host of this cluster (<slug>, dev.<slug>) to the address in
+# the Ingress status (var.public_ip, see ingress_nginx), which takes precedence
+# over the wildcard (docs/guides/operations.md §9).
+
+# Cloudflare token (Vault secret/platform/external-dns) -> Secret
+# external-dns/cloudflare-api-token, through ESO and the vault-backend
+# ClusterSecretStore (manual prerequisites: infra/eso/README.md, up-to-date
+# eso-reader policy). Local chart shared with infra/aks and infra/gke, like
+# cluster_issuers.
+resource "helm_release" "external_dns_token" {
+  name             = "cnp-external-dns-cloudflare-token"
+  chart            = "${path.module}/../../external-dns/cloudflare-token"
+  namespace        = "external-dns"
+  create_namespace = true
+  atomic           = true
+  timeout          = 300
+}
+
+# Values shared by the three clusters in infra/external-dns/values.yaml;
+# txtOwnerId = cluster name, so no instance ever touches another one's records.
+resource "helm_release" "external_dns" {
+  name       = "external-dns"
+  repository = "https://kubernetes-sigs.github.io/external-dns"
+  chart      = "external-dns"
+  version    = var.external_dns_chart_version
+  namespace  = "external-dns"
+  atomic     = true
+  timeout    = 300
+
+  values = [file("${path.module}/../../external-dns/values.yaml")]
+
+  set {
+    name  = "txtOwnerId"
+    value = var.cluster_name
+  }
+
+  # The address published in Ingress status comes from ingress-nginx
+  depends_on = [helm_release.ingress_nginx, helm_release.external_dns_token]
 }
