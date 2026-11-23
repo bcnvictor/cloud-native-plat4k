@@ -11,18 +11,34 @@ import re
 from dataclasses import dataclass
 
 import yaml
-from shared.models import ephemeral_env_name, sanitize_k8s_label_value
+from shared.models import CNP_BASE_DOMAIN, ephemeral_env_name, sanitize_k8s_label_value
 
 PULL_SECRET_NAME = "gitlab-registry"
 PLATFORM_PROJECT = "cnp-platform"
-APP_PROJECT = "cnp-ephemeral"
+# Suffixe du fichier de l'AppProject propre à l'env (même logique que PLATFORM_SUFFIX)
+PROJECT_SUFFIX = "--project"
+# Ressources que le chart d'une branche non relue ne doit pas créer : lecture de secrets
+# hors du namespace (ClusterSecretStore), émission de certificats (quota Let's Encrypt),
+# quotas que la plateforme garde pour elle.
+APP_RESOURCE_BLACKLIST = [
+    {"group": "external-secrets.io", "kind": "ExternalSecret"},
+    {"group": "external-secrets.io", "kind": "SecretStore"},
+    {"group": "external-secrets.io", "kind": "PushSecret"},
+    {"group": "cert-manager.io", "kind": "Certificate"},
+    {"group": "cert-manager.io", "kind": "CertificateRequest"},
+    {"group": "cert-manager.io", "kind": "Issuer"},
+    {"group": "acme.cert-manager.io", "kind": "Order"},
+    {"group": "acme.cert-manager.io", "kind": "Challenge"},
+    {"group": "", "kind": "ResourceQuota"},
+    {"group": "", "kind": "LimitRange"},
+]
 # Values de l'app lues sur la branche, dans cet ordre (comme update-gitops pour dev)
 SOURCE_VALUES_FILES = ("chart/values-dev.yaml", "chart/values.yaml")
 # "--" n'apparaît jamais dans un slug : l'Application plateforme ne peut pas entrer en
 # collision avec l'Application de l'app d'un autre env (branches `x` et `x-platform`).
 PLATFORM_SUFFIX = "--platform"
-# Même retry que l'Application de l'app (update-gitops-ephemeral) : la synchro peut
-# échouer tant qu'un ancien namespace du même nom est en Terminating.
+# Retry de synchro des deux Applications : le namespace (Application plateforme) peut ne
+# pas exister encore, ou un ancien namespace du même nom être encore en Terminating.
 SYNC_RETRY = {"limit": 10, "backoff": {"duration": "10s", "factor": 2, "maxDuration": "5m"}}
 
 
@@ -36,6 +52,16 @@ class EphemeralTarget:
     gitops_repo_url: str
     registry_vault_key: str
     registry_server: str
+    app_repo_url: str = ""
+    # Chemin Vault des variables de dev, héritées sans copie (ADR-0030 §7)
+    vault_env_path: str = ""
+    tls_issuer: str = "letsencrypt-prod"
+    base_domain: str = CNP_BASE_DOMAIN
+
+    @property
+    def host(self) -> str:
+        # Un seul label sous le domaine : couvert par le wildcard si on passe en DNS-01
+        return f"{self.name}.{self.base_domain}"
 
     @property
     def name(self) -> str:
@@ -56,6 +82,14 @@ class EphemeralTarget:
     @property
     def platform_app_path(self) -> str:
         return f"argocd/{self.cluster}/{self.app_slug}/ephemeral/{self.env_slug}{PLATFORM_SUFFIX}.yaml"
+
+    @property
+    def project_path(self) -> str:
+        return project_path(self.cluster, self.app_slug, self.env_slug)
+
+
+def project_path(cluster: str, app_slug: str, env_slug: str) -> str:
+    return f"argocd/{cluster}/{app_slug}/ephemeral/{env_slug}{PROJECT_SUFFIX}.yaml"
 
 
 def _clean_repo_url(url: str) -> str:
@@ -128,6 +162,61 @@ def _service_account(t: EphemeralTarget) -> dict:
     }
 
 
+def _app_env_secret(t: EphemeralTarget) -> dict:
+    """Variables de dev, lues dans Vault sans copie : même Secret <app>-env que dev, que le
+    chart monte en envFrom. Un env éphémère ne lit jamais le chemin prod."""
+    return {
+        "apiVersion": "external-secrets.io/v1",
+        "kind": "ExternalSecret",
+        "metadata": {"name": f"{t.app_slug}-env", "namespace": t.name},
+        "spec": {
+            "refreshInterval": "5m",
+            "secretStoreRef": {"name": "vault-backend", "kind": "ClusterSecretStore"},
+            # Delete, comme dev : une app sans variable n'a pas de chemin Vault, et Retain
+            # ferait passer l'ExternalSecret (donc l'Application plateforme) en Degraded.
+            "target": {"name": f"{t.app_slug}-env", "creationPolicy": "Owner", "deletionPolicy": "Delete"},
+            "dataFrom": [{"extract": {"key": t.vault_env_path}}],
+        },
+    }
+
+
+def _certificate(t: EphemeralTarget) -> dict:
+    """Certificat du host de l'env. Secret <app>-tls : celui que l'Ingress du chart
+    référence quand ingress.tls=true, comme pour une app exposée."""
+    return {
+        "apiVersion": "cert-manager.io/v1",
+        "kind": "Certificate",
+        "metadata": {"name": f"{t.app_slug}-tls", "namespace": t.name},
+        "spec": {
+            "secretName": f"{t.app_slug}-tls",
+            "dnsNames": [t.host],
+            "issuerRef": {"name": t.tls_issuer, "kind": "ClusterIssuer", "group": "cert-manager.io"},
+        },
+    }
+
+
+def _app_project(t: EphemeralTarget) -> dict:
+    """AppProject propre à l'env : le chart de la branche ne peut déployer que dans le
+    namespace de l'env (pas dans celui d'un env d'une autre app), et depuis son seul repo."""
+    sources = [_app_repo_url(t.app_repo_url)] if t.app_repo_url else []
+    return {
+        "apiVersion": "argoproj.io/v1alpha1",
+        "kind": "AppProject",
+        "metadata": {
+            "name": t.name,
+            "namespace": "argocd",
+            "labels": {"cnp.io/app": t.app_slug, "cnp.io/env": t.env_slug, "cnp.io/env-type": "ephemeral"},
+        },
+        "spec": {
+            "description": f"Ephemeral environment {t.name} (branch chart, not reviewed)",
+            "sourceRepos": sources + [_clean_repo_url(t.gitops_repo_url)],
+            "destinations": [{"server": "https://kubernetes.default.svc", "namespace": t.name}],
+            "clusterResourceWhitelist": [],
+            "namespaceResourceBlacklist": APP_RESOURCE_BLACKLIST,
+        },
+    }
+
+
 def _platform_application(t: EphemeralTarget) -> dict:
     return {
         "apiVersion": "argoproj.io/v1alpha1",
@@ -158,7 +247,10 @@ def declaration_files(t: EphemeralTarget) -> list[dict]:
         {"file_path": f"{t.root}/platform/namespace.yaml", "content": _dump(_namespace(t))},
         {"file_path": f"{t.root}/platform/registry-pull-secret.yaml", "content": _dump(_registry_pull_secret(t))},
         {"file_path": f"{t.root}/platform/serviceaccount.yaml", "content": _dump(_service_account(t))},
+        {"file_path": f"{t.root}/platform/app-env.yaml", "content": _dump(_app_env_secret(t))},
+        {"file_path": f"{t.root}/platform/certificate.yaml", "content": _dump(_certificate(t))},
         {"file_path": t.platform_app_path, "content": _dump(_platform_application(t))},
+        {"file_path": t.project_path, "content": _dump(_app_project(t))},
     ]
 
 
@@ -170,7 +262,10 @@ def argocd_app_names(app_slug: str, env_slug: str) -> tuple[str, str]:
 
 def destroy_paths(cluster: str, app_slug: str, env_slug: str) -> tuple[list[str], list[str]]:
     """(fichiers, dossiers) de l'env dans cnp-gitops : les deux Applications et tout son
-    dossier apps/. Supprimer les Applications laisse ArgoCD purger le namespace (finalizer)."""
+    dossier apps/. Supprimer les Applications laisse ArgoCD purger le namespace (finalizer).
+
+    L'AppProject de l'env (project_path) n'en fait pas partie : il est supprimé une fois les
+    Applications disparues, sinon ArgoCD ne pourrait plus finaliser l'Application de l'app."""
     argocd_dir = f"argocd/{cluster}/{app_slug}/ephemeral"
     return (
         [f"{argocd_dir}/{env_slug}.yaml", f"{argocd_dir}/{env_slug}{PLATFORM_SUFFIX}.yaml"],
@@ -187,9 +282,11 @@ def build_values(source_values: dict, t: EphemeralTarget, image_tag: str) -> dic
     """Values de l'env : celles de dev lues sur la branche, avec le tag de l'image construite."""
     values = copy.deepcopy(source_values) if isinstance(source_values, dict) else {}
     values.setdefault("image", {})["tag"] = image_tag
-    # Les values de dev portent le host de dev : jamais d'Ingress tant que l'env
-    # n'a pas son propre host (4K-287), sinon il volerait le trafic de dev.
-    values.setdefault("ingress", {})["enabled"] = False
+    # Le host de dev est toujours remplacé par celui de l'env : sinon l'env volerait le
+    # trafic de dev. TLS comme une app exposée (Certificate écrit par la plateforme).
+    ingress = values.get("ingress") if isinstance(values.get("ingress"), dict) else {}
+    ingress.update({"enabled": True, "className": "nginx", "host": t.host, "tls": True})
+    values["ingress"] = ingress
     if t.owner:
         values.setdefault("app", {})["owner"] = t.owner
     return values
@@ -205,7 +302,7 @@ def _app_application(t: EphemeralTarget, app_repo_url: str, commit_sha: str) -> 
             "finalizers": ["resources-finalizer.argocd.argoproj.io"],
         },
         "spec": {
-            "project": APP_PROJECT,
+            "project": t.name,
             "sources": [
                 {
                     # Chart figé sur le commit dont l'image a été construite : un push

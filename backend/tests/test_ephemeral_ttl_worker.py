@@ -66,7 +66,7 @@ async def test_detruit_les_envs_expires_seulement(db_session, app_row, bot):
     result = await run_ephemeral_ttl_reconciliation(db_session, now=NOW)
 
     assert result == {"deployed": 0, "destroyed": 1, "pending": 0}
-    assert bot.deleted == [["apps/cnp-aks/my-app/ephemeral/old"]]
+    assert bot.deleted[0] == ["apps/cnp-aks/my-app/ephemeral/old"]
     await db_session.refresh(expired)
     await db_session.refresh(alive)
     assert expired.status == EphemeralEnvStatus.DESTROYED

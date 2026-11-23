@@ -30,7 +30,10 @@ def test_chemins_des_fichiers():
         f"{ROOT}/platform/namespace.yaml",
         f"{ROOT}/platform/registry-pull-secret.yaml",
         f"{ROOT}/platform/serviceaccount.yaml",
+        f"{ROOT}/platform/app-env.yaml",
+        f"{ROOT}/platform/certificate.yaml",
         "argocd/cnp-aks/my-app/ephemeral/feat-login--platform.yaml",
+        "argocd/cnp-aks/my-app/ephemeral/feat-login--project.yaml",
     }
 
 
@@ -140,15 +143,17 @@ def test_nom_de_l_application_plateforme_dans_la_limite_argocd():
 
 
 def test_chemins_de_destruction_couvrent_ce_que_cree_la_creation():
-    from backend.gitops.ephemeral import destroy_paths
+    from backend.gitops.ephemeral import deployment_files, destroy_paths, project_path
 
     files, directories = destroy_paths("cnp-aks", "my-app", "feat-login")
+    project = project_path("cnp-aks", "my-app", "feat-login")
     created = {f["file_path"] for f in declaration_files(_target())}
-    # Tout fichier créé par le backend est supprimé, soit directement soit avec son dossier
+    created |= {f["file_path"] for f in deployment_files(_target(), {}, "https://gitlab.com/g/my-app", "a" * 40)}
+    # Tout fichier écrit par le backend est supprimé : directement, avec son dossier, ou
+    # (l'AppProject) une fois les Applications disparues
     for path in created:
-        assert path in files or any(path.startswith(d + "/") for d in directories)
-    # L'Application de l'app (créée par la CI) aussi
-    assert "argocd/cnp-aks/my-app/ephemeral/feat-login.yaml" in files
+        assert path in files or path == project or any(path.startswith(d + "/") for d in directories)
+    assert project not in files
 
 
 def test_fichiers_de_deploiement():
@@ -162,7 +167,10 @@ def test_fichiers_de_deploiement():
 
     values = files[f"{ROOT}/values.yaml"]
     assert values["image"]["tag"] == "01234567"
-    assert values["ingress"]["enabled"] is False  # jamais le host de dev
+    # Jamais le host de dev : celui de l'env, en TLS
+    assert values["ingress"] == {
+        "enabled": True, "host": "my-app--feat-login.cloud-native-plat4k.me", "className": "nginx", "tls": True,
+    }
     assert values["replicaCount"] == 2
     assert values["app"]["owner"] == "team-a"
     assert source["image"]["tag"] == "latest"  # la source n'est pas modifiée
@@ -171,7 +179,7 @@ def test_fichiers_de_deploiement():
     assert app["metadata"]["name"] == "my-app--feat-login"
     assert "resources-finalizer.argocd.argoproj.io" in app["metadata"]["finalizers"]
     spec = app["spec"]
-    assert spec["project"] == "cnp-ephemeral"
+    assert spec["project"] == "my-app--feat-login"  # AppProject propre à l'env
     chart, gitops = spec["sources"]
     assert chart == {
         "repoURL": "https://gitlab.com/g/my-app.git",  # sans identifiants
@@ -182,3 +190,49 @@ def test_fichiers_de_deploiement():
     assert gitops == {"repoURL": GITOPS_URL, "targetRevision": "HEAD", "ref": "gitops"}
     assert spec["destination"]["namespace"] == "my-app--feat-login"
     assert spec["syncPolicy"]["retry"]["limit"] >= 5
+
+
+def _tfiles(**kw) -> dict[str, dict]:
+    return {f["file_path"]: yaml.safe_load(f["content"]) for f in declaration_files(_target(**kw))}
+
+
+def test_variables_heritees_de_dev_sans_copie():
+    es = _tfiles(vault_env_path="secret/apps/team-a/my-app/dev")[f"{ROOT}/platform/app-env.yaml"]
+    assert es["kind"] == "ExternalSecret"
+    assert es["metadata"] == {"name": "my-app-env", "namespace": "my-app--feat-login"}
+    # Même Secret que dev (<app>-env, monté en envFrom par le chart), lu dans le chemin dev
+    assert es["spec"]["target"]["name"] == "my-app-env"
+    assert es["spec"]["target"]["deletionPolicy"] == "Delete"
+    assert es["spec"]["dataFrom"] == [{"extract": {"key": "secret/apps/team-a/my-app/dev"}}]
+
+
+def test_certificat_du_host_de_l_env():
+    cert = _tfiles(tls_issuer="letsencrypt-staging")[f"{ROOT}/platform/certificate.yaml"]
+    assert cert["kind"] == "Certificate"
+    assert cert["metadata"] == {"name": "my-app-tls", "namespace": "my-app--feat-login"}
+    assert cert["spec"]["secretName"] == "my-app-tls"  # celui de l'Ingress du chart
+    assert cert["spec"]["dnsNames"] == ["my-app--feat-login.cloud-native-plat4k.me"]
+    assert cert["spec"]["issuerRef"] == {"name": "letsencrypt-staging", "kind": "ClusterIssuer", "group": "cert-manager.io"}
+
+
+def test_appproject_limite_au_namespace_de_l_env():
+    """Revue de cnp-gitops !4 : le chart de l'app A ne peut pas déployer dans un env de B."""
+    proj = _tfiles(app_repo_url="https://gitlab.com/4k-cnp-2027/cnp-apps/my-app")[
+        "argocd/cnp-aks/my-app/ephemeral/feat-login--project.yaml"]
+    assert proj["kind"] == "AppProject"
+    assert proj["metadata"]["name"] == "my-app--feat-login"
+    assert proj["metadata"]["namespace"] == "argocd"
+    spec = proj["spec"]
+    assert spec["destinations"] == [{"server": "https://kubernetes.default.svc", "namespace": "my-app--feat-login"}]
+    assert spec["sourceRepos"] == ["https://gitlab.com/4k-cnp-2027/cnp-apps/my-app.git", GITOPS_URL]
+    assert spec["clusterResourceWhitelist"] == []
+    blacklisted = {(r["group"], r["kind"]) for r in spec["namespaceResourceBlacklist"]}
+    for kind in [("external-secrets.io", "ExternalSecret"), ("cert-manager.io", "Certificate"),
+                 ("cert-manager.io", "Issuer"), ("", "ResourceQuota")]:
+        assert kind in blacklisted
+
+
+def test_host_a_un_seul_label_sous_le_domaine():
+    t = _target()
+    assert t.host == "my-app--feat-login.cloud-native-plat4k.me"
+    assert t.host.count(".") == 2  # couvert par un futur wildcard *.cloud-native-plat4k.me

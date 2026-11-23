@@ -36,14 +36,17 @@ from backend.core.config import settings
 from backend.db.models import Application, ClusterConnection, EphemeralEnvironment, User
 from backend.gitlab.client import GitLabClient
 from backend.gitops.ephemeral import (
+    PLATFORM_SUFFIX,
     SOURCE_VALUES_FILES,
     EphemeralTarget,
     argocd_app_names,
     declaration_files,
     deployment_files,
     destroy_paths,
+    project_path,
 )
 from backend.services.audit_service import AuditService
+from backend.services.env_var_service import resolve_group_slug
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +70,7 @@ def _get_bot_client() -> GitLabClient:
     )
 
 
-def _target(env: EphemeralEnvironment, app: Application) -> EphemeralTarget:
+def _target(env: EphemeralEnvironment, app: Application, group_slug: str = "") -> EphemeralTarget:
     return EphemeralTarget(
         cluster=env.cluster_name,
         app_slug=app.slug,
@@ -77,6 +80,10 @@ def _target(env: EphemeralEnvironment, app: Application) -> EphemeralTarget:
         gitops_repo_url=settings.GITOPS_REPO_URL,
         registry_vault_key=settings.EPHEMERAL_REGISTRY_VAULT_KEY,
         registry_server=settings.EPHEMERAL_REGISTRY_SERVER,
+        app_repo_url=app.repo_url or "",
+        # Toujours le chemin dev : un env éphémère ne lit jamais les secrets de prod
+        vault_env_path=f"secret/apps/{group_slug}/{app.slug}/dev",
+        tls_issuer=settings.EPHEMERAL_TLS_CLUSTER_ISSUER or settings.TLS_CLUSTER_ISSUER,
     )
 
 
@@ -201,7 +208,7 @@ class EphemeralEnvService:
             await self.db.rollback()
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Branch '{branch}' already has an ephemeral environment")
 
-        target = _target(env, app)
+        target = _target(env, app, await resolve_group_slug(self.db, app.owning_gitlab_group_id))
         gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
         try:
             await anyio.to_thread.run_sync(
@@ -257,13 +264,21 @@ class EphemeralEnvService:
                     "sync": st.get("sync", {}).get("status"),
                     "health": st.get("health", {}).get("status"),
                 }
+                # L'Application plateforme porte le Certificate : ArgoCD la dit Healthy
+                # seulement une fois le certificat Ready (ADR-0030 §8).
+                platform = await argocd.get_app_status(ephemeral_env_name(app.slug, env.slug) + PLATFORM_SUFFIX)
+                argocd_status["platform_health"] = platform.get("status", {}).get("health", {}).get("status")
             except Exception as e:
-                # Application pas encore créée par update-gitops (404), ArgoCD injoignable,
+                # Application pas encore écrite (avant le premier build), ArgoCD injoignable,
                 # ou identifiants Vault/ArgoCD invalides : le statut reste inconnu.
                 logger.debug("ArgoCD status unavailable for %s: %s", ephemeral_env_name(app.slug, env.slug), e)
 
         if env.status == EphemeralEnvStatus.PROVISIONING:
-            if argocd_status.get("sync") == "Synced" and argocd_status.get("health") == "Healthy":
+            if (
+                argocd_status.get("sync") == "Synced"
+                and argocd_status.get("health") == "Healthy"
+                and argocd_status.get("platform_health") == "Healthy"
+            ):
                 env.status = EphemeralEnvStatus.ACTIVE
             elif env.pipeline_id and app.gitlab_project_id and settings.GITLAB_BOT_TOKEN and settings.GITOPS_REPO_URL:
                 bot = _get_bot_client()
@@ -392,6 +407,20 @@ class EphemeralEnvService:
         if not await self._argocd_apps_gone(env, app):
             # ArgoCD n'a pas encore vu la suppression (interrogation du repo toutes les
             # ~3 min) ou purge encore le namespace : le worker repassera.
+            return to_response(env, app.slug)
+        # L'AppProject de l'env en dernier : sans lui, ArgoCD ne pourrait plus finaliser
+        # l'Application de l'app.
+        try:
+            await anyio.to_thread.run_sync(
+                lambda: bot.delete_paths(
+                    extract_project_path(settings.GITOPS_REPO_URL),
+                    [project_path(env.cluster_name, app.slug, env.slug)], [],
+                    f"chore(gitops): remove AppProject of ephemeral env {name}",
+                ),
+                cancellable=True,
+            )
+        except Exception:
+            logger.exception("Failed to remove the AppProject of %s — will retry", name)
             return to_response(env, app.slug)
 
         env.status = EphemeralEnvStatus.DESTROYED

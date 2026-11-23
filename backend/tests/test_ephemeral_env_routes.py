@@ -315,6 +315,7 @@ class TestLecture:
             "sync": {"status": "Synced"},
             "health": {"status": "Healthy"},
         }}
+        argocd_apps["my-app--feat-login--platform"] = {"status": {"health": {"status": "Healthy"}}}
         resp = await client.get(f"/api/v1/apps/{app_row.id}/ephemeral-envs", headers=_auth(developer))
         env = resp.json()[0]
         assert env["status"] == "active"
@@ -446,7 +447,7 @@ class TestDestruction:
         resp = await _destroy(client, app_row.id, env_id, developer)
 
         assert resp.json()["status"] == "destroyed"
-        assert len(bot.deleted) == 3  # suppression, rattrapage, passe à vide
+        assert len(bot.deleted) == 4  # suppression, rattrapage, passe à vide, AppProject
         assert not any("feat-login" in p for p in bot.gitops)
 
     async def test_reste_en_destroying_tant_qu_argocd_a_les_applications(
@@ -509,7 +510,8 @@ class TestDeploiement:
         assert set(files) == {f"{root}/values.yaml", "argocd/cnp-aks/my-app/ephemeral/feat-login.yaml"}
         values = yaml.safe_load(files[f"{root}/values.yaml"])
         assert values["image"] == {"repository": "registry.gitlab.com/4k-cnp-2027/cnp-apps/my-app", "tag": SHA[:8]}
-        assert values["ingress"]["enabled"] is False
+        assert values["ingress"]["enabled"] is True
+        assert values["ingress"]["host"] == "my-app--feat-login.cloud-native-plat4k.me"
         assert values["app"]["owner"] == "team-a"
         application = yaml.safe_load(files["argocd/cnp-aks/my-app/ephemeral/feat-login.yaml"])
         assert application["spec"]["sources"][0]["targetRevision"] == SHA
@@ -563,3 +565,58 @@ class TestDeploiement:
 
         assert result["deployed"] == 0
         assert len(bot.pushed) == pushes
+
+
+class TestSecretsEtUrl:
+    """4K-287 : secrets hérités de dev, host et certificat par env."""
+
+    def _platform(self, bot) -> dict:
+        import yaml
+
+        _, files, _ = bot.pushed[0]
+        return {f["file_path"]: yaml.safe_load(f["content"]) for f in files}
+
+    async def test_secrets_lus_dans_le_chemin_dev(self, client, app_row, developer, bot):
+        await _create(client, app_row.id, developer)
+        es = self._platform(bot)["apps/cnp-aks/my-app/ephemeral/feat-login/platform/app-env.yaml"]
+        key = es["spec"]["dataFrom"][0]["extract"]["key"]
+        assert key.startswith("secret/apps/") and key.endswith("/my-app/dev")
+        assert not any("/prod" in str(f["content"]) for f in bot.pushed[0][1])
+
+    async def test_emetteur_des_certificats_ephemeres_configurable(self, client, app_row, developer, bot, monkeypatch):
+        monkeypatch.setattr(settings, "EPHEMERAL_TLS_CLUSTER_ISSUER", "letsencrypt-staging")
+        await _create(client, app_row.id, developer)
+        cert = self._platform(bot)["apps/cnp-aks/my-app/ephemeral/feat-login/platform/certificate.yaml"]
+        assert cert["spec"]["issuerRef"]["name"] == "letsencrypt-staging"
+
+    async def test_emetteur_par_defaut(self, client, app_row, developer, bot, monkeypatch):
+        monkeypatch.setattr(settings, "EPHEMERAL_TLS_CLUSTER_ISSUER", "")
+        monkeypatch.setattr(settings, "TLS_CLUSTER_ISSUER", "letsencrypt-prod")
+        await _create(client, app_row.id, developer)
+        cert = self._platform(bot)["apps/cnp-aks/my-app/ephemeral/feat-login/platform/certificate.yaml"]
+        assert cert["spec"]["issuerRef"]["name"] == "letsencrypt-prod"
+
+    async def test_reste_provisioning_tant_que_le_certificat_n_est_pas_pret(
+        self, client, app_row, developer, bot, argocd_apps
+    ):
+        await _create(client, app_row.id, developer)
+        argocd_apps["my-app--feat-login"] = {"status": {"sync": {"status": "Synced"}, "health": {"status": "Healthy"}}}
+        argocd_apps["my-app--feat-login--platform"] = {"status": {"health": {"status": "Progressing"}}}
+        resp = await client.get(f"/api/v1/apps/{app_row.id}/ephemeral-envs", headers=_auth(developer))
+        assert resp.json()[0]["status"] == "provisioning"
+
+    async def test_appproject_supprime_apres_les_applications(
+        self, client, db_session, app_row, developer, bot, argocd_apps
+    ):
+        """Sans son AppProject, ArgoCD ne pourrait plus finaliser l'Application de l'app."""
+        project = "argocd/cnp-aks/my-app/ephemeral/feat-login--project.yaml"
+        env_id = (await _create(client, app_row.id, developer)).json()["id"]
+        argocd_apps["my-app--feat-login"] = {}
+
+        await _destroy(client, app_row.id, env_id, developer)
+        assert project in bot.gitops
+
+        del argocd_apps["my-app--feat-login"]
+        db_session.expire_all()
+        await run_ephemeral_ttl_reconciliation(db_session)
+        assert project not in bot.gitops
