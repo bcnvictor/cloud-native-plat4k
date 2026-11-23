@@ -200,3 +200,22 @@
   .m-robot.is-changing-to-doctor .m-doc { animation: mascotOutfitFadeIn .15s ease-out both !important; }
   .m-robot.is-changing-to-chat .m-doc { animation: mascotOutfitFadeOut .15s ease-in both !important; }
 }
+
+/* Mouvement réduit, reste de l'assistant : le tiroir et le robot changent de place
+   sans glisser, le robot ne saute plus, ne salue plus et ne cligne plus, les bulles et
+   les messages apparaissent en fondu, les points d'attente ne font que varier d'opacité. */
+@keyframes plat4kFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes plat4kDotFade { 0%, 60%, 100% { opacity: .35; } 30% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .plat4k-assistant .m-drawer,
+  .plat4k-assistant.is-open .m-drawer,
+  .plat4k-assistant .m-dock { transition: none; }
+  .plat4k-assistant.is-attn .m-robot,
+  .plat4k-assistant.is-attn .m-arm,
+  .plat4k-assistant.is-attn .m-ring,
+  .plat4k-assistant .m-eye { animation: none; }
+  .plat4k-assistant [class*='animate-[']:not([class*='animate-[dotPulse']) {
+    animation: plat4kFadeIn .15s ease-out both;
+  }
+  .plat4k-assistant [class*='animate-[dotPulse'] { animation-name: plat4kDotFade; }
+}

@@ -63,7 +63,7 @@ function EvidenceItem({ evidence }: { evidence: Evidence }) {
             <span className="min-w-0 grow basis-48 break-words text-xs text-foreground">{evidence.label}</span>
           )}
           {when && (
-            <time dateTime={evidence.at ?? undefined} className="shrink-0 text-[11px] text-muted-foreground">
+            <time dateTime={evidence.at ?? undefined} className="shrink-0 text-xs text-muted-foreground">
               {when}
             </time>
           )}
@@ -73,7 +73,7 @@ function EvidenceItem({ evidence }: { evidence: Evidence }) {
             href={evidence.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="shrink-0 rounded-sm text-muted-foreground hover:text-foreground"
+            className="-m-1 shrink-0 rounded-sm p-1 text-muted-foreground hover:text-foreground"
             aria-label={`Ouvrir la source (${sourceLabel}) dans un nouvel onglet`}
             title="Ouvrir la source"
           >
@@ -85,7 +85,7 @@ function EvidenceItem({ evidence }: { evidence: Evidence }) {
         <pre
           id={detailId}
           hidden={!open}
-          className="mx-2.5 mb-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-sm border border-border bg-background-subtle p-2 font-mono text-[11px] leading-relaxed text-foreground"
+          className="mx-2.5 mb-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-sm border border-border bg-background-subtle p-2 font-mono text-xs leading-relaxed text-foreground"
         >
           {evidence.detail}
         </pre>

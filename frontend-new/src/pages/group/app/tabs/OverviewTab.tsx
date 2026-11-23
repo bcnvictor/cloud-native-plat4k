@@ -100,13 +100,14 @@ function EnvCard({ title, envKey, appId, appName, argo, scaleState }: EnvCardPro
 
   return (
     <Card>
-      <h2 className="text-sm font-medium text-foreground mb-3 flex items-center justify-between">
-        <span className="flex items-center gap-1.5">
+      {/* Le bouton reste hors du titre : sinon il fait partie du nom lu du titre. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <h2 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
           <IconRefresh size={14} />
           {title}
-        </span>
+        </h2>
         {unhealthy && <DoctorLaunchButton appId={appId} env={envKey} appName={appName} />}
-      </h2>
+      </div>
       {!argo || (argo.error && !argo.sync_status) ? (
         <p className="text-xs text-muted-foreground flex items-center gap-1.5 mb-3">
           <IconAlertTriangle size={12} className="shrink-0" />

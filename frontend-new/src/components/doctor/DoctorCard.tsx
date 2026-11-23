@@ -64,7 +64,7 @@ function EnvSelector({
             onClick={() => onChange(env)}
             className={cn(
               'inline-flex h-6 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium',
-              checked ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              checked ? 'bg-background text-foreground shadow-sm' : 'text-foreground/65 hover:text-foreground'
             )}
           >
             {broken[env] && <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-danger" />}

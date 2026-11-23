@@ -58,7 +58,7 @@ export function ModeToggle({ mode, onChange, className }: Props) {
               'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium max-sm:px-2',
               checked
                 ? 'bg-card text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+                : 'text-foreground/65 hover:text-foreground'
             )}
           >
             <Icon size={13} aria-hidden="true" className={cn('max-sm:hidden', checked && 'text-primary')} />

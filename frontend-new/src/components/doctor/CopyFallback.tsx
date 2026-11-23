@@ -46,7 +46,7 @@ export function CopyFallback({ text, onClose }: { text: string; onClose: () => v
         readOnly
         rows={6}
         value={text}
-        className="w-full resize-y rounded-md border border-border bg-background-subtle p-2 font-mono text-[11px] text-foreground"
+        className="w-full resize-y rounded-md border border-border bg-background-subtle p-2 font-mono text-xs text-foreground"
       />
       <Button variant="ghost" size="sm" className="self-start" onClick={onClose}>
         Fermer

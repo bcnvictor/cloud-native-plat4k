@@ -170,20 +170,23 @@ describe('DoctorDiagnosisView : rollback confirmé', () => {
 
     fireEvent.click(rollbackButton());
     const confirm = screen.getByRole('group', {
-      name: 'Revenir à a1b2c3d4 en prod ? La version en panne sera remplacée.',
+      name: 'Revenir à a1b2c3d4 pour demo-shop en prod ? La version en panne sera remplacée.',
     });
     expect(document.activeElement).toBe(within(confirm).getByRole('button', { name: 'Annuler' }));
     expect(rollback).not.toHaveBeenCalled();
 
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Confirmer le rollback' }));
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Revenir à a1b2c3d4' }));
 
     expect(await screen.findByText(/Rollback lancé : a1b2c3d4 est en cours de déploiement en prod/)).toBeTruthy();
     expect(rollback).toHaveBeenCalledWith(7, 11, 'prod');
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Rollback prod lancé' }));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['app-status', 7] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['app-history', 7] });
+    // Le bouton de confirmation a disparu : le focus passe sur « Revérifier l'état ».
+    const recheck = screen.getByRole('button', { name: 'Revérifier l’état' });
+    expect(document.activeElement).toBe(recheck);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revérifier l’état' }));
+    fireEvent.click(recheck);
     expect(diagnose).toHaveBeenCalledWith(7, 'prod');
   });
 
@@ -209,7 +212,7 @@ describe('DoctorDiagnosisView : rollback confirmé', () => {
     renderView();
 
     fireEvent.click(rollbackButton());
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmer le rollback' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Revenir à a1b2c3d4' }));
 
     expect((await screen.findByRole('alert')).textContent).toBe('Un rollback est déjà en cours sur prod.');
     expect((rollbackButton() as HTMLButtonElement).disabled).toBe(false);
@@ -231,7 +234,7 @@ describe('DoctorDiagnosisView : rollback confirmé', () => {
 
     await user.keyboard('{Enter}');
     await user.tab({ shift: true });
-    expect(document.activeElement?.textContent).toContain('Confirmer le rollback');
+    expect(document.activeElement?.textContent).toContain('Revenir à a1b2c3d4');
     await user.keyboard('{Enter}');
     await waitFor(() => expect(rollback).toHaveBeenCalledWith(7, 11, 'prod'));
   });
@@ -246,7 +249,7 @@ describe('DoctorDiagnosisView : rollback confirmé', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Relancer l’environnement dev/ }));
     screen.getByRole('group', { name: /Relancer l’environnement dev de demo-shop \?/ });
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmer la relance' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Relancer dev' }));
 
     expect(await screen.findByText(/Relance lancée/)).toBeTruthy();
     expect(resume).toHaveBeenCalledWith(7, 'dev');

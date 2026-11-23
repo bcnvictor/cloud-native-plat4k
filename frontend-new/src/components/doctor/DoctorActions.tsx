@@ -68,7 +68,9 @@ function usePageUrl(appName: string): { base: string | null; url: string | null 
 
 function Description({ action }: { action: DoctorAction }) {
   return action.description ? (
-    <p className="text-xs text-muted-foreground">{action.description}</p>
+    // Pas de text-muted-foreground : sur le fond teinté de l'action principale, il passe
+    // sous 4,5:1 en thème clair.
+    <p className="text-xs text-foreground/65">{action.description}</p>
   ) : null;
 }
 
@@ -171,6 +173,8 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
   useEffect(() => {
     const find = (sel: string) => containerRef.current?.querySelector<HTMLButtonElement>(sel);
     if (phase === 'confirming') find('[data-doctor-cancel]')?.focus();
+    // Le bouton de confirmation disparaît : sans ça, le focus clavier retombe sur la page.
+    if (phase === 'done') find('[data-doctor-recheck]')?.focus();
     if (phase === 'idle' && restoreFocus.current) {
       restoreFocus.current = false;
       find('[data-doctor-trigger]')?.focus();
@@ -192,7 +196,7 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
 
   if (phase === 'done') {
     return (
-      <div role="status" className="flex flex-wrap items-center gap-2">
+      <div ref={containerRef} role="status" className="flex flex-wrap items-center gap-2">
         <span className="flex items-center gap-1.5 text-xs font-medium text-success-text">
           <IconCircleCheck size={14} aria-hidden="true" className="shrink-0" />
           {isRollback
@@ -200,6 +204,7 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
             : `Relance lancée : l’environnement ${env} redémarre.`}
         </span>
         <Button
+          data-doctor-recheck
           size="sm"
           variant="secondary"
           icon={<IconRefresh size={13} aria-hidden="true" />}
@@ -222,7 +227,7 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
       >
         <p id={questionId} className="text-sm font-medium text-foreground">
           {isRollback
-            ? `Revenir à ${target} en ${env} ? La version en panne sera remplacée.`
+            ? `Revenir à ${target} pour ${diagnosis.app_name} en ${env} ? La version en panne sera remplacée.`
             : `Relancer l’environnement ${env} de ${diagnosis.app_name} ? Les réplicas seront remis en service.`}
         </p>
         <div className="flex flex-wrap items-center gap-2">
@@ -233,12 +238,12 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
             loading={mutation.isPending}
             onClick={() => mutation.mutate()}
           >
-            {isRollback ? 'Confirmer le rollback' : 'Confirmer la relance'}
+            {isRollback ? `Revenir à ${target}` : `Relancer ${env}`}
           </Button>
           <Button data-doctor-cancel size="sm" variant="ghost" onClick={cancel} disabled={mutation.isPending}>
             Annuler
           </Button>
-          <span className="text-[11px] text-muted-foreground">Échap pour annuler</span>
+          <span className="text-xs text-muted-foreground">Échap pour annuler</span>
         </div>
       </div>
     );

@@ -222,6 +222,22 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     }
   }, [open, graphicalBotEnabled]);
 
+  // Clavier : à l'ouverture, le focus entre dans le tiroir (sinon il faut traverser
+  // toute la page pour l'atteindre) ; à la fermeture, il revient à l'élément qui l'a
+  // ouvert, s'il était resté dans le tiroir.
+  useEffect(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    const opener = active instanceof HTMLElement && !drawerRef.current?.contains(active) ? active : null;
+    // La classe is-open est déjà posée : le tiroir est visible, donc focalisable.
+    drawerRef.current?.focus({ preventScroll: true });
+    return () => {
+      if (opener?.isConnected && drawerRef.current?.contains(document.activeElement)) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+  }, [open]);
+
   // Changement de mode : annonce vocale et message dans le fil (la conversation
   // est conservée ; un fil sans échange repart simplement du nouvel accueil).
   const previousMode = useRef(mode);
@@ -393,9 +409,19 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
       {/* ===== Tiroir de chat (glisse depuis la droite) ===== */}
       <div
         ref={drawerRef}
-        className="m-drawer fixed inset-y-0 right-0 z-40 flex w-[440px] max-w-[calc(92vw/1.25)] flex-col border-l border-border bg-background shadow-[-24px_0_60px_rgba(31,44,84,.14)]"
+        className="m-drawer fixed inset-y-0 right-0 z-40 flex w-[440px] max-w-[calc(92vw/1.25)] flex-col border-l border-border bg-background shadow-[-24px_0_60px_rgba(31,44,84,.14)] focus-visible:ring-0 focus-visible:ring-offset-0"
+        role="region"
+        aria-label={title}
+        tabIndex={-1}
         aria-hidden={!open}
         data-mode={mode}
+        onKeyDown={(e) => {
+          // Échap ferme le tiroir (les confirmations du Doctor arrêtent l'événement avant).
+          if (e.key === 'Escape' && open) {
+            e.stopPropagation();
+            onClose();
+          }
+        }}
       >
         {/* Bandeau héro : le robot vient se docker sur la gauche */}
         <div
@@ -534,7 +560,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
                         type="button"
                         onClick={() => diagnoseFromPanel(s.env)}
                         disabled={!currentApp}
-                        className="inline-flex items-center gap-1.5 rounded-[20px] border border-primary-border bg-primary-subtle px-3 py-[7px] text-xs font-medium text-primary hover:border-primary disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 rounded-[20px] border border-primary-border bg-primary-subtle px-3 py-[7px] text-xs font-medium text-primary hover:border-primary disabled:opacity-50 dark:text-primary-300"
                       >
                         <IconStethoscope size={13} aria-hidden="true" />
                         {s.label}
@@ -564,8 +590,9 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
 
             {/* Barre de saisie */}
             <div className="flex-none border-t border-border px-4 pb-[18px] pt-3.5">
-              <div className="flex items-center gap-[9px] rounded-[26px] border-[1.5px] border-border bg-muted py-[5px] pl-4 pr-[5px]">
+              <div className="flex items-center gap-[9px] rounded-[26px] border-[1.5px] border-border bg-muted py-[5px] pl-4 pr-[5px] focus-within:border-primary focus-within:ring-2 focus-within:ring-ring">
                 <input
+                  aria-label="Message à l’assistant"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && ask(input)}
@@ -589,11 +616,13 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
       {/* ===== Dock du robot (lanceur en coin → se docke dans le bandeau) ===== */}
       {graphicalBotEnabled && (
         <div ref={dockRef} className="m-dock fixed bottom-[26px] right-[30px] z-50 flex flex-col items-end gap-[11px]">
+          {/* Écran étroit : la bulle masquerait la carte, et le bandeau d'erreur propose
+              déjà « Diagnostiquer ». */}
           {offerDiagnosis ? (
             <button
               type="button"
               onClick={onToggle}
-              className="flex items-center gap-1.5 rounded-[14px_14px_4px_14px] border border-danger-border bg-card px-3.5 py-[9px] text-xs font-medium text-foreground shadow-[0_8px_20px_rgba(31,44,84,.12)] animate-[bubblePop_.3s_cubic-bezier(.2,1.3,.5,1)_both] hover:border-primary"
+              className="flex items-center gap-1.5 max-sm:hidden rounded-[14px_14px_4px_14px] border border-danger-border bg-card px-3.5 py-[9px] text-xs font-medium text-foreground shadow-[0_8px_20px_rgba(31,44,84,.12)] animate-[bubblePop_.3s_cubic-bezier(.2,1.3,.5,1)_both] hover:border-primary"
             >
               <IconStethoscope size={14} aria-hidden="true" className="text-danger" />
               Besoin d'un diagnostic ?

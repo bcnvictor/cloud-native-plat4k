@@ -132,7 +132,7 @@ export function DoctorTimeline({ timeline, compact = false }: { timeline: Timeli
                 {gap && (
                   <span
                     className={cn(
-                      'absolute left-0 -translate-x-1/2 whitespace-nowrap text-[10px] text-muted-foreground',
+                      'absolute left-0 -translate-x-1/2 whitespace-nowrap text-xs text-muted-foreground',
                       compact ? '-top-4' : '-top-[18px]'
                     )}
                   >
@@ -154,8 +154,8 @@ export function DoctorTimeline({ timeline, compact = false }: { timeline: Timeli
                 >
                   {title(e)}
                 </span>
-                {t && <span className={cn('text-[10px] font-medium', t.className)}>{t.text}</span>}
-                <span className="text-[10px] text-muted-foreground">{when}</span>
+                {t && <span className={cn('text-xs font-medium', t.className)}>{t.text}</span>}
+                <span className="text-xs text-muted-foreground">{when}</span>
               </li>
             );
           })}

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useNavigate, type NavigateFunction } from 'react-router-dom';
@@ -322,5 +323,47 @@ describe('GlobalAssistantPanel — mode docteur', () => {
     });
     expect(await screen.findByText('Tout va bien.')).toBeTruthy();
     expect(chat.mock.calls[0][0].message).toBe('Explique ce graphe');
+  });
+});
+
+describe('GlobalAssistantPanel — clavier du tiroir', () => {
+  it("met le focus dans le tiroir à l'ouverture, le ferme avec Échap et rend le focus", async () => {
+    vi.spyOn(assistantApi, 'getUiSettings').mockResolvedValue({
+      assistant_enabled: true,
+      graphical_bot_enabled: true,
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onClose = vi.fn();
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <QueryClientProvider client={client}>
+          <MemoryRouter>
+            <button type="button" onClick={() => setOpen(true)}>
+              Ouvrir
+            </button>
+            <GlobalAssistantPanel
+              open={open}
+              onToggle={() => setOpen((o) => !o)}
+              onClose={() => {
+                onClose();
+                setOpen(false);
+              }}
+            />
+          </MemoryRouter>
+        </QueryClientProvider>
+      );
+    }
+    render(<Harness />);
+    const opener = screen.getByRole('button', { name: 'Ouvrir' });
+    opener.focus();
+    fireEvent.click(opener);
+
+    const drawer = await screen.findByRole('region', { name: 'Assistant Plat4k' });
+    await waitFor(() => expect(document.activeElement).toBe(drawer));
+
+    fireEvent.keyDown(drawer, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(opener);
   });
 });

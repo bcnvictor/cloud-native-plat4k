@@ -46,7 +46,7 @@ export function DoctorChanges({ changes }: { changes: Changes }) {
           {changes.commits.map((c) => (
             <li key={c.sha} className="flex flex-col gap-0.5 px-2.5 py-2">
               <span className="break-words text-xs text-foreground">{c.title}</span>
-              <span className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
+              <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                 {c.url ? (
                   <a
                     href={c.url}
@@ -76,7 +76,7 @@ export function DoctorChanges({ changes }: { changes: Changes }) {
             return (
               <li
                 key={`${f.change}-${f.path}`}
-                className="inline-flex max-w-full items-baseline gap-1 rounded-md border border-border bg-background-subtle px-1.5 py-0.5 font-mono text-[11px] text-foreground"
+                className="inline-flex max-w-full items-baseline gap-1 rounded-md border border-border bg-background-subtle px-1.5 py-0.5 font-mono text-xs text-foreground"
                 title={`${f.path} (${meta.word})`}
               >
                 <span aria-hidden="true" className={cn('font-semibold', meta.className)}>
@@ -91,7 +91,7 @@ export function DoctorChanges({ changes }: { changes: Changes }) {
       )}
 
       {changes.truncated && (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Liste tronquée : seuls les premiers commits et fichiers sont affichés
           {changes.compare_url ? ' ; la comparaison GitLab montre tout.' : '.'}
         </p>

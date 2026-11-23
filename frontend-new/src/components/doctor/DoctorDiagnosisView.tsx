@@ -127,8 +127,11 @@ export function DoctorDiagnosisView({
             {verdict.label}
           </Badge>
           {d.cause && <Badge variant="info">{CONFIDENCE_LABEL[d.cause.confidence]}</Badge>}
-          <Badge variant={source.tone}>{source.label}</Badge>
-          <span className="text-[11px] text-muted-foreground">{d.env}</span>
+          {/* En sombre, text-primary sur primary-subtle reste sous 4,5:1 : teinte plus claire. */}
+          <Badge variant={source.tone} className={source.tone === 'primary' ? 'dark:text-primary-300' : undefined}>
+            {source.label}
+          </Badge>
+          <span className="text-xs text-muted-foreground">{d.env}</span>
         </div>
         <p className={cn('break-words font-medium text-foreground', compact ? 'text-sm' : 'text-md')}>
           {d.headline}
@@ -217,7 +220,7 @@ export function DoctorDiagnosisView({
           </Button>
         </div>
         {fallback && <CopyFallback text={fallback} onClose={dismiss} />}
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {metaLine(d)} · {SAFETY_SENTENCE}
         </p>
       </div>

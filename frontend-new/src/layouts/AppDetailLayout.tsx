@@ -121,7 +121,7 @@ export function AppDetailLayout() {
 
           {/* Unhealthy alert */}
           {health === 'unhealthy' && (
-            <div className="flex items-center gap-2 py-2 mb-1 px-3 bg-danger-subtle rounded-md text-xs text-danger-text">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 mb-1 px-3 bg-danger-subtle rounded-md text-xs text-danger-text">
               <span>⚠</span>
               <span>The application is in error.</span>
               <span className="ml-auto flex items-center gap-2">

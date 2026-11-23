@@ -26,7 +26,7 @@ export function DoctorThreadMessage({ appId, env, appName, showAvatar, mode }: P
     <div className="mb-3.5 animate-[msgIn_.28s_ease-out_both]" data-testid="doctor-thread-message">
       <div className="mb-1.5 flex items-center gap-[9px]">
         {showAvatar && <BotAvatar mode={mode} />}
-        <span className="truncate text-[11px] font-medium text-muted-foreground">
+        <span className="truncate text-xs font-medium text-muted-foreground">
           Diagnostic {env}
           {appName ? ` · ${appName}` : ''}
         </span>

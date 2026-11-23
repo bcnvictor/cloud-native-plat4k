@@ -64,5 +64,5 @@
 - [x] 10.1 Lancer les tests backend, les tests frontend, `tsc`, `eslint` et `ruff` ; tout doit passer
 - [x] 10.2 Rejouer le scénario dans le labo au navigateur : casser, diagnostiquer, rollback, retour à la normale, en mode simulé
 - [x] 10.3 Faire au plus 5 diagnostics avec le fournisseur IA réel et noter ce qui diffère du mode simulé
-- [ ] 10.4 Passer la carte et le robot à l'audit d'interface (clavier, contrastes, mouvements réduits) et corriger
+- [x] 10.4 Passer la carte et le robot à l'audit d'interface (clavier, contrastes, mouvements réduits) et corriger
 - [x] 10.5 Mettre à jour le graphe du projet et commiter par étapes
