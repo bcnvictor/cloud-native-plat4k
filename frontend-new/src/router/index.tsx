@@ -13,6 +13,7 @@ import { LogsTab } from '@/pages/group/app/tabs/LogsTab';
 import { HistoryTab } from '@/pages/group/app/tabs/HistoryTab';
 import { SettingsTab } from '@/pages/group/app/tabs/SettingsTab';
 import { AssistantTab } from '@/pages/group/app/tabs/AssistantTab';
+import { SecurityTab } from '@/pages/group/app/tabs/SecurityTab';
 import { NewApp } from '@/pages/group/app/NewApp';
 import { Clusters } from '@/pages/admin/Clusters';
 import { FinOps } from '@/pages/admin/FinOps';
@@ -44,6 +45,7 @@ export const router = createBrowserRouter([
               { path: 'logs', element: <LogsTab /> },
               { path: 'history', element: <HistoryTab /> },
               { path: 'settings', element: <SettingsTab /> },
+              { path: 'security', element: <SecurityTab /> },
               { path: 'assistant', element: <AssistantTab /> },
             ],
           },

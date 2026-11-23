@@ -41,6 +41,16 @@ def compute_slug(name: str) -> str:
     return s[:50]
 
 
+# Charset of Kubernetes Secret data keys. Env var keys are synced by ESO into the
+# app's Secret: a single key outside this charset makes the whole ExternalSecret
+# fail to sync, freezing every variable of that env (4K-248).
+ENV_VAR_KEY_PATTERN = r"[-._a-zA-Z0-9]+"
+
+
+def is_valid_env_var_key(key: str) -> bool:
+    return re.fullmatch(ENV_VAR_KEY_PATTERN, key) is not None
+
+
 class CloudType(str, Enum):
     AWS = "aws"
     GCP = "gcp"

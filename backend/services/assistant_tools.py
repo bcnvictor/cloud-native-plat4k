@@ -28,6 +28,7 @@ from typing import Any, Awaitable, Callable, Optional
 from shared.models import MemberStatus
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from backend.ai.redaction import mask_email, redact
 from backend.core.config import settings
@@ -43,10 +44,22 @@ from backend.db.models import (
     GitLabGroupMember,
     User,
 )
+from backend.services import monitoring_sources
 from backend.services.ai_limits_service import AILimitsService
 from backend.services.ai_settings_service import EffectiveAIConfig
 from backend.services.finops_advisor_service import analyze_usage, describe_analysis
-from backend.services.monitoring_service import get_cost_by_group, get_logs, get_metrics
+from backend.services.monitoring_service import (
+    get_cost_by_group,
+    get_logs,
+    get_metrics,
+    merge_cost_by_group,
+)
+from backend.services.monitoring_sources import (
+    fan_out,
+    prometheus_urls,
+    resolve_loki_url,
+    resolve_prometheus_url,
+)
 from backend.services.platform_knowledge_service import PlatformKnowledgeService
 
 logger = logging.getLogger(__name__)
@@ -459,7 +472,8 @@ class PlatformTools:
     async def _apps(self) -> list[Application]:
         if self._apps_cache is not None:
             return self._apps_cache
-        query = select(Application).order_by(Application.name)
+        # Clusters préchargés : la résolution Prometheus/Loki les lit dans l'identity map
+        query = select(Application).options(selectinload(Application.target_cluster)).order_by(Application.name)
         if not self.user.is_admin:
             group_ids = [g.gitlab_group_id for g, _ in await self._groups()]
             project_ids = select(AppMember.gitlab_project_id).where(
@@ -730,16 +744,26 @@ class PlatformTools:
                 "Métriques non accessibles : aucune de ces applications n'est autorisée "
                 "pour l'assistant (Réglages plateforme → Assistant IA)."
             )
-        try:
-            data = await get_metrics(settings.PROMETHEUS_URL)
-        except Exception as exc:
+        # Chaque app n'a ses métriques que dans le Prometheus de son cluster cible
+        url_of = {a.id: await resolve_prometheus_url(self.db, app=a) for a in allowed}
+        urls = list(dict.fromkeys(url_of.values()))
+        fetched = await asyncio.gather(
+            *(asyncio.wait_for(get_metrics(u), monitoring_sources.FAN_OUT_TIMEOUT_SECONDS) for u in urls),
+            return_exceptions=True,
+        )
+        series_by_url = {u: r for u, r in zip(urls, fetched) if not isinstance(r, BaseException)}
+        if not series_by_url:
+            exc = fetched[0]
             return ToolResult(
                 f"Prometheus inaccessible ({type(exc).__name__}). Les graphiques restent "
                 "consultables dans la page Metrics du groupe (Grafana)."
             )
-        series = data.get("apps", [])
         lines = [f"Métriques actuelles {scope} (fenêtre 30 min) :"]
         for a in allowed:
+            if url_of[a.id] not in series_by_url:
+                lines.append(f"- {a.name} : Prometheus injoignable")
+                continue
+            series = series_by_url[url_of[a.id]].get("apps", [])
             m = next((s for s in series if _matches(s["app_name"], a.slug)), None)
             if m:
                 lines.append(
@@ -769,7 +793,9 @@ class PlatformTools:
             g = groups[0][0]
             apps = [a for a in apps if a.owning_gitlab_group_id == g.gitlab_group_id]
         try:
-            costs = await get_cost_by_group(settings.PROMETHEUS_URL, str(g.gitlab_group_id))
+            costs = merge_cost_by_group(await fan_out(
+                await prometheus_urls(self.db), lambda url: get_cost_by_group(url, str(g.gitlab_group_id))
+            ))
         except Exception as exc:
             return ToolResult(f"Prometheus inaccessible ({type(exc).__name__}).")
         if not costs:
@@ -1033,8 +1059,7 @@ class PlatformTools:
         level = (level or "ERROR").upper()
         allowed_levels = {"ERROR": {"ERROR", "FATAL", "CRITICAL"},
                           "WARN": {"ERROR", "FATAL", "CRITICAL", "WARN"}}.get(level)
-        cluster = await self._cluster_of(a)
-        loki_url = (cluster.loki_url if cluster else None) or settings.LOKI_URL
+        loki_url = await resolve_loki_url(self.db, app=a)
         if not loki_url:
             return ToolResult("Loki n'est pas configuré pour cette application.")
         try:

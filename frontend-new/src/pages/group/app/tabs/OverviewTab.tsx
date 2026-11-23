@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCloud, IconCpu, IconDatabase, IconExternalLink, IconPlayerPlay, IconPlayerStop, IconRefresh, IconServer, IconTerminal2 } from '@tabler/icons-react';
+import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCloud, IconCpu, IconDatabase, IconExternalLink, IconPlayerPlay, IconPlayerStop, IconRefresh, IconServer, IconShieldCheck, IconTerminal2 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { MetricCard } from '@/components/MetricCard';
@@ -13,6 +13,7 @@ import { timeAgo } from '@/utils/timeAgo';
 import { appsApi } from '@/api/apps';
 import { useAppMetrics } from '@/hooks/useAppMetrics';
 import { useAppStatus } from '@/hooks/useAppStatus';
+import { useSecurityReport } from '@/hooks/useSecurityReport';
 import { useAppScaleState } from '@/hooks/useAppScaleState';
 import { useMetricUrl } from '@/hooks/useMonitoringConfig';
 import { appUrl, portForwardCommand } from '@/utils/appUrls';
@@ -167,6 +168,7 @@ export function OverviewTab() {
   const cpuUrl = useMetricUrl(app?.slug ?? '', 'cpu');
   const ramUrl = useMetricUrl(app?.slug ?? '', 'ram');
   const { data: runtimeStatus } = useAppStatus(app?.id);
+  const { data: securityReport } = useSecurityReport(app?.id);
   const { data: scale } = useAppScaleState(app?.id);
   const { data: clusters = [] } = useQuery({ queryKey: ['clusters'], queryFn: clustersApi.list });
   const cluster = app?.target_cluster_id
@@ -189,7 +191,7 @@ export function OverviewTab() {
   return (
     <div className="flex flex-col gap-5">
       {/* Metrics */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         {!metrics.available && (
           <div className="col-span-4 flex items-center gap-2 px-3 py-2 rounded-md bg-muted/40 border border-border text-xs text-muted-foreground">
             <IconAlertTriangle size={13} className="shrink-0" />
@@ -220,6 +222,11 @@ export function OverviewTab() {
               : '—'
           }
           icon={<IconServer size={14} />}
+        />
+        <MetricCard
+          label="Security grade"
+          value={securityReport?.grade ?? '—'}
+          icon={<IconShieldCheck size={14} />}
         />
         <MetricCard
           label="Last sync"
