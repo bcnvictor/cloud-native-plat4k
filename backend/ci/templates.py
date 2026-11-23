@@ -1,6 +1,7 @@
 from shared.models import sanitize_k8s_label_value
 
 from backend.core.config import settings
+from backend.services.security_report_service import callback_url
 
 _ALLOWED_FRAMEWORKS = {"python", "nodejs", "go", "generic"}
 
@@ -48,6 +49,7 @@ def generate_gitlab_ci(app_slug: str, app_id: int, framework: str, owner: str = 
         f'  CNP_CLUSTER_NAME: "{safe_cluster}"\n',
         f'  CNP_GITOPS_REPO: "{gitops_repo}"\n',
         f'  CNP_GITOPS_APP_PATH: "{gitops_app_path}"\n',
+        f'  CNP_CALLBACK_URL: "{_yaml_escape(callback_url())}"\n',
         "\n",
         "include:\n",
         f"  - project: '{templates_project}'\n",
@@ -62,6 +64,9 @@ def generate_gitlab_ci(app_slug: str, app_id: int, framework: str, owner: str = 
         f"  - project: '{templates_project}'\n",
         "    ref: main\n",
         "    file: '/security/hadolint.yml'\n",
+        f"  - project: '{templates_project}'\n",
+        "    ref: main\n",
+        "    file: '/security/cnp-report.yml'\n",
     ]
     if framework != "generic":
         lines += [

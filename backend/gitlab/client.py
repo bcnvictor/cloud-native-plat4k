@@ -232,6 +232,16 @@ class GitLabClient:
             "enable_ssl_verification": not webhook_url.startswith("http://"),
         })
 
+    def set_ci_variable(self, project_path: str, key: str, value: str, masked: bool = True) -> None:
+        """Create or update a project CI/CD variable (masked + protected=False so it reaches MR-less branch jobs)."""
+        project = self.get_project(project_path)
+        try:
+            var = project.variables.get(key)
+            var.value, var.masked = value, masked
+            var.save()
+        except GitlabGetError:
+            project.variables.create({"key": key, "value": value, "masked": masked, "protected": False})
+
     def create_mr(
         self,
         project_path: str,
