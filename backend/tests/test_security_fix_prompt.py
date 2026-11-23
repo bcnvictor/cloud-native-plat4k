@@ -89,3 +89,11 @@ async def test_route_works_with_ai_off_and_auth(client, seeded, admin_token):
     assert (await client.get(url, params={"finding": "all"}, headers=h)).status_code == 200
     assert (await client.get(url, params={"finding": "zzz"}, headers=h)).status_code == 404
     assert (await client.get(url, params={"finding": "dep1"})).status_code == 401
+
+
+def test_lockfile_and_version_list_wording():
+    f = _dep(fixed="1.2.6, 0.2.4")
+    f["file"] = "package-lock.json"
+    p = build_fix_prompt(APP, _report(trivy=[f]), "dep1")
+    assert "is a lockfile" in p and "`package.json`" in p and "regenerate the lockfile" in p
+    assert "Published fixed versions: `1.2.6`, `0.2.4`" in p and "current major line" in p

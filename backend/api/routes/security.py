@@ -1,4 +1,6 @@
 """Security tab: latest CI report (+ grade) per app."""
+import logging
+
 import httpx
 from backend.ai.factory import get_provider
 from backend.api.deps import require_tier
@@ -17,6 +19,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# Cloudflare replaces origin 502/504 by its own page: upstream failures use 424 so the cause stays readable.
 
 
 async def _require_app(db: AsyncSession, app_id: int) -> Application:
@@ -81,10 +86,19 @@ async def autofix_finding(
     except AutofixError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     except httpx.HTTPStatusError as exc:
+        logger.warning("Autofix: AI provider HTTP %s for app %s", exc.response.status_code, app_id)
         if exc.response.status_code == 429:
             raise HTTPException(status_code=429, detail="AI quota reached, try again later.") from exc
-        raise HTTPException(status_code=502, detail="The AI provider failed, try again later.") from exc
+        raise HTTPException(
+            status_code=424, detail=f"The AI provider failed (HTTP {exc.response.status_code}), try again later."
+        ) from exc
     except GitlabError as exc:
-        raise HTTPException(status_code=502, detail="GitLab refused the operation (check the bot's access to the project).") from exc
+        code = getattr(exc, "response_code", None)
+        logger.warning("Autofix: GitLab error %s for app %s: %s", code, app_id, exc.__class__.__name__)
+        raise HTTPException(
+            status_code=424,
+            detail=f"GitLab refused the operation (HTTP {code}). Check that the CNP bot has access to this project.",
+        ) from exc
     except httpx.TransportError as exc:
-        raise HTTPException(status_code=502, detail="The AI provider is unreachable, try again later.") from exc
+        logger.warning("Autofix: AI provider unreachable for app %s: %s", app_id, exc.__class__.__name__)
+        raise HTTPException(status_code=424, detail="The AI provider is unreachable, try again later.") from exc

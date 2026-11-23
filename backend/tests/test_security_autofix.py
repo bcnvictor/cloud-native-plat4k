@@ -168,7 +168,7 @@ async def test_quota_and_provider_errors(client, seeded, setup, admin_token):
     assert r.status_code == 429 and "quota" in r.json()["detail"].lower()
     resp = httpx.Response(500, request=httpx.Request("POST", "http://x"))
     setup["provider"] = FakeProvider(exc=httpx.HTTPStatusError("e", request=resp.request, response=resp))
-    assert (await client.post(_url(seeded), headers=_h(admin_token))).status_code == 502
+    assert (await client.post(_url(seeded), headers=_h(admin_token))).status_code == 424
 
 
 @pytest.mark.asyncio
@@ -216,6 +216,7 @@ async def test_forged_fixed_version_rejected(client, seeded, setup, admin_token,
 def test_fixed_version_list_and_boundary():
     assert pick_fixed_version("3.0.1, 2.9.5", "2.1.0") == "2.9.5"
     assert pick_fixed_version("3.0.1", None) == "3.0.1"
+    assert pick_fixed_version(">=4.17.19", "4.17.15") == "4.17.19"
     assert validate_rewrite("flask==1.0\n", "flask==2.9.5\n", "flask", "2.9.5") is None
     assert validate_rewrite("flask==1.0\n", "flask==2.9.51\n", "flask", "2.9.5") is not None  # no prefix match
     assert validate_rewrite('"flask": "1.0",\n', '"flask": "^2.9.5",\n', "flask", "2.9.5") is None
@@ -243,3 +244,16 @@ async def test_existing_branch_without_mr_is_not_a_dead_end(client, seeded, setu
     setup["gl"] = NoMR(branch_exists=True)
     r = await client.post(_url(seeded), headers=_h(admin_token))
     assert r.json()["status"] == "no_fix" and "already exists" in r.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_gitlab_error_is_readable_and_not_a_masked_502(client, seeded, setup, admin_token):
+    from gitlab.exceptions import GitlabGetError
+
+    class Denied(FakeGL):
+        def branch_exists(self, project, branch):
+            raise GitlabGetError("404 Project Not Found", response_code=404)
+
+    setup["gl"] = Denied()
+    r = await client.post(_url(seeded), headers=_h(admin_token))
+    assert r.status_code == 424 and "HTTP 404" in r.json()["detail"] and "bot" in r.json()["detail"]

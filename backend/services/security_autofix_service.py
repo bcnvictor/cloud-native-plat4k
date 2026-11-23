@@ -87,7 +87,7 @@ def _line_package(line: str) -> str:
 
 def pick_fixed_version(raw: str, installed: Optional[str]) -> str:
     """trivy FixedVersion may be a list ("3.0.1, 2.9.5"): prefer the one on the installed major line."""
-    versions = [v.strip() for v in str(raw).split(",") if v.strip()]
+    versions = [re.sub(r"^[<>=~^\s]+", "", v) for v in str(raw).split(",") if v.strip()]
     major = (installed or "").lstrip("v").split(".")[0]
     same = [v for v in versions if v.lstrip("v").split(".")[0] == major]
     return (same or versions or [""])[0]
@@ -143,7 +143,7 @@ async def run_autofix(db, app, user, report, finding_id: str, provider: LLMProvi
             _run(db, app, user, report, finding_id, provider, model, gl), timeout=TOTAL_TIMEOUT_S
         )
     except asyncio.TimeoutError as exc:
-        raise AutofixError(504, "The AI fix timed out, try again later.") from exc
+        raise AutofixError(408, "The AI fix timed out, try again later.") from exc
 
 
 async def _run(db, app, user, report, finding_id, provider, model, gl) -> dict[str, Any]:

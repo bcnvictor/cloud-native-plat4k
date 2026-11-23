@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from backend.ai.redaction import redact
+from backend.services.security_autofix_service import _LOCK_TO_MANIFEST
 
 MAX_LISTED = 20  # findings detailed in a "fix all" prompt
 
@@ -42,18 +43,35 @@ def _success(finding_ids: list[str]) -> str:
 
 def _dependency(f: dict[str, Any]) -> str:
     fixed = f.get("fixed_version")
-    target = (
-        f"upgrade `{f.get('package')}` from `{f.get('installed_version')}` to `{fixed}` (or the closest safe version)"
-        if fixed
-        else f"no fixed version is published for `{f.get('package')}` `{f.get('installed_version')}`: "
-        "propose a safe alternative (other package or version) and explain the trade-off"
+    versions = [v.strip() for v in str(fixed).split(",") if v.strip()] if fixed else []
+    pkg, inst = f.get("package"), f.get("installed_version")
+    if len(versions) > 1:
+        target = (
+            f"upgrade `{pkg}` from `{inst}` to a fixed version. Published fixed versions: "
+            f"{', '.join(f'`{v}`' for v in versions)}. Pick the one on your current major line (smallest upgrade that works)"
+        )
+    elif versions:
+        target = f"upgrade `{pkg}` from `{inst}` to `{versions[0]}` (or the closest safe version)"
+    else:
+        target = (
+            f"no fixed version is published for `{pkg}` `{inst}`: "
+            "propose a safe alternative (other package or version) and explain the trade-off"
+        )
+    path = f.get("file") or ""
+    manifest = _LOCK_TO_MANIFEST.get(path.rsplit("/", 1)[-1])
+    lock_note = (
+        f"- Note: `{path}` is a lockfile. Change the version constraint in `{manifest}`, then regenerate the lockfile "
+        "with the project's package manager (do not edit it by hand).\n"
+        if manifest
+        else ""
     )
     return (
         f"- Tool: trivy (dependency vulnerability)\n"
         f"- Identifier: {f['rule']}  (finding id: `{f['id']}`)\n"
         f"- Severity: {f['severity']}\n"
-        f"- Package: `{f.get('package')}` — installed `{f.get('installed_version')}` → fixed `{fixed or 'none'}`\n"
-        f"- File: `{f.get('file')}`\n"
+        f"- Package: `{pkg}` — installed `{inst}` → fixed `{fixed or 'none'}`\n"
+        f"- File: `{path}`\n"
+        f"{lock_note}"
         f"- Action: {target}. Update the lockfile too if the project has one.\n"
     )
 

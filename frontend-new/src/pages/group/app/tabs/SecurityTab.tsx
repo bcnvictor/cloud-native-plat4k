@@ -138,7 +138,7 @@ export function SecurityTab() {
   const { report } = data;
   const tools = report.tools;
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-24">
       <Card>
         <div className="flex items-center gap-4">
           <Badge variant={gradeVariant(data.grade)} className="text-2xl font-semibold px-4 py-1.5" >
