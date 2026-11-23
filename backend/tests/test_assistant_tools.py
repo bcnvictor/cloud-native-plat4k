@@ -19,13 +19,14 @@ from backend.db.models import (
     Application,
     ApplicationStatus,
     AppScaleState,
+    ClusterConnection,
     Event,
     GitLabGroup,
     GitLabGroupMember,
     User,
 )
 from backend.services.ai_settings_service import AISettingsService
-from backend.services.assistant_service import AssistantService, describe_page
+from backend.services.assistant_service import AssistantService, ContextBuilder, describe_page
 from backend.services.assistant_tools import PageContext, PlatformTools
 
 # ── fixtures helpers ──────────────────────────────────────────────────────────
@@ -436,3 +437,78 @@ async def test_finops_advice_tool_respects_scope_and_allow_list(
             "get_finops_advice", json.dumps({"app": "api-a"}))
         assert "non autorisé" in refused.text
     usage.assert_not_awaited()  # Prometheus never queried for refused apps
+
+
+# ── Prometheus du cluster de chaque app ───────────────────────────────────────
+
+_K3S = "http://k3s:9090"
+
+
+async def _seed_two_clusters(db: AsyncSession, dev_user: User, monkeypatch) -> dict:
+    """api-a sur le Prometheus global, web-a sur k3s."""
+    monkeypatch.setattr(settings, "PROMETHEUS_URL", "http://global:9090")
+    apps = await _seed(db, dev_user)
+    k3s = ClusterConnection(name="cnp-k3s", endpoint="https://k3s:6443",
+                            kubeconfig_secret_ref="clusters/k3s", prometheus_url=_K3S)
+    db.add(k3s)
+    await db.commit()
+    apps["web"].target_cluster_id = k3s.id
+    await db.commit()
+    return apps
+
+
+def _app_metrics(name: str, cpu: float) -> dict:
+    return {"app_name": name, "cpu_series": [], "cpu_current": cpu,
+            "ram_series": [], "ram_current_mb": 64.0}
+
+
+def _by_url(table: dict):
+    async def fake(url, *args):
+        value = table[url]
+        if isinstance(value, Exception):
+            raise value
+        return value
+    return AsyncMock(side_effect=fake)
+
+
+@pytest.mark.anyio
+async def test_get_metrics_queries_each_app_cluster(db_session: AsyncSession, dev_user: User, monkeypatch):
+    await _seed_two_clusters(db_session, dev_user, monkeypatch)
+    fake = _by_url({"http://global:9090": {"apps": [_app_metrics("api-a", 11.0)]},
+                    _K3S: {"apps": [_app_metrics("web-a", 22.0)]}})
+    with patch("backend.services.assistant_tools.get_metrics", fake):
+        out = (await PlatformTools(db_session, dev_user).call("get_metrics", '{"group": "team-a"}')).text
+    assert "api-a : CPU 11.0 mCPU" in out
+    assert "web-a : CPU 22.0 mCPU" in out
+    assert sorted(c.args[0] for c in fake.await_args_list) == ["http://global:9090", _K3S]
+
+
+@pytest.mark.anyio
+async def test_get_metrics_one_cluster_down(db_session: AsyncSession, dev_user: User, monkeypatch):
+    await _seed_two_clusters(db_session, dev_user, monkeypatch)
+    fake = _by_url({"http://global:9090": {"apps": [_app_metrics("api-a", 11.0)]},
+                    _K3S: httpx.ConnectError("down")})
+    with patch("backend.services.assistant_tools.get_metrics", fake):
+        out = (await PlatformTools(db_session, dev_user).call("get_metrics", '{"group": "team-a"}')).text
+    assert "api-a : CPU 11.0 mCPU" in out
+    assert "web-a : Prometheus injoignable" in out
+
+
+@pytest.mark.anyio
+async def test_get_costs_aggregates_clusters(db_session: AsyncSession, dev_user: User, monkeypatch):
+    await _seed_two_clusters(db_session, dev_user, monkeypatch)
+    cost = lambda app, t: {"app_name": app, "cpu_cost_usd": t, "ram_cost_usd": 0.0, "total_cost_usd": t}  # noqa: E731
+    fake = _by_url({"http://global:9090": [cost("api-a", 1.0)], _K3S: [cost("web-a", 2.0)]})
+    with patch("backend.services.assistant_tools.get_cost_by_group", fake):
+        out = (await PlatformTools(db_session, dev_user).call("get_costs", '{"group": "team-a"}')).text
+    assert "api-a" in out and "web-a" in out
+    assert "Total groupe : $3.00" in out
+
+
+@pytest.mark.anyio
+async def test_chat_metrics_context_uses_app_cluster(db_session: AsyncSession, dev_user: User, monkeypatch):
+    apps = await _seed_two_clusters(db_session, dev_user, monkeypatch)
+    fake = _by_url({_K3S: {"apps": [_app_metrics("web-a", 22.0)]}})
+    with patch("backend.services.assistant_service.get_metrics", fake):
+        text, _ = await ContextBuilder(db_session)._fetch_metrics_context(apps["web"])
+    assert "22.0 mCPU" in text

@@ -23,7 +23,8 @@ from backend.db.models import AIUsageRecord, Application, Event, User
 from backend.services.ai_settings_service import EffectiveAIConfig
 from backend.services.assistant_tools import PageContext, PlatformTools
 from backend.services.audit_service import AuditService
-from backend.services.monitoring_service import get_cost_by_group, get_metrics
+from backend.services.monitoring_service import get_cost_by_group, get_metrics, merge_cost_by_group
+from backend.services.monitoring_sources import fan_out, prometheus_urls, resolve_prometheus_url
 from backend.services.platform_knowledge_service import PlatformKnowledgeService
 
 logger = logging.getLogger(__name__)
@@ -302,7 +303,9 @@ class ContextBuilder:
             )
 
         try:
-            costs = await get_cost_by_group(settings.PROMETHEUS_URL, str(group_id))
+            costs = merge_cost_by_group(await fan_out(
+                await prometheus_urls(self.db), lambda url: get_cost_by_group(url, str(group_id))
+            ))
         except Exception as exc:
             return f"Coûts indisponibles : Prometheus inaccessible ({exc}).", []
 
@@ -349,7 +352,7 @@ class ContextBuilder:
     async def _fetch_metrics_context(self, app: Application) -> tuple[str, list[str]]:
         """Query Prometheus for current CPU/RAM of the app."""
         try:
-            data = await get_metrics(settings.PROMETHEUS_URL)
+            data = await get_metrics(await resolve_prometheus_url(self.db, app=app))
         except Exception as exc:
             return f"Métriques indisponibles : Prometheus inaccessible ({exc}).", []
 
