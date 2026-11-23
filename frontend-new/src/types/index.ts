@@ -595,3 +595,31 @@ export interface SecurityReportResponse {
   grade: SecurityGrade | null;
   partial: boolean;
 }
+
+export interface DependencyRow {
+  app_id: number;
+  app_name: string;
+  app_slug: string;
+  group: string | null;
+  group_slug: string | null;
+  package: string;
+  version: string;
+  ecosystem: string;
+  direct: boolean | null;
+  licenses: string[];
+}
+
+export interface DependencyCoverage {
+  apps_total: number;
+  apps_with_sbom: number;
+  oldest_snapshot: string | null;
+  newest_snapshot: string | null;
+}
+
+export interface DependencySearchResponse {
+  items: DependencyRow[];
+  total: number;
+  limit: number;
+  offset: number;
+  coverage: DependencyCoverage;
+}

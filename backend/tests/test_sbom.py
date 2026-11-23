@@ -162,6 +162,8 @@ async def test_search_case_version_ecosystem_and_fields(client, two_apps, admin_
     assert r["total"] == 2
     by_app = {i["app_name"]: i for i in r["items"]}
     assert by_app["Billing"]["group"] == "Team Pay" and by_app["Shop"]["group"] is None
+    assert (by_app["Billing"]["group_slug"], by_app["Billing"]["app_slug"]) == ("pay", "billing")
+    assert by_app["Shop"]["group_slug"] is None
     assert by_app["Shop"]["direct"] is True and by_app["Shop"]["licenses"] == ["MIT"]
     r = (await client.get(SEARCH, params={"q": "lodash", "version": "4.17.21"}, headers=_h(admin_token))).json()
     assert [i["app_name"] for i in r["items"]] == ["Billing"]

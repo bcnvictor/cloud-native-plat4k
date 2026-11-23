@@ -100,7 +100,7 @@ class SbomService:
             conds.append(SbomComponent.ecosystem == ecosystem)
         total = (await self.db.execute(select(func.count()).select_from(SbomComponent).where(*conds))).scalar_one()
         res = await self.db.execute(
-            select(SbomComponent, Application.name, GitLabGroup.name)
+            select(SbomComponent, Application.name, Application.slug, GitLabGroup.name, GitLabGroup.full_path)
             .join(Application, Application.id == SbomComponent.app_id)
             .outerjoin(GitLabGroup, GitLabGroup.gitlab_group_id == Application.owning_gitlab_group_id)
             .where(*conds)
@@ -108,8 +108,10 @@ class SbomService:
             .limit(limit).offset(offset)
         )
         items = [
-            {"app_id": c.app_id, "app_name": app_name, "group": group_name, "package": c.name,
+            {"app_id": c.app_id, "app_name": app_name, "app_slug": app_slug, "group": group_name,
+             # same rule as the frontend (groupsApi.getSlug): last segment of the GitLab group path
+             "group_slug": group_path.rsplit("/", 1)[-1] if group_path else None, "package": c.name,
              "version": c.version, "ecosystem": c.ecosystem, "direct": c.direct, "licenses": c.licenses or []}
-            for c, app_name, group_name in res.all()
+            for c, app_name, app_slug, group_name, group_path in res.all()
         ]
         return {"items": items, "total": total, "limit": limit, "offset": offset, "coverage": await self.coverage()}
