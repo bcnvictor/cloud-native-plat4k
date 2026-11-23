@@ -3,8 +3,19 @@ from typing import Optional
 from backend.api.deps import get_current_user, get_db
 from backend.core.config import settings
 from backend.db.models import User
-from backend.services.cluster_service import ClusterService
-from backend.services.monitoring_service import get_cost_by_group, get_logs, get_metrics
+from backend.services.monitoring_service import (
+    get_cost_by_group,
+    get_logs,
+    get_metrics,
+    merge_cost_by_group,
+)
+from backend.services.monitoring_sources import (
+    app_by_slug,
+    fan_out,
+    prometheus_urls,
+    resolve_loki_url,
+    resolve_prometheus_url,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,10 +37,7 @@ async def metrics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    prometheus_url = settings.PROMETHEUS_URL
-    if cluster_id is not None:
-        cluster = await ClusterService(db).get_cluster(cluster_id)
-        prometheus_url = cluster.prometheus_url or settings.PROMETHEUS_URL
+    prometheus_url = await resolve_prometheus_url(db, cluster_id=cluster_id)
     try:
         return await get_metrics(prometheus_url)
     except Exception as e:
@@ -43,12 +51,13 @@ async def cost(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    prometheus_url = settings.PROMETHEUS_URL
+    # Sans cluster_id : coût du groupe sur tous les clusters (un groupe peut en couvrir plusieurs)
     if cluster_id is not None:
-        cluster = await ClusterService(db).get_cluster(cluster_id)
-        prometheus_url = cluster.prometheus_url or settings.PROMETHEUS_URL
+        urls = [await resolve_prometheus_url(db, cluster_id=cluster_id)]
+    else:
+        urls = await prometheus_urls(db)
     try:
-        return await get_cost_by_group(prometheus_url, group_id)
+        return merge_cost_by_group(await fan_out(urls, lambda url: get_cost_by_group(url, group_id)))
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Prometheus unavailable: {e}")
 
@@ -62,10 +71,9 @@ async def logs(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    loki_url = settings.LOKI_URL
-    if cluster_id is not None:
-        cluster = await ClusterService(db).get_cluster(cluster_id)
-        loki_url = cluster.loki_url or settings.LOKI_URL
+    # Slug inconnu (simple nom de conteneur) : Loki par défaut
+    target = await app_by_slug(db, app) if app and cluster_id is None else None
+    loki_url = await resolve_loki_url(db, cluster_id=cluster_id, app=target)
     try:
         return await get_logs(loki_url, namespace=namespace, app=app, limit=limit)
     except Exception as e:
