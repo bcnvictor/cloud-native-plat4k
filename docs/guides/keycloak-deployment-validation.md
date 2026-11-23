@@ -169,5 +169,7 @@ L'absence de publication n'est pas remplacée par un SHA fictif ou `HEAD`.
 La correction Compose isolant le Keycloak local est incluse.
 
 Décision de fusion : le code a été fusionné dans main en **mode dormant** (PR #51), puis
-chaque instance n'a été enregistrée et activée qu'après son parcours de validation, dans
-l'ordre k3s, AKS, GKE (voir « Déploiements en production »).
+chaque instance a été enregistrée et activée après validation, dans l'ordre k3s, AKS, GKE
+(voir « Déploiements en production »). Exception : `public-02` (GKE) l'a été sur la base
+des contrôles serveur seuls, le parcours applicatif dans le navigateur restant à faire
+(voir « Restent ouverts »).
