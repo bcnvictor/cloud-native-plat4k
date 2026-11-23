@@ -99,7 +99,7 @@ Le statut ArgoCD (Synced, Healthy) est lu à la volée, comme pour `dev`/`prod`.
   est unique sur le cluster. `foo` + `bar-x` et `foo-bar` + `x` ne se confondent pas. Il
   sert de nom d'Application ArgoCD, de release Helm (limite de 53 caractères) et de
   **namespace dédié**.
-- Le backend refuse (400) un slug invalide. Le job CI revalide avant de générer du YAML.
+- Le backend refuse (400) un slug invalide.
 
 ### 4. Arborescence `cnp-gitops` et découverte par ArgoCD
 
@@ -107,10 +107,10 @@ Les root apps observent déjà `argocd/<cluster>/` en récursif (ADR-0012). Il s
 d'ajouter des fichiers :
 
 ```
-argocd/<cluster>/<app>/ephemeral/<slug>.yaml            # Application de l'app (créée par la CI)
+argocd/<cluster>/<app>/ephemeral/<slug>.yaml            # Application de l'app (écrite par le backend après le build)
 argocd/<cluster>/<app>/ephemeral/<slug>--platform.yaml  # Application plateforme (écrite par le backend)
 apps/<cluster>/<app>/ephemeral/<slug>/env.yaml          # déclaration : branche, slug, host (écrite par le backend)
-apps/<cluster>/<app>/ephemeral/<slug>/values.yaml       # values (créées par la CI)
+apps/<cluster>/<app>/ephemeral/<slug>/values.yaml       # values (écrites par le backend après le build)
 apps/<cluster>/<app>/ephemeral/<slug>/platform/         # Namespace, ExternalSecrets, SA (écrits par le backend)
 ```
 
@@ -122,10 +122,13 @@ La suppression d'une app (ADR-0014) retire déjà `apps/<cluster>/<app>/` et
 `argocd/<cluster>/<app>/`, et la FK en cascade retire les lignes. Les envs éphémères
 partent donc avec l'app sans code en plus.
 
-### 5. Provisionnement : déclaration par le backend, manifestes par la CI
+### 5. Provisionnement : le backend écrit tout, la CI de branche ne fait que construire
 
 On garde le principe de l'ADR-0014 : ArgoCD ne voit une Application qu'une fois l'image
-construite.
+construite. En revanche, **la CI d'une branche n'a aucun droit d'écriture sur
+`cnp-gitops`**. Son `.gitlab-ci.yml` n'est pas relu : y exposer le token du bot
+permettrait à n'importe quel Developer de l'exfiltrer, et ce token peut écrire partout
+dans `cnp-gitops` (prod, AppProjects, root-app). C'est donc le backend qui écrit.
 
 1. Le backend vérifie que la branche existe et contient `.gitlab-ci.yml`, `Dockerfile` et
    `chart/` (409 sinon). Une branche créée avant l'injection CI n'a pas de pipeline CNP.
@@ -133,29 +136,32 @@ construite.
    l'Application plateforme, puis déclenche un pipeline sur la branche via l'API GitLab.
    L'Application plateforme ne dépend pas de l'image : le namespace et le pull secret sont
    prêts avant le premier déploiement.
-3. Un job `update-gitops-ephemeral`, séparé d'`update-gitops` qui reste inchangé, tourne
-   sur les branches autres que `main` et `release-dev-*`. Il clone `cnp-gitops` et
-   cherche une déclaration dont `branch`
-   correspond à la branche courante (`${CI_COMMIT_BRANCH:-$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}`).
-   - S'il n'en trouve pas, il sort en succès sans rien faire. Les apps existantes ne
-     voient aucune différence, ce qui compte car `cnp-ci-modules` est inclus en `ref: main`.
-   - S'il en trouve une, il génère l'Application de l'app et `values.yaml` (copie de
-     `chart/values-dev.yaml`, sinon de `chart/values.yaml`) s'ils manquent, puis écrit
-     `image.tag` et `ingress.host`.
-   - La règle `workflow` du pipeline laisse passer les pipelines déclenchés par l'API
-     (`$CI_PIPELINE_SOURCE == "api"`), sinon celui de CNP serait filtré dès qu'une MR
-     est ouverte sur la branche.
-   - Les pushs suivants sur la branche mettent à jour le tag : l'env suit la branche.
-4. Le backend passe l'env en `active` quand l'Application est Synced et Healthy et le
-   `Certificate` `Ready` (§8), ou en `failed` si le pipeline échoue
-   (`last_pipeline_status`).
+3. Ce pipeline ne fait que construire et pousser l'image (`docker-build`, avec le job
+   token), taguée par le sha court du commit. La règle `workflow` laisse passer les
+   pipelines déclenchés par l'API (`$CI_PIPELINE_SOURCE == "api"`), sinon celui de CNP
+   serait filtré dès qu'une MR est ouverte sur la branche.
+4. Le worker éphémère (toutes les 2 min) cherche, pour chaque env vivant, le dernier commit
+   de la branche dont un pipeline a réussi. La recherche se fait par sha et non par ref,
+   parce qu'avec une MR ouverte les pipelines portent la ref de la MR. S'il est nouveau,
+   le worker écrit en un commit :
+   - `values.yaml` : les values de dev lues sur ce commit (`chart/values-dev.yaml`, sinon
+     `chart/values.yaml`), avec `image.tag` égal au sha court et le host de l'env (§8) ;
+   - l'Application de l'app, avec le chart en `targetRevision: <sha>`.
 
-L'Application de l'app suit la branche : le chart est en `targetRevision: <branche>`, pour
-qu'un changement de chart soit testable. Ce choix demande l'isolation du §6.
+   Les pushs suivants sont déployés de la même façon : l'env suit la branche, commit
+   construit par commit construit. Il n'y a pas de webhook : les hooks de pipeline
+   pointent vers une route qui n'existe pas. Le worker suffit, avec au plus 2 min de délai.
+5. Le backend passe l'env en `active` quand l'Application est Synced et Healthy et le
+   `Certificate` `Ready` (§8), ou en `failed` si le pipeline échoue. Un nouveau build
+   remet un env `failed` en `provisioning`. Un env en `destroying` n'est jamais redéployé.
+
+Le chart est figé sur le commit construit, pas sur la tête de la branche : un push qui
+n'est pas encore construit ne change ni le chart ni l'image déployés. Un changement de
+chart reste testable, ce qui demande l'isolation du §6.
 
 ### 6. Isolation : AppProject `cnp-ephemeral` et Application plateforme séparée
 
-Avec `targetRevision: <branche>`, le chart déployé n'est plus relu : tout Developer qui
+Le chart déployé vient d'une branche et n'est donc pas relu : tout Developer qui
 pousse une branche choisit ce qu'ArgoCD applique. Sans garde-fou, il pourrait ajouter un
 `ExternalSecret` vers `secret/apps/<autre-groupe>/<autre-app>/prod` via le
 ClusterSecretStore, ou des ressources cluster-scoped (ClusterRoleBinding).
@@ -210,7 +216,7 @@ Ce paragraphe réutilise le socle de l'exposition publique (PR #73, #74 et #76,
 - **Host** : `<app>--<slug>.cloud-native-plat4k.me`, par exemple
   `my-app--feat-login.cloud-native-plat4k.me`. Le même domaine sert pour tous les
   clusters, ce qui supprime le besoin d'un sous-domaine par cluster. Le backend calcule le
-  host et l'écrit dans `env.yaml` : la CI n'a pas à connaître le domaine.
+  host et l'écrit dans les values de l'env (§5) : la CI n'a pas à connaître le domaine.
 - **DNS** : external-dns tourne sur chaque cluster et publie chez Cloudflare un A pour
   chaque host d'Ingress, vers l'ingress de ce cluster. Cet enregistrement l'emporte sur le
   wildcard qui pointe vers AKS. Un env éphémère sur GKE ou k3s est donc joignable sans
@@ -246,11 +252,11 @@ Ce paragraphe réutilise le socle de l'exposition publique (PR #73, #74 et #76,
   `EPHEMERAL_MAX_TTL_HOURS=168`, choisi à la création. `expires_at` est en base.
 - La destruction ciblée passe l'env en `destroying`, en enregistrant la raison (`manual`,
   `expired`) et l'auteur, puis :
-  1. annule le pipeline de l'env, pour que `update-gitops-ephemeral` ne repousse pas
-     l'Application après la suppression ;
+  1. annule le pipeline de l'env, pour que le worker ne redéploie pas un build qui se termine
+     d'Application après la suppression ;
   2. supprime en un commit les deux Applications et `apps/<cluster>/<app>/ephemeral/<slug>/`,
-     et répète jusqu'à une passe vide : un fichier poussé par la CI entre le listage et le
-     commit est rattrapé. Les fichiers déjà absents sont ignorés, donc l'opération est
+     et répète jusqu'à une passe vide : un fichier poussé par un déploiement entre le listage
+     et le commit est rattrapé. Les fichiers déjà absents sont ignorés, donc l'opération est
      idempotente ;
   3. passe en `destroyed` seulement quand ArgoCD n'a plus aucune des deux Applications.
      Le finalizer et le Namespace géré ont alors libéré toutes les ressources, et le slug
@@ -297,7 +303,7 @@ tranchés pour 4K-317 :
 
 | Élément | Impact |
 |---|---|
-| `update-gitops` | Inchangé. Nouveau job `update-gitops-ephemeral` sur les branches autres que `main`/`release-dev-*` : cherche une déclaration, ne fait rien s'il n'y en a pas (§5). |
+| `update-gitops` | Inchangé. Aucun job ajouté : la seule modification de `cnp-ci-modules` est la règle `workflow` qui garde les pipelines lancés par l'API (§5). |
 | `workflow` du pipeline | Exception `$CI_PIPELINE_SOURCE == "api"` avant la règle qui coupe les pipelines de branche quand une MR est ouverte (§5). |
 | Chemin Vault | Aucun nouveau chemin : l'env lit `secret/apps/{group}/{app}/dev`. Le pull secret registry est ajouté sous `secret/apps/`, lisible par `eso-reader` sans changer la policy (§7). |
 | Matrice RBAC | Ajout des actions sur les envs éphémères (§10). La matrice des variables de l'ADR-0025 est inchangée, et `prod` reste réservée aux Maintainer/Owner. |
@@ -310,8 +316,8 @@ tranchés pour 4K-317 :
 
 ### 13. Découpage confirmé et ajusté
 
-- **4K-286 Provisionnement** : table et migration, endpoint de création, règle
-  `update-gitops`, AppProjects `cnp-ephemeral`/`cnp-platform`, Namespace géré, **pull
+- **4K-286 Provisionnement** : table et migration, endpoint de création, déploiement
+  par le worker après le build, règle `workflow` de la CI, AppProjects `cnp-ephemeral`/`cnp-platform`, Namespace géré, **pull
   secret** (sans lui, l'env reste en `ImagePullBackOff`).
 - **4K-287 Secrets et URL** : `ExternalSecret` hérité de `dev`, host, `Certificate`
   cert-manager, contrôle `PUBLIC_EXPOSURE_CLUSTERS`, extension RBAC. Le DNS et le TLS
@@ -347,19 +353,19 @@ tranchés pour 4K-317 :
 ## Conséquences
 
 Positif :
-- `dev`, `prod` et le code qui les manipule ne bougent pas. Le risque de régression reste
-  limité à la nouvelle règle d'`update-gitops`, qui ne fait rien sans déclaration.
-- Le flux reste GitOps et sans race condition : la CI génère les Applications après le
-  build (ADR-0014).
+- `dev`, `prod` et le code qui les manipule ne bougent pas. Le seul changement de
+  `cnp-ci-modules` est une règle `workflow`.
+- Le flux reste GitOps et sans race condition : l'Application n'apparaît qu'après le
+  build (ADR-0014), et la CI d'une branche n'a aucun droit sur `cnp-gitops`.
 - Un namespace par env, un AppProject restrictif et aucune copie de secret.
 - Disponible sur AKS et GKE (et k3s une fois exposé) avec le même code. Le DNS et le TLS
   reprennent le socle de l'exposition publique, sans brique propre à l'epic.
 - Le TTL limite le coût des envs oubliés (axe FinOps).
 
 Négatif / Dette :
-- `update-gitops` clone `cnp-gitops` sur chaque push de branche pour chercher une
-  déclaration. C'est acceptable à notre échelle. Un appel API ciblé pourra remplacer le
-  clone plus tard.
+- Le worker interroge GitLab toutes les 2 min pour chaque env vivant (2 appels au plus
+  par env, et 3 envs au plus par app). Un webhook de pipeline pourra réduire le délai et
+  le nombre d'appels plus tard.
 - `dev`/`prod` restent sur l'AppProject `default`, et le ClusterSecretStore n'a pas de
   `conditions` : un chart mergé sur la branche par défaut peut toujours lire n'importe quel
   chemin `secret/apps/*`. À traiter dans un ticket sécurité dédié (policies Vault par
