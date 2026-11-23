@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # Délai par source : le diagnostic doit répondre même si une source traîne.
 _SOURCE_TIMEOUT_S = 12.0
 _COMPARE_TIMEOUT_S = 10.0
+_VERSIONS_TIMEOUT_S = 10.0
 _LOG_LINES = 200
 _MAX_EVENTS = 30
 
@@ -41,10 +42,10 @@ _ERROR_LEVELS = {"ERROR", "FATAL", "CRITICAL"}
 
 @dataclass
 class Deployment:
-    """Une entrée de l'historique ArgoCD d'un environnement."""
+    """Une entrée de l'historique ArgoCD d'un environnement, avec l'image qu'elle a déployée."""
     history_id: int
-    revision: str            # 8 premiers caractères du commit applicatif = tag d'image
-    full_revision: str
+    revision: str            # tag d'image (commit court de l'application), lu dans le dépôt GitOps
+    full_revision: str       # même valeur, utilisée pour la comparaison GitLab
     deployed_at: datetime
 
 
@@ -58,6 +59,9 @@ class ArgoState:
     operation_phase: Optional[str] = None
     last_sync_at: Optional[datetime] = None
     history: list[Deployment] = field(default_factory=list)
+    # Entrées brutes et sources de l'Application : les versions sont résolues ensuite.
+    raw_history: list[dict] = field(default_factory=list, repr=False)
+    sources: list[dict] = field(default_factory=list, repr=False)
 
 
 @dataclass
@@ -211,6 +215,8 @@ def _why(exc: BaseException) -> str:
     detail = getattr(exc, "detail", None)
     if isinstance(detail, str) and detail:
         return detail[:160]
+    if isinstance(exc, RuntimeError) and str(exc):
+        return str(exc)[:160]  # nos propres messages (« … non configuré »)
     return type(exc).__name__
 
 
@@ -239,20 +245,8 @@ async def _read_argo(app: Application, env: str, cluster: ClusterConnection) -> 
     images = (st.get("summary") or {}).get("images") or []
     # Tag de l'image en service (« registry:5000/team/app:a1b2c3d4 » → « a1b2c3d4 »).
     last_part = images[0].rsplit("/", 1)[-1] if images else ""
-    image_tag = last_part.rsplit(":", 1)[-1][:8] if ":" in last_part else None
+    image_tag = last_part.rsplit(":", 1)[-1] if ":" in last_part else None
     operation = st.get("operationState") or {}
-
-    history: list[Deployment] = []
-    for entry in st.get("history") or []:
-        revisions = entry.get("revisions") or ([entry["revision"]] if entry.get("revision") else [])
-        deployed_at = parse_dt(entry.get("deployedAt"))
-        if not revisions or not revisions[0] or deployed_at is None or entry.get("id") is None:
-            continue
-        history.append(Deployment(
-            history_id=int(entry["id"]), revision=revisions[0][:8],
-            full_revision=revisions[0], deployed_at=deployed_at,
-        ))
-    history.sort(key=lambda d: d.deployed_at)
 
     return ArgoState(
         available=True,
@@ -261,8 +255,44 @@ async def _read_argo(app: Application, env: str, cluster: ClusterConnection) -> 
         image_tag=image_tag,
         operation_phase=operation.get("phase"),
         last_sync_at=parse_dt(operation.get("finishedAt")),
-        history=history,
+        raw_history=list(st.get("history") or []),
+        sources=list((data.get("spec") or {}).get("sources") or []),
     )
+
+
+def _resolve_history_sync(
+    app: Application, env: str, cluster: ClusterConnection, argo: ArgoState,
+) -> tuple[list[Deployment], int]:
+    """Image déployée par chaque entrée d'historique, lue dans le dépôt GitOps.
+
+    ``revisions[0]`` est le HEAD du chart (dépôt de l'application), pas l'image : voir
+    ``gitops_versions``. Renvoie les déploiements datés et le nombre d'entrées dont
+    l'image n'a pas pu être lue (écartées plutôt que nommées à tort).
+    """
+    from backend.services.gitops_versions import gitops_client, history_image_tag
+
+    gl, project = gitops_client()
+    out: list[Deployment] = []
+    unresolved = 0
+    first_error: Optional[BaseException] = None
+    for entry in argo.raw_history:
+        deployed_at = parse_dt(entry.get("deployedAt"))
+        if deployed_at is None or entry.get("id") is None:
+            continue
+        try:
+            tag = history_image_tag(gl, project, cluster.name, app.slug, env, entry, argo.sources)
+        except Exception as exc:  # fichier absent à cette révision, GitLab indisponible…
+            first_error = first_error or exc
+            tag = None
+        if not tag:
+            unresolved += 1
+            continue
+        out.append(Deployment(history_id=int(entry["id"]), revision=tag, full_revision=tag,
+                              deployed_at=deployed_at))
+    if not out and first_error is not None:
+        raise first_error
+    out.sort(key=lambda d: d.deployed_at)
+    return out, unresolved
 
 
 def _read_k8s_sync(app: Application, env: str, cluster: ClusterConnection) -> K8sState:
@@ -325,14 +355,16 @@ async def _read_logs(app: Application, env: str, cluster: Optional[ClusterConnec
     return LogsState(available=True, total=len(entries), errors=errors)
 
 
-def _read_pipeline_sync(app: Application) -> PipelineState:
+def _read_pipeline_sync(app: Application, env: str) -> PipelineState:
+    """Dernier pipeline de la branche qui alimente *env* (main pour la prod, release-dev-*
+    pour le dev) : celui d'une branche de feature ne dit rien de l'environnement."""
     from backend.gitlab.client import GitLabClient
 
     gl = GitLabClient(
         token=settings.GITLAB_BOT_TOKEN, namespace=settings.GITLAB_BOT_NAMESPACE or "",
         use_private_token=True,
     )
-    info = gl.get_last_pipeline_failure(app.gitlab_project_id)
+    info = gl.get_last_env_pipeline(app.gitlab_project_id, env)
     if info is None:
         return PipelineState(available=True)
     return PipelineState(
@@ -388,13 +420,31 @@ async def collect_signals(db: AsyncSession, app: Application, env: str) -> Signa
         _guarded(_read_argo(app, env, cluster)),
         _guarded(asyncio.to_thread(_read_k8s_sync, app, env, cluster)),
         _guarded(_read_logs(app, env, cluster)),
-        _guarded(asyncio.to_thread(_read_pipeline_sync, app)) if has_ci else _guarded(_none()),
+        _guarded(asyncio.to_thread(_read_pipeline_sync, app, env)) if has_ci else _guarded(_none()),
     )
 
     if isinstance(argo, BaseException):
         signals.missing.append(MissingSignal(DoctorEvidenceSource.ARGOCD, f"ArgoCD indisponible ({_why(argo)})."))
     else:
         signals.argo = argo
+        if argo.raw_history:
+            resolved = await _guarded(
+                asyncio.to_thread(_resolve_history_sync, app, env, cluster, argo), timeout=_VERSIONS_TIMEOUT_S,
+            )
+            if isinstance(resolved, BaseException):
+                signals.missing.append(MissingSignal(
+                    DoctorEvidenceSource.DEPLOYMENTS,
+                    f"Versions des déploiements illisibles dans le dépôt GitOps ({_why(resolved)}).",
+                ))
+            else:
+                argo.history, unresolved = resolved
+                if unresolved:
+                    s = "s" if unresolved > 1 else ""
+                    signals.missing.append(MissingSignal(
+                        DoctorEvidenceSource.DEPLOYMENTS,
+                        f"{unresolved} déploiement{s} écarté{s} de la chronologie : "
+                        "image introuvable dans le dépôt GitOps.",
+                    ))
     if isinstance(k8s, BaseException):
         signals.missing.append(
             MissingSignal(DoctorEvidenceSource.KUBERNETES, f"Kubernetes indisponible ({_why(k8s)})."))

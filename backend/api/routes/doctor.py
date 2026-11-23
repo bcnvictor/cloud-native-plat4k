@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Literal, Optional
 
 from backend.api.deps import require_tier
-from backend.db.models import Application, User
+from backend.db.models import Application, GitLabGroup, User
 from backend.db.session import get_db
 from backend.services.ai_settings_service import AISettingsService
 from backend.services.doctor_rules import Timeline
@@ -125,6 +125,10 @@ class AIInfoSchema(BaseModel):
 class DoctorDiagnosisResponse(BaseModel):
     app_id: int
     app_name: str
+    # Page de l'application diagnostiquée (/groups/{group_slug}/apps/{app_slug}) : les
+    # actions du panneau ne doivent pas viser l'application ouverte à l'écran.
+    app_slug: str
+    group_slug: Optional[str] = None
     env: Literal["dev", "prod"]
     generated_at: datetime
     verdict: DoctorVerdict
@@ -170,9 +174,10 @@ def _timeline(t: Optional[Timeline]) -> Optional[TimelineSchema]:
     )
 
 
-def to_response(r: DoctorResult) -> DoctorDiagnosisResponse:
+def to_response(r: DoctorResult, app_slug: str, group_slug: Optional[str]) -> DoctorDiagnosisResponse:
     return DoctorDiagnosisResponse(
-        app_id=r.app_id, app_name=r.app_name, env=r.env, generated_at=r.generated_at,
+        app_id=r.app_id, app_name=r.app_name, app_slug=app_slug, group_slug=group_slug,
+        env=r.env, generated_at=r.generated_at,
         verdict=r.verdict, source=r.source, headline=r.headline, explanation=r.explanation,
         cause=(
             CauseSchema(summary=r.cause.summary, confidence=r.cause.confidence, category=r.cause.category)
@@ -234,6 +239,17 @@ async def diagnose_app(
             detail="AI access to this application is not allowed by platform settings.",
         )
 
+    app_slug = app.slug
+    group_slug: Optional[str] = None
+    if app.owning_gitlab_group_id:
+        full_path = (
+            await db.execute(
+                select(GitLabGroup.full_path).where(GitLabGroup.gitlab_group_id == app.owning_gitlab_group_id)
+            )
+        ).scalar_one_or_none()
+        # Même règle que groupsApi.getSlug côté frontend : dernier segment du chemin.
+        group_slug = full_path.rsplit("/", 1)[-1] if full_path else None
+
     try:
         result = await DoctorService(db, cfg).diagnose(app, current_user, payload.env)
     except DoctorAccessDenied as exc:
@@ -241,4 +257,4 @@ async def diagnose_app(
             status_code=403,
             detail="Le diagnostic est réservé aux rôles developer et supérieurs sur cette application.",
         ) from exc
-    return to_response(result)
+    return to_response(result, app_slug, group_slug)

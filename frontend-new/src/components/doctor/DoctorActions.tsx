@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   IconCircleCheck,
@@ -26,7 +26,7 @@ import { CopyFallback, useCopyText } from './CopyFallback';
 import {
   actionEnv,
   actionErrorMessage,
-  appBasePath,
+  diagnosisBasePath,
   maintainerRequestText,
   roleRequirement,
   rollbackTarget,
@@ -59,9 +59,8 @@ interface ItemProps {
   appId: number;
 }
 
-function usePageUrl(appName: string): { base: string | null; url: string | null } {
-  const location = useLocation();
-  const base = appBasePath(location.pathname, appName);
+function usePageUrl(diagnosis: DoctorDiagnosis): { base: string | null; url: string | null } {
+  const base = diagnosisBasePath(diagnosis);
   const url = base && typeof window !== 'undefined' ? `${window.location.origin}${base}` : null;
   return { base, url };
 }
@@ -77,7 +76,7 @@ function Description({ action }: { action: DoctorAction }) {
 /** Action non autorisée : désactivée, rôle requis visible, demande à copier. */
 function RestrictedAction({ action, diagnosis }: ItemProps) {
   const roleId = useId();
-  const { url } = usePageUrl(diagnosis.app_name);
+  const { url } = usePageUrl(diagnosis);
   const { copy, fallback, dismiss } = useCopyText();
 
   return (
@@ -285,7 +284,7 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
 /** Ouvre l'onglet Logs ou History de l'application. */
 function TabAction({ action, diagnosis }: ItemProps) {
   const navigate = useNavigate();
-  const { base } = usePageUrl(diagnosis.app_name);
+  const { base } = usePageUrl(diagnosis);
   const tab = action.kind === 'view_logs' ? 'logs' : 'history';
   return (
     <>
@@ -359,7 +358,7 @@ function RetryAction({ action, diagnosis, appId }: ItemProps) {
 
 /** Contacter un maintainer : la demande (constat, cause, action conseillée) est copiée. */
 function ContactAction({ action, diagnosis }: ItemProps) {
-  const { url } = usePageUrl(diagnosis.app_name);
+  const { url } = usePageUrl(diagnosis);
   const { copy, fallback, dismiss } = useCopyText();
   const recommended =
     diagnosis.actions.find((a) => a.primary && a.kind !== 'contact_maintainer') ??

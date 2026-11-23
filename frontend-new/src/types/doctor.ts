@@ -177,6 +177,10 @@ export interface DoctorAIInfo {
 export interface DoctorDiagnosis {
   app_id: number;
   app_name: string;
+  /** Page de l'application diagnostiquée : /groups/{group_slug}/apps/{app_slug}. */
+  app_slug: string;
+  /** Null si l'application n'est rattachée à aucun groupe connu. */
+  group_slug: string | null;
   env: DoctorEnv;
   generated_at: string;
   verdict: DoctorVerdict;

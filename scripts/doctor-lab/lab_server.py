@@ -41,6 +41,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import html
+import itertools
 import json
 import os
 import re
@@ -261,6 +262,10 @@ def image_tag_from_values(content: str) -> str | None:
     return tag.group(1) if tag else None
 
 
+_RUN = os.urandom(4).hex()
+_COMMIT_SEQ = itertools.count(1)
+
+
 def values_file(env: str, tag: str) -> str:
     return (
         f"# Valeurs GitOps de {APP} ({env}) — dépôt simulé par le labo CNP Doctor\n"
@@ -355,9 +360,27 @@ class Lab:
         entries.append({
             "id": (entries[-1]["id"] + 1) if entries else 1,
             "sha": sha,
-            "gitops_sha": hashlib.sha1(f"cnp-gitops-{self.gitops_seq}".encode()).hexdigest(),
+            # Révisions uniques sur toute la vie du processus (comme de vrais commits) : le
+            # backend met en cache le tag lu à une révision, qui ne doit jamais changer.
+            "gitops_sha": hashlib.sha1(f"cnp-gitops-{_RUN}-{next(_COMMIT_SEQ)}".encode()).hexdigest(),
+            # Comme en vrai : la 1re source est le chart du dépôt de l'app à HEAD de main,
+            # donc revisions[0] n'est PAS l'image. Le tag est dans values-<env>.yaml du
+            # dépôt GitOps, à la révision gitops_sha (servi par file_at).
+            "app_head": hashlib.sha1(f"{APP}-main-head-{_RUN}-{next(_COMMIT_SEQ)}".encode()).hexdigest(),
             "at": at,
         })
+
+    def file_at(self, path: str, ref: str | None) -> str | None:
+        """Fichier du dépôt GitOps à une révision : HEAD, ou celle d'une entrée d'historique."""
+        if not ref or ref in ("main", "HEAD"):
+            return self.files.get(path)
+        m = _VALUES_RE.match(path)
+        if m and m.group(1) == APP:
+            env = m.group(2)
+            entry = next((e for e in self.history[env] if e["gitops_sha"] == ref), None)
+            if entry is not None:
+                return values_file(env, entry["sha"][:8])
+        return None
 
     def _set_values_tag(self, env: str, tag: str, message: str, at: float) -> None:
         path = f"apps/lab-cluster/{APP}/values-{env}.yaml"
@@ -439,12 +462,12 @@ class Lab:
                 "destination": {"server": "https://kubernetes.default.svc", "namespace": env},
                 "sources": [
                     {"repoURL": f"{APP_WEB_URL}.git", "targetRevision": "main", "path": "chart"},
-                    {"repoURL": f"{GITOPS_WEB_URL}.git", "targetRevision": "main", "ref": "values"},
+                    {"repoURL": f"{GITOPS_WEB_URL}.git", "targetRevision": "main", "ref": "gitops"},
                 ],
                 "syncPolicy": {"automated": {"prune": True, "selfHeal": True}},
             },
             "status": {
-                "sync": {"status": "Synced", "revisions": [current["sha"], current["gitops_sha"]]},
+                "sync": {"status": "Synced", "revisions": [current["app_head"], current["gitops_sha"]]},
                 "health": health,
                 "summary": {"images": [f"{REGISTRY}:{tag}"]},
                 "operationState": {
@@ -456,7 +479,7 @@ class Lab:
                 "history": [
                     {
                         "id": e["id"],
-                        "revisions": [e["sha"], e["gitops_sha"]],
+                        "revisions": [e["app_head"], e["gitops_sha"]],
                         "deployedAt": iso(e["at"]),
                         "deployStartedAt": iso(e["at"] - 6),
                         "initiatedBy": {"automated": True},
@@ -1367,7 +1390,7 @@ class Handler(BaseHTTPRequestHandler):
     def _gitlab_file(self, method: str, pid: int, path: str, tail: list[str], q: dict, now: float) -> None:
         files = LAB.files if pid == GITOPS_PROJECT_ID else {}
         if method == "GET":
-            content = files.get(path)
+            content = LAB.file_at(path, q.get("ref")) if pid == GITOPS_PROJECT_ID else None
             if content is None:
                 return self._send(404, {"message": "404 File Not Found"})
             if tail == ["raw"]:

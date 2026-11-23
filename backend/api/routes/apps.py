@@ -33,6 +33,8 @@ from backend.k8s.client import get_k8s_client_for_cluster
 from backend.k8s.manifests import sanitize_k8s_name
 from backend.services.app_service import AppService
 from backend.services.audit_service import AuditService
+from backend.services.gitops_versions import history_image_tag
+from backend.services.gitops_versions import values_path as gitops_values_path
 from backend.services.scaffolding_service import ScaffoldingService
 from backend.services.scale_service import ScaleService
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -144,20 +146,22 @@ async def get_app_runtime_status(
 
         # Persist last_known_status: prefer prod health, fallback to dev
         from shared.models import ApplicationStatus
-        ref = prod_data if prod_data.get("health_status") else dev_data
+        ref_env = "prod" if prod_data.get("health_status") else "dev"
+        ref = prod_data if ref_env == "prod" else dev_data
         health = ref.get("health_status")
         sync = ref.get("sync_status")
         old_status = app.last_known_status
+        # `env` : l'environnement dont la santé a décidé du statut (le CNP Doctor filtre dessus).
         if health in ("Degraded", "Missing"):
             app.last_known_status = ApplicationStatus.DEGRADED
             if old_status != ApplicationStatus.DEGRADED:
                 await emit_event(db, EventType.APP_HEALTH_DEGRADED, "critical", "argocd",
-                                 app_id=app.id, payload={"name": app.name, "health": health})
+                                 app_id=app.id, payload={"name": app.name, "health": health, "env": ref_env})
         elif sync == "Synced" and health == "Healthy":
             app.last_known_status = ApplicationStatus.DEPLOYED
             if old_status == ApplicationStatus.DEGRADED:
                 await emit_event(db, EventType.APP_HEALTH_RECOVERED, "info", "argocd",
-                                 app_id=app.id, payload={"name": app.name})
+                                 app_id=app.id, payload={"name": app.name, "env": ref_env})
         await db.commit()
     except (HTTPException, httpx.HTTPError) as e:
         payload["argocd_error"] = str(e)
@@ -228,20 +232,30 @@ async def rollback_app(
         raise HTTPException(status_code=404, detail="Cluster not found")
 
     argocd = get_argocd_client_for_cluster(cluster)
-    history = await argocd.get_app_history(f"{app.slug}-{payload.env}")
+    argo_app = await argocd.get_app_status(f"{app.slug}-{payload.env}")
+    history = (argo_app.get("status") or {}).get("history") or []
     entry = next((e for e in history if e.get("id") == payload.history_id), None)
     if entry is None:
         raise HTTPException(status_code=404, detail="History entry not found")
-    old_tag = ((entry.get("revisions") or [None])[0] or "")[:8] or None
-    if not old_tag:
-        raise HTTPException(status_code=409, detail="Cannot determine image tag for this history entry")
 
     if not settings.GITOPS_REPO_URL or not settings.GITLAB_BOT_TOKEN:
         raise HTTPException(status_code=503, detail="GitOps not configured (missing GITOPS_REPO_URL or GITLAB_BOT_TOKEN)")
 
     gitops_project = extract_project_path(settings.GITOPS_REPO_URL)
-    values_path = f"apps/{cluster.name}/{app.slug}/values-{payload.env}.yaml"
+    values_path = gitops_values_path(cluster.name, app.slug, payload.env)
     gl = GitLabClient(token=settings.GITLAB_BOT_TOKEN, namespace="", use_private_token=True)
+
+    # Le tag déployé par cette entrée est dans values-<env>.yaml du dépôt GitOps, à la
+    # révision GitOps de l'entrée : revisions[0] est le HEAD du chart, pas l'image.
+    try:
+        old_tag = history_image_tag(
+            gl, gitops_project, cluster.name, app.slug, payload.env, entry,
+            (argo_app.get("spec") or {}).get("sources"),
+        )
+    except Exception:
+        old_tag = None
+    if not old_tag:
+        raise HTTPException(status_code=409, detail="Cannot determine image tag for this history entry")
 
     raw = gl.read_file(gitops_project, values_path)
     data = yaml.safe_load(raw)

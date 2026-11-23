@@ -75,8 +75,15 @@ l'application doit faire partie de la sélection.
   version précédente a tourné au moins 30 minutes sans dégradation. **Moyenne** : jusqu'à
   60 minutes. **Faible** : jusqu'à 6 heures. Au-delà, aucune corrélation : le verdict est « En
   panne » et le rollback n'est pas l'action principale.
-- Dernière version saine : le déploiement précédent dont la révision diffère de celle en
-  service. C'est la cible du rollback proposé.
+- Dernière version saine : le déploiement précédent dont l'image diffère de celle en
+  service. C'est la cible du rollback proposé. Sa durée de service s'arrête au déploiement
+  qui l'a remplacée.
+- Versions : le tag d'image lu dans `values-<env>.yaml` du dépôt GitOps pour chaque entrée
+  de l'historique ArgoCD. Une resynchro qui garde la même image n'est pas un nouveau
+  déploiement.
+- Seules les dégradations de l'environnement diagnostiqué comptent, et seul le pipeline de
+  la branche qui l'alimente (`main` pour la prod, `release-dev-*` pour le dev) est lu.
+- La confiance affichée pour la cause ne dépasse jamais la corrélation calculée.
 
 ## Lire la carte
 

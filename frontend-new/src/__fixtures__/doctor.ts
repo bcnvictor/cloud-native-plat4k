@@ -29,6 +29,8 @@ const AI_UNUSED = {
 export const REGRESSION_DIAGNOSIS: DoctorDiagnosis = {
   app_id: 7,
   app_name: 'demo-shop',
+  app_slug: 'demo-shop',
+  group_slug: 'team-demo',
   env: 'prod',
   generated_at: '2026-11-16T14:07:31Z',
   verdict: 'regression',
@@ -252,6 +254,8 @@ export const FALLBACK_DIAGNOSIS: DoctorDiagnosis = {
 export const HEALTHY_DIAGNOSIS: DoctorDiagnosis = {
   app_id: 7,
   app_name: 'demo-shop',
+  app_slug: 'demo-shop',
+  group_slug: 'team-demo',
   env: 'prod',
   generated_at: '2026-11-16T15:10:00Z',
   verdict: 'healthy',

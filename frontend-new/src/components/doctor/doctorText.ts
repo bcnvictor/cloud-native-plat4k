@@ -11,7 +11,6 @@ import type {
   DoctorTimelineKind,
   DoctorVerdict,
 } from '@/types';
-import { pageContextFrom } from '@/utils/assistantContext';
 
 export type DoctorTone = 'danger' | 'warning' | 'success' | 'info' | 'muted' | 'primary';
 
@@ -123,23 +122,13 @@ export function formatDuration(seconds: number): string {
 
 // ── Navigation ─────────────────────────────────────────────────────────────
 
-/** Même règle que `appsApi.getBySlug`. */
-export function appSlugFromName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
 /**
- * Chemin de la page de l'application, déduit de l'URL : la vue est aussi rendue dans
- * le panneau de l'assistant, hors des routes de l'application (pas de `useParams`).
+ * Page de l'application diagnostiquée, d'après le diagnostic lui-même (groupe et slug
+ * renvoyés par l'API). Pas d'après l'URL : le panneau de l'assistant garde le diagnostic
+ * de l'app A quand on ouvre l'app B, et ses actions doivent toujours viser A.
  */
-export function appBasePath(pathname: string, appName: string): string | null {
-  const ctx = pageContextFrom(pathname);
-  if (!ctx.group_slug) return null;
-  const appSlug = ctx.app_slug ?? appSlugFromName(appName);
-  return appSlug ? `/groups/${ctx.group_slug}/apps/${appSlug}` : null;
+export function diagnosisBasePath(d: Pick<DoctorDiagnosis, 'app_slug' | 'group_slug'>): string | null {
+  return d.group_slug && d.app_slug ? `/groups/${d.group_slug}/apps/${d.app_slug}` : null;
 }
 
 // ── Actions ────────────────────────────────────────────────────────────────

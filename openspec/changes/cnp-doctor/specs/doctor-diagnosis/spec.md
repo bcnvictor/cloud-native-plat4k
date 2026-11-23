@@ -60,7 +60,7 @@ La plateforme SHALL conclure sans appeler le fournisseur IA quand les signaux su
 - **THEN** le verdict est `inconclusive`, aucun appel IA n'est fait et `missing_signals` nomme les sources manquantes
 
 ### Requirement: Chronologie de la panne
-Pour une application en échec, la plateforme SHALL calculer une chronologie : déploiements de l'environnement, début de la panne, déploiement suspect, dernière version saine et niveau de corrélation (`haute`, `moyenne`, `faible` ou aucun). Ce calcul MUST être fait par la plateforme et non par l'IA.
+Pour une application en échec, la plateforme SHALL calculer une chronologie : déploiements de l'environnement, début de la panne, déploiement suspect, dernière version saine et niveau de corrélation (`haute`, `moyenne`, `faible` ou aucun). Ce calcul MUST être fait par la plateforme et non par l'IA. La version d'un déploiement SHALL être le tag d'image lu dans `values-<env>.yaml` du dépôt GitOps à la révision GitOps de l'entrée d'historique ArgoCD, jamais `revisions[0]` (HEAD du chart). Seuls les événements de dégradation de l'environnement diagnostiqué SHALL compter.
 
 #### Scenario: Panne juste après un déploiement
 - **WHEN** le premier signal d'échec survient 1 minute après le dernier déploiement et que la version précédente a tourné plus de 30 minutes sans dégradation
@@ -69,6 +69,18 @@ Pour une application en échec, la plateforme SHALL calculer une chronologie : d
 #### Scenario: Panne sans déploiement récent
 - **WHEN** le premier signal d'échec survient plus de 6 heures après le dernier déploiement
 - **THEN** le verdict est `failing`, `timeline.correlation` est nul et aucune action de rollback n'est marquée principale
+
+#### Scenario: Resynchro de la même image
+- **WHEN** A est déployée à 10 h 00, B à 10 h 05 et plante, puis B est resynchronisée à 12 h 00 sans changer d'image
+- **THEN** l'entrée de 12 h 00 n'est pas un nouveau déploiement, `timeline.suspect` est B à 10 h 05, A a tourné 5 minutes et `timeline.correlation` ne vaut pas `haute`
+
+#### Scenario: Dégradation d'un autre environnement
+- **WHEN** le dev est diagnostiqué et qu'un événement `app.health.degraded` porte `env: prod`
+- **THEN** cet événement ne sert ni de début de panne ni à affaiblir la corrélation
+
+#### Scenario: Image d'une entrée introuvable
+- **WHEN** le tag d'image d'une entrée d'historique ne peut pas être lu dans le dépôt GitOps
+- **THEN** l'entrée est écartée de la chronologie et `missing_signals` le mentionne
 
 #### Scenario: Historique indisponible
 - **WHEN** l'historique des déploiements ne peut pas être lu
@@ -94,6 +106,10 @@ Chaque preuve affichée MUST provenir d'un registre construit par la plateforme 
 
 #### Scenario: Aucune preuve valide citée
 - **WHEN** la réponse de l'IA ne cite aucun identifiant valide
+- **THEN** `cause.confidence` vaut `faible`
+
+#### Scenario: Confiance plus haute que la chronologie
+- **WHEN** la corrélation calculée vaut `faible` (panne 4 h après le déploiement) et que l'IA écrit une confiance `haute`
 - **THEN** `cause.confidence` vaut `faible`
 
 #### Scenario: Secret dans un signal

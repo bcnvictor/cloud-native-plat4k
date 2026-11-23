@@ -35,9 +35,13 @@ from backend.db.models import (
     User,
 )
 from backend.services.ai_settings_service import AISettingsService
+from backend.services.doctor_rules import Cause, Evidence, Timeline
 from backend.services.doctor_service import (
     DoctorAccessDenied,
+    DoctorResult,
     DoctorService,
+    ModelAnswer,
+    apply_model_answer,
     parse_model_answer,
 )
 
@@ -104,15 +108,32 @@ async def _app(db: AsyncSession, user: User, level: int = 30, cluster_status=Clu
     return app
 
 
+GITOPS_URL = "https://gitlab.example/cnp/cnp-gitops.git"
+APP_HEAD_1 = "c0ffee01" + "0" * 32
+APP_HEAD_2 = "c0ffee02" + "0" * 32
+_VALUES_AT = {"g1": "a1b2c3d4", "g2": "f4e5d6c7"}
+
+
+def _gitops_values(project: str, path: str, ref: str = "main") -> str:
+    assert project == "cnp/cnp-gitops" and path == "apps/aks/demo-shop/values-prod.yaml"
+    return f"replicas: 1\nimage:\n  repository: registry/demo-shop\n  tag: {_VALUES_AT[ref]}\n"
+
+
 def _sources(broken: bool = True, pipeline_status: str = "success"):
     """Réponses brutes des sources pour un scénario sain ou une régression."""
     now = datetime.now(timezone.utc)
     deployed = now - timedelta(minutes=6)
     onset = deployed + timedelta(minutes=1)
-    history = [{"id": 11, "revisions": [GOOD, "g1"], "deployedAt": _iso(deployed - timedelta(days=3))}]
+    # revisions[0] = HEAD du chart (dépôt de l'app), jamais l'image : le tag est lu dans
+    # values-prod.yaml du dépôt GitOps, à la révision GitOps (revisions[1]).
+    history = [{"id": 11, "revisions": [APP_HEAD_1, "g1"], "deployedAt": _iso(deployed - timedelta(days=3))}]
     if broken:
-        history.append({"id": 12, "revisions": [BAD, "g2"], "deployedAt": _iso(deployed)})
-    argo_status = {"status": {
+        history.append({"id": 12, "revisions": [APP_HEAD_2, "g2"], "deployedAt": _iso(deployed)})
+    argo_status = {"spec": {"sources": [
+        {"repoURL": "https://gitlab.example/team/demo-shop.git", "path": "chart", "targetRevision": "HEAD"},
+        {"repoURL": GITOPS_URL, "targetRevision": "HEAD", "ref": "gitops"},
+        {"repoURL": GITOPS_URL, "targetRevision": "HEAD", "path": "apps/aks/demo-shop/platform/prod"},
+    ]}, "status": {
         "sync": {"status": "Synced"},
         "health": {"status": "Degraded" if broken else "Healthy"},
         "summary": {"images": [f"registry/demo-shop:{'f4e5d6c7' if broken else 'a1b2c3d4'}"]},
@@ -155,7 +176,9 @@ def _sources(broken: bool = True, pipeline_status: str = "success"):
         patch("backend.k8s.client.get_k8s_client_for_cluster", return_value=k8s),
         patch("backend.services.doctor_signals.get_logs", new=AsyncMock(return_value=logs)),
         patch.object(settings, "GITLAB_BOT_TOKEN", "bot"),
-        patch("backend.gitlab.client.GitLabClient.get_last_pipeline_failure", return_value=pipeline),
+        patch.object(settings, "GITOPS_REPO_URL", GITOPS_URL),
+        patch("backend.gitlab.client.GitLabClient.read_file", side_effect=_gitops_values),
+        patch("backend.gitlab.client.GitLabClient.get_last_env_pipeline", return_value=pipeline),
         patch("backend.gitlab.client.GitLabClient.compare_revisions", return_value=compare),
     ]
 
@@ -365,6 +388,8 @@ async def test_route_contract_and_access(client: AsyncClient, admin_token: str, 
     assert body["timeline"]["suspect"]["revision"] == "f4e5d6c7"
     assert body["timeline"]["last_healthy"]["history_id"] == 11
     assert body["actions"][0]["kind"] == "rollback" and body["actions"][0]["allowed"] is True
+    # Page de l'app diagnostiquée, pas celle ouverte à l'écran (remarque PO n° 6).
+    assert body["app_slug"] == "demo-shop" and body["group_slug"] == "team-a"
     assert body["changes"]["files"] == [{"path": "app/config.py", "change": "modified"}]
     assert {"id", "source", "label", "cited"} <= set(body["evidence"][0])
     assert viewer.status_code == 403
@@ -396,3 +421,29 @@ def test_action_note_does_not_repeat_the_action_label():
     assert _strip_label("Revenir à la version a1b2c3d4 — dernière version en service.", label) == (
         "Dernière version en service.")
     assert _strip_label("Rétablit le service.", label) == "Rétablit le service."
+
+
+@pytest.mark.parametrize("link, said, shown", [
+    (DoctorConfidence.FAIBLE, "haute", DoctorConfidence.FAIBLE),
+    (DoctorConfidence.MOYENNE, "haute", DoctorConfidence.MOYENNE),
+    (DoctorConfidence.HAUTE, "moyenne", DoctorConfidence.MOYENNE),
+    (None, "haute", DoctorConfidence.HAUTE),
+])
+def test_ai_confidence_is_capped_by_the_computed_link(link, said, shown):
+    """Remarque PO n° 5 : une panne 4 h après le déploiement reste un lien faible,
+    même si le modèle écrit « haute »."""
+    from shared.models import DoctorCauseCategory, DoctorEvidenceSource
+
+    result = DoctorResult(
+        app_id=7, app_name="demo-shop", env="prod", generated_at=datetime.now(timezone.utc),
+        verdict=DoctorVerdict.REGRESSION, source=DoctorSource.AI, headline="x", user_role="admin",
+        evidence=[Evidence(DoctorEvidenceSource.LOGS, "KeyError", id="E1")],
+        timeline=Timeline(correlation=link),
+    )
+    answer = ModelAnswer(
+        headline="Panne", cause=Cause("PAYMENT_API_URL manquante", DoctorConfidence(said),
+                                      DoctorCauseCategory.CONFIG),
+        evidence_ids=["E1"],
+    )
+    apply_model_answer(result, answer)
+    assert result.cause.confidence == shown

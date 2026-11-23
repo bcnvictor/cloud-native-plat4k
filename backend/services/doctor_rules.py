@@ -28,6 +28,7 @@ from backend.services.doctor_signals import (
     Changes,
     ContainerState,
     Deployment,
+    PlatformEvent,
     PodState,
     Signals,
 )
@@ -212,10 +213,42 @@ def is_failing(signals: Signals) -> bool:
     return signals.argo.available and signals.argo.health in ("Degraded", "Missing")
 
 
+def deployed_versions(signals: Signals) -> list[Deployment]:
+    """Historique réduit aux changements d'image, du plus ancien au plus récent.
+
+    Une resynchro qui garde la même image (chart modifié, push sur main dont la CI
+    échoue) n'est pas un nouveau déploiement : on garde la date où l'image est arrivée.
+    """
+    out: list[Deployment] = []
+    for dep in signals.argo.history:
+        if out and out[-1].revision == dep.revision:
+            continue
+        out.append(dep)
+    return out
+
+
+def _for_env(event: PlatformEvent, env: str) -> bool:
+    """L'événement concerne-t-il l'environnement diagnostiqué ?"""
+    event_env = event.payload.get("env")
+    if event_env:
+        return event_env == env
+    if event.type in ("app.health.degraded", "app.health.recovered"):
+        # Sans environnement : seule la perte du cluster touche les deux à la fois.
+        return event.payload.get("reason") == "cluster_offline"
+    return True
+
+
+def _degraded_times(signals: Signals) -> list[datetime]:
+    return [
+        e.at for e in signals.events
+        if e.type == "app.health.degraded" and e.at is not None and _for_env(e, signals.env)
+    ]
+
+
 def _since_current_deploy(signals: Signals) -> Optional[datetime]:
-    """Début de la version en service (dernier déploiement), à la tolérance d'horloge près."""
-    history = signals.argo.history
-    return history[-1].deployed_at - timedelta(seconds=_CLOCK_SKEW_S) if history else None
+    """Arrivée de l'image en service, à la tolérance d'horloge près."""
+    versions = deployed_versions(signals)
+    return versions[-1].deployed_at - timedelta(seconds=_CLOCK_SKEW_S) if versions else None
 
 
 def current_errors(signals: Signals) -> list:
@@ -263,7 +296,7 @@ def _is_healthy(signals: Signals) -> bool:
 def _rollback_times(signals: Signals) -> list[datetime]:
     return [
         e.at for e in signals.events
-        if e.type == "app.rollback" and e.at is not None and e.payload.get("env", signals.env) == signals.env
+        if e.type == "app.rollback" and e.at is not None and _for_env(e, signals.env)
     ]
 
 
@@ -285,16 +318,19 @@ def _failure_onset(signals: Signals, after: datetime) -> Optional[datetime]:
     starts = [pod.start_time for pod, _c, _r in failing if pod.start_time and pod.start_time >= floor]
     if starts:
         return min(starts)
-    degraded = [
-        e.at for e in signals.events
-        if e.type == "app.health.degraded" and e.at is not None and e.at >= floor
-    ]
+    degraded = [at for at in _degraded_times(signals) if at >= floor]
     return min(degraded) if degraded else None
+
+
+def _replaced_at(history: list[Deployment], previous: Deployment, current: Deployment) -> datetime:
+    """Fin de service de *previous* : le déploiement qui l'a remplacée, pas le dernier."""
+    later = [d for d in history if d.deployed_at > previous.deployed_at]
+    return later[0].deployed_at if later else current.deployed_at
 
 
 def build_timeline(signals: Signals, failing: bool) -> Optional[Timeline]:
     """Relie la panne aux déploiements de l'environnement. None sans historique."""
-    history = signals.argo.history
+    history = deployed_versions(signals)
     if not history:
         return None
     now = signals.collected_at
@@ -324,12 +360,12 @@ def build_timeline(signals: Signals, failing: bool) -> Optional[Timeline]:
                 level = None
             if level is not None and previous is not None:
                 timeline.last_healthy = previous
-                ran_for = (current.deployed_at - previous.deployed_at).total_seconds()
+                replaced_at = _replaced_at(history, previous, current)
+                ran_for = (replaced_at - previous.deployed_at).total_seconds()
                 timeline.last_healthy_ran_for_s = ran_for
                 degraded_before = any(
-                    e.type == "app.health.degraded" and e.at is not None
-                    and previous.deployed_at < e.at < current.deployed_at - timedelta(seconds=_CLOCK_SKEW_S)
-                    for e in signals.events
+                    previous.deployed_at < at < replaced_at - timedelta(seconds=_CLOCK_SKEW_S)
+                    for at in _degraded_times(signals)
                 )
                 # Une version précédente trop brève ou déjà dégradée n'est pas une référence sûre.
                 if level == DoctorConfidence.HAUTE and (ran_for < _MIN_HEALTHY_RUN_S or degraded_before):
@@ -340,7 +376,9 @@ def build_timeline(signals: Signals, failing: bool) -> Optional[Timeline]:
         if timeline.last_healthy is None and timeline.correlation is None and previous is not None:
             # Panne non corrélée : on garde la version précédente comme simple repère.
             timeline.last_healthy = previous
-            timeline.last_healthy_ran_for_s = (current.deployed_at - previous.deployed_at).total_seconds()
+            timeline.last_healthy_ran_for_s = (
+                _replaced_at(history, previous, current) - previous.deployed_at
+            ).total_seconds()
 
     # Entrées affichées : derniers déploiements, début de panne, dégradation, pipeline.
     for dep in history[-_TIMELINE_DEPLOYMENTS:]:
@@ -361,10 +399,7 @@ def build_timeline(signals: Signals, failing: bool) -> Optional[Timeline]:
             at=timeline.onset_at, kind="failure_onset", label="Premier signal d'échec",
         ))
     first_shown = timeline.entries[0].at if timeline.entries else now
-    degraded = sorted(
-        e.at for e in signals.events
-        if e.type == "app.health.degraded" and e.at is not None and e.at >= current.deployed_at
-    )
+    degraded = sorted(at for at in _degraded_times(signals) if at >= current.deployed_at)
     if failing and degraded:
         timeline.entries.append(TimelineEntry(
             at=degraded[0], kind="degraded", label="Application marquée dégradée",
@@ -465,8 +500,8 @@ def build_ledger(
                          f"Version précédente {prev.revision} : en service pendant "
                          f"{fmt_duration(timeline.last_healthy_ran_for_s)} avant ce déploiement",
                          at=prev.deployed_at))
-    elif timeline is not None and signals.argo.history:
-        dep = signals.argo.history[-1]
+    elif timeline is not None and deployed_versions(signals):
+        dep = deployed_versions(signals)[-1]
         add(Evidence(DoctorEvidenceSource.DEPLOYMENTS,
                      f"Dernier déploiement en {env} : {dep.revision} {at_clock(dep.deployed_at, now)}",
                      at=dep.deployed_at))
@@ -566,7 +601,7 @@ def build_ledger(
     }
     shown = 0
     for event in signals.events:
-        if event.type in labels and event.at is not None and shown < 3:
+        if event.type in labels and event.at is not None and shown < 3 and _for_env(event, env):
             add(Evidence(DoctorEvidenceSource.EVENTS,
                          f"{labels[event.type]} {at_clock(event.at, now)}", at=event.at))
             shown += 1

@@ -194,7 +194,27 @@ class GitLabClient:
         pipelines = project.pipelines.list(per_page=1, get_all=False)
         if not pipelines:
             return None
-        pipeline = pipelines[0]
+        return self._pipeline_info(project, pipelines[0], trace_lines)
+
+    def get_last_env_pipeline(self, project_id: int, env: str, trace_lines: int = 60) -> dict | None:
+        """Latest pipeline of the branch that feeds *env* (CNP Doctor, read-only).
+
+        ``prod`` is fed by the default branch (``main``/``master``) and ``dev`` by
+        ``release-dev-*`` branches (ADR-0014): a feature-branch pipeline says nothing
+        about the environment.
+        """
+        project = self._gl.projects.get(project_id)
+        if env == "prod":
+            branch = getattr(project, "default_branch", None) or "main"
+            pipelines = project.pipelines.list(ref=branch, per_page=1, get_all=False)
+        else:
+            recent = project.pipelines.list(per_page=50, get_all=False)
+            pipelines = [p for p in recent if (p.ref or "").startswith("release-dev-")][:1]
+        if not pipelines:
+            return None
+        return self._pipeline_info(project, pipelines[0], trace_lines)
+
+    def _pipeline_info(self, project, pipeline, trace_lines: int) -> dict:
         info = {
             "id": pipeline.id,
             "status": pipeline.status,

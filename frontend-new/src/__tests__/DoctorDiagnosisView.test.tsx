@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { DoctorDiagnosisView } from '@/components/doctor/DoctorDiagnosisView';
 import { toast } from '@/components/ui/toast';
 import { appsApi } from '@/api/apps';
@@ -40,13 +40,22 @@ function renderView(
         <Routes>
           <Route path="/groups/:slug" element={view} />
           <Route path="/groups/:slug/apps/:appSlug" element={view} />
-          <Route path="/groups/:slug/apps/:appSlug/logs" element={<p>Page des logs</p>} />
+          <Route path="/groups/:slug/apps/:appSlug/logs" element={<Where page="Page des logs" />} />
           <Route path="/groups/:slug/apps/:appSlug/history" element={<p>Page de l’historique</p>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
   );
   return { ...utils, invalidate };
+}
+
+function Where({ page }: { page: string }) {
+  const location = useLocation();
+  return (
+    <p>
+      {page} <span data-testid="where">{location.pathname + location.search}</span>
+    </p>
+  );
 }
 
 function mockClipboard() {
@@ -320,6 +329,21 @@ describe('DoctorDiagnosisView : autres interactions', () => {
     renderView(REGRESSION_DIAGNOSIS, { path: '/groups/team-demo' });
     fireEvent.click(screen.getByRole('button', { name: 'Voir les logs' }));
     expect(await screen.findByText('Page des logs')).toBeTruthy();
+  });
+
+  it("vise l'application diagnostiquée, pas celle ouverte à l'écran", async () => {
+    // Remarque PO n° 6 : diagnostic de demo-shop (team-demo) gardé dans le panneau
+    // pendant qu'on consulte l'app « blog » d'un autre groupe.
+    const writeText = mockClipboard();
+    renderView(REGRESSION_AS_DEVELOPER, { path: '/groups/other-team/apps/blog' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copier la demande' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(writeText.mock.calls[0][0]).toContain('/groups/team-demo/apps/demo-shop');
+    expect(writeText.mock.calls[0][0]).not.toContain('other-team');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Voir les logs' }));
+    expect((await screen.findByTestId('where')).textContent).toBe('/groups/team-demo/apps/demo-shop/logs?env=prod');
   });
 
   it("ouvre l'onglet History", async () => {

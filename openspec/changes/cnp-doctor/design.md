@@ -3,8 +3,8 @@
 Base : branche `feature/cnp-doctor` (partie de `main`, POC reporté dans le commit 815a94f). Modèle maison à suivre : le conseiller FinOps (`backend/services/finops_advisor_service.py`, `backend/api/routes/finops_advisor.py`, `frontend-new/src/components/AIFinOpsAdvisor.tsx`) : analyse par code, un appel IA qui répond en JSON, repli `raw_text`, carte dans Overview.
 
 Faits vérifiés dans le code :
-- Historique ArgoCD : `argocd.get_app_history("{slug}-{env}")` renvoie des entrées `{id, deployedAt, revisions[]}` ; `revisions[0]` est le commit applicatif, et le tag d'image vaut ses 8 premiers caractères.
-- Le rollback existant (`POST /apps/{id}/rollback`, maintainer+) pousse un commit GitOps qui change le tag. Après un rollback, `revisions[0]` de la nouvelle entrée reste le HEAD applicatif : la version réellement en service se lit dans le tag d'image du statut ArgoCD.
+- Historique ArgoCD : entrées `{id, deployedAt, revisions[]}`. Les Applications ont plusieurs sources (chart du dépôt de l'app à `HEAD`, dépôt GitOps `ref: gitops`, dossier `platform`) : `revisions[0]` est le HEAD du chart au moment de la synchro, **pas** l'image (corrigé après revue du PO, 2026-11-23). Le tag déployé se lit dans `apps/<cluster>/<app>/values-<env>.yaml` du dépôt GitOps, à la révision GitOps de l'entrée (`backend/services/gitops_versions.py`, partagé avec la route de rollback).
+- Le rollback existant (`POST /apps/{id}/rollback`, maintainer+) pousse un commit GitOps qui change le tag ; il lit le tag de l'entrée visée de la même façon.
 - `resume` et `stop` sont maintainer+.
 - Événements CNP : `app.deployed`, `app.rollback`, `app.health.degraded`, `app.health.recovered`, `app.scale.*`, `cluster.offline`.
 - ArgoCD laisse une application en `Progressing` jusqu'à 10 minutes pendant un crash en boucle : `Progressing` seul ne suffit pas à conclure « déploiement en cours ».
@@ -32,10 +32,13 @@ Le code construit des entrées `E1..En` (source, libellé, détail, horodatage, 
 Catalogue `A1..An` : `rollback`, `resume`, `view_logs`, `open_pipeline`, `view_history`, `open_repo_compare`, `retry_later`, `contact_maintainer`. La cible du rollback (`history_id`, révision) vient de la chronologie. L'IA ordonne et commente ; `allowed` et `required_role` sont calculés selon le rôle.
 
 **5. Chronologie.**
-- Déploiements : historique ArgoCD trié par date.
+- Déploiements : historique ArgoCD trié par date, réduit aux changements d'image (une resynchro de la même image n'est pas un déploiement).
 - Début de panne : plus ancien horodatage parmi les événements Warning Kubernetes, les arrêts de conteneurs et le démarrage des pods en échec (à ajouter dans `get_pod_diagnostics`).
 - Corrélation : `haute` si le délai est d'au plus 10 minutes et que la version précédente a tourné au moins 30 minutes sans événement de dégradation ; `moyenne` jusqu'à 60 minutes ; `faible` jusqu'à 6 heures ; sinon aucune.
-- Dernière version saine : entrée précédente dont la révision diffère.
+- Dernière version saine : entrée précédente dont l'image diffère ; sa durée de vie s'arrête au déploiement qui l'a remplacée.
+- Pipeline : celui de la branche qui alimente l'environnement (branche par défaut pour la prod, `release-dev-*` pour le dev).
+- Événements de dégradation : seulement ceux de l'environnement diagnostiqué (`payload.env`), ou la perte du cluster.
+- Confiance de la cause : plafonnée à la corrélation calculée.
 
 **6. Commits modifiés.**
 Nouvelle méthode `GitLabClient.compare_revisions(project_id, from_sha, to_sha)` : 20 commits et 50 fichiers au plus, lien de comparaison. Titres et chemins passent par `redact()` avant l'envoi à l'IA.

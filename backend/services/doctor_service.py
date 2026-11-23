@@ -108,6 +108,7 @@ Règles :
 """
 
 _CONFIDENCES = {c.value: c for c in DoctorConfidence}
+_CONFIDENCE_RANK = {DoctorConfidence.FAIBLE: 0, DoctorConfidence.MOYENNE: 1, DoctorConfidence.HAUTE: 2}
 _CATEGORIES = {c.value: c for c in DoctorCauseCategory}
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
@@ -261,6 +262,11 @@ def apply_model_answer(result: DoctorResult, answer: ModelAnswer) -> None:
     result.explanation = answer.explanation or None
     if answer.cause is not None:
         result.cause = answer.cause
+        # Le modèle ne peut pas être plus sûr que le lien calculé entre la panne et le
+        # déploiement : une panne 4 h après reste une corrélation faible.
+        link = result.timeline.correlation if result.timeline is not None else None
+        if link is not None and _CONFIDENCE_RANK[result.cause.confidence] > _CONFIDENCE_RANK[link]:
+            result.cause.confidence = link
 
     if cited:
         for ev in result.evidence:

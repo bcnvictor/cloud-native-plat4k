@@ -318,9 +318,71 @@ def test_rule_cause_for_a_regression_mentions_the_delay():
 def test_degraded_event_before_the_deploy_lowers_confidence():
     deployed = NOW - timedelta(minutes=6)
     s = _broken(events=[PlatformEvent(type="app.health.degraded", severity="critical",
-                                      at=deployed - timedelta(hours=1), payload={})])
+                                      at=deployed - timedelta(hours=1), payload={"env": "prod"})])
     _, timeline = _verdict(s)
     assert timeline.correlation == DoctorConfidence.MOYENNE
+
+
+def test_a_degradation_of_the_other_env_is_ignored():
+    """Remarque PO n° 3 : une dégradation de la prod ne fausse pas le diagnostic du dev."""
+    deployed = NOW - timedelta(minutes=6)
+    prod_degraded = PlatformEvent(type="app.health.degraded", severity="critical",
+                                  at=deployed - timedelta(hours=1), payload={"env": "prod"})
+    s = _broken(env="dev", events=[prod_degraded])
+    _, timeline = _verdict(s)
+    assert timeline.correlation == DoctorConfidence.HAUTE
+    assert all(e.kind != "degraded" for e in timeline.entries)
+    ledger = build_ledger(s, DoctorVerdict.REGRESSION, timeline, None)
+    assert not any("dégradée" in ev.label for ev in ledger)
+
+
+def test_a_degradation_without_env_only_counts_when_the_cluster_went_offline():
+    deployed = NOW - timedelta(minutes=6)
+    unknown = PlatformEvent(type="app.health.degraded", severity="critical",
+                            at=deployed - timedelta(hours=1), payload={})
+    s = _broken(events=[unknown])
+    assert _verdict(s)[1].correlation == DoctorConfidence.HAUTE
+    offline = PlatformEvent(type="app.health.degraded", severity="critical", at=deployed - timedelta(hours=1),
+                            payload={"reason": "cluster_offline"})
+    assert _verdict(_broken(events=[offline]))[1].correlation == DoctorConfidence.MOYENNE
+
+
+def test_a_resync_of_the_same_image_is_not_a_new_deployment():
+    """Remarques PO n° 1 et 4 : A à 10 h 00, B à 10 h 05 qui plante, B resynchronisée
+    à 12 h 00 (même image). A n'a tourné que 5 min : le lien reste moyen, et B est
+    datée de son arrivée."""
+    a_at = NOW - timedelta(hours=2, minutes=5)
+    b_at = a_at + timedelta(minutes=5)
+    resync = NOW - timedelta(minutes=5)
+    history = [_dep(11, GOOD, a_at), _dep(12, BAD, b_at), _dep(13, BAD, resync)]
+    s = _broken(onset_after=timedelta(minutes=1),
+                argo=ArgoState(available=True, sync="Synced", health="Degraded", image_tag="f4e5d6c7",
+                               operation_phase="Succeeded", last_sync_at=resync, history=history),
+                k8s=_crashing_k8s(b_at + timedelta(minutes=1)),
+                logs=LogsState(available=True, total=3, errors=[
+                    LogLine(at=b_at + timedelta(minutes=1), level="ERROR", msg="KeyError: 'PAYMENT_API_URL'"),
+                ]))
+    verdict, timeline = _verdict(s)
+    assert verdict == DoctorVerdict.REGRESSION
+    assert timeline.suspect.history_id == 12 and timeline.suspect.deployed_at == b_at
+    assert timeline.last_healthy.revision == "a1b2c3d4"
+    assert timeline.last_healthy_ran_for_s == 5 * 60
+    assert timeline.correlation == DoctorConfidence.MOYENNE  # A trop brève pour servir de référence
+    assert [e.history_id for e in timeline.entries if e.kind == "deployment"] == [11, 12]
+
+
+def test_healthy_lifetime_stops_at_the_deployment_that_replaced_it():
+    """Remarque PO n° 4 : A, puis C (remplace A), puis B qui plante : A n'est plus la
+    version précédente ; C l'est, et sa durée de vie s'arrête à l'arrivée de B."""
+    c_at = NOW - timedelta(hours=1)
+    deployed = NOW - timedelta(minutes=6)
+    other = "c3c3c3c3" + "0" * 32
+    history = [_dep(10, GOOD, NOW - timedelta(days=3)), _dep(11, other, c_at), _dep(12, BAD, deployed)]
+    s = _broken(argo=ArgoState(available=True, sync="Synced", health="Degraded", image_tag="f4e5d6c7",
+                               operation_phase="Succeeded", last_sync_at=deployed, history=history))
+    _, timeline = _verdict(s)
+    assert timeline.last_healthy.history_id == 11
+    assert timeline.last_healthy_ran_for_s == (deployed - c_at).total_seconds()
 
 
 def test_errors_left_by_the_previous_version_do_not_make_a_rollback_unstable():
