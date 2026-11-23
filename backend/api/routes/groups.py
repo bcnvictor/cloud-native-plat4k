@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal, Optional
 
 from backend.api.deps import _access_level_to_tier, get_current_user
 from backend.api.schemas.members import MemberRead
@@ -12,6 +12,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
+
+# Panneaux du dashboard `cnp-group-overview` (infra/grafana/dashboard.json) que les boutons
+# « ouvrir dans Grafana » des pages d'app ciblent. À garder alignés avec les `id` du JSON.
+_GRAFANA_GROUP_PANEL_IDS = {"cpu": 21, "ram": 22, "logs": 41}
 
 _BOT_USERNAMES = {'4k-service-bot'}
 
@@ -79,6 +83,12 @@ async def get_group_activity(
 @router.get("/{gitlab_group_id}/grafana-url")
 async def get_group_grafana_url(
     gitlab_group_id: int,
+    panel: Optional[Literal["cpu", "ram", "logs"]] = Query(
+        None, description="Ouvre le dashboard directement sur ce panneau."
+    ),
+    env: Optional[Literal["dev", "prod"]] = Query(
+        None, description="Préselectionne la variable `env` du dashboard."
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -103,7 +113,13 @@ async def get_group_grafana_url(
     uid = settings.GRAFANA_DASHBOARD_UID
     gid = gitlab_group_id
 
+    dashboard_url = f"{base}/d/{uid}?orgId=1&auth_token={token}&var-group_id={gid}"
+    if env:
+        dashboard_url += f"&var-env={env}"
+    if panel:
+        dashboard_url += f"&viewPanel=panel-{_GRAFANA_GROUP_PANEL_IDS[panel]}"
+
     return {
-        "dashboard_url": f"{base}/d/{uid}?orgId=1&auth_token={token}&var-group_id={gid}",
+        "dashboard_url": dashboard_url,
         "panel_base_url": f"{base}/d-solo/{uid}?orgId=1&auth_token={token}&var-group_id={gid}",
     }
