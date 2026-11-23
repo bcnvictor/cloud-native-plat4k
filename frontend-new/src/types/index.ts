@@ -555,6 +555,9 @@ export interface AIFinOpsAdvice {
   estimated_cost_usd: number | null;
 }
 
+// ── CNP Doctor ──────────────────────────────────────────────────────────────────
+export * from './doctor';
+
 // ── Security tab (CI trivy/gitleaks summary) ────────────────────────────────────
 
 export type SecuritySeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';

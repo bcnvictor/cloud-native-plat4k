@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   IconDownload,
   IconExternalLink,
@@ -36,7 +36,19 @@ const ENV_OPTIONS = [
 
 export function LogsTab() {
   const { appSlug } = useParams<{ appSlug: string }>();
-  const [env, setEnv] = useState('dev');
+  // L'environnement vit dans l'URL (`?env=prod`) : « Voir les logs » du CNP Doctor doit
+  // le changer même quand l'onglet Logs est déjà ouvert sur l'autre environnement.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const env = searchParams.get('env') === 'prod' ? 'prod' : 'dev';
+  const setEnv = (next: string) =>
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        params.set('env', next);
+        return params;
+      },
+      { replace: true }
+    );
   const [level, setLevel] = useState('ALL');
   const [search, setSearch] = useState('');
   const topRef = useRef<HTMLDivElement>(null);

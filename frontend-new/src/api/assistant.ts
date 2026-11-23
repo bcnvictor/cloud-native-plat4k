@@ -9,6 +9,8 @@ import {
   ChatPayload,
   ChatResponse,
   ChatTurn,
+  DoctorDiagnosis,
+  DoctorEnv,
 } from '@/types';
 
 /** Nombre de tours renvoyés au backend pour garder le fil de la conversation. */
@@ -30,6 +32,16 @@ export function toChatHistory(
 
 export const assistantApi = {
   /** Conseiller FinOps IA : recommandations depuis 24 h de métriques Prometheus. */
+  /** CNP Doctor : diagnostic structuré d'un environnement (collecte, règles, IA, vérification). */
+  async diagnose(appId: number, env: DoctorEnv): Promise<DoctorDiagnosis> {
+    const res = await api.post<DoctorDiagnosis>(
+      `/apps/${appId}/doctor/diagnose`,
+      { env },
+      { timeout: 120_000 }
+    );
+    return res.data;
+  },
+
   async getAiAdvice(appId: number): Promise<AIFinOpsAdvice> {
     const res = await api.get<AIFinOpsAdvice>(`/apps/${appId}/ai-advice`, { timeout: 120_000 });
     return res.data;
