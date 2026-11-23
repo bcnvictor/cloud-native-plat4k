@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { IconAlertTriangle, IconExternalLink, IconKey, IconPackage, IconShieldCheck } from '@tabler/icons-react';
+import { IconAlertTriangle, IconExternalLink, IconKey, IconPackage, IconShieldCheck, IconTool } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { useSecurityReport } from '@/hooks/useSecurityReport';
 import { Card } from '@/components/ui/Card';
@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/EmptyState';
+import { SecurityFixDialog } from '@/components/SecurityFixDialog';
 import { timeAgo } from '@/utils/timeAgo';
 import { cn } from '@/utils/cn';
 import { SEVERITIES, gradeVariant, severityVariant } from '@/utils/securityGrade';
@@ -59,6 +60,7 @@ export function SecurityTab() {
   const { data, isLoading, isError, refetch } = useSecurityReport(app?.id);
   const [toolFilter, setToolFilter] = useState<SecurityToolName | 'all'>('all');
   const [sevFilter, setSevFilter] = useState<SecuritySeverity | 'all'>('all');
+  const [fixTarget, setFixTarget] = useState<string | null>(null);
 
   const rows: Row[] = useMemo(() => {
     const tools = data?.report?.tools ?? {};
@@ -118,6 +120,11 @@ export function SecurityTab() {
               {data.partial && ' · partial (a scanner did not complete)'}
             </p>
           </div>
+          {rows.length > 0 && (
+            <Button size="sm" variant="secondary" icon={<IconTool size={13} />} onClick={() => setFixTarget('all')}>
+              Fix all
+            </Button>
+          )}
           <a
             href={report.pipeline_url}
             target="_blank"
@@ -168,6 +175,9 @@ export function SecurityTab() {
                 </p>
               </div>
               <span className="text-xs text-muted-foreground shrink-0">{r.tool}</span>
+              <Button size="sm" variant="secondary" icon={<IconTool size={13} />} onClick={() => setFixTarget(r.id)}>
+                Fix
+              </Button>
             </div>
           ))
         )}
@@ -177,6 +187,13 @@ export function SecurityTab() {
           </div>
         )}
       </div>
+      <SecurityFixDialog
+        open={fixTarget !== null}
+        appId={app.id}
+        finding={fixTarget ?? ''}
+        onClose={() => setFixTarget(null)}
+        modeB={{ disabledReason: 'Not available yet.' }}
+      />
     </div>
   );
 }
