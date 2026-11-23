@@ -1,8 +1,5 @@
 """Which Prometheus / Loki to query: the app's target cluster, else the platform default.
-
-Group-level questions (costs) span every cluster: fan_out queries each Prometheus in
-parallel and skips the unreachable ones (AKS is stopped at night).
-"""
+Costs span every cluster: fan_out queries each Prometheus and skips unreachable ones."""
 import asyncio
 import logging
 from typing import Awaitable, Callable, Optional, TypeVar
