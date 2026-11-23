@@ -108,7 +108,7 @@ export function SecurityTab() {
     return (
       <div className="space-y-4">
         <Skeleton className="h-20 w-full" />
-        <div className="grid grid-cols-2 gap-4"><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
         <Skeleton className="h-48 w-full" />
       </div>
     );
@@ -167,7 +167,7 @@ export function SecurityTab() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <ToolCard name="trivy" tool={tools.trivy} />
         <ToolCard name="gitleaks" tool={tools.gitleaks} />
       </div>
@@ -181,7 +181,7 @@ export function SecurityTab() {
             </Button>
           ))}
           <span className="w-px h-4 bg-border mx-1" />
-          {(['all', ...SEVERITIES] as const).map((s) => (
+          {(['all', ...SEVERITIES.filter((x) => x !== 'UNKNOWN')] as const).map((s) => (
             <Button key={s} size="sm" variant={sevFilter === s ? 'primary' : 'ghost'} onClick={() => setSevFilter(s)}>
               {s === 'all' ? 'All severities' : s.toLowerCase()}
             </Button>

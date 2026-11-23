@@ -49,7 +49,7 @@ def generate_gitlab_ci(app_slug: str, app_id: int, framework: str, owner: str = 
         f'  CNP_CLUSTER_NAME: "{safe_cluster}"\n',
         f'  CNP_GITOPS_REPO: "{gitops_repo}"\n',
         f'  CNP_GITOPS_APP_PATH: "{gitops_app_path}"\n',
-        f'  CNP_CALLBACK_URL: "{_yaml_escape(callback_url())}"\n',
+        f'  CNP_REPORT_URL: "{_yaml_escape(callback_url())}"\n',
         "\n",
         "include:\n",
         f"  - project: '{templates_project}'\n",
