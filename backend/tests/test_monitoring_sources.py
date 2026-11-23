@@ -100,6 +100,8 @@ async def test_app_by_slug_loads_cluster(db_session):
 def test_normalize_url():
     assert normalize_url(" HTTP://10.0.152.88:9090/ ") == "http://10.0.152.88:9090"
     assert normalize_url("http://Host:9090/prom/") == "http://host:9090/prom"
+    # Les identifiants sont sensibles à la casse : seul l'hôte passe en minuscules
+    assert normalize_url("https://User:PaSs@Prom.Example:443/") == "https://User:PaSs@prom.example:443"
 
 
 async def test_prometheus_urls_dedupes_after_normalization(db_session, monkeypatch):
@@ -115,6 +117,31 @@ async def test_prometheus_urls_dedupes_after_normalization(db_session, monkeypat
 
 async def test_prometheus_urls_global_only(db_session):
     assert await prometheus_urls(db_session) == ["http://global:9090"]
+
+
+async def test_prometheus_urls_skips_global_when_every_cluster_has_one(db_session, monkeypatch):
+    # Le global désigne AKS sous un autre nom : l'interroger en plus doublerait les coûts d'AKS
+    monkeypatch.setattr(settings, "PROMETHEUS_URL", "http://prometheus-operated.monitoring.svc:9090")
+    db_session.add_all([
+        _cluster("cnp-k3s", "http://k3s:9090", None),
+        _cluster("cnp-aks", "http://10.0.152.88:9090", None),
+    ])
+    await db_session.commit()
+    assert await prometheus_urls(db_session) == ["http://k3s:9090", "http://10.0.152.88:9090"]
+
+
+async def test_prometheus_urls_keeps_global_for_app_without_cluster(db_session):
+    # Une app sans cluster cible lit ses métriques dans le Prometheus global
+    db_session.add(_cluster("cnp-k3s", "http://k3s:9090", None))
+    db_session.add(Application(name="Legacy", slug="legacy", owner="t", target_cluster_id=None))
+    await db_session.commit()
+    assert await prometheus_urls(db_session) == ["http://k3s:9090", "http://global:9090"]
+
+
+async def test_prometheus_urls_keeps_global_for_blank_cluster_url(db_session):
+    db_session.add_all([_cluster("cnp-k3s", "http://k3s:9090", None), _cluster("cnp-aks", "  ", None)])
+    await db_session.commit()
+    assert await prometheus_urls(db_session) == ["http://k3s:9090", "http://global:9090"]
 
 
 # ── fan-out ───────────────────────────────────────────────────────────────────

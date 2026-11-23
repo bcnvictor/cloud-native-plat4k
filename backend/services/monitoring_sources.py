@@ -21,10 +21,13 @@ T = TypeVar("T")
 
 
 def normalize_url(url: str) -> str:
-    """Comparable form: trimmed, lowercase scheme and host, no trailing slash."""
+    """Comparable form: trimmed, lowercase scheme and host, no trailing slash.
+    Userinfo (user:password@) is kept as is: credentials are case-sensitive."""
     parts = urlsplit(url.strip())
+    userinfo, at, hostport = parts.netloc.rpartition("@")
     return urlunsplit(
-        (parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), parts.query, parts.fragment)
+        (parts.scheme.lower(), f"{userinfo}{at}{hostport.lower()}", parts.path.rstrip("/"),
+         parts.query, parts.fragment)
     )
 
 
@@ -63,10 +66,22 @@ async def app_by_slug(db: AsyncSession, slug: str) -> Optional[Application]:
 
 
 async def prometheus_urls(db: AsyncSession) -> list[str]:
-    """Every distinct Prometheus: the clusters' (by id), then the platform default."""
+    """Every distinct Prometheus: the clusters' (by id), then the platform default.
+
+    The default is only a fallback, for clusters without their own URL and for apps
+    without a target cluster: it is left out when neither exists, so that a default
+    spelled differently from a cluster's URL (DNS name vs IP) can't make that
+    Prometheus count twice in the cost sums."""
     rows = await db.execute(select(ClusterConnection.prometheus_url).order_by(ClusterConnection.id))
+    cluster_urls = list(rows.scalars().all())
+    candidates = [u for u in cluster_urls if u and u.strip()]
+    needs_default = len(candidates) < len(cluster_urls) or (
+        await db.execute(select(Application.id).where(Application.target_cluster_id.is_(None)).limit(1))
+    ).first() is not None
+    if needs_default or not candidates:
+        candidates.append(settings.PROMETHEUS_URL)
     urls: list[str] = []
-    for url in [*rows.scalars().all(), settings.PROMETHEUS_URL]:
+    for url in candidates:
         if url and url.strip():
             normalized = normalize_url(url)
             if normalized not in urls:
