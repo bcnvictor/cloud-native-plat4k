@@ -1,10 +1,12 @@
 """Fichiers cnp-gitops écrits par le backend pour un env éphémère (ADR-0030 §4 à §7).
 
-Le backend déclare l'env et pose les ressources plateforme. Il ne génère pas
-l'Application de l'app : c'est update-gitops qui la crée après le build de l'image,
-pour qu'ArgoCD ne voie jamais une Application sans image (ADR-0014).
+Le backend écrit tout : la déclaration et les ressources plateforme à la création,
+puis les values et l'Application de l'app quand un pipeline de la branche a construit
+l'image (ADR-0014 : ArgoCD ne voit jamais d'Application sans image). La CI d'une
+branche n'a aucun droit d'écriture sur cnp-gitops : son .gitlab-ci.yml n'est pas relu.
 """
 
+import copy
 import re
 from dataclasses import dataclass
 
@@ -13,6 +15,9 @@ from shared.models import ephemeral_env_name, sanitize_k8s_label_value
 
 PULL_SECRET_NAME = "gitlab-registry"
 PLATFORM_PROJECT = "cnp-platform"
+APP_PROJECT = "cnp-ephemeral"
+# Values de l'app lues sur la branche, dans cet ordre (comme update-gitops pour dev)
+SOURCE_VALUES_FILES = ("chart/values-dev.yaml", "chart/values.yaml")
 # "--" n'apparaît jamais dans un slug : l'Application plateforme ne peut pas entrer en
 # collision avec l'Application de l'app d'un autre env (branches `x` et `x-platform`).
 PLATFORM_SUFFIX = "--platform"
@@ -41,6 +46,14 @@ class EphemeralTarget:
         return f"apps/{self.cluster}/{self.app_slug}/ephemeral/{self.env_slug}"
 
     @property
+    def values_path(self) -> str:
+        return f"{self.root}/values.yaml"
+
+    @property
+    def app_application_path(self) -> str:
+        return f"argocd/{self.cluster}/{self.app_slug}/ephemeral/{self.env_slug}.yaml"
+
+    @property
     def platform_app_path(self) -> str:
         return f"argocd/{self.cluster}/{self.app_slug}/ephemeral/{self.env_slug}{PLATFORM_SUFFIX}.yaml"
 
@@ -54,7 +67,7 @@ def _dump(manifest: dict) -> str:
 
 
 def _declaration(t: EphemeralTarget) -> dict:
-    # Lu par update-gitops pour retrouver l'env d'une branche
+    # Trace lisible de l'env dans le dépôt (branche d'origine), lue par personne
     return {"app": t.app_slug, "slug": t.env_slug, "name": t.name, "branch": t.branch, "namespace": t.name}
 
 
@@ -163,3 +176,64 @@ def destroy_paths(cluster: str, app_slug: str, env_slug: str) -> tuple[list[str]
         [f"{argocd_dir}/{env_slug}.yaml", f"{argocd_dir}/{env_slug}{PLATFORM_SUFFIX}.yaml"],
         [f"apps/{cluster}/{app_slug}/ephemeral/{env_slug}"],
     )
+
+
+def _app_repo_url(repo_url: str) -> str:
+    url = _clean_repo_url(repo_url).rstrip("/")
+    return url if url.endswith(".git") else f"{url}.git"
+
+
+def build_values(source_values: dict, t: EphemeralTarget, image_tag: str) -> dict:
+    """Values de l'env : celles de dev lues sur la branche, avec le tag de l'image construite."""
+    values = copy.deepcopy(source_values) if isinstance(source_values, dict) else {}
+    values.setdefault("image", {})["tag"] = image_tag
+    # Les values de dev portent le host de dev : jamais d'Ingress tant que l'env
+    # n'a pas son propre host (4K-287), sinon il volerait le trafic de dev.
+    values.setdefault("ingress", {})["enabled"] = False
+    if t.owner:
+        values.setdefault("app", {})["owner"] = t.owner
+    return values
+
+
+def _app_application(t: EphemeralTarget, app_repo_url: str, commit_sha: str) -> dict:
+    return {
+        "apiVersion": "argoproj.io/v1alpha1",
+        "kind": "Application",
+        "metadata": {
+            "name": t.name,
+            "namespace": "argocd",
+            "finalizers": ["resources-finalizer.argocd.argoproj.io"],
+        },
+        "spec": {
+            "project": APP_PROJECT,
+            "sources": [
+                {
+                    # Chart figé sur le commit dont l'image a été construite : un push
+                    # pas encore buildé ne change ni le chart ni l'image déployés.
+                    "repoURL": _app_repo_url(app_repo_url),
+                    "targetRevision": commit_sha,
+                    "path": "chart",
+                    "helm": {"valueFiles": [f"$gitops/{t.values_path}"]},
+                },
+                {"repoURL": _clean_repo_url(t.gitops_repo_url), "targetRevision": "HEAD", "ref": "gitops"},
+            ],
+            "destination": {"server": "https://kubernetes.default.svc", "namespace": t.name},
+            # Le namespace est créé par l'Application plateforme : réessayer tant qu'il manque
+            "syncPolicy": {"automated": {"prune": True, "selfHeal": True}, "retry": SYNC_RETRY},
+        },
+    }
+
+
+def deployment_files(
+    t: EphemeralTarget, source_values: dict, app_repo_url: str, commit_sha: str
+) -> list[dict]:
+    """Values et Application de l'app pour le commit `commit_sha`, dont l'image est construite.
+
+    Le tag d'image est le sha court (8 caractères) : celui que docker-build pousse
+    (CI_COMMIT_SHORT_SHA).
+    """
+    values = build_values(source_values, t, commit_sha[:8])
+    return [
+        {"file_path": t.values_path, "content": _dump(values)},
+        {"file_path": t.app_application_path, "content": _dump(_app_application(t, app_repo_url, commit_sha))},
+    ]

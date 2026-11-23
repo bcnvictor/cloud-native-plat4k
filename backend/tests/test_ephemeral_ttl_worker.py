@@ -65,7 +65,7 @@ async def test_detruit_les_envs_expires_seulement(db_session, app_row, bot):
 
     result = await run_ephemeral_ttl_reconciliation(db_session, now=NOW)
 
-    assert result == {"destroyed": 1, "pending": 0}
+    assert result == {"deployed": 0, "destroyed": 1, "pending": 0}
     assert bot.deleted == [["apps/cnp-aks/my-app/ephemeral/old"]]
     await db_session.refresh(expired)
     await db_session.refresh(alive)
@@ -97,7 +97,7 @@ async def test_reprend_une_destruction_echouee(db_session, app_row, bot):
 
     result = await run_ephemeral_ttl_reconciliation(db_session, now=NOW)
 
-    assert result == {"destroyed": 1, "pending": 0}
+    assert result == {"deployed": 0, "destroyed": 1, "pending": 0}
     await db_session.refresh(env)
     assert env.status == EphemeralEnvStatus.DESTROYED
 
@@ -108,13 +108,13 @@ async def test_echec_gitops_laisse_l_env_a_reprendre(db_session, app_row, bot):
 
     result = await run_ephemeral_ttl_reconciliation(db_session, now=NOW)
 
-    assert result == {"destroyed": 0, "pending": 1}
+    assert result == {"deployed": 0, "destroyed": 0, "pending": 1}
     await db_session.refresh(env)
     assert env.status == EphemeralEnvStatus.DESTROYING
 
     bot.fail = False
     result = await run_ephemeral_ttl_reconciliation(db_session, now=NOW)
-    assert result == {"destroyed": 1, "pending": 0}
+    assert result == {"deployed": 0, "destroyed": 1, "pending": 0}
     # Revue #83 : la reprise garde la raison du premier passage
     log = (await db_session.execute(select(AuditLog))).scalar_one()
     assert log.action == "ephemeral:expire:old"
@@ -124,5 +124,5 @@ async def test_echec_gitops_laisse_l_env_a_reprendre(db_session, app_row, bot):
 async def test_ignore_les_envs_deja_detruits(db_session, app_row, bot):
     await _env(db_session, app_row, "gone", -100, status=EphemeralEnvStatus.DESTROYED)
     result = await run_ephemeral_ttl_reconciliation(db_session, now=NOW)
-    assert result == {"destroyed": 0, "pending": 0}
+    assert result == {"deployed": 0, "destroyed": 0, "pending": 0}
     assert bot.deleted == []

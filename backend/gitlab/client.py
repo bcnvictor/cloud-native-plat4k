@@ -200,6 +200,31 @@ class GitLabClient:
             logger.warning("Failed to cancel pipeline %s of project %s", pipeline_id, gitlab_project_id)
             return False
 
+    def built_head_commit(self, gitlab_project_id: int, branch: str) -> tuple[str, int] | None:
+        """(sha, pipeline_id) of the branch head if a pipeline succeeded on that commit, else None.
+
+        Looks up pipelines by sha rather than by ref: with an open MR, the branch only
+        gets merge request pipelines, whose ref is refs/merge-requests/<iid>/head.
+        """
+        project = self._gl.projects.get(gitlab_project_id, lazy=True)
+        try:
+            sha = project.branches.get(branch).commit["id"]
+        except GitlabGetError:
+            return None
+        pipelines = project.pipelines.list(sha=sha, status="success", order_by="id", sort="desc", per_page=1, get_all=False)
+        if not pipelines:
+            return None
+        return sha, pipelines[0].id
+
+    def read_first_file(self, project_path: str, file_paths: tuple[str, ...], ref: str) -> str | None:
+        """Content of the first of file_paths that exists at ref, None if none does."""
+        for file_path in file_paths:
+            try:
+                return self.read_file(project_path, file_path, ref=ref)
+            except GitlabGetError:
+                continue
+        return None
+
     def get_pipeline_status(self, gitlab_project_id: int, pipeline_id: int) -> str | None:
         """GitLab pipeline status (running, success, failed…), None if unavailable."""
         try:

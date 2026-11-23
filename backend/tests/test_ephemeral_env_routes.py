@@ -42,6 +42,10 @@ class FakeBot:
         self.gitops: set[str] = set()
         # Fichier que le job CI repousse juste après la prochaine suppression
         self.ci_pushes_after_delete: str | None = None
+        # (sha, pipeline_id) du dernier commit construit de la branche, None si aucun
+        self.built: tuple[str, int] | None = None
+        self.values_files: dict[str, str] = {"chart/values-dev.yaml": "replicaCount: 1\nimage:\n  repository: registry.gitlab.com/4k-cnp-2027/cnp-apps/my-app\n  tag: latest\ningress:\n  enabled: true\n  host: dev.my-app.cloud-native-plat4k.me\n"}
+        self.read_refs: list[str] = []
 
     def branch_exists(self, project_path, branch):
         return branch in self.branches
@@ -63,6 +67,16 @@ class FakeBot:
 
     def get_pipeline_status(self, gitlab_project_id, pipeline_id):
         return self.pipeline_status
+
+    def built_head_commit(self, gitlab_project_id, branch):
+        return self.built
+
+    def read_first_file(self, project_path, file_paths, ref):
+        self.read_refs.append(ref)
+        for path in file_paths:
+            if path in self.values_files:
+                return self.values_files[path]
+        return None
 
     def cancel_pipeline(self, gitlab_project_id, pipeline_id):
         self.cancelled.append((gitlab_project_id, pipeline_id))
@@ -300,18 +314,12 @@ class TestLecture:
         argocd_apps["my-app--feat-login"] = {"status": {
             "sync": {"status": "Synced"},
             "health": {"status": "Healthy"},
-            # Le sidecar est listé en premier : seul le tag de l'image de l'app compte
-            "summary": {"images": [
-                "docker.io/istio/proxyv2:1.24.0",
-                "registry.gitlab.com/4k-cnp-2027/cnp-apps/my-app:abc12345@sha256:0123abcd",
-            ]},
         }}
         resp = await client.get(f"/api/v1/apps/{app_row.id}/ephemeral-envs", headers=_auth(developer))
         env = resp.json()[0]
         assert env["status"] == "active"
         assert env["sync_status"] == "Synced"
         assert env["health_status"] == "Healthy"
-        assert env["image_tag"] == "abc12345"
 
     async def test_passe_failed_quand_le_pipeline_echoue(self, client, app_row, developer, bot, argocd_apps):
         await _create(client, app_row.id, developer)
@@ -459,10 +467,99 @@ class TestDestruction:
         del argocd_apps["my-app--feat-login--platform"]
         db_session.expire_all()
         result = await run_ephemeral_ttl_reconciliation(db_session)
-        assert result == {"destroyed": 1, "pending": 0}
+        assert result == {"deployed": 0, "destroyed": 1, "pending": 0}
         log = (await db_session.execute(
             select(AuditLog).where(AuditLog.action == "ephemeral:destroy:feat-login")
         )).scalar_one()
         assert log.user_id is not None
         assert log.extra["reason"] == "manual"
         assert (await _create(client, app_row.id, developer)).status_code == 201
+
+
+SHA = "0123456789abcdef0123456789abcdef01234567"
+SHA2 = "fedcba9876543210fedcba9876543210fedcba98"
+
+
+class TestDeploiement:
+    """Le backend écrit l'Application de l'app quand un pipeline a construit la branche
+    (revue de cnp-ci-modules !4 : la CI d'une branche ne pousse jamais dans cnp-gitops)."""
+
+    async def _deploy_files(self, bot) -> dict[str, str]:
+        _, files, message = bot.pushed[-1]
+        assert message.startswith("chore(gitops): deploy ephemeral env")
+        return {f["file_path"]: f["content"] for f in files}
+
+    async def test_rien_n_est_deploye_avant_le_build(self, client, db_session, app_row, developer, bot):
+        await _create(client, app_row.id, developer)
+        result = await run_ephemeral_ttl_reconciliation(db_session)
+        assert result["deployed"] == 0
+        assert len(bot.pushed) == 1  # seule la déclaration
+
+    async def test_deploie_le_commit_construit(self, client, db_session, app_row, developer, bot):
+        import yaml
+
+        env_id = (await _create(client, app_row.id, developer)).json()["id"]
+        bot.built = (SHA, 777)
+
+        result = await run_ephemeral_ttl_reconciliation(db_session)
+
+        assert result["deployed"] == 1
+        files = await self._deploy_files(bot)
+        root = "apps/cnp-aks/my-app/ephemeral/feat-login"
+        assert set(files) == {f"{root}/values.yaml", "argocd/cnp-aks/my-app/ephemeral/feat-login.yaml"}
+        values = yaml.safe_load(files[f"{root}/values.yaml"])
+        assert values["image"] == {"repository": "registry.gitlab.com/4k-cnp-2027/cnp-apps/my-app", "tag": SHA[:8]}
+        assert values["ingress"]["enabled"] is False
+        assert values["app"]["owner"] == "team-a"
+        application = yaml.safe_load(files["argocd/cnp-aks/my-app/ephemeral/feat-login.yaml"])
+        assert application["spec"]["sources"][0]["targetRevision"] == SHA
+        # Les values sont lues sur le commit construit, pas sur la tête mouvante de la branche
+        assert bot.read_refs == [SHA]
+
+        env = await db_session.get(EphemeralEnvironment, env_id)
+        await db_session.refresh(env)
+        assert env.image_tag == SHA[:8]
+        assert env.pipeline_id == 777
+
+    async def test_idempotent_puis_suit_les_nouveaux_commits(self, client, db_session, app_row, developer, bot):
+        await _create(client, app_row.id, developer)
+        bot.built = (SHA, 777)
+        assert (await run_ephemeral_ttl_reconciliation(db_session))["deployed"] == 1
+        assert (await run_ephemeral_ttl_reconciliation(db_session))["deployed"] == 0
+
+        bot.built = (SHA2, 778)
+        assert (await run_ephemeral_ttl_reconciliation(db_session))["deployed"] == 1
+        files = await self._deploy_files(bot)
+        assert SHA2[:8] in files["apps/cnp-aks/my-app/ephemeral/feat-login/values.yaml"]
+
+    async def test_un_env_en_echec_repart_sur_un_nouveau_build(self, client, db_session, app_row, developer, bot):
+        bot.fail_trigger = True
+        env_id = (await _create(client, app_row.id, developer)).json()["id"]
+        bot.built = (SHA, 777)
+
+        await run_ephemeral_ttl_reconciliation(db_session)
+
+        env = await db_session.get(EphemeralEnvironment, env_id)
+        await db_session.refresh(env)
+        assert env.status == EphemeralEnvStatus.PROVISIONING
+
+    async def test_pas_de_deploiement_sans_fichier_de_values(self, client, db_session, app_row, developer, bot):
+        await _create(client, app_row.id, developer)
+        bot.built = (SHA, 777)
+        bot.values_files = {}
+        assert (await run_ephemeral_ttl_reconciliation(db_session))["deployed"] == 0
+        assert len(bot.pushed) == 1
+
+    async def test_un_env_en_destruction_n_est_pas_redeploye(
+        self, client, db_session, app_row, developer, bot, argocd_apps
+    ):
+        env_id = (await _create(client, app_row.id, developer)).json()["id"]
+        argocd_apps["my-app--feat-login--platform"] = {}
+        await _destroy(client, app_row.id, env_id, developer)  # reste en destroying
+        bot.built = (SHA, 777)
+        pushes = len(bot.pushed)
+
+        result = await run_ephemeral_ttl_reconciliation(db_session)
+
+        assert result["deployed"] == 0
+        assert len(bot.pushed) == pushes

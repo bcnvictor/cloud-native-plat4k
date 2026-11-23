@@ -149,3 +149,36 @@ def test_chemins_de_destruction_couvrent_ce_que_cree_la_creation():
         assert path in files or any(path.startswith(d + "/") for d in directories)
     # L'Application de l'app (créée par la CI) aussi
     assert "argocd/cnp-aks/my-app/ephemeral/feat-login.yaml" in files
+
+
+def test_fichiers_de_deploiement():
+    from backend.gitops.ephemeral import deployment_files
+
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    source = {"image": {"repository": "registry.gitlab.com/g/my-app", "tag": "latest"},
+              "ingress": {"enabled": True, "host": "dev.my-app.example"}, "replicaCount": 2}
+    files = {f["file_path"]: yaml.safe_load(f["content"])
+             for f in deployment_files(_target(), source, "https://oauth2:tok@gitlab.com/g/my-app", sha)}
+
+    values = files[f"{ROOT}/values.yaml"]
+    assert values["image"]["tag"] == "01234567"
+    assert values["ingress"]["enabled"] is False  # jamais le host de dev
+    assert values["replicaCount"] == 2
+    assert values["app"]["owner"] == "team-a"
+    assert source["image"]["tag"] == "latest"  # la source n'est pas modifiée
+
+    app = files["argocd/cnp-aks/my-app/ephemeral/feat-login.yaml"]
+    assert app["metadata"]["name"] == "my-app--feat-login"
+    assert "resources-finalizer.argocd.argoproj.io" in app["metadata"]["finalizers"]
+    spec = app["spec"]
+    assert spec["project"] == "cnp-ephemeral"
+    chart, gitops = spec["sources"]
+    assert chart == {
+        "repoURL": "https://gitlab.com/g/my-app.git",  # sans identifiants
+        "targetRevision": sha,
+        "path": "chart",
+        "helm": {"valueFiles": [f"$gitops/{ROOT}/values.yaml"]},
+    }
+    assert gitops == {"repoURL": GITOPS_URL, "targetRevision": "HEAD", "ref": "gitops"}
+    assert spec["destination"]["namespace"] == "my-app--feat-login"
+    assert spec["syncPolicy"]["retry"]["limit"] >= 5
