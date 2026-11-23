@@ -15,6 +15,7 @@ import { useAppMetrics } from '@/hooks/useAppMetrics';
 import { useAppStatus } from '@/hooks/useAppStatus';
 import { useAppScaleState } from '@/hooks/useAppScaleState';
 import { useMetricUrl } from '@/hooks/useMonitoringConfig';
+import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { appUrl, portForwardCommand } from '@/utils/appUrls';
 import { clustersApi } from '@/api/clusters';
 import { isPrivateCluster } from '@/utils/clusterUtils';
@@ -167,8 +168,9 @@ function EnvCard({ title, envKey, appId, appName, argo, scaleState }: EnvCardPro
 export function OverviewTab() {
   const { app, isLoading } = useAppDetail();
   const metrics = useAppMetrics(app?.slug ?? '', app?.target_cluster_id);
-  const cpuUrl = useMetricUrl(app?.slug ?? '', 'cpu');
-  const ramUrl = useMetricUrl(app?.slug ?? '', 'ram');
+  const group = useCurrentGroup();
+  const cpuUrl = useMetricUrl(app?.slug ?? '', 'cpu', group?.gitlab_group_id);
+  const ramUrl = useMetricUrl(app?.slug ?? '', 'ram', group?.gitlab_group_id);
   const { data: runtimeStatus } = useAppStatus(app?.id);
   const { data: scale } = useAppScaleState(app?.id);
   const { data: clusters = [] } = useQuery({ queryKey: ['clusters'], queryFn: clustersApi.list });

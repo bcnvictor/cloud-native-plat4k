@@ -8,6 +8,7 @@ import {
 } from '@tabler/icons-react';
 import { useAppLogs } from '@/hooks/useAppLogs';
 import { useLokiUrl } from '@/hooks/useMonitoringConfig';
+import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
@@ -40,7 +41,8 @@ export function LogsTab() {
   const [level, setLevel] = useState('ALL');
   const [search, setSearch] = useState('');
   const topRef = useRef<HTMLDivElement>(null);
-  const lokiUrl = useLokiUrl(appSlug!);
+  const group = useCurrentGroup();
+  const lokiUrl = useLokiUrl(group?.gitlab_group_id, env === 'prod' ? 'prod' : 'dev');
 
   const { data: logs = [], isLoading, isError } = useAppLogs({
     appSlug: appSlug!,
@@ -94,7 +96,7 @@ export function LogsTab() {
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <IconExternalLink size={13} />
-            Open in Loki
+            Open in Grafana
           </a>
         )}
         {logs.some((l) => l.level === 'ERROR') && (
