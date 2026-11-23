@@ -30,7 +30,7 @@ from backend.ai.factory import get_provider
 from backend.ai.pricing import estimate_cost
 from backend.ai.provider import LLMMessage
 from backend.core.config import settings
-from backend.db.models import AIUsageRecord, Application, ClusterConnection, User
+from backend.db.models import AIUsageRecord, Application, User
 from backend.services.ai_settings_service import EffectiveAIConfig
 from backend.services.monitoring_service import (
     CPU_CORE_HOUR_USD,
@@ -38,6 +38,7 @@ from backend.services.monitoring_service import (
     RAM_GIB_HOUR_USD,
     get_app_resource_usage,
 )
+from backend.services.monitoring_sources import resolve_prometheus_url
 
 logger = logging.getLogger(__name__)
 
@@ -246,12 +247,8 @@ Consignes pour rédiger les recommandations FinOps :
 
 
 async def _prometheus_url(db: AsyncSession, app: Application) -> str:
-    """Prometheus of the app's target cluster, else the platform one (as routes/monitoring)."""
-    if app.target_cluster_id:
-        cluster = await db.get(ClusterConnection, app.target_cluster_id)
-        if cluster is not None and cluster.prometheus_url:
-            return cluster.prometheus_url
-    return settings.PROMETHEUS_URL
+    """Prometheus of the app's target cluster, else the platform one."""
+    return await resolve_prometheus_url(db, app=app)
 
 
 async def analyze_usage(db: AsyncSession, app: Application) -> UsageAnalysis:

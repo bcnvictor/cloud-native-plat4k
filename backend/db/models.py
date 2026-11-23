@@ -138,6 +138,8 @@ class Application(Base):
     gitlab_project_id = Column(BigInteger, nullable=True)
     owning_gitlab_group_id = Column(BigInteger, nullable=True)
     target_cluster_id = Column(Integer, ForeignKey("cluster_connections.id", ondelete="SET NULL"), nullable=True)
+    # Session async : charger via joinedload/selectinload, jamais en lazy load implicite.
+    target_cluster = relationship("ClusterConnection")
     origin = Column(String, nullable=True)
     source_url = Column(String, nullable=True)
     framework = Column(String, nullable=True)

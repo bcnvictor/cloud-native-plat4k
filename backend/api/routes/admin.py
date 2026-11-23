@@ -9,7 +9,8 @@ from backend.db.models import GitLabGroup, User
 from backend.db.session import get_db
 from backend.services.audit_service import AuditService
 from backend.services.gitlab_sync_service import _build_gitlab_client, run_gitlab_sync
-from backend.services.monitoring_service import get_cost_by_team
+from backend.services.monitoring_service import get_cost_by_team, merge_cost_by_team
+from backend.services.monitoring_sources import fan_out, prometheus_urls
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -162,9 +163,9 @@ async def get_finops_cost_by_team(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> list[TeamCostEntry]:
-    """Coût 30j par équipe (label_cnp_io_group_id), résolu vers le nom du groupe GitLab."""
+    """Coût 30j par équipe (label_cnp_io_group_id), sommé sur tous les clusters et résolu vers le nom du groupe GitLab."""
     try:
-        entries = await get_cost_by_team(settings.PROMETHEUS_URL)
+        entries = merge_cost_by_team(await fan_out(await prometheus_urls(db), get_cost_by_team))
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Prometheus unavailable: {e}")
 
