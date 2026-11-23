@@ -97,8 +97,10 @@ class Settings(BaseSettings):
     EPHEMERAL_MAX_TTL_HOURS: int = 168
     # Chaque env émet un certificat Let's Encrypt (50 par semaine sur le domaine) : quota par app
     EPHEMERAL_MAX_PER_APP: int = 3
-    # Identifiants registry du bot (clés username/password) lus par ESO pour le pull secret
-    # des namespaces éphémères ; sous secret/apps/ pour rester dans la policy eso-reader.
+    # Identifiants registry (clés username/password) lus par ESO pour le pull secret des
+    # namespaces éphémères ; sous secret/apps/ pour rester dans la policy eso-reader.
+    # Deploy token de groupe limité à read_registry, jamais le token du bot : le chart vient
+    # d'une branche non relue et peut lire ce Secret.
     EPHEMERAL_REGISTRY_VAULT_KEY: str = "secret/apps/_platform/gitlab-registry"
     EPHEMERAL_REGISTRY_SERVER: str = "registry.gitlab.com"
 

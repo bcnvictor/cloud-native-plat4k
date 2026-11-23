@@ -27,7 +27,7 @@ REQUIRED_FILES = {".gitlab-ci.yml", "Dockerfile", "chart/Chart.yaml"}
 
 class FakeBot:
     def __init__(self):
-        self.branches = {"feat/login", "feat/other", "feat/third", "feat/fourth"}
+        self.branches = {"feat/login", "feat/other", "feat/third", "feat/fourth", "login", "login-platform"}
         self.files = set(REQUIRED_FILES)
         self.pushed: list[tuple[str, list[dict], str]] = []
         self.pipelines: list[tuple[int, str]] = []
@@ -163,7 +163,7 @@ class TestCreation:
         assert project == "cnp/cnp-gitops"
         paths = {f["file_path"] for f in files}
         assert "apps/cnp-aks/my-app/ephemeral/feat-login/env.yaml" in paths
-        assert "argocd/cnp-aks/my-app/ephemeral/feat-login-platform.yaml" in paths
+        assert "argocd/cnp-aks/my-app/ephemeral/feat-login--platform.yaml" in paths
         assert bot.pipelines == [(123, "feat/login")]
 
         env = (await db_session.execute(select(EphemeralEnvironment))).scalar_one()
@@ -214,6 +214,28 @@ class TestCreation:
         resp = await _create(client, app_row.id, developer, branch="feat/third")
         assert resp.status_code == 409
 
+    async def test_branches_x_et_x_platform(self, client, app_row, developer, bot):
+        """Revue #82 : deux envs `login` et `login-platform` ont des fichiers disjoints."""
+        assert (await _create(client, app_row.id, developer, branch="login")).status_code == 201
+        assert (await _create(client, app_row.id, developer, branch="login-platform")).status_code == 201
+        paths = [{f["file_path"] for f in files} for _, files, _ in bot.pushed]
+        assert paths[0].isdisjoint(paths[1])
+
+    async def test_creation_concurrente_sur_la_meme_branche_donne_409(
+        self, client, db_session, app_row, developer, bot, monkeypatch
+    ):
+        """Revue #82 : l'index unique (app_id, slug) refuse le second env : 409, pas 500."""
+        assert (await _create(client, app_row.id, developer)).status_code == 201
+
+        async def no_alive(self, app_id):
+            return []  # la seconde requête n'a pas vu la ligne de la première
+
+        monkeypatch.setattr(ephemeral_env_service.EphemeralEnvService, "_alive", no_alive)
+        resp = await _create(client, app_row.id, developer)
+        assert resp.status_code == 409
+        assert len(bot.pushed) == 1
+        assert len((await db_session.execute(select(EphemeralEnvironment))).scalars().all()) == 1
+
     async def test_ttl_hors_limites(self, client, app_row, developer, bot):
         resp = await _create(client, app_row.id, developer, ttl_hours=settings.EPHEMERAL_MAX_TTL_HOURS + 1)
         assert resp.status_code == 422
@@ -251,7 +273,11 @@ class TestLecture:
         argocd_apps["my-app--feat-login"] = {"status": {
             "sync": {"status": "Synced"},
             "health": {"status": "Healthy"},
-            "summary": {"images": ["registry.gitlab.com/x/my-app:abc12345"]},
+            # Le sidecar est listé en premier : seul le tag de l'image de l'app compte
+            "summary": {"images": [
+                "docker.io/istio/proxyv2:1.24.0",
+                "registry.gitlab.com/4k-cnp-2027/cnp-apps/my-app:abc12345@sha256:0123abcd",
+            ]},
         }}
         resp = await client.get(f"/api/v1/apps/{app_row.id}/ephemeral-envs", headers=_auth(developer))
         env = resp.json()[0]

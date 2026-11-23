@@ -18,6 +18,7 @@ from shared.models import (
     ephemeral_slug,
 )
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.alerting.constants import EventType
@@ -69,12 +70,26 @@ def to_response(env: EphemeralEnvironment, app_slug: str, argocd_status: dict | 
     )
 
 
+def _app_image_tag(images: list[str], app: Application) -> str | None:
+    """Tag de l'image de l'app parmi les images de l'Application (sidecars ignorés).
+
+    L'image est poussée par la CI dans le registry du projet : son dépôt se termine par
+    le chemin du repo de l'app (registry.gitlab.com/<groupe>/<app>:<tag>).
+    """
+    repo_path = extract_project_path(app.repo_url).lower() if app.repo_url else app.slug
+    for image in images:
+        name, sep, tag = image.split("@", 1)[0].rpartition(":")
+        if sep and "/" not in tag and name.lower().endswith(repo_path):
+            return tag
+    return None
+
+
 class EphemeralEnvService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def _get_app(self, app_id: int) -> Application:
-        app = await self.db.get(Application, app_id)
+    async def _get_app(self, app_id: int, for_update: bool = False) -> Application:
+        app = await self.db.get(Application, app_id, with_for_update=for_update)
         if app is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
         return app
@@ -121,7 +136,10 @@ class EphemeralEnvService:
 
     async def create(self, app_id: int, branch: str, ttl_hours: int | None, user: User) -> EphemeralEnvResponse:
         branch = branch.strip()
-        app = await self._get_app(app_id)
+        # Verrou sur la ligne de l'app jusqu'au commit : deux créations simultanées ne
+        # peuvent ni dépasser EPHEMERAL_MAX_PER_APP ni prendre le même slug. Il est tenu
+        # pendant les appels GitLab (quelques secondes), acceptable pour une création.
+        app = await self._get_app(app_id, for_update=True)
         if not app.repo_url or not app.gitlab_project_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Application has no GitLab repository")
         cluster = await self._get_cluster(app)
@@ -160,7 +178,13 @@ class EphemeralEnvService:
             created_by_user_id=user.id,
         )
         self.db.add(env)
-        await self.db.flush()
+        try:
+            await self.db.flush()
+        except IntegrityError:
+            # Filet de sécurité si le verrou n'a pas joué (SQLite) : l'index unique partiel
+            # (app_id, slug) a refusé un second env vivant sur la même branche.
+            await self.db.rollback()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Branch '{branch}' already has an ephemeral environment")
 
         target = EphemeralTarget(
             cluster=cluster.name,
@@ -219,24 +243,26 @@ class EphemeralEnvService:
         cluster = await self._cluster_by_name(env.cluster_name)
         if cluster is not None and cluster.argocd_url:
             try:
-                argocd = get_argocd_client_for_cluster(cluster)
+                # Le client lit ses identifiants dans Vault de façon synchrone
+                argocd = await anyio.to_thread.run_sync(lambda: get_argocd_client_for_cluster(cluster))
                 data = await argocd.get_app_status(ephemeral_env_name(app.slug, env.slug))
                 st = data.get("status", {})
                 argocd_status = {
                     "sync": st.get("sync", {}).get("status"),
                     "health": st.get("health", {}).get("status"),
                 }
-                images = st.get("summary", {}).get("images") or []
-                if images and ":" in images[0]:
-                    env.image_tag = images[0].rsplit(":", 1)[1]
-            except Exception:
-                # Application pas encore créée par update-gitops, ou ArgoCD injoignable
-                pass
+                tag = _app_image_tag(st.get("summary", {}).get("images") or [], app)
+                if tag:
+                    env.image_tag = tag
+            except Exception as e:
+                # Application pas encore créée par update-gitops (404), ArgoCD injoignable,
+                # ou identifiants Vault/ArgoCD invalides : le statut reste inconnu.
+                logger.debug("ArgoCD status unavailable for %s: %s", ephemeral_env_name(app.slug, env.slug), e)
 
         if env.status == EphemeralEnvStatus.PROVISIONING:
             if argocd_status.get("sync") == "Synced" and argocd_status.get("health") == "Healthy":
                 env.status = EphemeralEnvStatus.ACTIVE
-            elif env.pipeline_id and app.gitlab_project_id and settings.GITLAB_BOT_TOKEN:
+            elif env.pipeline_id and app.gitlab_project_id and settings.GITLAB_BOT_TOKEN and settings.GITOPS_REPO_URL:
                 bot = _get_bot_client()
                 pipeline_status = await anyio.to_thread.run_sync(
                     lambda: bot.get_pipeline_status(app.gitlab_project_id, env.pipeline_id), cancellable=True

@@ -13,6 +13,12 @@ from shared.models import ephemeral_env_name, sanitize_k8s_label_value
 
 PULL_SECRET_NAME = "gitlab-registry"
 PLATFORM_PROJECT = "cnp-platform"
+# "--" n'apparaît jamais dans un slug : l'Application plateforme ne peut pas entrer en
+# collision avec l'Application de l'app d'un autre env (branches `x` et `x-platform`).
+PLATFORM_SUFFIX = "--platform"
+# Même retry que l'Application de l'app (update-gitops-ephemeral) : la synchro peut
+# échouer tant qu'un ancien namespace du même nom est en Terminating.
+SYNC_RETRY = {"limit": 10, "backoff": {"duration": "10s", "factor": 2, "maxDuration": "5m"}}
 
 
 @dataclass(frozen=True)
@@ -36,7 +42,7 @@ class EphemeralTarget:
 
     @property
     def platform_app_path(self) -> str:
-        return f"argocd/{self.cluster}/{self.app_slug}/ephemeral/{self.env_slug}-platform.yaml"
+        return f"argocd/{self.cluster}/{self.app_slug}/ephemeral/{self.env_slug}{PLATFORM_SUFFIX}.yaml"
 
 
 def _clean_repo_url(url: str) -> str:
@@ -111,7 +117,7 @@ def _platform_application(t: EphemeralTarget) -> dict:
         "apiVersion": "argoproj.io/v1alpha1",
         "kind": "Application",
         "metadata": {
-            "name": f"{t.name}-platform",
+            "name": f"{t.name}{PLATFORM_SUFFIX}",
             "namespace": "argocd",
             "finalizers": ["resources-finalizer.argocd.argoproj.io"],
         },
@@ -124,7 +130,7 @@ def _platform_application(t: EphemeralTarget) -> dict:
             },
             "destination": {"server": "https://kubernetes.default.svc", "namespace": t.name},
             # Pas de CreateNamespace : le Namespace est un manifeste géré, supprimé avec l'Application
-            "syncPolicy": {"automated": {"prune": True, "selfHeal": True}},
+            "syncPolicy": {"automated": {"prune": True, "selfHeal": True}, "retry": SYNC_RETRY},
         },
     }
 

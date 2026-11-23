@@ -30,7 +30,7 @@ def test_chemins_des_fichiers():
         f"{ROOT}/platform/namespace.yaml",
         f"{ROOT}/platform/registry-pull-secret.yaml",
         f"{ROOT}/platform/serviceaccount.yaml",
-        "argocd/cnp-aks/my-app/ephemeral/feat-login-platform.yaml",
+        "argocd/cnp-aks/my-app/ephemeral/feat-login--platform.yaml",
     }
 
 
@@ -81,9 +81,9 @@ def test_service_account_default_utilise_le_pull_secret():
 
 
 def test_application_plateforme():
-    app = _files()["argocd/cnp-aks/my-app/ephemeral/feat-login-platform.yaml"]
+    app = _files()["argocd/cnp-aks/my-app/ephemeral/feat-login--platform.yaml"]
     assert app["kind"] == "Application"
-    assert app["metadata"]["name"] == "my-app--feat-login-platform"
+    assert app["metadata"]["name"] == "my-app--feat-login--platform"
     assert app["metadata"]["namespace"] == "argocd"
     assert "resources-finalizer.argocd.argoproj.io" in app["metadata"]["finalizers"]
     spec = app["spec"]
@@ -99,3 +99,35 @@ def test_url_gitops_sans_identifiants():
     files = declaration_files(_target(gitops_repo_url="https://oauth2:secret@gitlab.com/4k-cnp-2027/cnp-gitops.git"))
     app = next(yaml.safe_load(f["content"]) for f in files if f["file_path"].startswith("argocd/"))
     assert app["spec"]["source"]["repoURL"] == GITOPS_URL
+
+
+def test_application_plateforme_reessaie_la_synchro():
+    app = _files()["argocd/cnp-aks/my-app/ephemeral/feat-login--platform.yaml"]
+    # Un ancien namespace du même nom peut encore être en Terminating
+    assert app["spec"]["syncPolicy"]["retry"]["limit"] >= 5
+
+
+def test_branches_x_et_x_platform_sans_collision():
+    """Revue #82 : `login` et `login-platform` ne partagent ni fichier ni Application."""
+    files_x = declaration_files(_target(env_slug="login", branch="login"))
+    files_xp = declaration_files(_target(env_slug="login-platform", branch="login-platform"))
+    paths_x = {f["file_path"] for f in files_x}
+    paths_xp = {f["file_path"] for f in files_xp}
+    assert paths_x.isdisjoint(paths_xp)
+    # ... ni avec l'Application de l'app que update-gitops-ephemeral écrit dans <slug>.yaml
+    app_files = {"argocd/cnp-aks/my-app/ephemeral/login.yaml", "argocd/cnp-aks/my-app/ephemeral/login-platform.yaml"}
+    assert app_files.isdisjoint(paths_x | paths_xp)
+
+    def app_name(files):
+        return next(yaml.safe_load(f["content"]) for f in files if f["file_path"].startswith("argocd/"))["metadata"]["name"]
+
+    names = {app_name(files_x), app_name(files_xp), "my-app--login", "my-app--login-platform"}
+    assert len(names) == 4
+
+
+def test_nom_de_l_application_plateforme_dans_la_limite_argocd():
+    # Nom d'env au plus 53 caractères (release Helm) + "--platform" : 63, limite des labels
+    t = _target(app_slug="a" * 30, env_slug="b" * 21)
+    assert len(t.name) == 53
+    app = next(yaml.safe_load(f["content"]) for f in declaration_files(t) if f["file_path"].startswith("argocd/"))
+    assert len(app["metadata"]["name"]) <= 63
