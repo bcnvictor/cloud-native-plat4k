@@ -6,7 +6,7 @@ from urllib.parse import quote
 import typer
 
 from cli.core.client import client
-from cli.core.output import print_error, print_success, print_table
+from cli.core.output import print_error, print_success, print_table, print_warning
 
 app = typer.Typer(help="Manage application environment variables.")
 
@@ -121,9 +121,21 @@ def _dotenv_line(key: str, value: str) -> str:
     interpolation, `#` kept, multi-line allowed). python-dotenv decodes `\\\\`
     and `\\'` there, so only backslashes it would consume are doubled (before
     a backslash, a quote or the end), which keeps `C:\\path` intact for Compose.
+
+    Node dotenv does not decode `\\'`, so a value with an apostrophe goes in
+    double quotes instead, which the three readers take literally as long as it
+    has no `"`, `$` or `\\`. Otherwise no quoting reads the same everywhere:
+    the single-quoted form is kept and `pull` warns (see _node_dotenv_mismatch).
     """
+    if "'" in value and not _node_dotenv_mismatch(value):
+        return f'{key}="{value}"\n'
     escaped = re.sub(r"\\(?=[\\']|\Z)", r"\\\\", value).replace("'", "\\'")
     return f"{key}='{escaped}'\n"
+
+
+def _node_dotenv_mismatch(value: str) -> bool:
+    """True when Node dotenv will read the written value with a stray `\\'`."""
+    return "'" in value and re.search(r'["$\\]', value) is not None
 
 
 @app.command("pull")
@@ -152,6 +164,12 @@ def pull_env(
             for key, value in values.items():
                 f.write(_dotenv_line(key, value))
         print_success(f"Wrote {len(values)} variable(s) to {output}")
+        mismatched = [key for key, value in values.items() if _node_dotenv_mismatch(value)]
+        if mismatched:
+            print_warning(
+                f"Node dotenv will read \\' instead of ' in: {', '.join(mismatched)} "
+                "(apostrophe together with \", $ or \\; python-dotenv and Docker Compose read them correctly)."
+            )
     except Exception as e:
         print_error(str(e))
         raise typer.Exit(1)

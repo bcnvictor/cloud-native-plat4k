@@ -192,6 +192,9 @@ class TestPullFile:
         "SPACES": "two words",
         "HASH": "abc#def",
         "QUOTES": "it's \"quoted\"",
+        "APOSTROPHE": "it's",
+        "APOSTROPHE_HASH": "it's # b c",
+        "APOSTROPHE_MULTILINE": "it's\nline2",
         "DOLLAR": "pa$$word${HOME}",
         "BACKSLASH": "C:\\path\\n",
         "DOUBLE_BACKSLASH": "a\\\\b",
@@ -239,3 +242,40 @@ class TestPullFile:
         assert result.exit_code == 0, result.output
         assert "OLD" not in out.read_text()
         assert stat.S_IMODE(out.stat().st_mode) == 0o600
+
+
+class TestPullApostrophe:
+    """Node dotenv keeps `\\'` inside single quotes, so `it's` would come back as
+    `it\\'s` (PR #68 review). Checked against python-dotenv 1.2.4, Node dotenv
+    18.0.10 and Docker Compose 2.34."""
+
+    @pytest.mark.parametrize("value", ["it's", "it's # b c", "l'été à 20 °C", "it's\nline2"])
+    def test_apostrophe_goes_in_double_quotes(self, value):
+        assert env_cmd._dotenv_line("K", value) == f'K="{value}"\n'
+
+    @pytest.mark.parametrize("value", ["it's $HOME", 'it\'s "x"', "it's \\n"])
+    def test_apostrophe_with_special_chars_keeps_single_quotes(self, value):
+        # Double quotes would let Compose expand `$` and Node keep `\\"`: no quoting
+        # reads the same in all three, so the escaped single-quoted form stays.
+        line = env_cmd._dotenv_line("K", value)
+        assert line.startswith("K='") and "\\'" in line
+
+    @pytest.mark.parametrize("value", ["two words", 'say "hi"', "cost $HOME", "a # b", ""])
+    def test_values_without_apostrophe_are_unchanged(self, value):
+        assert env_cmd._dotenv_line("K", value) == f"K='{value}'\n"
+
+    def test_pull_warns_with_the_affected_keys_only(self, monkeypatch, tmp_path):
+        fake = FakeClient(values={"OK_QUOTE": "it's", "BAD": "it's $HOME", "PLAIN": "x"})
+        monkeypatch.setattr(env_cmd, "client", fake)
+        out = tmp_path / ".env.local"
+        result = _invoke("pull", "-a", APP_SLUG, "-o", str(out))
+        assert result.exit_code == 0, result.output
+        assert "Warning" in result.output and "BAD" in result.output
+        assert "OK_QUOTE" not in result.output and "PLAIN" not in result.output
+
+    def test_pull_does_not_warn_otherwise(self, monkeypatch, tmp_path):
+        fake = FakeClient(values={"OK_QUOTE": "it's", "PLAIN": "x"})
+        monkeypatch.setattr(env_cmd, "client", fake)
+        result = _invoke("pull", "-a", APP_SLUG, "-o", str(tmp_path / ".env.local"))
+        assert result.exit_code == 0, result.output
+        assert "Warning" not in result.output
