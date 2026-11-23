@@ -42,7 +42,7 @@ TCP 443).
 
 Si le plan montre une règle supprimée (`-`), ou un autre changement (nom, source de la
 règle 6443…), **ne pas appliquer** : corriger `main.tf` ou `terraform.tfvars`. Pour voir
-la configuration exacte de l'existant, générer-la dans un dossier à part :
+la configuration exacte de l'existant, la générer dans un dossier à part :
 
 ```bash
 mkdir /tmp/oci-gen && cd /tmp/oci-gen
@@ -71,7 +71,7 @@ terraform apply
 Depuis n'importe quel poste :
 
 ```bash
-nc -z -G 5 138.2.159.23 80 && nc -z -G 5 138.2.159.23 443   # les deux doivent réussir
+nc -z -w 5 138.2.159.23 80 && nc -z -w 5 138.2.159.23 443   # les deux doivent réussir
 curl -sI http://138.2.159.23/   # 404 d'ingress-nginx attendu (aucun Ingress sur l'IP nue)
 ```
 
@@ -84,4 +84,6 @@ fermés alors que la security list est ouverte, vérifier iptables en SSH sur la
 Toute nouvelle règle passe par une PR sur `main.tf`, puis `terraform plan` et `apply`,
 plus par la console : une modification faite à la main serait écrasée au prochain apply.
 `prevent_destroy` empêche de supprimer la security list par erreur, ce qui couperait SSH
-et l'API k3s.
+et l'API k3s. Les tags (`defined_tags`, `freeform_tags`) sont ignorés : OCI pose souvent
+d'office `Oracle-Tags.CreatedBy`/`CreatedOn`, que Terraform voudrait sinon retirer à
+chaque plan.

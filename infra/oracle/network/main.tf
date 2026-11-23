@@ -104,5 +104,8 @@ resource "oci_core_security_list" "k3s" {
   lifecycle {
     # Destroying it would cut SSH and the k3s API.
     prevent_destroy = true
+    # Many tenancies apply tag defaults (Oracle-Tags.CreatedBy/CreatedOn) to every
+    # resource: without this, the first plan after import would try to remove them.
+    ignore_changes = [defined_tags, freeform_tags]
   }
 }
