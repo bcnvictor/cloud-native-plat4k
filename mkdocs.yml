@@ -112,4 +112,4 @@ nav:
       - ADR-0027 — Service d'authentification Keycloak: adr/0027-keycloak-app-auth.md
       - ADR-0028 — Authentification JWT des iframes Grafana: adr/0028-grafana-embed-jwt.md
       - ADR-0029 — Serveur MCP read-only: adr/0029-mcp-server.md
-      - ADR-0030 — Direction IA (CNP Doctor): adr/0030-direction-ia-cnp-doctor.md
+      - ADR-0031 — Direction IA (CNP Doctor): adr/0031-direction-ia-cnp-doctor.md

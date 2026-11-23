@@ -55,8 +55,8 @@
 
 ## 9. Documentation et demandes au PO
 
-- [ ] 9.1 Écrire le guide utilisateur du Doctor et l'ajouter à la navigation et au guide de l'interface ; vérifier que `mkdocs build` passe
-- [x] 9.2 Corriger l'ADR-0030 (serveur MCP livré par la PR #65, FinOps fusionné, nouvelle route) ; vérifier par relecture
+- [x] 9.1 Écrire le guide utilisateur du Doctor et l'ajouter à la navigation et au guide de l'interface ; vérifier que `mkdocs build` passe
+- [x] 9.2 Corriger l'ADR-0031 (serveur MCP livré par la PR #65, FinOps fusionné, nouvelle route) ; vérifier par relecture
 - [x] 9.3 Créer le dossier des demandes au PO (accès, secrets, validations) dans le change ; vérifier que chaque demande dit quoi, pourquoi et à qui
 
 ## 10. Vérification d'ensemble

@@ -1,6 +1,6 @@
 ## Why
 
-Quand une application tombe en panne après un déploiement, la plateforme montre le symptôme (bandeau rouge, conteneur qui redémarre) mais laisse le développeur chercher seul la cause et la correction. Les signaux nécessaires sont déjà lus par la plateforme (ArgoCD, Kubernetes, Loki, GitLab CI, événements CNP) ; il manque le rapprochement avec le dernier changement, un résultat fiable et lisible, et le lien vers la correction. Le parcours a été validé par le PO le 2026-11-16 (ADR-0030, spike 4K-247).
+Quand une application tombe en panne après un déploiement, la plateforme montre le symptôme (bandeau rouge, conteneur qui redémarre) mais laisse le développeur chercher seul la cause et la correction. Les signaux nécessaires sont déjà lus par la plateforme (ArgoCD, Kubernetes, Loki, GitLab CI, événements CNP) ; il manque le rapprochement avec le dernier changement, un résultat fiable et lisible, et le lien vers la correction. Le parcours a été validé par le PO le 2026-11-16 (ADR-0031, spike 4K-247).
 
 ## What Changes
 
@@ -36,6 +36,6 @@ Aucune (aucune spec existante dans `openspec/specs/`).
 - Backend : nouveaux `backend/api/routes/doctor.py`, `backend/services/doctor_*.py` ; ajouts dans `backend/gitlab/client.py` (comparaison de révisions), `backend/k8s/client.py` (horodatages), `backend/services/monitoring_service.py` (fenêtre de logs), `shared/models.py` (énumérations) ; retrait du POC dans `assistant_service.py` et `routes/assistant.py`.
 - Frontend : `frontend-new/src/components/doctor/*`, store et types, `OverviewTab`, `AppDetailLayout`, `GlobalAssistantPanel`, `index.css`.
 - CLI : `cli/commands/apps.py`, `docs/cli.md`.
-- Docs : guide utilisateur, ADR-0030 (section transport à corriger : la PR #65 livre un serveur MCP), `mkdocs.yml`.
+- Docs : guide utilisateur, ADR-0031 (section transport à corriger : la PR #65 livre un serveur MCP), `mkdocs.yml`.
 - Aucune migration de base, aucune nouvelle dépendance Python prévue.
 - Dépendances externes : jeton GitLab du bot avec lecture des commits ; fournisseur IA (quota Gemini 20 requêtes/jour).

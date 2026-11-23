@@ -12,7 +12,7 @@ noter la date et la trace (message, ticket, compte rendu).
 | 3 | Application et droits pour répéter la démo sur un vrai cluster | Montrer le scénario de bout en bout ailleurs qu'en local | PO → owner du groupe GitLab concerné | Non | Le labo de démo local (`scripts/doctor-lab/`) |
 | 4 | Validation de gouvernance écrite | Trace de l'accord oral du 2026-11-16 sur ce qui part chez le provider IA, et sur les droits | PO | Non pour développer | Le comportement actuel suit l'accord oral |
 | 5 | Ticket Linear pour la fonctionnalité | La branche s'appelle `feature/cnp-doctor` faute de ticket ; convention `feature/4k-NNN-…` | PO | Non | Le travail continue sur `feature/cnp-doctor` |
-| 6 | Relecture de l'ADR-0030 par un autre pôle, et coordination avec la PR #65 | Critère d'acceptation du spike 4K-247 non coché ; section « Transport » de l'ADR | PO → relecteur d'un autre pôle ; auteur de la PR #65 | Non | L'ADR reste « Proposed » |
+| 6 | Relecture de l'ADR-0031 par un autre pôle, et coordination avec la PR #65 | Critère d'acceptation du spike 4K-247 non coché ; section « Transport » de l'ADR | PO → relecteur d'un autre pôle ; auteur de la PR #65 | Non | L'ADR reste « Proposed » |
 | 7 | Pousser la branche et ouvrir la PR | Les commits sont uniquement locaux | Le développeur, quand il est prêt | Non | La revue ne peut pas commencer |
 
 ## 1. Lecture des commits par le jeton GitLab du bot
@@ -100,19 +100,19 @@ nommer la branche et la PR selon la convention.
 **Sans réponse.** Le travail continue sur `feature/cnp-doctor` ; la branche pourra être
 renommée une fois le ticket créé.
 
-## 6. Relecture de l'ADR-0030 et coordination avec la PR #65
+## 6. Relecture de l'ADR-0031 et coordination avec la PR #65
 
 - [ ] Relecteur désigné : _nom, pôle_
 - [ ] Section « Transport » vue avec l'auteur de la PR #65
 
-**Contexte.** La relecture de l'ADR-0030 par un membre d'un autre pôle est un critère
+**Contexte.** La relecture de l'ADR-0031 par un membre d'un autre pôle est un critère
 d'acceptation du spike 4K-247 ; la case « Relu par » de l'ADR n'est pas cochée. La PR #65
 (ticket 4K-77, serveur MCP en lecture seule `cnp-mcp`, ADR-0029) touche le même sujet que la
-section « Transport » de l'ADR-0030, mise à jour le 2026-11-17.
+section « Transport » de l'ADR-0031, mise à jour le 2026-11-17.
 
 **À demander.**
 
-1. qu'un membre d'un **autre pôle** relise l'ADR-0030, pour qu'elle passe de « Proposed » à
+1. qu'un membre d'un **autre pôle** relise l'ADR-0031, pour qu'elle passe de « Proposed » à
    « Accepted » ;
 2. un échange avec l'**auteur de la PR #65** pour valider la formulation de la section
    « Transport » : le Doctor passe par l'API REST, et l'exposer comme outil MCP serait une

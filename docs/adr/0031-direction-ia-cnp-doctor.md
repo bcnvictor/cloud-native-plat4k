@@ -1,9 +1,12 @@
-# ADR-0030 : Direction IA — CNP Doctor comme piste principale
+# ADR-0031 : Direction IA — CNP Doctor comme piste principale
 
 ## Statut
 
 Proposed : 2026-10-19 (spike 4K-247). À relire par un membre d'un autre pôle avant de passer
 en Accepted (voir « Relecture » en fin de document).
+
+Rédigée sous le numéro 0030 ; renumérotée 0031 le 2026-11-23, le numéro 0030 étant pris par
+l'ADR des environnements éphémères (4K-285), fusionnée avant.
 
 **Mise à jour 2026-11-17.** L'évaluation ci-dessous reste celle du 2026-10-19 ; seuls les
 faits devenus inexacts sont corrigés, dans les sections concernées :

@@ -229,8 +229,8 @@ et la commande sort avec le code 1.
 ## Labo de démo local
 
 Pour rejouer le scénario complet (application saine, déploiement cassé, diagnostic, rollback,
-retour à la normale) sans toucher un vrai cluster ni le Vault partagé, voir le labo de démo :
-[`scripts/doctor-lab/README.md`](../../scripts/doctor-lab/README.md).
+retour à la normale) sans toucher un vrai cluster ni le Vault partagé, voir le labo de démo
+décrit dans `scripts/doctor-lab/README.md`, à la racine du dépôt.
 
 ## Pour les contributeurs
 
@@ -244,4 +244,4 @@ retour à la normale) sans toucher un vrai cluster ni le Vault partagé, voir le
   `frontend-new/src/types/doctor.ts`, `frontend-new/src/store/doctor.ts`,
   `cli/commands/apps.py` (commande `doctor`).
 - Conception et spécifications : `openspec/changes/cnp-doctor/`. Choix de la direction IA :
-  [ADR-0030](../adr/0030-direction-ia-cnp-doctor.md).
+  [ADR-0031](../adr/0031-direction-ia-cnp-doctor.md).
