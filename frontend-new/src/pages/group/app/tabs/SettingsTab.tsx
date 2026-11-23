@@ -111,7 +111,12 @@ export function SettingsTab() {
   // Switching an exposed app off is always allowed, even on a cluster that can't expose.
   const exposeLocked = !app?.expose && !exposeSupported;
 
-  const { data: myAccess, isLoading: myAccessLoading } = useQuery({
+  const {
+    data: myAccess,
+    isLoading: myAccessLoading,
+    isError: myAccessIsError,
+    error: myAccessError,
+  } = useQuery({
     queryKey: ['myAccess', app?.id],
     queryFn: () => appsApi.getMyAccess(app!.id),
     enabled: !!app,
@@ -322,6 +327,9 @@ export function SettingsTab() {
 
         {envVarsLoading || myAccessLoading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>
+        ) : myAccessIsError && !myAccess ? (
+          // Without the tier, permissions are unknown: no list query runs, so say why.
+          <p className="text-xs text-danger-text">Could not load your access to this app · {apiError(myAccessError)}</p>
         ) : envVarsIsError ? (
           <p className="text-xs text-danger-text">Could not load variables · {apiError(envVarsError)}</p>
         ) : (envVarsData?.keys.length ?? 0) === 0 && !showAddForm ? (
