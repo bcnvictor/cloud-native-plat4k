@@ -512,3 +512,25 @@ async def test_chat_metrics_context_uses_app_cluster(db_session: AsyncSession, d
     with patch("backend.services.assistant_service.get_metrics", fake):
         text, _ = await ContextBuilder(db_session)._fetch_metrics_context(apps["web"])
     assert "22.0 mCPU" in text
+
+
+@pytest.mark.anyio
+async def test_get_metrics_bounded_when_cluster_hangs(db_session: AsyncSession, dev_user: User, monkeypatch):
+    import asyncio
+
+    from backend.services import monitoring_sources
+
+    await _seed_two_clusters(db_session, dev_user, monkeypatch)
+    monkeypatch.setattr(monitoring_sources, "FAN_OUT_TIMEOUT_SECONDS", 0.05)
+
+    async def fake(url):
+        if url == _K3S:
+            await asyncio.sleep(5)
+        return {"apps": [_app_metrics("api-a", 11.0)]}
+
+    with patch("backend.services.assistant_tools.get_metrics", AsyncMock(side_effect=fake)):
+        out = (await asyncio.wait_for(
+            PlatformTools(db_session, dev_user).call("get_metrics", '{"group": "team-a"}'), 2
+        )).text
+    assert "api-a : CPU 11.0 mCPU" in out
+    assert "web-a : Prometheus injoignable" in out

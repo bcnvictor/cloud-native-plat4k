@@ -22,11 +22,13 @@ _RAM_QUERY = (
 )
 
 RANGE_SECONDS = 1800  # fenêtre affichée : 30 min
+# Connexion courte : un cluster arrêté (AKS la nuit) échoue en 2 s au lieu de bloquer le fan-out
+_PROM_TIMEOUT = httpx.Timeout(15, connect=2)
 STEP_SECONDS  = 60    # 1 point/min → 30 points max
 
 
 async def _query_instant(client: httpx.AsyncClient, promql: str) -> list[dict]:
-    resp = await client.get("/api/v1/query", params={"query": promql}, timeout=15)
+    resp = await client.get("/api/v1/query", params={"query": promql}, timeout=_PROM_TIMEOUT)
     resp.raise_for_status()
     return resp.json()["data"]["result"]
 
@@ -35,7 +37,7 @@ async def _query_range(client: httpx.AsyncClient, promql: str, start: int, end: 
     resp = await client.get(
         "/api/v1/query_range",
         params={"query": promql, "start": start, "end": end, "step": STEP_SECONDS},
-        timeout=15,
+        timeout=_PROM_TIMEOUT,
     )
     resp.raise_for_status()
     return resp.json()["data"]["result"]

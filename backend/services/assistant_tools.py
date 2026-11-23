@@ -44,6 +44,7 @@ from backend.db.models import (
     GitLabGroupMember,
     User,
 )
+from backend.services import monitoring_sources
 from backend.services.ai_limits_service import AILimitsService
 from backend.services.ai_settings_service import EffectiveAIConfig
 from backend.services.finops_advisor_service import analyze_usage, describe_analysis
@@ -746,7 +747,10 @@ class PlatformTools:
         # Chaque app n'a ses métriques que dans le Prometheus de son cluster cible
         url_of = {a.id: await resolve_prometheus_url(self.db, app=a) for a in allowed}
         urls = list(dict.fromkeys(url_of.values()))
-        fetched = await asyncio.gather(*(get_metrics(u) for u in urls), return_exceptions=True)
+        fetched = await asyncio.gather(
+            *(asyncio.wait_for(get_metrics(u), monitoring_sources.FAN_OUT_TIMEOUT_SECONDS) for u in urls),
+            return_exceptions=True,
+        )
         series_by_url = {u: r for u, r in zip(urls, fetched) if not isinstance(r, BaseException)}
         if not series_by_url:
             exc = fetched[0]

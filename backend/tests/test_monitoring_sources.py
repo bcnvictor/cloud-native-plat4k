@@ -181,3 +181,35 @@ def test_merge_cost_by_team_sums_per_group():
 def test_merge_empty():
     assert merge_cost_by_group([]) == []
     assert merge_cost_by_team([[]]) == []
+
+
+# ── Prometheus arrêté : échec rapide à la connexion ───────────────────────────
+
+
+@pytest.fixture
+def seen_timeouts(monkeypatch):
+    """Records the timeout httpx would apply to each Prometheus request."""
+    from backend.services import monitoring_service
+
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.extensions["timeout"])
+        return httpx.Response(200, json={"data": {"result": []}})
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        monitoring_service.httpx, "AsyncClient",
+        lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw),
+    )
+    return seen
+
+
+async def test_cost_queries_fail_fast_on_connect(seen_timeouts):
+    from backend.services.monitoring_service import get_cost_by_group, get_cost_by_team, get_metrics
+
+    await get_cost_by_group("http://gke:9090", "101")
+    await get_cost_by_team("http://gke:9090")
+    await get_metrics("http://gke:9090")
+    assert seen_timeouts and all(t["connect"] <= 2 for t in seen_timeouts)
+    assert all(t["read"] == 15 for t in seen_timeouts)
