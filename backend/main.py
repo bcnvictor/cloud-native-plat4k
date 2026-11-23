@@ -29,6 +29,7 @@ from backend.api.routes import (
     monitoring,
     notifications,
     resources,
+    security,
     users,
     webhooks,
 )
@@ -149,6 +150,7 @@ app.include_router(apps.router, prefix=f"{settings.API_V1_STR}/apps", tags=["app
 app.include_router(assistant.router, prefix=f"{settings.API_V1_STR}/apps", tags=["assistant"])
 app.include_router(assistant.global_router, prefix=f"{settings.API_V1_STR}", tags=["assistant"])
 app.include_router(finops_advisor.router, prefix=f"{settings.API_V1_STR}/apps", tags=["finops-advisor"])
+app.include_router(security.router, prefix=f"{settings.API_V1_STR}/apps", tags=["security"])
 app.include_router(env_vars.router, prefix=f"{settings.API_V1_STR}/apps", tags=["env-vars"])
 app.include_router(keycloak_instances.router, prefix=f"{settings.API_V1_STR}/keycloak/instances", tags=["keycloak-instances"])
 app.include_router(keycloak.router, prefix=f"{settings.API_V1_STR}/apps", tags=["keycloak"])

@@ -554,3 +554,41 @@ export interface AIFinOpsAdvice {
   output_tokens: number;
   estimated_cost_usd: number | null;
 }
+
+// ── Security tab (CI trivy/gitleaks summary) ────────────────────────────────────
+
+export type SecuritySeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
+export type SecurityToolName = 'trivy' | 'gitleaks';
+export type SecurityToolStatus = 'ok' | 'failed' | 'skipped';
+export type SecurityGrade = 'A' | 'B' | 'C' | 'D' | 'F';
+
+export interface SecurityFinding {
+  id: string;
+  rule: string;
+  severity: SecuritySeverity;
+  title: string;
+  package?: string | null;
+  installed_version?: string | null;
+  fixed_version?: string | null;
+  file?: string | null;
+  line?: number | null;
+}
+
+export interface SecurityToolReport {
+  status: SecurityToolStatus;
+  counts: Record<string, number>;
+  truncated: boolean;
+  findings: SecurityFinding[];
+}
+
+export interface SecurityReportResponse {
+  report: {
+    pipeline_id: number;
+    pipeline_url: string;
+    commit_sha: string;
+    received_at: string;
+    tools: Partial<Record<SecurityToolName, SecurityToolReport>>;
+  } | null;
+  grade: SecurityGrade | null;
+  partial: boolean;
+}

@@ -1,14 +1,15 @@
 import hashlib
 import hmac
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from backend.api.deps import get_db
 from backend.core.config import settings
 from backend.db.models import Application, ClusterConnection
+from backend.services.security_report_service import SecurityReportService, verify_token
 from backend.services.security_scan_service import SecurityScanService
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -168,3 +169,65 @@ async def security_scan_callback(
         len(findings_data),
     )
     return {"scan_id": scan.id, "status": payload.status, "findings_stored": len(findings_data)}
+
+
+# ── CI security summary (cnp-report job) ──────────────────────────────────────
+
+
+class CIFinding(BaseModel):
+    # Unknown fields (e.g. a leaked "Secret") are dropped by pydantic's default extra=ignore.
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    rule: str = Field(max_length=100)
+    severity: str = Field(max_length=16)
+    title: str = Field(default="", max_length=200)
+    package: Optional[str] = Field(default=None, max_length=200)
+    installed_version: Optional[str] = Field(default=None, max_length=100)
+    fixed_version: Optional[str] = Field(default=None, max_length=100)
+    file: Optional[str] = Field(default=None, max_length=300)
+    line: Optional[int] = None
+
+
+class CIToolReport(BaseModel):
+    status: Literal["ok", "failed", "skipped"]
+    counts: dict[str, int] = {}
+    truncated: bool = False
+    findings: list[CIFinding] = Field(default=[], max_length=100)
+
+    @field_validator("counts")
+    @classmethod
+    def _counts_keys(cls, v: dict[str, int]) -> dict[str, int]:
+        allowed = {"CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN", "total"}
+        if not set(v) <= allowed:
+            raise ValueError("unexpected counts key")
+        return v
+
+
+class CISecurityReport(BaseModel):
+    app_id: int
+    pipeline_id: int = Field(ge=0, le=2**62)
+    pipeline_url: str = Field(max_length=500, pattern=r"^https?://\S+$")
+    commit_sha: str = Field(max_length=64)
+    tools: dict[str, CIToolReport] = Field(default={}, max_length=4)
+
+
+@router.post("/ci-security-report", status_code=status.HTTP_200_OK)
+async def ci_security_report(
+    payload: CISecurityReport,
+    db: AsyncSession = Depends(get_db),
+    x_cnp_token: Optional[str] = Header(default=None),
+):
+    """Authenticated callback from the cnp-report CI job (HMAC token per app)."""
+    if not verify_token(payload.app_id, x_cnp_token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    app = (await db.execute(select(Application).where(Application.id == payload.app_id))).scalar_one_or_none()
+    if app is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    tools = {
+        name: tool.model_dump()
+        for name, tool in payload.tools.items()
+        if name in ("trivy", "gitleaks")
+    }
+    stored = await SecurityReportService(db).upsert(
+        payload.app_id, payload.pipeline_id, payload.pipeline_url, payload.commit_sha, tools
+    )
+    return {"stored": stored, **({} if stored else {"reason": "stale_or_replayed_pipeline"})}

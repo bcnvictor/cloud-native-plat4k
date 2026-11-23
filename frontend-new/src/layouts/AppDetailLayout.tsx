@@ -27,6 +27,7 @@ const TABS = [
   { key: '', label: 'Overview' },
   { key: 'logs', label: 'Logs' },
   { key: 'history', label: 'History' },
+  { key: 'security', label: 'Security' },
   { key: 'settings', label: 'Settings' },
   { key: 'assistant', label: 'Assistant' },
 ];
