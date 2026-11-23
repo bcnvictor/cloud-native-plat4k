@@ -193,10 +193,10 @@ export function SecurityTab() {
           visible.map((r) => (
             <div
               key={r.id}
-              className={cn('flex items-center gap-4 px-4 py-3 text-sm border-b border-border last:border-0 hover:bg-muted/40 transition-colors')}
+              className={cn('flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap sm:gap-4 px-4 py-3 text-sm border-b border-border last:border-0 hover:bg-muted/40 transition-colors')}
             >
-              <Badge variant={severityVariant(r.severity)} className="w-20 justify-center shrink-0">{r.severity.toLowerCase()}</Badge>
-              <div className="flex-1 min-w-0">
+              <Badge variant={severityVariant(r.severity)} className="order-1 w-20 justify-center shrink-0">{r.severity.toLowerCase()}</Badge>
+              <div className="order-4 basis-full sm:order-2 sm:basis-0 flex-1 min-w-0">
                 <p className="font-mono text-xs text-foreground truncate">{r.rule}</p>
                 <p className="text-xs text-muted-foreground truncate">
                   {r.tool === 'trivy'
@@ -205,8 +205,8 @@ export function SecurityTab() {
                   {' · '}{r.file}{r.line ? `:${r.line}` : ''}
                 </p>
               </div>
-              <span className="text-xs text-muted-foreground shrink-0">{r.tool}</span>
-              <Button size="sm" variant="secondary" icon={<IconTool size={13} />} onClick={() => setFixTarget(r.id)}>
+              <span className="order-2 ml-auto sm:order-3 sm:ml-0 text-xs text-muted-foreground shrink-0">{r.tool}</span>
+              <Button className="order-3 sm:order-4" size="sm" variant="secondary" icon={<IconTool size={13} />} onClick={() => setFixTarget(r.id)}>
                 Fix
               </Button>
             </div>
