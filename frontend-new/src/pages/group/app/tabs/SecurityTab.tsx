@@ -157,7 +157,7 @@ export function SecurityTab() {
             </Button>
           )}
           <a
-            href={report.pipeline_url}
+            href={/^https?:\/\//i.test(report.pipeline_url) ? report.pipeline_url : undefined}
             target="_blank"
             rel="noreferrer"
             className="text-xs text-primary inline-flex items-center gap-1 hover:underline"

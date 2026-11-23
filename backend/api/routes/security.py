@@ -10,7 +10,8 @@ from backend.services.ai_settings_service import AISettingsService
 from backend.services.security_autofix_service import AutofixError, run_autofix
 from backend.services.security_fix_prompts import build_fix_prompt
 from backend.services.security_report_service import SecurityReportService
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from gitlab.exceptions import GitlabError
 from shared.models import CnpTier
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,7 +63,7 @@ def get_autofix_gitlab_client() -> GitLabClient:
 @router.post("/{app_id}/security/findings/{finding_id}/autofix")
 async def autofix_finding(
     app_id: int,
-    finding_id: str,
+    finding_id: str = Path(..., pattern=r"^[A-Za-z0-9_-]{1,64}$"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_tier(CnpTier.DEVELOPER)),
     gl: GitLabClient = Depends(get_autofix_gitlab_client),
@@ -83,5 +84,7 @@ async def autofix_finding(
         if exc.response.status_code == 429:
             raise HTTPException(status_code=429, detail="AI quota reached, try again later.") from exc
         raise HTTPException(status_code=502, detail="The AI provider failed, try again later.") from exc
+    except GitlabError as exc:
+        raise HTTPException(status_code=502, detail="GitLab refused the operation (check the bot's access to the project).") from exc
     except httpx.TransportError as exc:
         raise HTTPException(status_code=502, detail="The AI provider is unreachable, try again later.") from exc

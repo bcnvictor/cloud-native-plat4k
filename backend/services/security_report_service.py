@@ -10,6 +10,7 @@ import hmac
 from typing import Any, Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
@@ -38,7 +39,8 @@ def compute_grade(tools: dict[str, Any]) -> Optional[str]:
     """A→F from the stored summary; None when no tool produced a usable result.
 
     F: any secret leaked or any CRITICAL CVE · D: >=5 HIGH · C: 1-4 HIGH ·
-    B: any MEDIUM · A: otherwise (none or only LOW/UNKNOWN).
+    B: any MEDIUM · A: otherwise. A and B need both scanners ok (else None: a crashed
+    scanner must not look clean).
     """
     trivy, leaks = tools.get("trivy") or {}, tools.get("gitleaks") or {}
     usable = [t for t in (trivy, leaks) if t.get("status") == "ok"]
@@ -53,6 +55,9 @@ def compute_grade(tools: dict[str, Any]) -> Optional[str]:
         return "D"
     if high >= 1:
         return "C"
+    # A/B claim "nothing serious found": only valid when both scanners really ran.
+    if len(usable) < 2:
+        return None
     if counts.get("MEDIUM", 0) > 0:
         return "B"
     return "A"
@@ -80,7 +85,12 @@ class SecurityReportService:
             row.payload = tools
             from sqlalchemy.sql import func
             row.received_at = func.now()
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            # Concurrent first report for the same app: the other one won, treat this one as a replay.
+            await self.db.rollback()
+            return False
         return True
 
     @staticmethod

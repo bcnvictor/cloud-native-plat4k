@@ -10,7 +10,12 @@ from backend.api.routes import security as security_routes
 from backend.core.config import settings
 from backend.db.models import Application, AuditLog, SecurityReport
 from backend.main import app as fastapi_app
-from backend.services.security_autofix_service import AutofixError, resolve_target, validate_rewrite
+from backend.services.security_autofix_service import (
+    AutofixError,
+    pick_fixed_version,
+    resolve_target,
+    validate_rewrite,
+)
 
 REQ = "flask==1.0\nrequests==2.0\n"
 
@@ -120,6 +125,9 @@ async def test_existing_branch_returns_existing_mr(client, seeded, setup, admin_
     json.dumps({"new_content": "flask==2.0.1\nrequests==9.9\n"}),  # touches another package
     json.dumps({"new_content": "flask==2.0.1\nrequests==2.0\nevil-pkg==1\n"}),  # extra line
     json.dumps({"new_content": "flask==3.0\nrequests==2.0\n"}),  # wrong version
+    json.dumps({"new_content": "flask-cors==2.0.1\nrequests==2.0\n"}),  # other package whose name starts the same
+    json.dumps({"new_content": "flask @ https://evil.example/flask-2.0.1.tar.gz\nrequests==2.0\n"}),  # URL redirect
+    json.dumps({"new_content": "git+https://evil/flask@2.0.1#egg=flask\nrequests==2.0\n"}),  # VCS
 ])
 async def test_no_fix_when_invalid_or_out_of_scope(client, seeded, setup, admin_token, content):
     setup["provider"] = FakeProvider(content)
@@ -192,3 +200,46 @@ def test_resolve_target_rules():
 def test_validate_rewrite_caps_diff():
     old = "\n".join(f"flask-{i}==1" for i in range(30))
     assert validate_rewrite(old, old.replace("==1", "==2.0.1"), "flask", "2.0.1") is not None  # too many lines
+
+
+@pytest.mark.asyncio
+async def test_forged_fixed_version_rejected(client, seeded, setup, admin_token, db_session):
+    row = await db_session.get(SecurityReport, seeded.id)
+    payload = json.loads(json.dumps(row.payload))
+    payload["trivy"]["findings"][0]["fixed_version"] = "1.0 @ https://evil.example/x.tgz"
+    row.payload = payload
+    await db_session.commit()
+    r = await client.post(_url(seeded), headers=_h(admin_token))
+    assert r.status_code == 422 and setup["provider"].calls == []
+
+
+def test_fixed_version_list_and_boundary():
+    assert pick_fixed_version("3.0.1, 2.9.5", "2.1.0") == "2.9.5"
+    assert pick_fixed_version("3.0.1", None) == "3.0.1"
+    assert validate_rewrite("flask==1.0\n", "flask==2.9.5\n", "flask", "2.9.5") is None
+    assert validate_rewrite("flask==1.0\n", "flask==2.9.51\n", "flask", "2.9.5") is not None  # no prefix match
+    assert validate_rewrite('"flask": "1.0",\n', '"flask": "^2.9.5",\n', "flask", "2.9.5") is None
+    assert validate_rewrite("require github.com/x/y v1.0.0\n", "require github.com/x/y v1.2.3\n", "github.com/x/y", "v1.2.3") is None
+
+
+@pytest.mark.asyncio
+async def test_failed_commit_cleans_up_branch(client, seeded, setup, admin_token):
+    class BadGL(FakeGL):
+        deleted = None
+        def push_multiple_files(self, *a, **k): raise RuntimeError("push rejected")
+        def delete_branch(self, project, branch): BadGL.deleted = branch
+    setup["gl"] = BadGL()
+    try:
+        await client.post(_url(seeded), headers=_h(admin_token))
+    except RuntimeError:
+        pass
+    assert BadGL.deleted == "cnp/autofix/dep1"
+
+
+@pytest.mark.asyncio
+async def test_existing_branch_without_mr_is_not_a_dead_end(client, seeded, setup, admin_token):
+    class NoMR(FakeGL):
+        def find_mr_url_for_branch(self, project, branch): return None
+    setup["gl"] = NoMR(branch_exists=True)
+    r = await client.post(_url(seeded), headers=_h(admin_token))
+    assert r.json()["status"] == "no_fix" and "already exists" in r.json()["message"]

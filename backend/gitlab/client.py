@@ -272,6 +272,9 @@ class GitLabClient:
         except GitlabGetError:
             return False
 
+    def delete_branch(self, project_path: str, branch: str) -> None:
+        self.get_project(project_path).branches.delete(branch)
+
     def find_mr_url_for_branch(self, project_path: str, branch: str) -> str | None:
         """web_url of the most recent MR (any state) whose source branch is *branch*."""
         project = self.get_project(project_path)

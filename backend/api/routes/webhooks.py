@@ -9,7 +9,7 @@ from backend.db.models import Application, ClusterConnection
 from backend.services.security_report_service import SecurityReportService, verify_token
 from backend.services.security_scan_service import SecurityScanService
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -176,7 +176,7 @@ async def security_scan_callback(
 
 class CIFinding(BaseModel):
     # Unknown fields (e.g. a leaked "Secret") are dropped by pydantic's default extra=ignore.
-    id: str = Field(max_length=64)
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
     rule: str = Field(max_length=100)
     severity: str = Field(max_length=16)
     title: str = Field(default="", max_length=200)
@@ -193,13 +193,21 @@ class CIToolReport(BaseModel):
     truncated: bool = False
     findings: list[CIFinding] = Field(default=[], max_length=100)
 
+    @field_validator("counts")
+    @classmethod
+    def _counts_keys(cls, v: dict[str, int]) -> dict[str, int]:
+        allowed = {"CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN", "total"}
+        if not set(v) <= allowed:
+            raise ValueError("unexpected counts key")
+        return v
+
 
 class CISecurityReport(BaseModel):
     app_id: int
-    pipeline_id: int
-    pipeline_url: str = Field(max_length=500)
+    pipeline_id: int = Field(ge=0, le=2**62)
+    pipeline_url: str = Field(max_length=500, pattern=r"^https?://\S+$")
     commit_sha: str = Field(max_length=64)
-    tools: dict[str, CIToolReport] = {}
+    tools: dict[str, CIToolReport] = Field(default={}, max_length=4)
 
 
 @router.post("/ci-security-report", status_code=status.HTTP_200_OK)

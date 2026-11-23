@@ -33,7 +33,8 @@ Onglet Security ◄── GET /apps/{id}/security/latest (rapport + grade) ◄�
 | B | au moins une MEDIUM |
 | A | sinon (aucune, ou seulement LOW/UNKNOWN) |
 
-Aucune note (`null`) si aucun scanner n'a abouti ; note « partielle » si l'un des deux a échoué.
+A et B exigent que **les deux** scanners aient abouti ; sinon aucune note (`null`, « partielle ») : un scanner planté
+ne doit pas ressembler à un résultat propre. Un mauvais résultat (C, D, F) reste affiché même si l'autre scanner a échoué.
 
 ## API
 

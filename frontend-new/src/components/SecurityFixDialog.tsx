@@ -164,7 +164,7 @@ export function SecurityFixDialog({ open, appId, finding, onClose, modeB }: Prop
                 result.status === 'no_fix' ? (
                   <p className="text-xs text-warning-text">No automatic fix: {result.message ?? 'the change was rejected by the safety checks.'}</p>
                 ) : (
-                  <a href={result.mr_url ?? '#'} target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1 hover:underline">
+                  <a href={result.mr_url && /^https?:\/\//i.test(result.mr_url) ? result.mr_url : undefined} target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1 hover:underline">
                     {result.status === 'exists' ? 'A Merge Request already exists' : 'Draft Merge Request created'} <IconExternalLink size={12} />
                   </a>
                 )

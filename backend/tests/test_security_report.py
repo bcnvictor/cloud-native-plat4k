@@ -83,7 +83,8 @@ def test_grade_rules():
     assert compute_grade({"trivy": ok(HIGH=5), "gitleaks": clean_leaks}) == "D"
     assert compute_grade({"trivy": ok(CRITICAL=1), "gitleaks": clean_leaks}) == "F"
     assert compute_grade({"trivy": ok(), "gitleaks": ok(total=1)}) == "F"
-    assert compute_grade({"trivy": {"status": "failed"}, "gitleaks": clean_leaks}) == "A"  # partial
+    assert compute_grade({"trivy": {"status": "failed"}, "gitleaks": clean_leaks}) is None  # not clean
+    assert compute_grade({"trivy": {"status": "failed"}, "gitleaks": ok(total=1)}) == "F"  # bad stays bad
     assert compute_grade({"trivy": {"status": "failed"}, "gitleaks": {"status": "skipped"}}) is None
     assert compute_grade({}) is None
 
@@ -96,7 +97,7 @@ async def test_read_route(client, app_row, admin_token):
     await _post(client, app_row.id, _payload(app_row.id, trivy_status="failed"))
     r = await client.get(f"/api/v1/apps/{app_row.id}/security/latest", headers=h)
     body = r.json()
-    assert body["report"]["pipeline_id"] == 10 and body["partial"] is True and body["grade"] == "A"
+    assert body["report"]["pipeline_id"] == 10 and body["partial"] is True and body["grade"] is None
     assert (await client.get("/api/v1/apps/999/security/latest", headers=h)).status_code == 404
 
 
@@ -138,3 +139,24 @@ def test_migration_upgrade_downgrade():
             assert "security_reports" in inspect(conn).get_table_names()
             mig.downgrade()
             assert "security_reports" not in inspect(conn).get_table_names()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["javascript:alert(1)", "data:text/html,x", "//evil.example", "ftp://x/y"])
+async def test_pipeline_url_must_be_http(client, app_row, url):
+    body = _payload(app_row.id)
+    body["pipeline_url"] = url
+    assert (await _post(client, app_row.id, body)).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_payload_bounds(client, app_row):
+    body = _payload(app_row.id)
+    body["pipeline_id"] = 10**20
+    assert (await _post(client, app_row.id, body)).status_code == 422
+    body = _payload(app_row.id)
+    body["tools"]["trivy"]["counts"] = {"EVIL": 1}
+    assert (await _post(client, app_row.id, body)).status_code == 422
+    body = _payload(app_row.id)
+    body["tools"]["trivy"]["findings"][0]["id"] = "bad id/../x"
+    assert (await _post(client, app_row.id, body)).status_code == 422

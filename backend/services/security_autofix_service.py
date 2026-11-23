@@ -35,6 +35,9 @@ _LOCK_TO_MANIFEST = {
 }
 _ALLOWED_MANIFEST = re.compile(r"^(requirements[\w.-]*\.txt|pyproject\.toml|package\.json|go\.mod|Pipfile)$")
 _SAFE_PATH = re.compile(r"^[A-Za-z0-9._/-]+$")
+_SAFE_VERSION = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+_~-]{0,49}$")
+# A rewritten line must never introduce a URL / VCS / local-path / index option (supply-chain redirection).
+_FORBIDDEN_IN_NEW_LINE = re.compile(r"://|git\+|\bfile:|\blink:|\s@\s|^\s*-|\.\./", re.IGNORECASE)
 
 SYSTEM_PROMPT = (
     "You edit one dependency manifest. Change ONLY the version constraint of the single package named by the user, "
@@ -75,6 +78,21 @@ def _norm(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name.lower())
 
 
+def _line_package(line: str) -> str:
+    """Normalized dependency name a manifest line is about (first token), '' if none."""
+    t = re.sub(r"^\s*(require\s+)?", "", line).lstrip("\"'")
+    m = re.match(r"[A-Za-z0-9_.@/-]+", t)
+    return _norm(m.group(0)) if m else ""
+
+
+def pick_fixed_version(raw: str, installed: Optional[str]) -> str:
+    """trivy FixedVersion may be a list ("3.0.1, 2.9.5"): prefer the one on the installed major line."""
+    versions = [v.strip() for v in str(raw).split(",") if v.strip()]
+    major = (installed or "").lstrip("v").split(".")[0]
+    same = [v for v in versions if v.lstrip("v").split(".")[0] == major]
+    return (same or versions or [""])[0]
+
+
 def validate_rewrite(old: str, new: str, package: str, fixed_version: str) -> Optional[str]:
     """None if the rewrite only touches version lines of *package*; else the rejection reason."""
     if new == old:
@@ -90,9 +108,14 @@ def validate_rewrite(old: str, new: str, package: str, fixed_version: str) -> Op
     if not changed_new or len(changed_old) + len(changed_new) > MAX_CHANGED_LINES:
         return "The change is outside the allowed size."
     pkg = _norm(package)
-    if not all(pkg in _norm(line) for line in changed_old + changed_new):
+    if not all(_line_package(line) == pkg for line in changed_old + changed_new):
         return "The diff touches lines unrelated to the vulnerable package."
-    if not any(fixed_version in line for line in changed_new):
+    if not _SAFE_VERSION.match(fixed_version):
+        return "The fixed version is not a plain version string."
+    if any(_FORBIDDEN_IN_NEW_LINE.search(line) for line in changed_new):
+        return "The change introduces a URL, VCS reference or option, which is not allowed."
+    boundary = re.compile(r"(?<![0-9A-Za-z.])" + re.escape(fixed_version) + r"(?![0-9A-Za-z.])")
+    if not any(boundary.search(line) for line in changed_new):
         return "The fixed version does not appear in the change."
     return None
 
@@ -131,6 +154,9 @@ async def _run(db, app, user, report, finding_id, provider, model, gl) -> dict[s
         raise AutofixError(422, "No fixed version is published for this dependency.")
     if not app.repo_url:
         raise AutofixError(409, "The application has no repository.")
+    f = {**f, "fixed_version": pick_fixed_version(f["fixed_version"], f.get("installed_version"))}
+    if not _SAFE_VERSION.match(str(f["fixed_version"])) or not re.match(r"^[A-Za-z0-9@/._-]{1,100}$", str(f["package"])):
+        raise AutofixError(422, "Unsupported package or version format.")
     target = resolve_target(f.get("file"))
     project = extract_project_path(app.repo_url)
     branch = f"cnp/autofix/{finding_id}"
@@ -138,7 +164,10 @@ async def _run(db, app, user, report, finding_id, provider, model, gl) -> dict[s
     # (3) anti-duplicate
     if await asyncio.to_thread(gl.branch_exists, project, branch):
         url = await asyncio.to_thread(gl.find_mr_url_for_branch, project, branch)
-        return {"status": "exists", "mr_url": url, "message": None}
+        if url:
+            return {"status": "exists", "mr_url": url, "message": None}
+        return {"status": "no_fix", "mr_url": None,
+                "message": f"Branch {branch} already exists without a Merge Request: delete it or open the MR manually."}
 
     # (4) read only the target manifest
     default_branch = await asyncio.to_thread(gl.get_default_branch, project)
@@ -182,13 +211,21 @@ async def _run(db, app, user, report, finding_id, provider, model, gl) -> dict[s
         f"pipeline run before merging.{lock_note}"
     )
     await asyncio.to_thread(gl.create_branch, project, branch, default_branch)
-    await asyncio.to_thread(
-        gl.push_multiple_files, project, branch, title.removeprefix("Draft: "),
-        [{"action": "update", "file_path": target.manifest, "content": new}],
-    )
-    mr = await asyncio.to_thread(
-        gl.create_mr, project, branch, default_branch, title, redact(body).text, ["cnp-autofix"]
-    )
+    try:
+        await asyncio.to_thread(
+            gl.push_multiple_files, project, branch, title.removeprefix("Draft: "),
+            [{"action": "update", "file_path": target.manifest, "content": new}],
+        )
+        mr = await asyncio.to_thread(
+            gl.create_mr, project, branch, default_branch, title, redact(body).text, ["cnp-autofix"]
+        )
+    except Exception:
+        # Don't leave an orphan branch that would block every retry.
+        try:
+            await asyncio.to_thread(gl.delete_branch, project, branch)
+        except Exception:
+            logger.warning("Could not clean up branch %s on %s", branch, project, exc_info=True)
+        raise
     await AuditService(db).log_action(
         user_id=user.id, action="SECURITY_AUTOFIX_MR", app_id=app.id,
         extra={"finding_id": finding_id, "mr_url": mr.get("web_url")},
