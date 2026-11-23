@@ -73,6 +73,8 @@ non fiable : seul un contenu validé est écrit.
 
 ## Exploitation
 
+- **Ordre de déploiement** : merger d'abord `cnp-ci-modules` (fournit `security/cnp-report.yml`), puis le backend. Les `.gitlab-ci.yml` générés pour les nouvelles apps incluent ce fichier ; s'il manque, leur pipeline échoue.
+
 - Rollout : les apps existantes doivent voir leur CI ré-injectée pour recevoir `cnp-report`, `CNP_REPORT_URL` et
   `CNP_REPORT_TOKEN`.
 - Le bot GitLab (`GITLAB_BOT_TOKEN`) doit pouvoir créer branches et MR (et poser des variables CI) sur les apps.
