@@ -249,16 +249,34 @@ class GitLabClient:
         target_branch: str,
         title: str,
         description: str = "",
+        labels: list[str] | None = None,
     ) -> dict:
         """Create a Merge Request and return its iid and web_url."""
         project = self.get_project(project_path)
-        mr = project.mergerequests.create({
+        data = {
             "source_branch": source_branch,
             "target_branch": target_branch,
             "title": title,
             "description": description,
-        })
+        }
+        if labels:
+            data["labels"] = ",".join(labels)
+        mr = project.mergerequests.create(data)
         return {"iid": mr.iid, "web_url": mr.web_url}
+
+    def branch_exists(self, project_path: str, branch: str) -> bool:
+        project = self.get_project(project_path)
+        try:
+            project.branches.get(branch)
+            return True
+        except GitlabGetError:
+            return False
+
+    def find_mr_url_for_branch(self, project_path: str, branch: str) -> str | None:
+        """web_url of the most recent MR (any state) whose source branch is *branch*."""
+        project = self.get_project(project_path)
+        mrs = project.mergerequests.list(source_branch=branch, order_by="created_at", sort="desc", per_page=1)
+        return mrs[0].web_url if mrs else None
     
     @staticmethod
     def _slugify(name: str) -> str:

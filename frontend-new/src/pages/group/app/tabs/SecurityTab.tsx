@@ -1,7 +1,12 @@
 import { useMemo, useState } from 'react';
 import { IconAlertTriangle, IconExternalLink, IconKey, IconPackage, IconShieldCheck, IconTool } from '@tabler/icons-react';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
+import { useQuery } from '@tanstack/react-query';
 import { useSecurityReport } from '@/hooks/useSecurityReport';
+import { securityApi } from '@/api/security';
+import { assistantApi } from '@/api/assistant';
+import { appsApi } from '@/api/apps';
+import { apiError } from '@/utils/apiError';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -61,6 +66,13 @@ export function SecurityTab() {
   const [toolFilter, setToolFilter] = useState<SecurityToolName | 'all'>('all');
   const [sevFilter, setSevFilter] = useState<SecuritySeverity | 'all'>('all');
   const [fixTarget, setFixTarget] = useState<string | null>(null);
+  const { data: ui } = useQuery({ queryKey: ['assistant-ui-settings'], queryFn: assistantApi.getUiSettings, staleTime: 60_000 });
+  const { data: myAccess } = useQuery({
+    queryKey: ['myAccess', app?.id],
+    queryFn: () => appsApi.getMyAccess(app!.id),
+    enabled: !!app?.id,
+  });
+  const canFix = !!myAccess && (myAccess.is_admin || ['developer', 'maintainer', 'owner'].includes(myAccess.tier));
 
   const rows: Row[] = useMemo(() => {
     const tools = data?.report?.tools ?? {};
@@ -71,6 +83,25 @@ export function SecurityTab() {
   const visible = rows.filter(
     (r) => (toolFilter === 'all' || r.tool === toolFilter) && (sevFilter === 'all' || r.severity === sevFilter),
   );
+
+  function modeBConfig() {
+    if (!app || !fixTarget) return {};
+    const f = rows.find((r) => r.id === fixTarget);
+    if (!ui?.assistant_enabled) return { disabledReason: 'The CNP AI is disabled on this platform. Use the local mode.' };
+    if (fixTarget === 'all') return { disabledReason: 'The CNP AI fixes one finding at a time: pick a single finding.' };
+    if (f?.tool === 'gitleaks') return { disabledReason: 'Secrets must be revoked and rotated, not patched: use the local mode.' };
+    if (!f || !f.fixed_version) return { disabledReason: 'Only dependency vulnerabilities with a published fixed version can be fixed by the CNP AI.' };
+    if (!canFix) return { disabledReason: 'You need the developer role on this application to use the CNP AI.' };
+    return {
+      launch: async () => {
+        try {
+          return await securityApi.autofix(app.id, f.id);
+        } catch (e) {
+          throw new Error(apiError(e, 'The AI fix failed, try again later.'));
+        }
+      },
+    };
+  }
 
   if (!app) return null;
   if (isLoading) {
@@ -192,7 +223,7 @@ export function SecurityTab() {
         appId={app.id}
         finding={fixTarget ?? ''}
         onClose={() => setFixTarget(null)}
-        modeB={{ disabledReason: 'Not available yet.' }}
+        modeB={modeBConfig()}
       />
     </div>
   );
