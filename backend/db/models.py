@@ -21,6 +21,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -490,3 +491,37 @@ class SecurityReport(Base):
     commit_sha = Column(String, nullable=False)
     received_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     payload = Column(JSON, nullable=False)
+
+
+class SbomSnapshot(Base):
+    """Latest CI dependency inventory (SBOM) summary per app — one row, replaced per pipeline."""
+
+    __tablename__ = "sbom_snapshots"
+
+    app_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), primary_key=True)
+    pipeline_id = Column(BigInteger, nullable=False)
+    commit_sha = Column(String, nullable=False)
+    received_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    component_count = Column(Integer, nullable=False)
+    truncated = Column(Boolean, nullable=False, default=False, server_default="false")
+
+
+class SbomComponent(Base):
+    """One library of an app's latest SBOM. Rows of an app are replaced wholesale (no history)."""
+
+    __tablename__ = "sbom_components"
+    __table_args__ = (
+        Index("ix_sbom_components_ecosystem_name", "ecosystem", "name"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    app_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    version = Column(String, nullable=False)
+    ecosystem = Column(String, nullable=False)
+    purl = Column(String, nullable=False)
+    direct = Column(Boolean, nullable=True)  # None = unknown
+    licenses = Column(JSON, nullable=False, default=list)
+
+
+Index("ix_sbom_components_lower_name", func.lower(SbomComponent.name))
