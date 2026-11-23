@@ -623,3 +623,21 @@ export interface DependencySearchResponse {
   offset: number;
   coverage: DependencyCoverage;
 }
+
+export interface CvePackageMatch {
+  ecosystem: string;
+  name: string;
+  mode: 'explicit' | 'range_unevaluated';
+  ranges: string[];
+  matches: DependencyRow[];
+}
+
+export interface CveSearchResponse {
+  cve: string;
+  summary: string | null;
+  aliases: string[];
+  osv_packages: number;
+  packages: CvePackageMatch[];
+  partial: boolean;
+  coverage: DependencyCoverage;
+}

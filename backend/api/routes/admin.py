@@ -11,7 +11,7 @@ from backend.services.audit_service import AuditService
 from backend.services.gitlab_sync_service import _build_gitlab_client, run_gitlab_sync
 from backend.services.monitoring_service import get_cost_by_team, merge_cost_by_team
 from backend.services.monitoring_sources import fan_out, prometheus_urls
-from backend.services.sbom_service import MAX_SEARCH_LIMIT, SbomService
+from backend.services.sbom_service import MAX_SEARCH_LIMIT, OsvError, SbomService, search_by_cve
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -203,3 +203,16 @@ async def search_dependencies(
 ):
     """Which apps use this dependency? Search the latest SBOM inventory of every app (admin only)."""
     return await SbomService(db).search(q or None, version or None, ecosystem or None, limit, offset)
+
+
+@router.get("/dependencies/by-cve")
+async def search_dependencies_by_cve(
+    id: str = Query(..., min_length=1, max_length=32, description="CVE identifier, e.g. CVE-2021-44228"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Which apps use a package affected by this CVE? Looks the CVE up on OSV.dev (id only is sent)."""
+    try:
+        return await search_by_cve(db, id)
+    except OsvError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

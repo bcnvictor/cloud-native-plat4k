@@ -246,3 +246,131 @@ def test_migration_upgrade_downgrade():
             assert {"ix_sbom_components_lower_name", "ix_sbom_components_ecosystem_name"} <= idx
             mig.downgrade()
             assert not {"sbom_snapshots", "sbom_components"} & set(inspect(conn).get_table_names())
+
+
+# ── search by CVE (OSV.dev mocked) ────────────────────────────────────────────
+
+import httpx  # noqa: E402
+
+from backend.services import sbom_service  # noqa: E402
+
+BYCVE = "/api/v1/admin/dependencies/by-cve"
+LOG4J_CVE = {"id": "CVE-2021-44228", "summary": "Log4Shell", "aliases": ["GHSA-jfh8-c2jp-5v3q"],
+             "related": ["SUSE-SU-2021:4096-1"],
+             # like the real CVE record: GIT ranges only, no package
+             "affected": [{"ranges": [{"type": "GIT", "events": [{"introduced": "0"}, {"fixed": "abc"}]}],
+                           "versions": ["2.14.1"]}]}
+LOG4J_GHSA = {"id": "GHSA-jfh8-c2jp-5v3q", "affected": [
+    {"package": {"ecosystem": "Maven", "name": "org.apache.logging.log4j:log4j-core"},
+     "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "2.0-beta9"}, {"fixed": "2.15.0"}]}],
+     "versions": ["2.14.1", "2.14.0"]},
+    {"package": {"ecosystem": "Debian:11", "name": "apache-log4j2"}, "versions": ["2.14.1"]},  # out of scope
+]}
+RANGE_ONLY = {"id": "CVE-2023-1111", "aliases": [], "affected": [
+    {"package": {"ecosystem": "npm", "name": "lodash"},
+     "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "4.17.21"}]}]}]}
+
+
+@pytest.fixture
+def osv(monkeypatch):
+    """Mock OSV.dev with an httpx MockTransport; records every outgoing request."""
+    sbom_service._osv_cache.clear()
+    db: dict = {"CVE-2021-44228": LOG4J_CVE, "GHSA-jfh8-c2jp-5v3q": LOG4J_GHSA, "CVE-2023-1111": RANGE_ONLY}
+    seen: list[httpx.Request] = []
+    state = {"mode": "ok"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if state["mode"] == "timeout":
+            raise httpx.ReadTimeout("slow", request=request)
+        if state["mode"] == "500":
+            return httpx.Response(500)
+        vid = request.url.path.rsplit("/", 1)[-1]
+        return httpx.Response(200, json=db[vid]) if vid in db else httpx.Response(404, json={"code": 5})
+
+    monkeypatch.setattr(sbom_service, "_osv_client", lambda: httpx.AsyncClient(
+        base_url="https://osv.test", transport=httpx.MockTransport(handler)))
+    return type("Osv", (), {"seen": seen, "state": state, "db": db})
+
+
+@pytest.fixture
+async def cve_apps(client, app_row, db_session):
+    other = Application(name="Billing", slug="billing", owner="o")
+    db_session.add(other)
+    await db_session.commit()
+    mv = lambda v: {"purl": f"pkg:maven/org.apache.logging.log4j/log4j-core@{v}", "name": "log4j-core",  # noqa: E731
+                    "version": v, "ecosystem": "maven", "direct": True, "licenses": ["Apache-2.0"]}
+    await _post(client, app_row.id, _payload(app_row.id, 1, [mv("2.14.1"), _comp("lodash", "4.17.20")]))
+    await _post(client, other.id, _payload(other.id, 1, [mv("2.17.1"), _comp("lodash", "4.17.21")]))
+    return app_row, other
+
+
+@pytest.mark.asyncio
+async def test_by_cve_explicit_versions_via_alias(client, cve_apps, osv, admin_token):
+    r = await client.get(BYCVE, params={"id": "cve-2021-44228"}, headers=_h(admin_token))  # case-insensitive
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["cve"] == "CVE-2021-44228" and body["aliases"] == ["GHSA-jfh8-c2jp-5v3q"] and body["partial"] is False
+    assert len(body["packages"]) == 1  # Debian entry is outside the inventory ecosystems
+    pkg = body["packages"][0]
+    assert (pkg["ecosystem"], pkg["name"], pkg["mode"]) == ("Maven", "org.apache.logging.log4j:log4j-core", "explicit")
+    assert [(m["app_name"], m["version"]) for m in pkg["matches"]] == [("Shop", "2.14.1")]  # 2.17.1 not listed
+    assert pkg["ranges"] == [">= 2.0-beta9, < 2.15.0"]
+    assert body["coverage"]["apps_with_sbom"] == 2
+
+
+@pytest.mark.asyncio
+async def test_by_cve_ranges_only_lists_package_users_unevaluated(client, cve_apps, osv, admin_token):
+    body = (await client.get(BYCVE, params={"id": "CVE-2023-1111"}, headers=_h(admin_token))).json()
+    pkg = body["packages"][0]
+    assert pkg["mode"] == "range_unevaluated" and pkg["ranges"] == ["< 4.17.21"]
+    # both versions listed: ranges are NOT evaluated
+    assert sorted(m["version"] for m in pkg["matches"]) == ["4.17.20", "4.17.21"]
+
+
+@pytest.mark.asyncio
+async def test_by_cve_unknown_invalid_and_upstream_errors(client, cve_apps, osv, admin_token):
+    h = _h(admin_token)
+    assert (await client.get(BYCVE, params={"id": "CVE-2099-0001"}, headers=h)).status_code == 404
+    assert (await client.get(BYCVE, params={"id": "not-a-cve"}, headers=h)).status_code == 422
+    assert (await client.get(BYCVE, params={"id": "CVE-1-1; DROP"}, headers=h)).status_code == 422
+    osv.state["mode"] = "timeout"
+    r = await client.get(BYCVE, params={"id": "CVE-2021-44228"}, headers=h)
+    assert r.status_code == 424 and "in time" in r.json()["detail"]
+    osv.state["mode"] = "500"
+    r = await client.get(BYCVE, params={"id": "CVE-2021-44228"}, headers=h)
+    assert r.status_code == 424 and "HTTP 500" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_by_cve_alias_failure_is_partial(client, cve_apps, osv, admin_token):
+    del osv.db["GHSA-jfh8-c2jp-5v3q"]  # alias 404s
+    body = (await client.get(BYCVE, params={"id": "CVE-2021-44228"}, headers=_h(admin_token))).json()
+    assert body["partial"] is True and body["packages"] == []
+
+
+@pytest.mark.asyncio
+async def test_by_cve_sends_only_ids_to_osv_and_caches(client, cve_apps, osv, admin_token):
+    h = _h(admin_token)
+    await client.get(BYCVE, params={"id": "CVE-2021-44228"}, headers=h)
+    paths = [r.url.path for r in osv.seen]
+    assert paths == ["/v1/vulns/CVE-2021-44228", "/v1/vulns/GHSA-jfh8-c2jp-5v3q"]
+    for req in osv.seen:  # no query string, no body, no app data, no auth header
+        assert req.method == "GET" and not req.url.query and not req.content
+        blob = (str(req.url) + str(dict(req.headers))).lower()
+        assert all(w not in blob for w in ("shop", "billing", "lodash", "log4j-core", "bearer"))
+    await client.get(BYCVE, params={"id": "CVE-2021-44228"}, headers=h)
+    assert len(osv.seen) == 2  # second call served from the in-process cache
+
+
+@pytest.mark.asyncio
+async def test_by_cve_requires_admin(client, cve_apps, osv, dev_token):
+    assert (await client.get(BYCVE, params={"id": "CVE-2021-44228"})).status_code == 401
+    assert (await client.get(BYCVE, params={"id": "CVE-2021-44228"}, headers=_h(dev_token))).status_code == 403
+    assert osv.seen == []
+
+
+def test_osv_helpers():
+    assert sbom_service._purl_prefix("PyPI", "Django_Rest.Framework") == "pkg:pypi/django-rest-framework"
+    assert sbom_service._purl_prefix("Go", "github.com/x/y") == "pkg:golang/github.com/x/y"
+    assert sbom_service._norm_version("Go", "v1.2.3") == "1.2.3"

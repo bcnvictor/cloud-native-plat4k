@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { IconAlertTriangle, IconInfoCircle, IconPackage } from '@tabler/icons-react';
 import { useScopeStore } from '@/store/scope';
 import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
-import { useDependencySearch } from '@/hooks/useDependencySearch';
+import { useCveSearch, useDependencySearch } from '@/hooks/useDependencySearch';
+import { apiError } from '@/utils/apiError';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -11,10 +12,11 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/EmptyState';
-import type { DependencyCoverage, DependencyRow } from '@/types';
+import type { CvePackageMatch, DependencyCoverage, DependencyRow } from '@/types';
 
 const PAGE_SIZE = 50;
 const ECOSYSTEMS = ['npm', 'pypi', 'golang', 'maven', 'cargo', 'gem'];
+const CVE_RE = /^CVE-\d{4}-\d{4,9}$/i;
 const GRID = 'grid grid-cols-[1.3fr_1fr_1.5fr_0.9fr_0.9fr_1.4fr] gap-4 px-4';
 
 function shortDate(iso: string | null): string {
@@ -80,15 +82,7 @@ function Row({ r }: { r: DependencyRow }) {
   );
 }
 
-export function AdminDependencies() {
-  const { setScope } = useScopeStore();
-  const { setBreadcrumb } = useBreadcrumb();
-  useEffect(() => { setScope('admin'); }, [setScope]);
-  useEffect(() => {
-    setBreadcrumb([{ label: 'Platform', to: '/admin/clusters' }, { label: 'Dependencies' }]);
-    return () => setBreadcrumb([]);
-  }, [setBreadcrumb]);
-
+function PackageSearch() {
   const [q, setQ] = useState('');
   const [version, setVersion] = useState('');
   const [ecosystem, setEcosystem] = useState('');
@@ -103,14 +97,7 @@ export function AdminDependencies() {
   const hasFilter = !!(dq || dv || ecosystem);
 
   return (
-    <div className="max-w-[1440px] mx-auto px-8 py-6 space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">Dependencies</h1>
-        <p className="text-sm text-muted-foreground">
-          Which apps use a given package? Search the inventory of the latest default-branch pipeline of every app.
-        </p>
-      </div>
-
+    <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <Input label="Package" placeholder="e.g. log4j, lodash" value={q} onChange={(e) => setQ(e.target.value)} className="w-64" />
         <Input label="Version" placeholder="exact, e.g. 4.17.20" value={version} onChange={(e) => setVersion(e.target.value)} className="w-44" mono />
@@ -179,6 +166,140 @@ export function AdminDependencies() {
           </div>
         )}
       </div>
+
+    </div>
+  );
+}
+
+function CvePackageBlock({ pkg }: { pkg: CvePackageMatch }) {
+  return (
+    <div className="bg-card border border-border rounded-md overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-border bg-background-subtle space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-mono text-foreground">{pkg.name}</span>
+          <Badge variant="muted">{pkg.ecosystem}</Badge>
+          {pkg.mode === 'explicit' ? (
+            <Badge variant="danger">Affected version in use</Badge>
+          ) : (
+            <Badge variant="warning">Range not evaluated automatically</Badge>
+          )}
+        </div>
+        {pkg.mode === 'range_unevaluated' && (
+          <p className="text-xs text-muted-foreground">
+            OSV only gives version ranges for this package: every app using it is listed, check the version yourself.
+            {pkg.ranges.length > 0 && <> Affected range: <span className="font-mono">{pkg.ranges.join(' | ')}</span></>}
+          </p>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <div className="min-w-[860px]">
+          <div className={`${GRID} py-2 border-b border-border`}>
+            {['App', 'Group', 'Package', 'Version', 'Type', 'Licenses'].map((h) => (
+              <p key={h} className="text-xs font-medium text-muted-foreground">{h}</p>
+            ))}
+          </div>
+          {pkg.matches.map((r) => <Row key={`${r.app_id}-${r.version}`} r={r} />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CveSearch() {
+  const [input, setInput] = useState('');
+  const [submitted, setSubmitted] = useState<string | null>(null);
+  const valid = CVE_RE.test(input.trim());
+  const { data, isFetching, isError, error, refetch } = useCveSearch(submitted);
+
+  function submit() {
+    if (valid) setSubmitted(input.trim().toUpperCase());
+  }
+
+  return (
+    <div className="space-y-4">
+      <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+        <Input
+          label="CVE identifier"
+          placeholder="CVE-2021-44228"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          error={input.trim() && !valid ? 'Expected a CVE id such as CVE-2021-44228' : undefined}
+          className="w-64"
+          mono
+        />
+        <Button type="submit" disabled={!valid || isFetching}>{isFetching ? 'Searching…' : 'Search'}</Button>
+      </form>
+      <p className="text-xs text-muted-foreground">
+        The CVE id (and nothing else) is sent to OSV.dev to find the affected packages, which are then matched against the inventory.
+      </p>
+
+      {!submitted && (
+        <EmptyState
+          icon={<IconPackage size={40} strokeWidth={1.5} />}
+          title="Search by CVE"
+          description="Enter a CVE id to see which apps use an affected package, even before their own scan reports it."
+        />
+      )}
+      {submitted && isFetching && <Skeleton className="h-32 w-full" />}
+      {submitted && !isFetching && isError && (
+        <Card padding="sm">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-danger-text flex items-center gap-1.5">
+              <IconAlertTriangle size={14} className="shrink-0" /> {apiError(error, 'The CVE lookup failed, try again later.')}
+            </p>
+            <Button size="sm" onClick={() => refetch()}>Retry</Button>
+          </div>
+        </Card>
+      )}
+      {submitted && !isFetching && data && (
+        <>
+          <CoverageBanner coverage={data.coverage} />
+          {data.summary && <p className="text-sm text-foreground"><strong>{data.cve}</strong> — {data.summary}</p>}
+          {data.partial && (
+            <p className="text-xs text-warning-text flex items-center gap-1.5">
+              <IconAlertTriangle size={12} /> Some related OSV records could not be read: the affected packages list may be incomplete.
+            </p>
+          )}
+          {data.packages.length === 0 ? (
+            <EmptyState
+              icon={<IconPackage size={40} strokeWidth={1.5} />}
+              title="No inventoried app uses an affected package"
+              description={`OSV lists ${data.osv_packages} affected package(s) in the supported ecosystems (npm, PyPI, Go, Maven, crates.io, RubyGems). This does not cover the ${data.coverage.apps_total - data.coverage.apps_with_sbom} app(s) without an inventory.`}
+            />
+          ) : (
+            data.packages.map((p) => <CvePackageBlock key={`${p.ecosystem}:${p.name}`} pkg={p} />)
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+export function AdminDependencies() {
+  const { setScope } = useScopeStore();
+  const { setBreadcrumb } = useBreadcrumb();
+  useEffect(() => { setScope('admin'); }, [setScope]);
+  useEffect(() => {
+    setBreadcrumb([{ label: 'Platform', to: '/admin/clusters' }, { label: 'Dependencies' }]);
+    return () => setBreadcrumb([]);
+  }, [setBreadcrumb]);
+  const [mode, setMode] = useState<'package' | 'cve'>('package');
+
+  return (
+    <div className="max-w-[1440px] mx-auto px-8 py-6 space-y-4">
+      <div>
+        <h1 className="text-xl font-semibold text-foreground">Dependencies</h1>
+        <p className="text-sm text-muted-foreground">
+          Which apps use a given package, or a package affected by a given CVE? Search the inventory of the latest default-branch pipeline of every app.
+        </p>
+      </div>
+
+      <div className="flex gap-1.5">
+        <Button size="sm" variant={mode === 'package' ? 'primary' : 'ghost'} onClick={() => setMode('package')}>By package</Button>
+        <Button size="sm" variant={mode === 'cve' ? 'primary' : 'ghost'} onClick={() => setMode('cve')}>By CVE</Button>
+      </div>
+
+      {mode === 'package' ? <PackageSearch /> : <CveSearch />}
 
       <p className="text-xs text-muted-foreground">
         Limits: the scan reads the repository lockfiles at the root (<code className="font-mono">trivy fs</code>), not the deployed image;

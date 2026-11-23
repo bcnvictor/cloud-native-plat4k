@@ -8,7 +8,7 @@ import { BreadcrumbProvider } from '@/components/nav/BreadcrumbContext';
 import { dependenciesApi } from '@/api/dependencies';
 import type { DependencySearchResponse } from '@/types';
 
-vi.mock('@/api/dependencies', () => ({ dependenciesApi: { search: vi.fn() } }));
+vi.mock('@/api/dependencies', () => ({ dependenciesApi: { search: vi.fn(), searchByCve: vi.fn() } }));
 
 const COVERAGE = { apps_total: 5, apps_with_sbom: 3, oldest_snapshot: '2026-11-02T10:00:00Z', newest_snapshot: '2026-11-20T10:00:00Z' };
 const ROW = {
@@ -19,6 +19,7 @@ const resp = (over: Partial<DependencySearchResponse> = {}): DependencySearchRes
   items: [ROW], total: 1, limit: 50, offset: 0, coverage: COVERAGE, ...over,
 });
 const search = vi.mocked(dependenciesApi.search);
+const byCve = vi.mocked(dependenciesApi.searchByCve);
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -82,5 +83,53 @@ describe('AdminDependencies', () => {
     search.mockResolvedValue(resp());
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('lodash')).toBeTruthy();
+  });
+
+  describe('by CVE mode', () => {
+    const CVE = {
+      cve: 'CVE-2021-44228', summary: 'Log4Shell', aliases: ['GHSA-x'], osv_packages: 2, partial: false, coverage: COVERAGE,
+      packages: [
+        { ecosystem: 'Maven', name: 'org.apache.logging.log4j:log4j-core', mode: 'explicit' as const, ranges: [], matches: [{ ...ROW, package: 'log4j-core', version: '2.14.1', ecosystem: 'maven' }] },
+        { ecosystem: 'npm', name: 'lodash', mode: 'range_unevaluated' as const, ranges: ['< 4.17.21'], matches: [ROW] },
+      ],
+    };
+
+    async function openCveMode() {
+      search.mockResolvedValue(resp());
+      renderPage();
+      await screen.findByText('lodash');
+      await userEvent.click(screen.getByRole('button', { name: 'By CVE' }));
+    }
+
+    it('validates the id, sends it uppercased and shows explicit vs unevaluated packages', async () => {
+      byCve.mockResolvedValue(CVE);
+      await openCveMode();
+      const submit = screen.getByRole('button', { name: 'Search' }) as HTMLButtonElement;
+      await userEvent.type(screen.getByLabelText('CVE identifier'), 'nope');
+      expect(submit.disabled).toBe(true);
+      await userEvent.clear(screen.getByLabelText('CVE identifier'));
+      await userEvent.type(screen.getByLabelText('CVE identifier'), 'cve-2021-44228');
+      await userEvent.click(submit);
+      await waitFor(() => expect(byCve).toHaveBeenCalledWith('CVE-2021-44228'));
+      expect(await screen.findByText('Affected version in use')).toBeTruthy();
+      expect(screen.getByText('Range not evaluated automatically')).toBeTruthy();
+      expect(screen.getByText(/< 4\.17\.21/)).toBeTruthy();
+      expect(screen.getByTestId('coverage-banner').textContent).toContain('3 of 5 apps');
+    });
+
+    it('shows the API error message (unknown CVE, OSV down)', async () => {
+      byCve.mockRejectedValue({ response: { data: { detail: 'CVE-2099-0001 is unknown to OSV.dev.' } } });
+      await openCveMode();
+      await userEvent.type(screen.getByLabelText('CVE identifier'), 'CVE-2099-0001{enter}');
+      expect(await screen.findByText(/unknown to OSV\.dev/)).toBeTruthy();
+    });
+
+    it('empty result is not presented as "nobody is affected"', async () => {
+      byCve.mockResolvedValue({ ...CVE, packages: [] });
+      await openCveMode();
+      await userEvent.type(screen.getByLabelText('CVE identifier'), 'CVE-2021-44228{enter}');
+      expect(await screen.findByText('No inventoried app uses an affected package')).toBeTruthy();
+      expect(screen.getByText(/does not cover the 2 app\(s\) without an inventory/)).toBeTruthy();
+    });
   });
 });
