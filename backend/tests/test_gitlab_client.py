@@ -277,7 +277,7 @@ def _client_with_files(paths):
 def test_delete_paths_supprime_fichiers_et_dossier_en_un_commit():
     client, project = _client_with_files([
         "argocd/c/app/ephemeral/s.yaml",
-        "argocd/c/app/ephemeral/s-platform.yaml",
+        "argocd/c/app/ephemeral/s--platform.yaml",
         "apps/c/app/ephemeral/s/env.yaml",
         "apps/c/app/ephemeral/s/platform/namespace.yaml",
         "apps/c/app/ephemeral/other/env.yaml",
@@ -285,7 +285,7 @@ def test_delete_paths_supprime_fichiers_et_dossier_en_un_commit():
 
     deleted = client.delete_paths(
         "cnp/cnp-gitops",
-        files=["argocd/c/app/ephemeral/s.yaml", "argocd/c/app/ephemeral/s-platform.yaml"],
+        files=["argocd/c/app/ephemeral/s.yaml", "argocd/c/app/ephemeral/s--platform.yaml"],
         directories=["apps/c/app/ephemeral/s"],
         commit_message="destroy",
     )
@@ -295,7 +295,7 @@ def test_delete_paths_supprime_fichiers_et_dossier_en_un_commit():
     assert paths == [
         "apps/c/app/ephemeral/s/env.yaml",
         "apps/c/app/ephemeral/s/platform/namespace.yaml",
-        "argocd/c/app/ephemeral/s-platform.yaml",
+        "argocd/c/app/ephemeral/s--platform.yaml",
         "argocd/c/app/ephemeral/s.yaml",
     ]
     assert {a["action"] for a in project.commits.payload["actions"]} == {"delete"}
@@ -308,3 +308,46 @@ def test_delete_paths_sans_rien_a_supprimer_ne_commit_pas():
 
     assert deleted == 0
     assert project.commits.payload is None
+
+
+class _FakePipeline:
+    def __init__(self, status):
+        self.status = status
+        self.cancelled = False
+
+    def cancel(self):
+        self.cancelled = True
+
+
+def _client_with_pipeline(pipeline):
+    from types import SimpleNamespace
+
+    client = GitLabClient.__new__(GitLabClient)
+    project = SimpleNamespace(pipelines=SimpleNamespace(get=lambda _id: pipeline))
+    client._gl = SimpleNamespace(projects=SimpleNamespace(get=lambda _id: project))
+    return client
+
+
+def test_cancel_pipeline_annule_un_pipeline_en_cours():
+    pipeline = _FakePipeline("running")
+    assert _client_with_pipeline(pipeline).cancel_pipeline(1, 2) is True
+    assert pipeline.cancelled is True
+
+
+def test_cancel_pipeline_ne_touche_pas_un_pipeline_termine():
+    pipeline = _FakePipeline("success")
+    assert _client_with_pipeline(pipeline).cancel_pipeline(1, 2) is True
+    assert pipeline.cancelled is False
+
+
+def test_cancel_pipeline_best_effort():
+    client = GitLabClient.__new__(GitLabClient)
+
+    class _Boom:
+        def get(self, _id):
+            raise RuntimeError("gitlab down")
+
+    from types import SimpleNamespace
+
+    client._gl = SimpleNamespace(projects=_Boom())
+    assert client.cancel_pipeline(1, 2) is False

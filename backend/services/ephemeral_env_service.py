@@ -32,7 +32,12 @@ from backend.ci.detector import extract_project_path
 from backend.core.config import settings
 from backend.db.models import Application, ClusterConnection, EphemeralEnvironment, User
 from backend.gitlab.client import GitLabClient
-from backend.gitops.ephemeral import EphemeralTarget, declaration_files, destroy_paths
+from backend.gitops.ephemeral import (
+    EphemeralTarget,
+    argocd_app_names,
+    declaration_files,
+    destroy_paths,
+)
 from backend.services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
@@ -40,6 +45,7 @@ logger = logging.getLogger(__name__)
 # Fichiers sans lesquels la branche ne peut pas produire d'image ni de déploiement CNP
 _REQUIRED_BRANCH_FILES = (".gitlab-ci.yml", "Dockerfile", "chart/Chart.yaml")
 _FAILED_PIPELINE_STATUSES = {"failed", "canceled", "skipped"}
+_MAX_DELETE_PASSES = 3
 
 
 def _get_bot_client() -> GitLabClient:
@@ -304,41 +310,92 @@ class EphemeralEnvService:
     async def destroy_env(
         self, env: EphemeralEnvironment, app: Application, actor_user_id: int | None, reason: str
     ) -> EphemeralEnvResponse:
-        """Idempotent : un env déjà détruit est renvoyé tel quel, des fichiers déjà
-        supprimés sont ignorés. dev, prod, le repo et la ligne de l'app ne sont pas touchés."""
+        """Fait avancer la destruction d'un env ; renvoyé en destroying tant qu'elle n'est pas finie.
+
+        Idempotent et repris par le worker TTL à chaque cycle :
+        1. passage en destroying, avec la raison et l'auteur (gardés si l'env y était déjà) ;
+        2. annulation du pipeline de l'env, pour que update-gitops-ephemeral ne repousse
+           pas l'Application après la suppression ;
+        3. suppression des fichiers de l'env dans cnp-gitops, répétée jusqu'à ce qu'il n'y
+           ait plus rien à supprimer ;
+        4. destroyed seulement quand ArgoCD n'a plus aucune des deux Applications : le
+           namespace est alors purgé et le slug peut être réutilisé sans conflit.
+        dev, prod, le repo et la ligne de l'app ne sont pas touchés.
+        """
         if env.status == EphemeralEnvStatus.DESTROYED:
             return to_response(env, app.slug)
 
         # L'intention est enregistrée avant d'agir : un échec laisse un env à reprendre,
         # jamais un env à moitié détruit que personne ne retrouve.
-        env.status = EphemeralEnvStatus.DESTROYING
-        await self.db.commit()
+        if env.status != EphemeralEnvStatus.DESTROYING:
+            env.status = EphemeralEnvStatus.DESTROYING
+            env.destroy_reason = reason
+            env.destroy_requested_by_user_id = actor_user_id
+            await self.db.commit()
 
         name = ephemeral_env_name(app.slug, env.slug)
-        files, directories = destroy_paths(env.cluster_name, app.slug, env.slug)
         try:
             bot = _get_bot_client()
-            gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
-            await anyio.to_thread.run_sync(
-                lambda: bot.delete_paths(gitops_path, files, directories, f"chore(gitops): destroy ephemeral env {name}"),
-                cancellable=True,
-            )
+            await self._cancel_pipeline(bot, env, app)
+            await self._delete_from_gitops(bot, env, app, name)
         except Exception:
             logger.exception("Failed to remove ephemeral env %s from gitops — will retry", name)
             return to_response(env, app.slug)
 
+        if not await self._argocd_apps_gone(env, app):
+            # ArgoCD n'a pas encore vu la suppression (interrogation du repo toutes les
+            # ~3 min) ou purge encore le namespace : le worker repassera.
+            return to_response(env, app.slug)
+
         env.status = EphemeralEnvStatus.DESTROYED
         env.destroyed_at = datetime.now(timezone.utc)
+        reason = env.destroy_reason or reason
+        actor = env.destroy_requested_by_user_id
         action = "expire" if reason == "expired" else "destroy"
         await AuditService(self.db).log_action(
-            actor_user_id, f"ephemeral:{action}:{env.slug}", app_id=app.id,
+            actor, f"ephemeral:{action}:{env.slug}", app_id=app.id,
             extra={"branch": env.branch, "reason": reason},
         )
         await emit_event(
             self.db, EventType.APP_EPHEMERAL_DESTROYED, "info", "ephemeral_env",
             app_id=app.id, payload={"env": name, "branch": env.branch, "reason": reason},
-            actor_user_id=actor_user_id,
+            actor_user_id=actor,
         )
         await self.db.commit()
         await self.db.refresh(env)
         return to_response(env, app.slug)
+
+    async def _cancel_pipeline(self, bot: GitLabClient, env: EphemeralEnvironment, app: Application) -> None:
+        if env.pipeline_id and app.gitlab_project_id:
+            await anyio.to_thread.run_sync(
+                lambda: bot.cancel_pipeline(app.gitlab_project_id, env.pipeline_id), cancellable=True
+            )
+
+    async def _delete_from_gitops(self, bot: GitLabClient, env: EphemeralEnvironment, app: Application, name: str) -> None:
+        """Supprime jusqu'à ce qu'une passe ne trouve plus rien : un fichier poussé par le
+        job CI entre le listage et le commit est rattrapé à la passe suivante."""
+        files, directories = destroy_paths(env.cluster_name, app.slug, env.slug)
+        gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
+        for _ in range(_MAX_DELETE_PASSES):
+            deleted = await anyio.to_thread.run_sync(
+                lambda: bot.delete_paths(gitops_path, files, directories, f"chore(gitops): destroy ephemeral env {name}"),
+                cancellable=True,
+            )
+            if deleted == 0:
+                return
+        raise RuntimeError(f"gitops files of {name} keep reappearing")
+
+    async def _argocd_apps_gone(self, env: EphemeralEnvironment, app: Application) -> bool:
+        cluster = await self._cluster_by_name(env.cluster_name)
+        if cluster is None or not cluster.argocd_url:
+            # Cluster supprimé ou sans ArgoCD : rien à attendre
+            return True
+        try:
+            argocd = await anyio.to_thread.run_sync(lambda: get_argocd_client_for_cluster(cluster))
+            for app_name in argocd_app_names(app.slug, env.slug):
+                if await argocd.app_exists(app_name):
+                    return False
+            return True
+        except Exception as e:
+            logger.warning("Cannot check ArgoCD for %s: %s — will retry", ephemeral_env_name(app.slug, env.slug), e)
+            return False

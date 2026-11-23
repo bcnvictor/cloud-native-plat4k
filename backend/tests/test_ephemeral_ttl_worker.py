@@ -25,7 +25,10 @@ class FakeBot:
         if self.fail:
             raise RuntimeError("gitlab down")
         self.deleted.append(directories)
-        return len(files)
+        return 0  # rien dans le faux dépôt : une seule passe
+
+    def cancel_pipeline(self, gitlab_project_id, pipeline_id):
+        return True
 
 
 @pytest.fixture
@@ -112,6 +115,10 @@ async def test_echec_gitops_laisse_l_env_a_reprendre(db_session, app_row, bot):
     bot.fail = False
     result = await run_ephemeral_ttl_reconciliation(db_session, now=NOW)
     assert result == {"destroyed": 1, "pending": 0}
+    # Revue #83 : la reprise garde la raison du premier passage
+    log = (await db_session.execute(select(AuditLog))).scalar_one()
+    assert log.action == "ephemeral:expire:old"
+    assert log.extra["reason"] == "expired"
 
 
 async def test_ignore_les_envs_deja_detruits(db_session, app_row, bot):

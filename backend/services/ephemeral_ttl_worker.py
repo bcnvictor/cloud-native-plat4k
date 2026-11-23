@@ -1,8 +1,8 @@
 """Destruction automatique des environnements éphémères expirés (4K-288, ADR-0030 §9).
 
 Même structure que scale_worker : un tick = une réconciliation. Il détruit les envs
-dont le TTL est dépassé et reprend ceux restés en destroying après un échec de
-suppression dans cnp-gitops.
+dont le TTL est dépassé et fait avancer ceux en destroying : suppression dans
+cnp-gitops à reprendre, ou purge par ArgoCD pas encore terminée.
 """
 
 import asyncio
@@ -41,8 +41,8 @@ async def run_ephemeral_ttl_reconciliation(db: AsyncSession, now: datetime | Non
     service = EphemeralEnvService(db)
     destroyed = pending = 0
     for env, app in rows:
-        reason = "retry" if env.status == EphemeralEnvStatus.DESTROYING else "expired"
-        response = await service.destroy_env(env, app, actor_user_id=None, reason=reason)
+        # Un env déjà en destroying garde la raison et l'auteur posés au premier passage
+        response = await service.destroy_env(env, app, actor_user_id=None, reason="expired")
         if response.status == EphemeralEnvStatus.DESTROYED:
             destroyed += 1
         else:

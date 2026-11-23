@@ -51,7 +51,8 @@ async def destroy_ephemeral_env(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_tier(CnpTier.DEVELOPER)),
 ):
-    """200 si l'env est détruit, 202 s'il reste en destroying (reprise par le worker TTL)."""
+    """202 tant que l'env est en destroying (ArgoCD purge le namespace, le worker TTL
+    termine la destruction), 200 s'il est déjà détruit."""
     env = await EphemeralEnvService(db).destroy(app_id, env_id, current_user)
     if env.status != EphemeralEnvStatus.DESTROYED:
         response.status_code = 202

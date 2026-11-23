@@ -189,6 +189,17 @@ class GitLabClient:
         project = self._gl.projects.get(gitlab_project_id)
         return project.pipelines.create({"ref": ref}).id
 
+    def cancel_pipeline(self, gitlab_project_id: int, pipeline_id: int) -> bool:
+        """Cancel a pipeline if it is still running. Best effort: False on error."""
+        try:
+            pipeline = self._gl.projects.get(gitlab_project_id).pipelines.get(pipeline_id)
+            if pipeline.status in ("created", "waiting_for_resource", "preparing", "pending", "running", "scheduled", "manual"):
+                pipeline.cancel()
+            return True
+        except Exception:
+            logger.warning("Failed to cancel pipeline %s of project %s", pipeline_id, gitlab_project_id)
+            return False
+
     def get_pipeline_status(self, gitlab_project_id: int, pipeline_id: int) -> str | None:
         """GitLab pipeline status (running, success, failed…), None if unavailable."""
         try:

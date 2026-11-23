@@ -91,19 +91,26 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(run_scale_worker(settings.SCALE_SCHEDULE_INTERVAL_MINUTES))
         if settings.SCALE_SCHEDULE_ENABLED else None
     )
-    ephemeral_task = asyncio.create_task(run_ephemeral_ttl_worker(settings.EPHEMERAL_TTL_WORKER_INTERVAL_MINUTES))
+    # Sans GitOps configuré, le worker ne pourrait rien détruire et journaliserait une
+    # erreur par env expiré à chaque cycle
+    ephemeral_task = (
+        asyncio.create_task(run_ephemeral_ttl_worker(settings.EPHEMERAL_TTL_WORKER_INTERVAL_MINUTES))
+        if settings.GITLAB_BOT_TOKEN and settings.GITOPS_REPO_URL else None
+    )
     yield
     health_task.cancel()
     sync_task.cancel()
-    ephemeral_task.cancel()
+    if ephemeral_task:
+        ephemeral_task.cancel()
     if scale_task:
         scale_task.cancel()
     with suppress(asyncio.CancelledError):
         await health_task
     with suppress(asyncio.CancelledError):
         await sync_task
-    with suppress(asyncio.CancelledError):
-        await ephemeral_task
+    if ephemeral_task:
+        with suppress(asyncio.CancelledError):
+            await ephemeral_task
     if scale_task:
         with suppress(asyncio.CancelledError):
             await scale_task
