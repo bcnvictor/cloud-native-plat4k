@@ -176,10 +176,12 @@ resource "google_container_node_pool" "system" {
 # ---------------------------------------------------------------------------
 
 resource "helm_release" "ingress_nginx" {
-  name             = "ingress-nginx"
-  repository       = "https://kubernetes.github.io/ingress-nginx"
-  chart            = "ingress-nginx"
-  version          = "4.10.1"
+  name       = "ingress-nginx"
+  repository = "https://kubernetes.github.io/ingress-nginx"
+  chart      = "ingress-nginx"
+  # 4.15.1 = contrôleur v1.15.1, aligné sur AKS et k3s. < v1.11.5 est vulnérable à
+  # CVE-2025-1974 (« IngressNightmare », RCE via le webhook d'admission).
+  version          = "4.15.1"
   namespace        = "ingress-nginx"
   create_namespace = true
 
