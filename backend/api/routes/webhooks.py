@@ -268,13 +268,19 @@ async def ci_sbom(
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > _SBOM_MAX_WIRE:
         raise HTTPException(status_code=413, detail="Payload too large")
-    body = _sbom_body(await request.body(), request.headers.get("content-encoding"))
+    # Read the stream ourselves so the wire cap holds even without Content-Length (chunked).
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw += chunk
+        if len(raw) > _SBOM_MAX_WIRE:
+            raise HTTPException(status_code=413, detail="Payload too large")
+    body = _sbom_body(bytes(raw), request.headers.get("content-encoding"))
     try:
         data = json.loads(body)
         app_id = data["app_id"]
         if not isinstance(app_id, int) or isinstance(app_id, bool):
             raise ValueError
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError, RecursionError):
         raise HTTPException(status_code=422, detail="Invalid payload") from None
     if not verify_token(app_id, x_cnp_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")

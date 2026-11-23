@@ -10,7 +10,7 @@ import type { DependencySearchResponse } from '@/types';
 
 vi.mock('@/api/dependencies', () => ({ dependenciesApi: { search: vi.fn(), searchByCve: vi.fn() } }));
 
-const COVERAGE = { apps_total: 5, apps_with_sbom: 3, oldest_snapshot: '2026-11-02T10:00:00Z', newest_snapshot: '2026-11-20T10:00:00Z' };
+const COVERAGE = { apps_total: 5, apps_with_sbom: 3, oldest_snapshot: '2026-11-02T10:00:00Z', newest_snapshot: '2026-11-20T10:00:00Z', truncated_apps: 1 };
 const ROW = {
   app_id: 1, app_name: 'Shop', app_slug: 'shop', group: 'Team Pay', group_slug: 'pay',
   package: 'lodash', version: '4.17.20', ecosystem: 'npm', direct: true, licenses: ['MIT'],
@@ -50,6 +50,7 @@ describe('AdminDependencies', () => {
     expect(banner).toContain('02/11');
     expect(banner).toContain('20/11');
     expect(banner).toContain('do not have a recent pipeline');
+    expect(banner).toContain('1 app(s) have a truncated inventory');
   });
 
   it('debounces the search and sends the query', async () => {

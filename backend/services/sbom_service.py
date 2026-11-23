@@ -9,10 +9,11 @@ import asyncio
 import re
 import time
 from typing import Any, Optional
+from urllib.parse import quote
 
 import httpx
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,7 +52,9 @@ class SbomService:
     async def ingest(self, payload: SbomPayload) -> bool:
         """Replace the app's inventory. Returns False when ignored (replay or older pipeline)."""
         app_id = payload.app_id
-        snap = (await self.db.execute(select(SbomSnapshot).where(SbomSnapshot.app_id == app_id))).scalar_one_or_none()
+        # FOR UPDATE: two concurrent pipelines of the same app are serialized (no-op on SQLite).
+        snap = (await self.db.execute(
+            select(SbomSnapshot).where(SbomSnapshot.app_id == app_id).with_for_update())).scalar_one_or_none()
         if snap is not None and payload.pipeline_id <= snap.pipeline_id:
             return False
         # Dedupe on purl+version (a lockfile may list the same package twice): keep first occurrence.
@@ -78,17 +81,22 @@ class SbomService:
                 snap.received_at = func.now()
             await self.db.commit()
         except IntegrityError:
-            # Concurrent first snapshot for the same app: the other one won, treat this one as a replay.
             await self.db.rollback()
-            return False
+            # Concurrent first snapshot for the same app: the other one won, treat this one as a replay.
+            # Any other integrity error (e.g. the app was deleted meanwhile) is a real failure.
+            if (await self.db.execute(select(SbomSnapshot.app_id).where(SbomSnapshot.app_id == app_id))).first():
+                return False
+            raise
         return True
 
     async def coverage(self) -> dict[str, Any]:
         apps_total = (await self.db.execute(select(func.count(Application.id)))).scalar_one()
-        n, oldest, newest = (await self.db.execute(
+        n, oldest, newest, truncated = (await self.db.execute(
             select(func.count(SbomSnapshot.app_id), func.min(SbomSnapshot.received_at),
-                   func.max(SbomSnapshot.received_at)))).one()
-        return {"apps_total": apps_total, "apps_with_sbom": n, "oldest_snapshot": oldest, "newest_snapshot": newest}
+                   func.max(SbomSnapshot.received_at),
+                   func.coalesce(func.sum(case((SbomSnapshot.truncated.is_(True), 1), else_=0)), 0)))).one()
+        return {"apps_total": apps_total, "apps_with_sbom": n, "oldest_snapshot": oldest, "newest_snapshot": newest,
+                "truncated_apps": int(truncated)}
 
     async def search(self, q: Optional[str], version: Optional[str], ecosystem: Optional[str],
                      limit: int, offset: int) -> dict[str, Any]:
@@ -134,6 +142,7 @@ OSV_TIMEOUT = 5.0
 OSV_CACHE_TTL = 600.0
 _OSV_CACHE_MAX = 256
 _MAX_ALIASES = 8
+MAX_OSV_PACKAGES = 50
 CVE_RE = re.compile(r"^CVE-\d{4}-\d{4,9}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 
@@ -206,8 +215,12 @@ def _osv_packages(records: list[dict[str, Any]]) -> dict[tuple[str, str], dict[s
             eco, name = pkg.get("ecosystem"), pkg.get("name")
             if eco not in _PURL_TYPE_BY_OSV or not isinstance(name, str) or not name:
                 continue
-            entry = out.setdefault((eco, name), {"versions": set(), "ranges": []})
-            entry["versions"].update(v for v in aff.get("versions") or [] if isinstance(v, str))
+            entry = out.setdefault((eco, name), {"versions": set(), "ranges": [], "unlisted": False})
+            listed = [v for v in aff.get("versions") or [] if isinstance(v, str)]
+            entry["versions"].update(listed)
+            if not listed and any(isinstance(r, dict) and r.get("type") in ("SEMVER", "ECOSYSTEM")
+                                  for r in aff.get("ranges") or []):
+                entry["unlisted"] = True  # ranges without an explicit list: the list alone cannot be trusted
             for rng in aff.get("ranges") or []:
                 text = _range_text(rng) if isinstance(rng, dict) else None
                 if text and text not in entry["ranges"]:
@@ -215,14 +228,19 @@ def _osv_packages(records: list[dict[str, Any]]) -> dict[tuple[str, str], dict[s
     return out
 
 
-def _purl_prefix(eco: str, name: str) -> str:
-    """purl prefix (before '@') of an OSV package, per the purl spec of each ecosystem."""
+def _purl_prefixes(eco: str, name: str) -> list[str]:
+    """purl prefixes (before '@') of an OSV package, per the purl spec of each ecosystem.
+
+    Trivy percent-encodes segments (npm scope: `pkg:npm/%40babel/core`): both the encoded and the
+    raw form are returned so neither spelling is missed."""
     ptype = _PURL_TYPE_BY_OSV[eco]
     if eco == "Maven":
         name = name.replace(":", "/", 1)
     elif eco == "PyPI":
         name = re.sub(r"[-_.]+", "-", name).lower()
-    return f"pkg:{ptype}/{name}"
+    raw = f"pkg:{ptype}/{name}"
+    encoded = f"pkg:{ptype}/" + "/".join(quote(seg, safe="") for seg in name.split("/"))
+    return [raw] if raw == encoded else [raw, encoded]
 
 
 def _norm_version(eco: str, v: str) -> str:
@@ -250,15 +268,19 @@ async def search_by_cve(db: AsyncSession, cve_id: str) -> dict[str, Any]:
                 partial = True  # an alias could not be read: package data may be incomplete
     osv_pkgs = _osv_packages(records)
     packages = []
-    for (eco, name), info in sorted(osv_pkgs.items()):
-        explicit = bool(info["versions"])
+    ordered = sorted(osv_pkgs.items())
+    if len(ordered) > MAX_OSV_PACKAGES:
+        partial, ordered = True, ordered[:MAX_OSV_PACKAGES]  # bounded work per request
+    for (eco, name), info in ordered:
+        explicit = bool(info["versions"]) and not info["unlisted"]
         versions = {_norm_version(eco, v) for v in info["versions"]}
-        prefix = _purl_prefix(eco, name)
+        prefixes = _purl_prefixes(eco, name)
         res = await db.execute(
             select(SbomComponent, Application.name, Application.slug, GitLabGroup.name, GitLabGroup.full_path)
             .join(Application, Application.id == SbomComponent.app_id)
             .outerjoin(GitLabGroup, GitLabGroup.gitlab_group_id == Application.owning_gitlab_group_id)
-            .where(func.lower(SbomComponent.purl).like(_like_escape(prefix.lower()) + "@%", escape="\\"))
+            .where(or_(*(func.lower(SbomComponent.purl).like(_like_escape(p.lower()) + "@%", escape="\\")
+                         for p in prefixes)))
             .order_by(Application.name, SbomComponent.version)
         )
         matches = [

@@ -614,6 +614,7 @@ export interface DependencyCoverage {
   apps_with_sbom: number;
   oldest_snapshot: string | null;
   newest_snapshot: string | null;
+  truncated_apps: number;
 }
 
 export interface DependencySearchResponse {

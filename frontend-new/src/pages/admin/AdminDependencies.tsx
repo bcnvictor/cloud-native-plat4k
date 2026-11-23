@@ -20,7 +20,7 @@ const CVE_RE = /^CVE-\d{4}-\d{4,9}$/i;
 const GRID = 'grid grid-cols-[1.3fr_1fr_1.5fr_0.9fr_0.9fr_1.4fr] gap-4 px-4';
 
 function shortDate(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) : '—';
+  return iso ? new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 }
 
 function useDebounced<T>(value: T, ms = 300): T {
@@ -33,7 +33,7 @@ function useDebounced<T>(value: T, ms = 300): T {
 }
 
 export function CoverageBanner({ coverage }: { coverage: DependencyCoverage }) {
-  const { apps_total, apps_with_sbom, oldest_snapshot, newest_snapshot } = coverage;
+  const { apps_total, apps_with_sbom, oldest_snapshot, newest_snapshot, truncated_apps } = coverage;
   const partial = apps_with_sbom < apps_total;
   return (
     <Card padding="sm" className={partial ? 'border-warning' : undefined}>
@@ -47,6 +47,7 @@ export function CoverageBanner({ coverage }: { coverage: DependencyCoverage }) {
           <strong>{apps_with_sbom}</strong> of <strong>{apps_total}</strong> apps have an inventory
           {apps_with_sbom > 0 && <> · data from {shortDate(oldest_snapshot)} to {shortDate(newest_snapshot)}</>}
           {partial && <>; the others do not have a recent pipeline yet and are not searched.</>}
+          {truncated_apps > 0 && <> {truncated_apps} app(s) have a truncated inventory (more than 5000 components).</>}
         </span>
       </p>
     </Card>
@@ -89,7 +90,6 @@ function PackageSearch() {
   const [offset, setOffset] = useState(0);
   const dq = useDebounced(q.trim());
   const dv = useDebounced(version.trim());
-  useEffect(() => { setOffset(0); }, [dq, dv, ecosystem]);
 
   const { data, isLoading, isError, isFetching, refetch } = useDependencySearch({
     q: dq, version: dv, ecosystem, limit: PAGE_SIZE, offset,
@@ -99,12 +99,12 @@ function PackageSearch() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
-        <Input label="Package" placeholder="e.g. log4j, lodash" value={q} onChange={(e) => setQ(e.target.value)} className="w-64" />
-        <Input label="Version" placeholder="exact, e.g. 4.17.20" value={version} onChange={(e) => setVersion(e.target.value)} className="w-44" mono />
+        <Input label="Package" placeholder="e.g. log4j, lodash" value={q} onChange={(e) => { setQ(e.target.value); setOffset(0); }} className="w-64" />
+        <Input label="Version" placeholder="exact, e.g. 4.17.20" value={version} onChange={(e) => { setVersion(e.target.value); setOffset(0); }} className="w-44" mono />
         <Select
           label="Ecosystem"
           value={ecosystem}
-          onChange={setEcosystem}
+          onChange={(v) => { setEcosystem(v); setOffset(0); }}
           placeholder="All"
           className="w-36"
           options={[{ value: '', label: 'All' }, ...ECOSYSTEMS.map((e) => ({ value: e, label: e }))]}

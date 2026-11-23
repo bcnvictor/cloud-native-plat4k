@@ -371,6 +371,56 @@ async def test_by_cve_requires_admin(client, cve_apps, osv, dev_token):
 
 
 def test_osv_helpers():
-    assert sbom_service._purl_prefix("PyPI", "Django_Rest.Framework") == "pkg:pypi/django-rest-framework"
-    assert sbom_service._purl_prefix("Go", "github.com/x/y") == "pkg:golang/github.com/x/y"
+    assert sbom_service._purl_prefixes("PyPI", "Django_Rest.Framework") == ["pkg:pypi/django-rest-framework"]
+    assert sbom_service._purl_prefixes("Go", "github.com/x/y") == ["pkg:golang/github.com/x/y"]
+    assert sbom_service._purl_prefixes("npm", "@babel/core") == ["pkg:npm/@babel/core", "pkg:npm/%40babel/core"]
     assert sbom_service._norm_version("Go", "v1.2.3") == "1.2.3"
+
+
+SCOPED = {"id": "CVE-2024-2222", "aliases": ["GHSA-scoped"], "affected": []}
+SCOPED_GHSA = {"id": "GHSA-scoped", "affected": [{"package": {"ecosystem": "npm", "name": "@babel/traverse"},
+                                                  "versions": ["7.0.0"]}]}
+MIXED = {"id": "CVE-2024-3333", "aliases": ["GHSA-mixed"], "affected": [
+    {"package": {"ecosystem": "npm", "name": "lodash"}, "versions": ["4.17.20"]}]}
+MIXED_GHSA = {"id": "GHSA-mixed", "affected": [{"package": {"ecosystem": "npm", "name": "lodash"},
+              "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "4.17.21"}]}]}]}
+
+
+@pytest.mark.asyncio
+async def test_by_cve_scoped_npm_purl_is_percent_encoded(client, app_row, osv, admin_token):
+    osv.db.update({"CVE-2024-2222": SCOPED, "GHSA-scoped": SCOPED_GHSA})
+    comp = {"purl": "pkg:npm/%40babel/traverse@7.0.0", "name": "@babel/traverse", "version": "7.0.0",
+            "ecosystem": "npm", "direct": False, "licenses": []}
+    await _post(client, app_row.id, _payload(app_row.id, 1, [comp]))
+    body = (await client.get(BYCVE, params={"id": "CVE-2024-2222"}, headers=_h(admin_token))).json()
+    assert [m["app_name"] for m in body["packages"][0]["matches"]] == ["Shop"]
+
+
+@pytest.mark.asyncio
+async def test_by_cve_explicit_list_plus_unlisted_range_falls_back_to_unevaluated(client, cve_apps, osv, admin_token):
+    osv.db.update({"CVE-2024-3333": MIXED, "GHSA-mixed": MIXED_GHSA})
+    pkg = (await client.get(BYCVE, params={"id": "CVE-2024-3333"}, headers=_h(admin_token))).json()["packages"][0]
+    assert pkg["mode"] == "range_unevaluated"
+    assert sorted(m["version"] for m in pkg["matches"]) == ["4.17.20", "4.17.21"]  # nobody silently dropped
+
+
+@pytest.mark.asyncio
+async def test_coverage_counts_truncated_apps(client, app_row, admin_token):
+    await _post(client, app_row.id, _payload(app_row.id, truncated=True))
+    cov = (await client.get(SEARCH, headers=_h(admin_token))).json()["coverage"]
+    assert cov["truncated_apps"] == 1
+
+
+@pytest.mark.asyncio
+async def test_chunked_oversize_body_is_rejected(client, app_row):
+    async def chunks():  # no Content-Length: the cap must apply while streaming
+        for _ in range(3):
+            yield b"x" * (1024 * 1024)
+    r = await client.post(HOOK, content=chunks(), headers={"X-CNP-Token": compute_token(app_row.id)})
+    assert r.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_deeply_nested_json_is_422_not_500(client, app_row):
+    r = await client.post(HOOK, content=b"[" * 200000 + b"]" * 200000, headers={"X-CNP-Token": compute_token(app_row.id)})
+    assert r.status_code == 422
