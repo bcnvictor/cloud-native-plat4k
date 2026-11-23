@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
-from backend.db.models import Application, ClusterConnection
+from backend.db.models import Application, ClusterConnection, GitLabGroup
 
 pytestmark = pytest.mark.anyio
 
@@ -134,3 +134,27 @@ async def test_cost_with_cluster_id_single_source(client, dev_token, clusters):
                              headers=_auth(dev_token))
     assert r.status_code == 200
     assert [c.args[0] for c in fake.await_args_list] == [K3S]
+
+
+# ── coût par équipe (admin) ───────────────────────────────────────────────────
+
+
+async def test_cost_by_team_aggregates_and_skips_failure(client, admin_token, db_session, clusters):
+    db_session.add(GitLabGroup(gitlab_group_id=101, name="Team A", full_path="cnp-apps/team-a"))
+    await db_session.commit()
+    table = {
+        AKS: [{"group_id": "101", "cost_eur_month": 1.0}],
+        K3S: [{"group_id": "101", "cost_eur_month": 2.0}],
+        "http://gke:9090": httpx.ConnectError("down"),
+    }
+
+    async def fake(url: str):
+        if isinstance(table[url], Exception):
+            raise table[url]
+        return table[url]
+
+    with patch("backend.api.routes.admin.get_cost_by_team", AsyncMock(side_effect=fake)):
+        r = await client.get("/api/v1/admin/finops/cost-by-team", headers=_auth(admin_token))
+    assert r.status_code == 200
+    assert r.json()[0]["cost_eur_month"] == 3.0
+    assert r.json()[0]["group_name"] == "Team A"
