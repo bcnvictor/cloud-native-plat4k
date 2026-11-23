@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.config import settings
 from backend.db.models import Application, ClusterConnection
 from backend.services import monitoring_sources
+from backend.services.monitoring_service import merge_cost_by_group, merge_cost_by_team
 from backend.services.monitoring_sources import (
     app_by_slug,
     fan_out,
@@ -149,3 +150,34 @@ async def test_fan_out_timeout(monkeypatch):
         return url.upper()
 
     assert await fan_out(["slow", "fast"], fn) == ["FAST"]
+
+
+# ── fusions de coûts ──────────────────────────────────────────────────────────
+
+
+def test_merge_cost_by_group_sums_duplicates_and_sorts():
+    a = [{"app_name": "api", "cpu_cost_usd": 1.0, "ram_cost_usd": 0.5, "total_cost_usd": 1.5}]
+    b = [
+        {"app_name": "api", "cpu_cost_usd": 0.25, "ram_cost_usd": 0.25, "total_cost_usd": 0.5},
+        {"app_name": "web", "cpu_cost_usd": 3.0, "ram_cost_usd": 0.0, "total_cost_usd": 3.0},
+    ]
+    assert merge_cost_by_group([a, b]) == [
+        {"app_name": "web", "cpu_cost_usd": 3.0, "ram_cost_usd": 0.0, "total_cost_usd": 3.0},
+        {"app_name": "api", "cpu_cost_usd": 1.25, "ram_cost_usd": 0.75, "total_cost_usd": 2.0},
+    ]
+
+
+def test_merge_cost_by_team_sums_per_group():
+    merged = merge_cost_by_team([
+        [{"group_id": "101", "cost_eur_month": 1.5}, {"group_id": "unknown", "cost_eur_month": 0.1}],
+        [{"group_id": "101", "cost_eur_month": 2.0}],
+    ])
+    assert merged == [
+        {"group_id": "101", "cost_eur_month": 3.5},
+        {"group_id": "unknown", "cost_eur_month": 0.1},
+    ]
+
+
+def test_merge_empty():
+    assert merge_cost_by_group([]) == []
+    assert merge_cost_by_team([[]]) == []

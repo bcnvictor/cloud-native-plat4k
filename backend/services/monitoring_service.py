@@ -265,6 +265,29 @@ async def get_cost_by_team(prometheus_url: str) -> list[dict]:
     return sorted(entries, key=lambda x: x["cost_eur_month"], reverse=True)
 
 
+def merge_cost_by_group(results: list[list[dict]]) -> list[dict]:
+    """get_cost_by_group of several Prometheus; an app seen on two clusters is summed."""
+    merged: dict[str, dict] = {}
+    for entries in results:
+        for e in entries:
+            m = merged.setdefault(e["app_name"], {
+                "app_name": e["app_name"], "cpu_cost_usd": 0.0, "ram_cost_usd": 0.0, "total_cost_usd": 0.0,
+            })
+            for key in ("cpu_cost_usd", "ram_cost_usd", "total_cost_usd"):
+                m[key] = round(m[key] + e[key], 4)
+    return sorted(merged.values(), key=lambda x: x["total_cost_usd"], reverse=True)
+
+
+def merge_cost_by_team(results: list[list[dict]]) -> list[dict]:
+    """get_cost_by_team of several Prometheus, summed per group_id."""
+    totals: dict[str, float] = {}
+    for entries in results:
+        for e in entries:
+            totals[e["group_id"]] = round(totals.get(e["group_id"], 0.0) + e["cost_eur_month"], 4)
+    merged = [{"group_id": g, "cost_eur_month": c} for g, c in totals.items()]
+    return sorted(merged, key=lambda x: x["cost_eur_month"], reverse=True)
+
+
 def _detect_level(line: str, stream_labels: dict) -> str:
     if "level" in stream_labels:
         return stream_labels["level"].upper()
