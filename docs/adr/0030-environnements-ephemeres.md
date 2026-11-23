@@ -252,8 +252,8 @@ Ce paragraphe réutilise le socle de l'exposition publique (PR #73, #74 et #76,
   `EPHEMERAL_MAX_TTL_HOURS=168`, choisi à la création. `expires_at` est en base.
 - La destruction ciblée passe l'env en `destroying`, en enregistrant la raison (`manual`,
   `expired`) et l'auteur, puis :
-  1. annule le pipeline de l'env, pour que le worker ne redéploie pas un build qui se termine
-     d'Application après la suppression ;
+  1. annule le pipeline de l'env, qui ne sert plus et occupe un runner (le worker ne
+     redéploie jamais un env en `destroying`) ;
   2. supprime en un commit les deux Applications et `apps/<cluster>/<app>/ephemeral/<slug>/`,
      et répète jusqu'à une passe vide : un fichier poussé par un déploiement entre le listage
      et le commit est rattrapé. Les fichiers déjà absents sont ignorés, donc l'opération est
