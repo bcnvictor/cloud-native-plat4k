@@ -107,6 +107,9 @@ class Settings(BaseSettings):
     # d'une branche non relue et peut lire ce Secret.
     EPHEMERAL_REGISTRY_VAULT_KEY: str = "secret/apps/_platform/gitlab-registry"
     EPHEMERAL_REGISTRY_SERVER: str = "registry.gitlab.com"
+    # ClusterIssuer des certificats des envs éphémères ; vide = TLS_CLUSTER_ISSUER.
+    # letsencrypt-staging ménage le quota Let's Encrypt (certificat non reconnu par les navigateurs).
+    EPHEMERAL_TLS_CLUSTER_ISSUER: str = ""
 
     CLUSTER_HEALTH_INTERVAL: int = 300      # secondes entre deux sondes
     CLUSTER_HEALTH_FAILURE_THRESHOLD: int = 2  # sondes échouées consécutives avant de marquer OFFLINE (grace period)
