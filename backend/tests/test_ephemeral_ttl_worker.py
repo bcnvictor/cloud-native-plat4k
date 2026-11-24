@@ -126,3 +126,21 @@ async def test_ignore_les_envs_deja_detruits(db_session, app_row, bot):
     result = await run_ephemeral_ttl_reconciliation(db_session, now=NOW)
     assert result == {"deployed": 0, "destroyed": 0, "pending": 0}
     assert bot.deleted == []
+
+
+async def test_un_env_en_erreur_ne_bloque_pas_le_deploiement_des_autres(db_session, app_row, bot, monkeypatch):
+    # Le rollback après l'échec du premier env ne doit pas rendre les suivants inutilisables
+    await _env(db_session, app_row, "un", 10)
+    await _env(db_session, app_row, "deux", 10)
+    calls: list[str] = []
+
+    async def fake_deploy(self, env, app):
+        calls.append(env.slug)
+        if len(calls) == 1:
+            raise RuntimeError("gitlab down")
+        return True
+
+    monkeypatch.setattr(ephemeral_env_service.EphemeralEnvService, "deploy_env", fake_deploy)
+    result = await run_ephemeral_ttl_reconciliation(db_session, now=NOW)
+    assert sorted(calls) == ["deux", "un"]
+    assert result["deployed"] == 1

@@ -66,6 +66,7 @@ nav:
       - Importer un repo existant: frontend-export/importer.md
       - FAQ: frontend-export/faq.md
       - Conseiller FinOps IA: guides/ai-finops-advisor.md
+      - CNP Doctor (diagnostic d'une panne): guides/cnp-doctor.md
   - Référence CLI: cli.md
   - API:
       - Vue d'ensemble (Swagger UI): api/overview.md
@@ -73,6 +74,8 @@ nav:
   - Architecture:
       - Vue d'ensemble: architecture/overview.md
       - Use case IA — Chatbot par projet: architecture/ai-chatbot-use-case.md
+      - Onglet Security et correction en un clic: architecture/security-tab.md
+      - Inventaire des dépendances (SBOM): architecture/sbom-inventory.md
   - Guides opérationnels:
       - Setup ArgoCD & GitOps: guides/argocd-setup.md
       - Service discovery & health: guides/cluster-health-monitoring.md
@@ -111,3 +114,4 @@ nav:
       - ADR-0027 — Service d'authentification Keycloak: adr/0027-keycloak-app-auth.md
       - ADR-0028 — Authentification JWT des iframes Grafana: adr/0028-grafana-embed-jwt.md
       - ADR-0029 — Serveur MCP read-only: adr/0029-mcp-server.md
+      - ADR-0031 — Direction IA (CNP Doctor): adr/0031-direction-ia-cnp-doctor.md

@@ -1,12 +1,10 @@
 # Validation du déploiement Keycloak portable
 
-État au 19 octobre 2026, branche `feature/keycloak-portable-cnp`.
-Ce document distingue les essais réalisés des validations encore ouvertes.
-origin/main a été fusionné dans la branche (dernière fusion `a754047`) ; sa fusion dans main
-se fait en mode dormant (voir [Publication et fusion](#publication-et-fusion)). Aucune installation live AKS ou k3s ni migration de
-la base CNP de production n'a été effectuée. La règle ACL Tailscale
-`tag:cnp-control` → `tag:k8s:8080` est ajoutée dans `infra/tailscale/main.tf`,
-en attente de `terraform apply`.
+État au 20 novembre 2026. Ce document distingue les essais réalisés des validations encore
+ouvertes. Les trois instances sont **déployées en production et activées** dans le registre
+`keycloak_instances` : `private-01` (k3s) le 6 novembre, `public-01` (AKS) et `public-02`
+(GKE) le 20 novembre (détails en fin de document). Les résultats ci-dessous jusqu'à
+« Images vérifiées » datent de la phase de développement (octobre 2026, avant la PR #51).
 
 ## Résultats réalisés
 
@@ -94,89 +92,74 @@ Les références exactes AMD64/ARM64 sont versionnées dans
 Keycloak : `26.8.0`; PostgreSQL : `16-alpine`; NGINX : `alpine`; Vault de test : `1.21`.
 Les tags seuls ne servent pas à installer : toutes les images comportent leur digest.
 
-## AKS — contrôles réalisés, validation applicative ouverte
+## Déploiements en production (novembre 2026)
 
-Contexte `cnp-aks` relancé par l'opérateur. Lecture de la StorageClass `managed-csi`,
-des CRD ESO servant `v1`, de l'opérateur Tailscale et de l'egress Vault existant.
-Les proxies utilisent bien le label `tailscale.com/managed=true`.
+Depuis le poste opérateur, avec `deploy.sh` (Helm 3.17.3 via `CNP_HELM`, tunnel SSH vers
+Vault, clé API admin CNP). Pour chaque instance : sauvegarde de cnp-control
+(`infra/scripts/cnp-control-backup.sh`) et copie de la policy `cnp-backend` avant
+l'exécution, `--check`, déploiement, **seconde exécution sans effet** (révision Helm 2,
+mêmes pods), Job de renouvellement du token ESO lancé une fois depuis le CronJob.
 
-Le **dry-run serveur des 12 ressources** a réussi contre l'API AKS. Il a utilisé le
-namespace existant `default`, sans création réelle ni modification de ressources.
-Ce contrôle vérifie l'acceptation des manifests/CRD ; il ne vérifie ni le binding
-réel d'un PVC, ni l'accès réseau, ni le déploiement ou le login d'une app.
+| Instance | Cluster (id CNP) | Date | Stockage | Résultat |
+|---|---|---|---|---|
+| `private-01` | `cnp-k3s` (1) | 2026-11-06 | `local-path` 5 Gi | 7 étapes OK |
+| `public-01` | `cnp-aks` (2) | 2026-11-20 | `managed-csi` 5 Gi | 7 étapes OK au premier passage |
+| `public-02` | `cnp-gke` (4) | 2026-11-20 | `standard-rwo` 5 Gi | 7 étapes OK au premier passage |
 
-L'accès à la passerelle `cnp-control` est indisponible depuis cette machine :
-MagicDNS ne résout pas le nom, et SSH vers l'adresse tailnet documentée
-`100.85.20.62` expire. Le CLI Tailscale ne charge pas ses préférences.
-Le backend de validation dédié, son API admin et Vault opérateur n'ont donc pas
-pu être raccordés à la VM. **Aucune installation live déclarée validée.**
+Keycloak `26.8.0`, PostgreSQL `16-alpine` (digests dans `images.lock.yaml`). Issuers :
+`https://auth.cloud-native-plat4k.me/clusters/<instance>/realms/<realm>`.
 
-À réaliser une fois cet accès rétabli : backend de validation avec base CNP
-séparée → preflight → déploiement → deuxième exécution → vérification depuis les
-conteneurs CNP → apps de test issues de `react-vite`, `python-fastapi`, et un repo
-onboardé compatible → login/callback/reconnexion/console et contrôle JWT.
-Nettoyer seulement les apps/realms de test possédés, jamais l'instance ni ses PVC.
+Contrôles communs aux trois instances :
 
-## GKE — reporté après AKS et k3s
+- Frontières publiques via la passerelle : `realms/master`, sa découverte OIDC, son
+  endpoint token, `admin/master/console`, `/health` et `/metrics` répondent 403.
+- Policy `cnp-backend` : seule la règle de lecture
+  `secret/data/cnp/keycloak/+/provisioner` est ajoutée (au premier déploiement, k3s) ;
+  inchangée aux suivants.
+- CNP (200) et Grafana (302) disponibles avant, pendant et après chaque déploiement.
 
-Cible `infra/keycloak/targets/public-gke.yaml` (instance `public-02`, profil `public`),
-ajoutée après la mise en service de `cnp-gke` (4K-244). Mode Standard ; l'opérateur
-Tailscale y tague ses proxies `tag:k8s` (`infra/gke/tailscale/operator-values.yaml`),
-couvert par la règle ACL `tag:k8s:8080`. Aucune politique réseau n'est activée dans
-`infra/gke/main.tf` : comme sur AKS, les NetworkPolicies du chart n'y sont pas appliquées.
+Corrections faites pendant le premier déploiement réel (PR #62) : User-Agent explicite du
+client de déploiement (Cloudflare bloquait `Python-urllib` en 403, erreur 1010) et lecture
+de la liste de Deployments sans `--ignore-not-found` (kubectl 1.36 n'affiche rien sur un
+namespace vide).
 
-État relevé le 2026-10-18 (lecture seule) : StorageClass `standard-rwo (default)`, ESO
-v2.11.0 avec CRD `v1`, egress `ts-vault-cnp-control` Running, mais `ClusterSecretStore
-vault-backend` en `InvalidProviderConfig` : le Secret `external-secrets/vault-eso-token`
-n'a jamais été créé (étape 5 de `infra/gke/README.md`). Le preflight refuse la cible tant
-qu'il manque. Indépendamment de Keycloak, les apps GKE créées d'ici là ont une
-ExternalSecret non synchronisée (app Degraded, pods fonctionnels : `envFrom` optionnel).
+### Parcours applicatif dans le navigateur
 
-Procédure, une fois AKS et k3s validés :
+**k3s, 6 novembre** — app `kc-test-k3s` (template `react-vite`, Authentication, exposée par
+port-forward uniquement) :
 
-1. Contexte opérateur dans un fichier séparé (projet GCP `cnp-cloud-2`, droits IAM GKE) :
-   ```bash
-   gcloud components install gke-gcloud-auth-plugin   # hors PATH avec Homebrew : ajouter
-   # "$(gcloud info --format='value(installation.sdk_root)')/bin" au PATH
-   KUBECONFIG=~/.kube/config-cnp-gke gcloud container clusters get-credentials cnp-gke \
-     --zone europe-west1-b --project cnp-cloud-2
-   kubectl --kubeconfig ~/.kube/config-cnp-gke config rename-context \
-     gke_cnp-cloud-2_europe-west1-b_cnp-gke cnp-gke
-   ```
-2. Token ESO : `bash ~/fix-vault-tokens.sh` sur `cnp-control` (étape 5 du README GKE), ou
-   copie du Secret d'AKS, même token qu'AKS et k3s, sans l'afficher :
-   ```bash
-   kubectl --context cnp-aks -n external-secrets get secret vault-eso-token -o json \
-     | python3 -c 'import json,sys; s=json.load(sys.stdin); print(json.dumps({"apiVersion": "v1", "kind": "Secret", "type": s.get("type", "Opaque"), "metadata": {"name": "vault-eso-token", "namespace": "external-secrets"}, "data": s["data"]}))' \
-     | kubectl --kubeconfig ~/.kube/config-cnp-gke --context cnp-gke apply -f -
-   kubectl --kubeconfig ~/.kube/config-cnp-gke --context cnp-gke get clustersecretstore vault-backend
-   ```
-   Attendu : `Valid`, `READY True`.
-3. Même parcours que les autres cibles :
-   ```bash
-   export KUBECONFIG=~/.kube/config:~/.kube/config-cnp-gke
-   ./infra/keycloak/deploy.sh --config infra/keycloak/targets/public-gke.yaml --check
-   ./infra/keycloak/deploy.sh --config infra/keycloak/targets/public-gke.yaml
-   ./infra/keycloak/verify.sh --target infra/keycloak/targets/public-gke.yaml
-   ```
+- création par l'assistant CNP ; realms `kc-test-k3s-dev/prod` actifs ; `OIDC_ISSUER_URL`
+  et `OIDC_CLIENT_ID` présents dans le pod (Vault → ESO → Secret `envFrom`) et dans
+  `config.js` ;
+- console d'équipe : « Get access », mot de passe temporaire, changement imposé
+  (`length(12) and notUsername`) ;
+- app via `kubectl port-forward -n dev svc/<slug> 8000:8000` : login PKCE S256, callback,
+  échange du token depuis `http://localhost:8000` (origine CORS autorisée du realm dev),
+  logout fermant la session Keycloak ;
+- utilisatrice créée dans la console : token avec audience du client, **sans**
+  `realm-management` ; refusée sur la console d'administration.
 
-## Cloud privé k3s — validation confiée à l'opérateur
+**AKS, 20 novembre** — app `kc-test-aks` exposée sur Internet, après installation de
+cert-manager (PR #73) : certificats Let's Encrypt délivrés en moins d'une minute,
+HTTP redirigé en 308 vers HTTPS. Login PKCE depuis l'URL publique HTTPS, callback,
+logout ; utilisateur de test sans `realm-management` et refusé sur la console. Le client
+accepte la `redirect_uri` HTTPS publique et `localhost`, refuse la variante HTTP et une
+origine étrangère.
 
-L'opérateur a demandé à exécuter lui-même les essais depuis la VM ayant le
-kubeconfig k3s. Aucun accès ou résultat live privé n'est revendiqué ici.
+Les deux apps de test et leurs realms ont été supprimés après les essais.
 
-```bash
-# Depuis la VM, adapter contexte/noms/tailnet/SSH dans la cible.
-./infra/keycloak/deploy.sh --config infra/keycloak/targets/private-k3s.yaml --check
-./infra/keycloak/deploy.sh --config infra/keycloak/targets/private-k3s.yaml
-./infra/keycloak/deploy.sh --config infra/keycloak/targets/private-k3s.yaml
-./infra/keycloak/verify.sh --target infra/keycloak/targets/private-k3s.yaml
-```
+**GKE** : contrôles serveur uniquement (ci-dessus). Pas de parcours applicatif : GKE n'a
+pas encore d'URL publique pour les apps (DNS, voir `operations.md` §9, PR #76).
 
-Le dernier contrôle est en lecture seule ; il ne remplace pas le parcours des
-apps de test. Consigner révision, stockage, issuer, résultats navigateur et
-reconnexion après suppression/recréation contrôlée d'une installation de test.
-Les sauvegardes d'identités restent nécessaires pour récupérer les anciens users.
+### Restent ouverts
+
+- Parcours applicatif sur GKE (et URL publique sur k3s) après external-dns (PR #76) et,
+  pour k3s, l'ouverture des ports 80/443 OCI.
+- Sauvegarde des bases Keycloak : les identités vivent sur le PVC de chaque cluster ; une
+  recréation de cluster les perd (cas d’AKS, recréé sur une nouvelle subscription par la PR #72, avant le déploiement de
+  `public-01`).
+- Rotation et renouvellement des tokens ESO des clusters (`eso-reader`) : périodiques
+  768 h, sans renouvellement automatique.
 
 ## Publication et fusion
 
@@ -185,9 +168,8 @@ avant d'intégrer les Applications générées dans `cnp-gitops`.
 L'absence de publication n'est pas remplacée par un SHA fictif ou `HEAD`.
 La correction Compose isolant le Keycloak local est incluse.
 
-Décision de fusion : le code est fusionné dans main en **mode dormant** (merge de la
-PR #51) : `KEYCLOAK_ENABLED=false` et aucune instance enregistrée dans le registre
-`keycloak_instances`, donc aucune app ne peut activer Keycloak et rien ne change pour
-la plateforme. La validation live reste ouverte : elle se fait instance par instance,
-avant l'activation de chacune, dans l'ordre k3s, puis AKS, puis GKE (parcours décrits
-ci-dessus). Une instance n'est enregistrée et activée qu'une fois son parcours validé.
+Décision de fusion : le code a été fusionné dans main en **mode dormant** (PR #51), puis
+chaque instance a été enregistrée et activée après validation, dans l'ordre k3s, AKS, GKE
+(voir « Déploiements en production »). Exception : `public-02` (GKE) l'a été sur la base
+des contrôles serveur seuls, le parcours applicatif dans le navigateur restant à faire
+(voir « Restent ouverts »).

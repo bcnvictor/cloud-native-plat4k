@@ -6,6 +6,8 @@ from cli.core.output import print_error, print_success, print_table, print_json
 app = typer.Typer(help="Manage Kubernetes cluster connections.")
 
 _PROVIDER_HELP = "Cloud provider (azure, aws, gcp, openstack, oracle, other)"
+_PROMETHEUS_HELP = "Prometheus URL of the cluster (e.g. http://10.43.200.90:9090)"
+_LOKI_HELP = "Loki URL of the cluster (e.g. http://10.43.200.100:3100)"
 
 _STATUS_LABEL = {
     "online":  "[green]● online[/green]",
@@ -48,6 +50,8 @@ def add_cluster(
     endpoint: str = typer.Option(..., help="Kubernetes API server endpoint URL (e.g. https://1.2.3.4:6443)"),
     kubeconfig: str = typer.Option(..., help="Path to the kubeconfig YAML file"),
     provider: str = typer.Option(None, help=f"{_PROVIDER_HELP}; defaults to other"),
+    prometheus_url: str = typer.Option(None, help=_PROMETHEUS_HELP),
+    loki_url: str = typer.Option(None, help=_LOKI_HELP),
 ):
     """Register a new Kubernetes cluster connection."""
     try:
@@ -69,6 +73,10 @@ def add_cluster(
         }
         if provider is not None:
             payload["provider"] = provider
+        if prometheus_url:
+            payload["prometheus_url"] = prometheus_url
+        if loki_url:
+            payload["loki_url"] = loki_url
 
         data = client.post("/clusters/", json=payload)
         print_success(f"Cluster '{name}' successfully registered (ID: {data['id']}).")
@@ -82,6 +90,8 @@ def update_cluster(
     endpoint: str = typer.Option(None, help="New Kubernetes API server endpoint URL"),
     kubeconfig: str = typer.Option(None, help="Path to a new kubeconfig YAML file to update in Vault"),
     provider: str = typer.Option(None, help=_PROVIDER_HELP),
+    prometheus_url: str = typer.Option(None, help=f"{_PROMETHEUS_HELP}; empty string clears it"),
+    loki_url: str = typer.Option(None, help=f"{_LOKI_HELP}; empty string clears it"),
 ):
     """Update an existing Kubernetes cluster connection's details or kubeconfig."""
     try:
@@ -92,6 +102,11 @@ def update_cluster(
             payload["endpoint"] = endpoint
         if provider is not None:
             payload["provider"] = provider
+        # "" efface l'URL : le backend repasse alors sur le Prometheus/Loki par défaut
+        if prometheus_url is not None:
+            payload["prometheus_url"] = prometheus_url or None
+        if loki_url is not None:
+            payload["loki_url"] = loki_url or None
         if kubeconfig is not None:
             if not os.path.exists(kubeconfig):
                 print_error(f"Kubeconfig file not found at path: {kubeconfig}")
@@ -104,7 +119,8 @@ def update_cluster(
                 raise typer.Exit(1)
 
         if not payload:
-            print_error("No fields to update. Please specify --name, --endpoint, --provider, or --kubeconfig.")
+            print_error("No fields to update. Please specify --name, --endpoint, --provider, --kubeconfig, "
+                "--prometheus-url or --loki-url.")
             raise typer.Exit(1)
 
         client.put(f"/clusters/{id}", json=payload)

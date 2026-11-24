@@ -1,3 +1,4 @@
+import os
 import toml
 from pathlib import Path
 
@@ -16,7 +17,11 @@ def load_config() -> dict:
 
 def save_config(config: dict):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, "w") as f:
+    # Holds the API key: owner-only, including when rewriting a looser existing file.
+    fd = os.open(CONFIG_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    if hasattr(os, "fchmod"):  # POSIX only before Python 3.13
+        os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w") as f:
         toml.dump(config, f)
 
 def get_base_url():

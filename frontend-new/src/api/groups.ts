@@ -16,8 +16,15 @@ export const groupsApi = {
     await api.post('/users/me/sync-teams');
   },
 
-  async getGrafanaUrl(gitlabGroupId: number): Promise<{ dashboard_url: string | null; panel_base_url: string | null }> {
-    const res = await api.get<{ dashboard_url: string | null; panel_base_url: string | null }>(`/groups/${gitlabGroupId}/grafana-url`);
+  // `panel` / `env` : le dashboard s'ouvre directement sur ce panneau, pour cet environnement.
+  async getGrafanaUrl(
+    gitlabGroupId: number,
+    options?: { panel?: 'cpu' | 'ram' | 'logs'; env?: 'dev' | 'prod' },
+  ): Promise<{ dashboard_url: string | null; panel_base_url: string | null }> {
+    const res = await api.get<{ dashboard_url: string | null; panel_base_url: string | null }>(
+      `/groups/${gitlabGroupId}/grafana-url`,
+      { params: options },
+    );
     return res.data;
   },
 

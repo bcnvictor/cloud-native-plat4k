@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCloud, IconCpu, IconDatabase, IconExternalLink, IconPlayerPlay, IconPlayerStop, IconRefresh, IconServer, IconTerminal2 } from '@tabler/icons-react';
+import { IconAlertTriangle, IconBrandGitlab, IconClock, IconCloud, IconCpu, IconDatabase, IconExternalLink, IconPlayerPlay, IconPlayerStop, IconRefresh, IconServer, IconShieldCheck, IconTerminal2 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppDetail } from '@/layouts/AppDetailLayout';
 import { MetricCard } from '@/components/MetricCard';
@@ -13,13 +13,16 @@ import { timeAgo } from '@/utils/timeAgo';
 import { appsApi } from '@/api/apps';
 import { useAppMetrics } from '@/hooks/useAppMetrics';
 import { useAppStatus } from '@/hooks/useAppStatus';
+import { useSecurityReport } from '@/hooks/useSecurityReport';
 import { useAppScaleState } from '@/hooks/useAppScaleState';
 import { useMetricUrl } from '@/hooks/useMonitoringConfig';
+import { useCurrentGroup } from '@/hooks/useCurrentGroup';
 import { appUrl, portForwardCommand } from '@/utils/appUrls';
 import { clustersApi } from '@/api/clusters';
 import { isPrivateCluster } from '@/utils/clusterUtils';
 import { cn } from '@/utils/cn';
-import { AskAIButton } from '@/components/AskAIButton';
+import { DoctorCard } from '@/components/doctor/DoctorCard';
+import { DoctorLaunchButton } from '@/components/doctor/DoctorLaunchButton';
 import type { ArgoEnvStatus, AppScaleStateItem } from '@/types';
 
 function SyncBadge({ status }: { status: string | null | undefined }) {
@@ -93,24 +96,20 @@ function EnvCard({ title, envKey, appId, appName, argo, scaleState }: EnvCardPro
     ? `Stopped${scaleState?.stop_reason ? ` (${scaleState.stop_reason})` : ''}${scaleState?.stopped_at ? ` · ${timeAgo(scaleState.stopped_at)}` : ''}`
     : 'Running';
 
-  // Santé ArgoCD anormale (hors arrêt volontaire) : proposer un diagnostic IA.
+  // Santé ArgoCD anormale (hors arrêt volontaire) : proposer le CNP Doctor sur cet environnement.
   const unhealthy =
     !isStopped && !!argo?.health_status && ['Degraded', 'Missing'].includes(argo.health_status);
 
   return (
     <Card>
-      <h2 className="text-sm font-medium text-foreground mb-3 flex items-center justify-between">
-        <span className="flex items-center gap-1.5">
+      {/* Le bouton reste hors du titre : sinon il fait partie du nom lu du titre. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <h2 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
           <IconRefresh size={14} />
           {title}
-        </span>
-        {unhealthy && (
-          <AskAIButton
-            label="Expliquer"
-            question={`Pourquoi l'environnement ${envKey} de ${appName} est-il ${argo?.health_status} ? Diagnostique avec les logs et les pods.`}
-          />
-        )}
-      </h2>
+        </h2>
+        {unhealthy && <DoctorLaunchButton appId={appId} env={envKey} appName={appName} />}
+      </div>
       {!argo || (argo.error && !argo.sync_status) ? (
         <p className="text-xs text-muted-foreground flex items-center gap-1.5 mb-3">
           <IconAlertTriangle size={12} className="shrink-0" />
@@ -167,9 +166,11 @@ function EnvCard({ title, envKey, appId, appName, argo, scaleState }: EnvCardPro
 export function OverviewTab() {
   const { app, isLoading } = useAppDetail();
   const metrics = useAppMetrics(app?.slug ?? '', app?.target_cluster_id);
-  const cpuUrl = useMetricUrl(app?.slug ?? '', 'cpu');
-  const ramUrl = useMetricUrl(app?.slug ?? '', 'ram');
+  const group = useCurrentGroup();
+  const cpuUrl = useMetricUrl(app?.slug ?? '', 'cpu', group?.gitlab_group_id);
+  const ramUrl = useMetricUrl(app?.slug ?? '', 'ram', group?.gitlab_group_id);
   const { data: runtimeStatus } = useAppStatus(app?.id);
+  const { data: securityReport } = useSecurityReport(app?.id);
   const { data: scale } = useAppScaleState(app?.id);
   const { data: clusters = [] } = useQuery({ queryKey: ['clusters'], queryFn: clustersApi.list });
   const cluster = app?.target_cluster_id
@@ -192,7 +193,7 @@ export function OverviewTab() {
   return (
     <div className="flex flex-col gap-5">
       {/* Metrics */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         {!metrics.available && (
           <div className="col-span-4 flex items-center gap-2 px-3 py-2 rounded-md bg-muted/40 border border-border text-xs text-muted-foreground">
             <IconAlertTriangle size={13} className="shrink-0" />
@@ -225,6 +226,11 @@ export function OverviewTab() {
           icon={<IconServer size={14} />}
         />
         <MetricCard
+          label="Security grade"
+          value={securityReport?.grade ?? '—'}
+          icon={<IconShieldCheck size={14} />}
+        />
+        <MetricCard
           label="Last sync"
           value={lastSync ? timeAgo(lastSync) : '—'}
           icon={<IconClock size={14} />}
@@ -245,6 +251,9 @@ export function OverviewTab() {
           <EnvCard title="Dev environment" envKey="dev" appId={app.id} appName={app.name} argo={runtimeStatus?.argocd_dev} scaleState={scale?.dev} />
         </div>
       )}
+
+      {/* CNP Doctor : diagnostic guidé d'un environnement */}
+      {app?.id && <DoctorCard appId={app.id} appName={app.name} />}
 
       {/* Cloud target */}
       {cluster && (
