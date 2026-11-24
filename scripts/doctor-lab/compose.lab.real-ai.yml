@@ -1,0 +1,12 @@
+# Labo CNP Doctor : fournisseur IA réel (ajouté par start.sh --real-ai, après compose.lab.yml).
+#
+# Les valeurs viennent du shell ou du .env racine, interpolées par Compose ; le
+# labo ne lit jamais le Vault partagé. Seules ces quatre variables quittent le .env.
+# Le démarrage échoue si AI_PROVIDER, AI_API_KEY ou AI_MODEL manquent.
+services:
+  backend:
+    environment:
+      AI_PROVIDER: ${AI_PROVIDER:?AI_PROVIDER manquant (shell ou .env)}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
+      AI_API_KEY: ${AI_API_KEY:?AI_API_KEY manquant (shell ou .env)}
+      AI_MODEL: ${AI_MODEL:?AI_MODEL manquant (shell ou .env)}

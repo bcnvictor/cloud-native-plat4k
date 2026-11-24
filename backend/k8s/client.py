@@ -10,6 +10,11 @@ from backend.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _iso(value) -> Optional[str]:
+    """Horodatage ISO d'un datetime Kubernetes, ou None."""
+    return value.isoformat() if value is not None and hasattr(value, "isoformat") else None
+
+
 class KubernetesClient:
     def __init__(self, kubeconfig_yaml: Optional[str] = None):
         self._core_v1: Optional[client.CoreV1Api] = None
@@ -152,10 +157,13 @@ class KubernetesClient:
                     "last_terminated_reason": last.reason if last else None,
                     "last_exit_code": last.exit_code if last else None,
                     "last_finished_at": last.finished_at.isoformat() if last and last.finished_at else None,
+                    # Démarrage du conteneur en cours (None s'il n'est pas en marche).
+                    "started_at": _iso(getattr(getattr(cs.state, "running", None), "started_at", None)),
                 })
             pod_rows.append({
                 "name": pod.metadata.name,
                 "phase": pod.status.phase,
+                "start_time": _iso(getattr(pod.status, "start_time", None)),
                 "containers": containers,
             })
 
@@ -176,7 +184,12 @@ class KubernetesClient:
             "pods": pod_rows,
             "warnings": [
                 {"reason": e.reason, "message": e.message, "count": e.count or 1,
-                 "object": e.involved_object.name}
+                 "object": e.involved_object.name,
+                 # Première et dernière occurrence : la première date le début de la panne.
+                 "first_seen": _iso(
+                     getattr(e, "first_timestamp", None) or getattr(e, "event_time", None)
+                     or getattr(e.metadata, "creation_timestamp", None)),
+                 "last_seen": _iso(getattr(e, "last_timestamp", None) or getattr(e, "event_time", None))}
                 for e in warnings[:max_events]
             ],
         }

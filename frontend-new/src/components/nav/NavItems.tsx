@@ -8,6 +8,7 @@ import {
   IconCoin,
   IconUsers,
   IconShield,
+  IconPackage,
 } from '@tabler/icons-react';
 import { useScopeStore } from '@/store/scope';
 import { cn } from '@/utils/cn';
@@ -30,6 +31,7 @@ const ADMIN_NAV: NavItemDef[] = [
   { label: 'Apps',         icon: IconApps,     path: () => '/admin/apps' },
   { label: 'FinOps',       icon: IconCoin,     path: () => '/admin/finops' },
   { label: 'Users',        icon: IconUsers,    path: () => '/admin/users' },
+  { label: 'Dependencies', icon: IconPackage, path: () => '/admin/dependencies' },
   { label: 'Audit',        icon: IconShield,   path: () => '/admin/audit' },
   { label: 'Settings',     icon: IconSettings, path: () => '/admin/settings' },
 ];

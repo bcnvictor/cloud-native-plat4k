@@ -64,6 +64,9 @@ class Settings(BaseSettings):
 
     # CNP API public URL (used in webhook registration)
     CNP_API_BASE_URL: str = "http://localhost:8000"
+    # URL the app pipelines POST their security summary to (cnp-report job). Must be
+    # reachable from gitlab.com runners; defaults to CNP_API_BASE_URL + the webhook path.
+    CNP_CI_CALLBACK_URL: Optional[str] = None
     # GitLab webhook secret (sent as X-Gitlab-Token to verify incoming webhook calls)
     GITLAB_WEBHOOK_SECRET: Optional[str] = None
     ARGOCD_WEBHOOK_SECRET: Optional[str] = None

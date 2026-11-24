@@ -140,6 +140,8 @@ class Application(Base):
     gitlab_project_id = Column(BigInteger, nullable=True)
     owning_gitlab_group_id = Column(BigInteger, nullable=True)
     target_cluster_id = Column(Integer, ForeignKey("cluster_connections.id", ondelete="SET NULL"), nullable=True)
+    # Session async : charger via joinedload/selectinload, jamais en lazy load implicite.
+    target_cluster = relationship("ClusterConnection")
     origin = Column(String, nullable=True)
     source_url = Column(String, nullable=True)
     framework = Column(String, nullable=True)
@@ -523,3 +525,50 @@ class KeycloakInstance(Base):
     enabled = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+
+
+class SecurityReport(Base):
+    """Latest CI security summary (trivy + gitleaks) per app — one row, upserted per pipeline."""
+
+    __tablename__ = "security_reports"
+
+    app_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), primary_key=True)
+    pipeline_id = Column(BigInteger, nullable=False)
+    pipeline_url = Column(String, nullable=False)
+    commit_sha = Column(String, nullable=False)
+    received_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    payload = Column(JSON, nullable=False)
+
+
+class SbomSnapshot(Base):
+    """Latest CI dependency inventory (SBOM) summary per app — one row, replaced per pipeline."""
+
+    __tablename__ = "sbom_snapshots"
+
+    app_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), primary_key=True)
+    pipeline_id = Column(BigInteger, nullable=False)
+    commit_sha = Column(String, nullable=False)
+    received_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    component_count = Column(Integer, nullable=False)
+    truncated = Column(Boolean, nullable=False, default=False, server_default="false")
+
+
+class SbomComponent(Base):
+    """One library of an app's latest SBOM. Rows of an app are replaced wholesale (no history)."""
+
+    __tablename__ = "sbom_components"
+    __table_args__ = (
+        Index("ix_sbom_components_ecosystem_name", "ecosystem", "name"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    app_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    version = Column(String, nullable=False)
+    ecosystem = Column(String, nullable=False)
+    purl = Column(String, nullable=False)
+    direct = Column(Boolean, nullable=True)  # None = unknown
+    licenses = Column(JSON, nullable=False, default=list)
+
+
+Index("ix_sbom_components_lower_name", func.lower(SbomComponent.name))

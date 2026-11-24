@@ -8,10 +8,11 @@ response), not the real Vault KV v2 wire behavior.
 import pytest
 from httpx import AsyncClient
 from hvac.exceptions import InvalidPath
-from shared.models import UserRole
+from shared.models import UserRole, is_valid_env_var_key
 
 from backend.core.security import get_password_hash
 from backend.db.models import Application, AppMember, ClusterConnection, User
+from backend.services.env_var_service import MANAGED_ENV_KEYS
 from backend.vault.client import vault_client
 
 pytestmark = pytest.mark.asyncio
@@ -193,6 +194,23 @@ class TestDevAccess:
             headers={"Authorization": f"Bearer {developer_token}"},
         )
         assert resp.json()["keys"] == [{"key": "B", "is_set": True, "managed": False}]
+
+    async def test_delete_missing_key_returns_404(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault
+    ):
+        """`cnp env unset` printed "Removed" for keys that were never set."""
+        await client.put(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev",
+            json={"variables": {"A": "1"}},
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        resp = await client.delete(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev/MISSING",
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 404
+        assert "MISSING" in resp.json()["detail"]
+        assert fake_vault["apps/_ungrouped/demo/dev"] == {"A": "1"}
 
     async def test_status_endpoint_reflects_key_presence(
         self, client: AsyncClient, developer_token: str, app_with_developer: Application
@@ -441,3 +459,118 @@ class TestOidcKeysWithoutKeycloak:
             headers={"Authorization": f"Bearer {developer_token}"},
         )
         assert resp.json()["keys"] == [{"key": "OIDC_ISSUER_URL", "is_set": True, "managed": False}]
+
+
+class TestKeyValidation:
+    """Keys must match the ESO/K8s Secret key charset [-._a-zA-Z0-9]+ (4K-248):
+    one bad key makes the ExternalSecret fail to sync, freezing every variable
+    of that env. Enforced on write only — keys already in Vault stay readable
+    and deletable so they can be cleaned up.
+    """
+
+    @pytest.mark.parametrize("bad_key", ["", "MY KEY", "a/b", "a:b", "clé", "KEY\n", "A=B"])
+    async def test_invalid_key_rejected_on_write(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault, bad_key
+    ):
+        resp = await client.put(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev",
+            json={"variables": {"GOOD_KEY": "1", bad_key: "x"}},
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 422
+        assert fake_vault == {}, "a rejected payload must not be partially written"
+
+    @pytest.mark.parametrize("key", ["DATABASE_URL", "my.key", "a-b", "_x", "9LIVES"])
+    async def test_valid_keys_accepted(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application, key
+    ):
+        resp = await client.put(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev",
+            json={"variables": {key: "v"}},
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["keys"] == [{"key": key, "is_set": True, "managed": False}]
+
+    async def test_existing_invalid_key_still_listed_and_deletable(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault
+    ):
+        fake_vault["apps/_ungrouped/demo/dev"] = {"BAD KEY": "x", "OK": "y"}
+        headers = {"Authorization": f"Bearer {developer_token}"}
+        base = f"/api/v1/apps/{app_with_developer.id}/env/dev"
+
+        resp = await client.get(base, headers=headers)
+        assert resp.status_code == 200
+        assert [k["key"] for k in resp.json()["keys"]] == ["BAD KEY", "OK"]
+
+        resp = await client.get(f"{base}/BAD%20KEY/status", headers=headers)
+        assert resp.json() == {"key": "BAD KEY", "is_set": True}
+
+        resp = await client.delete(f"{base}/BAD%20KEY", headers=headers)
+        assert resp.status_code == 200
+        assert fake_vault["apps/_ungrouped/demo/dev"] == {"OK": "y"}
+
+
+class TestKeyValidationWithManagedKeys:
+    """Key-name validation (4K-248) and Keycloak-managed keys (4K-15) together.
+
+    Order: the key charset is checked by the request schema (422) before the
+    service applies the managed-key rule (409) — a malformed request is rejected
+    as such, whatever it contains; only well-formed requests reach business rules.
+    """
+
+    def test_managed_keys_match_the_secret_key_charset(self):
+        """Keycloak writes these keys itself: ESO must be able to sync them."""
+        assert MANAGED_ENV_KEYS
+        assert all(is_valid_env_var_key(k) for k in MANAGED_ENV_KEYS)
+
+    @pytest.fixture
+    async def keycloak_app(self, db_session, app_with_developer: Application) -> Application:
+        app_with_developer.auth_enabled = True
+        await db_session.commit()
+        return app_with_developer
+
+    async def test_invalid_key_beside_managed_key_is_a_422(
+        self, client: AsyncClient, developer_token: str, keycloak_app: Application, fake_vault
+    ):
+        resp = await client.put(
+            f"/api/v1/apps/{keycloak_app.id}/env/dev",
+            json={"variables": {"OIDC_CLIENT_ID": "x", "MY KEY": "y"}},
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 422
+        assert fake_vault == {}
+
+    async def test_valid_managed_key_is_a_409(
+        self, client: AsyncClient, developer_token: str, keycloak_app: Application, fake_vault
+    ):
+        resp = await client.put(
+            f"/api/v1/apps/{keycloak_app.id}/env/dev",
+            json={"variables": {"OIDC_CLIENT_ID": "x", "NORMAL_KEY": "y"}},
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 409
+        assert fake_vault == {}
+
+    async def test_deleting_absent_managed_key_is_a_409_not_404(
+        self, client: AsyncClient, developer_token: str, keycloak_app: Application, fake_vault
+    ):
+        """Managed keys can never be deleted by hand, whether or not they are set."""
+        fake_vault["apps/_ungrouped/demo/dev"] = {"OTHER": "1"}
+        resp = await client.delete(
+            f"/api/v1/apps/{keycloak_app.id}/env/dev/OIDC_CLIENT_SECRET",
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 409
+        assert fake_vault["apps/_ungrouped/demo/dev"] == {"OTHER": "1"}
+
+    async def test_absent_oidc_key_without_keycloak_is_a_404(
+        self, client: AsyncClient, developer_token: str, app_with_developer: Application, fake_vault
+    ):
+        """Without Keycloak, OIDC_* are ordinary keys: the not-set rule applies."""
+        fake_vault["apps/_ungrouped/demo/dev"] = {"OTHER": "1"}
+        resp = await client.delete(
+            f"/api/v1/apps/{app_with_developer.id}/env/dev/OIDC_CLIENT_SECRET",
+            headers={"Authorization": f"Bearer {developer_token}"},
+        )
+        assert resp.status_code == 404
