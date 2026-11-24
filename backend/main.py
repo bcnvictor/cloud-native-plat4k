@@ -21,6 +21,7 @@ from backend.api.routes import (
     deployments,
     doctor,
     env_vars,
+    ephemeral_envs,
     finops_advisor,
     gitlab,
     groups,
@@ -154,6 +155,7 @@ app.include_router(finops_advisor.router, prefix=f"{settings.API_V1_STR}/apps", 
 app.include_router(doctor.router, prefix=f"{settings.API_V1_STR}/apps", tags=["cnp-doctor"])
 app.include_router(security.router, prefix=f"{settings.API_V1_STR}/apps", tags=["security"])
 app.include_router(env_vars.router, prefix=f"{settings.API_V1_STR}/apps", tags=["env-vars"])
+app.include_router(ephemeral_envs.router, prefix=f"{settings.API_V1_STR}/apps", tags=["ephemeral-envs"])
 app.include_router(keycloak_instances.router, prefix=f"{settings.API_V1_STR}/keycloak/instances", tags=["keycloak-instances"])
 app.include_router(keycloak.router, prefix=f"{settings.API_V1_STR}/apps", tags=["keycloak"])
 app.include_router(clusters.router, prefix=f"{settings.API_V1_STR}/clusters", tags=["clusters"])

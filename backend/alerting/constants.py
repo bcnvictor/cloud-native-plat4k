@@ -11,6 +11,7 @@ class EventType:
     APP_SCALE_RESUMED           = "app.scale.resumed"
     APP_SCALE_SCHEDULED_STOP    = "app.scale.scheduled_stop"
     APP_SCALE_SCHEDULED_RESUME  = "app.scale.scheduled_resume"
+    APP_EPHEMERAL_CREATED = "app.ephemeral.created"
     CLUSTER_OFFLINE       = "cluster.offline"
     CLUSTER_ONLINE        = "cluster.online"
     GROUP_RENAMED         = "group.renamed"
@@ -32,6 +33,7 @@ CATEGORY_MAP: dict[str, list[str]] = {
         EventType.APP_SCALE_RESUMED,
         EventType.APP_SCALE_SCHEDULED_STOP,
         EventType.APP_SCALE_SCHEDULED_RESUME,
+        EventType.APP_EPHEMERAL_CREATED,
     ],
     "cluster": [
         EventType.CLUSTER_OFFLINE,

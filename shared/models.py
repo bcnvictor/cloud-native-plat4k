@@ -3,6 +3,7 @@ Shared Pydantic models for both the FastAPI backend and the Typer CLI.
 This avoids duplicating code between the client and server.
 """
 
+import hashlib
 import re
 from datetime import datetime
 from enum import Enum
@@ -489,6 +490,84 @@ def app_hostname(slug: str, env: str) -> str:
 def app_internet_url(slug: str, env: str) -> str:
     """Return the public HTTPS URL for display."""
     return f"https://{app_hostname(slug, env)}"
+
+
+# ── Environnements éphémères (ADR-0030) ───────────────────────────────────────
+
+EPHEMERAL_SLUG_MAX = 20
+# Le nom complet <app>--<slug> sert de release Helm : 53 caractères au plus.
+EPHEMERAL_NAME_MAX = 53
+EPHEMERAL_RESERVED_SLUGS = frozenset({"dev", "prod", "staging", "platform"})
+_EPHEMERAL_SUFFIX_LEN = 5  # "-" + 4 caractères hexadécimaux
+
+
+class EphemeralSlugError(ValueError):
+    """La branche ne permet pas de dériver un slug d'env éphémère valide."""
+
+
+class EphemeralEnvStatus(str, Enum):
+    PROVISIONING = "provisioning"
+    ACTIVE = "active"
+    FAILED = "failed"
+    DESTROYING = "destroying"
+    DESTROYED = "destroyed"
+
+
+def ephemeral_env_name(app_slug: str, env_slug: str) -> str:
+    """Nom d'Application ArgoCD, de release Helm et de namespace d'un env éphémère.
+
+    Les slugs d'app ne contiennent jamais "--" (compute_slug), donc le nom est unique
+    sur le cluster : "foo" + "bar-x" et "foo-bar" + "x" ne se confondent pas.
+    """
+    return f"{app_slug}--{env_slug}"
+
+
+def ephemeral_slug(branch: str, app_slug: str, taken: frozenset[str] | set[str] = frozenset()) -> str:
+    """Slug RFC 1123 d'un env éphémère, dérivé de la branche (ADR-0030 §3).
+
+    Tronqué à EPHEMERAL_SLUG_MAX et à ce que permet la limite de 53 caractères du nom
+    complet. Un slug tronqué, réservé ou déjà pris reçoit un suffixe tiré d'un hash de
+    la branche : il est stable pour une même branche et distingue deux branches qui se
+    normalisent pareil (feat/x et feat_x).
+    """
+    base = re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
+    if not base:
+        raise EphemeralSlugError(f"Branch '{branch}' cannot be normalised to a valid slug")
+
+    max_len = min(EPHEMERAL_SLUG_MAX, EPHEMERAL_NAME_MAX - len(app_slug) - 2)
+    if base not in EPHEMERAL_RESERVED_SLUGS and base not in taken and len(base) <= max_len:
+        return base
+
+    if max_len < _EPHEMERAL_SUFFIX_LEN + 1:
+        raise EphemeralSlugError(f"App slug '{app_slug}' is too long to host an ephemeral environment")
+    suffix = hashlib.sha1(branch.encode()).hexdigest()[:4]
+    head = base[: max_len - _EPHEMERAL_SUFFIX_LEN].rstrip("-")
+    slug = f"{head}-{suffix}"
+    if slug in taken:
+        raise EphemeralSlugError(f"Slug '{slug}' is already used by another ephemeral environment")
+    return slug
+
+
+class EphemeralEnvCreate(BaseModel):
+    branch: str
+    ttl_hours: Optional[int] = None  # None = EPHEMERAL_DEFAULT_TTL_HOURS côté backend
+
+
+class EphemeralEnvResponse(BaseModel):
+    id: int
+    app_id: int
+    slug: str
+    name: str
+    branch: str
+    cluster_name: str
+    status: EphemeralEnvStatus
+    image_tag: Optional[str] = None
+    expires_at: datetime
+    created_at: Optional[datetime] = None
+    created_by_user_id: Optional[int] = None
+    # Lus à la volée dans ArgoCD, None si indisponible
+    sync_status: Optional[str] = None
+    health_status: Optional[str] = None
 
 
 class CiStatusUpdate(BaseModel):

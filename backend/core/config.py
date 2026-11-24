@@ -95,6 +95,18 @@ class Settings(BaseSettings):
     # expose=true y est refusé (scaffold, onboard, import, PATCH /apps/{id}/expose).
     PUBLIC_EXPOSURE_CLUSTERS: str = "cnp-aks"
 
+    # Environnements éphémères créés depuis une branche (ADR-0030)
+    EPHEMERAL_DEFAULT_TTL_HOURS: int = 24
+    EPHEMERAL_MAX_TTL_HOURS: int = 168
+    # Chaque env émet un certificat Let's Encrypt (50 par semaine sur le domaine) : quota par app
+    EPHEMERAL_MAX_PER_APP: int = 3
+    # Identifiants registry (clés username/password) lus par ESO pour le pull secret des
+    # namespaces éphémères ; sous secret/apps/ pour rester dans la policy eso-reader.
+    # Deploy token de groupe limité à read_registry, jamais le token du bot : le chart vient
+    # d'une branche non relue et peut lire ce Secret.
+    EPHEMERAL_REGISTRY_VAULT_KEY: str = "secret/apps/_platform/gitlab-registry"
+    EPHEMERAL_REGISTRY_SERVER: str = "registry.gitlab.com"
+
     CLUSTER_HEALTH_INTERVAL: int = 300      # secondes entre deux sondes
     CLUSTER_HEALTH_FAILURE_THRESHOLD: int = 2  # sondes échouées consécutives avant de marquer OFFLINE (grace period)
     KUBECONFIG_DIR: Optional[str] = None    # répertoire de kubeconfigs, optionnel
