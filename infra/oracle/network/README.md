@@ -1,9 +1,23 @@
 # Réseau Oracle Cloud de la VM k3s (Terraform)
 
 Gère la **security list OCI** du subnet de la VM `cnp-k3s` (138.2.159.23). C'est le pare-feu
-réseau d'Oracle, en amont de la VM : une session SSH n'y a pas accès. Il ouvre aujourd'hui
-22 (SSH) et 6443 (API k3s) ; cette racine y ajoute **80 et 443** pour ingress-nginx (URLs
-publiques des apps, challenges HTTP-01 de cert-manager).
+réseau d'Oracle, en amont de la VM : une session SSH n'y a pas accès.
+
+**Le subnet est partagé** avec la VM de contrôle `cnp-control` (130.61.112.206 : backend,
+front, webhooks, Vault). Cette liste filtre donc les deux VMs, et retirer une règle ici peut
+couper la plateforme entière, pas seulement k3s.
+
+Règles d'entrée, toutes reprises telles qu'elles existaient dans la console (descriptions
+comprises) :
+
+| Port | Source | Usage |
+|---|---|---|
+| 22 | 0.0.0.0/0 | SSH (règle par défaut d'OCI) |
+| ICMP 3/4, ICMP 3 | 0.0.0.0/0, CIDR du VCN | règles par défaut d'OCI |
+| 80, 443 | 0.0.0.0/0 | nginx de `cnp-control` (front, webhooks) et ingress-nginx de `cnp-k3s` (URLs publiques des apps, challenges HTTP-01) |
+| 8201 | `vault_api_source_cidr` (0.0.0.0/0) | API Vault de `cnp-control`, lue par External Secrets sur chaque cluster |
+| 6443 | `control_public_ip`/32 | API k3s depuis le backend CNP |
+| 6443 | `k3s_api_source_cidr` (0.0.0.0/0) | API k3s pour les opérateurs |
 
 Racine séparée de `infra/oracle/k3s/` : autre provider, autres identifiants (clé d'API du
 compte Oracle), impact limité. La VM et le VCN ne sont pas gérés ici. L'état reste local
@@ -36,12 +50,11 @@ terraform init
 terraform plan
 ```
 
-Le plan attendu : `1 to import, 0 to add, 1 to change, 0 to destroy`, et dans le détail
-de `oci_core_security_list.k3s`, **seulement deux règles d'entrée ajoutées** (TCP 80 et
-TCP 443).
+Le plan attendu : `1 to import, 0 to add, 0 to change, 0 to destroy`. `main.tf` décrit
+exactement la liste existante (relevé du 24/11/2026) : l'import ne modifie aucune règle.
 
-Si le plan montre une règle supprimée (`-`), ou un autre changement (nom, source de la
-règle 6443…), **ne pas appliquer** : corriger `main.tf` ou `terraform.tfvars`. Pour voir
+Si le plan montre une règle supprimée (`-`), ou un autre changement (nom, source, description…),
+c'est que la console a été modifiée depuis : **ne pas appliquer** : corriger `main.tf` ou `terraform.tfvars`. Pour voir
 la configuration exacte de l'existant, la générer dans un dossier à part :
 
 ```bash
@@ -83,7 +96,7 @@ fermés alors que la security list est ouverte, vérifier iptables en SSH sur la
 
 Toute nouvelle règle passe par une PR sur `main.tf`, puis `terraform plan` et `apply`,
 plus par la console : une modification faite à la main serait écrasée au prochain apply.
-`prevent_destroy` empêche de supprimer la security list par erreur, ce qui couperait SSH
-et l'API k3s. Les tags (`defined_tags`, `freeform_tags`) sont ignorés : OCI pose souvent
+`prevent_destroy` empêche de supprimer la security list par erreur, ce qui couperait SSH,
+l'API k3s, Vault et le front sur les deux VMs. Les tags (`defined_tags`, `freeform_tags`) sont ignorés : OCI pose souvent
 d'office `Oracle-Tags.CreatedBy`/`CreatedOn`, que Terraform voudrait sinon retirer à
 chaque plan.

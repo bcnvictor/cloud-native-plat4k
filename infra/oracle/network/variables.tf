@@ -36,6 +36,18 @@ variable "vcn_cidr" {
 }
 
 variable "k3s_api_source_cidr" {
-  description = "Source autorisée sur 6443 : la valeur actuelle de la règle (0.0.0.0/0 ou l'IP du backend en /32)"
+  description = "Source de la règle 6443 ouverte aux opérateurs (aujourd'hui 0.0.0.0/0)"
   type        = string
+}
+
+variable "control_public_ip" {
+  description = "IP publique de la VM cnp-control (backend CNP), autorisée sur 6443 en /32"
+  type        = string
+  default     = "130.61.112.206"
+}
+
+variable "vault_api_source_cidr" {
+  description = "Source autorisée sur 8201 (API Vault de cnp-control) : aujourd'hui 0.0.0.0/0"
+  type        = string
+  default     = "0.0.0.0/0"
 }
