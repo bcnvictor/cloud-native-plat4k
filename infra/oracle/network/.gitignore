@@ -1,0 +1,10 @@
+# State Terraform - état réel de l'infra, ne pas commiter
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+# Valeurs propres au compte OCI (partir de terraform.tfvars.example)
+terraform.tfvars
+# Plan sauvegardé et configuration générée à l'import (à relire avant de recopier)
+tfplan
+generated.tf

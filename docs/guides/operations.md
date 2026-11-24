@@ -323,8 +323,8 @@ ingress-nginx, cert-manager, les ClusterIssuers et external-dns sont déclarés 
    (`--publish-status-address=var.public_ip`, avec `controller.publishService.enabled=false`,
    les deux options étant exclusives) : c'est elle qu'external-dns met dans les A.
    À changer (`-var public_ip=…`) si la VM change d'IP publique.
-2. **Security list OCI** (manuel, console OCI, subnet de la VM) : règles d'entrée TCP `80` et
-   `443`, source `0.0.0.0/0`. Sans le port 80, HTTP-01 échoue ; sans 443, l'app est
+2. **Security list OCI** (Terraform, `infra/oracle/network/`, appliqué par la personne qui a
+   la clé d'API OCI) : règles d'entrée TCP `80` et `443`, source `0.0.0.0/0`. Sans le port 80, HTTP-01 échoue ; sans 443, l'app est
    injoignable.
 3. **HTTP-01 et hairpin OCI** : le self-check de cert-manager résout le host depuis le pod,
    obtient l'IP publique de la VM et doit revenir sur le nœud par cette IP. Si le NAT OCI ne

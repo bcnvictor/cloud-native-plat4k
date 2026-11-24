@@ -1,0 +1,8 @@
+# Copier en terraform.tfvars (non versionné) et remplir depuis la console OCI.
+region                     = "eu-frankfurt-1"
+compartment_id             = "ocid1.compartment.oc1..xxxx"
+vcn_id                     = "ocid1.vcn.oc1.eu-frankfurt-1.xxxx"
+security_list_id           = "ocid1.securitylist.oc1.eu-frankfurt-1.xxxx"
+security_list_display_name = "Default Security List for vcn-xxxx"
+vcn_cidr                   = "10.0.0.0/16"
+k3s_api_source_cidr        = "0.0.0.0/0"
