@@ -213,6 +213,10 @@ class EphemeralEnvironment(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
     destroyed_at = Column(DateTime(timezone=True), nullable=True)
+    # Posés au passage en destroying : une destruction reprise par le worker garde sa
+    # raison (manual, expired) et son auteur dans l'audit.
+    destroy_reason = Column(String(20), nullable=True)
+    destroy_requested_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     __table_args__ = (
         # Un seul env non détruit par slug et par app

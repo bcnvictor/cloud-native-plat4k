@@ -42,6 +42,7 @@ from backend.k8s.dashboards import FINOPS_DASHBOARD_JSON
 from backend.k8s.discovery import discover_clusters
 from backend.k8s.health_worker import run_health_worker
 from backend.keycloak.client import KeycloakError, KeycloakUnavailable
+from backend.services.ephemeral_ttl_worker import run_ephemeral_ttl_worker
 from backend.services.gitlab_sync_service import run_gitlab_sync_worker
 from backend.services.platform_knowledge_service import sync_platform_docs_at_startup
 from backend.services.scale_worker import run_scale_worker
@@ -92,15 +93,26 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(run_scale_worker(settings.SCALE_SCHEDULE_INTERVAL_MINUTES))
         if settings.SCALE_SCHEDULE_ENABLED else None
     )
+    # Sans GitOps configuré, le worker ne pourrait rien détruire et journaliserait une
+    # erreur par env expiré à chaque cycle
+    ephemeral_task = (
+        asyncio.create_task(run_ephemeral_ttl_worker(settings.EPHEMERAL_TTL_WORKER_INTERVAL_MINUTES))
+        if settings.GITLAB_BOT_TOKEN and settings.GITOPS_REPO_URL else None
+    )
     yield
     health_task.cancel()
     sync_task.cancel()
+    if ephemeral_task:
+        ephemeral_task.cancel()
     if scale_task:
         scale_task.cancel()
     with suppress(asyncio.CancelledError):
         await health_task
     with suppress(asyncio.CancelledError):
         await sync_task
+    if ephemeral_task:
+        with suppress(asyncio.CancelledError):
+            await ephemeral_task
     if scale_task:
         with suppress(asyncio.CancelledError):
             await scale_task

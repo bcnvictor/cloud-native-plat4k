@@ -181,6 +181,17 @@ class GitLabClient:
         project = self._gl.projects.get(gitlab_project_id)
         return project.pipelines.create({"ref": ref}).id
 
+    def cancel_pipeline(self, gitlab_project_id: int, pipeline_id: int) -> bool:
+        """Cancel a pipeline if it is still running. Best effort: False on error."""
+        try:
+            pipeline = self._gl.projects.get(gitlab_project_id).pipelines.get(pipeline_id)
+            if pipeline.status in ("created", "waiting_for_resource", "preparing", "pending", "running", "scheduled", "manual"):
+                pipeline.cancel()
+            return True
+        except Exception:
+            logger.warning("Failed to cancel pipeline %s of project %s", pipeline_id, gitlab_project_id)
+            return False
+
     def get_pipeline_status(self, gitlab_project_id: int, pipeline_id: int) -> str | None:
         """GitLab pipeline status (running, success, failed…), None if unavailable."""
         try:
@@ -689,6 +700,33 @@ class GitLabClient:
             "commit_message": commit_message,
             "actions": actions,
         })
+
+    def delete_paths(
+        self,
+        project_path: str,
+        files: list[str],
+        directories: list[str],
+        commit_message: str,
+        branch: str = "main",
+    ) -> int:
+        """Delete files and whole directories in one commit. Paths already gone are skipped,
+        so a retry is a no-op. Returns the number of deleted files."""
+        project = self.get_project(project_path)
+        to_delete = {f for f in files if self.file_exists(project_path, f, ref=branch)}
+        for directory in directories:
+            try:
+                items = project.repository_tree(path=directory, ref=branch, recursive=True, all=True)
+            except GitlabGetError:
+                continue
+            to_delete.update(item["path"] for item in items if item["type"] == "blob")
+        if not to_delete:
+            return 0
+        project.commits.create({
+            "branch": branch,
+            "commit_message": commit_message,
+            "actions": [{"action": "delete", "file_path": p} for p in sorted(to_delete)],
+        })
+        return len(to_delete)
 
     def delete_directory_contents(self, project_path: str, directory_path: str, commit_message: str, branch: str = "main") -> None:
         """Deletes all files within a directory using the Commits API."""

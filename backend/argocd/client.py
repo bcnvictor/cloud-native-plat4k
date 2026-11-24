@@ -21,6 +21,17 @@ class ArgoCDClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def app_exists(self, app_name: str) -> bool:
+        """True tant que l'Application existe, y compris pendant sa suppression (finalizer).
+
+        Passe par la liste filtrée par nom : un GET direct sur une Application absente peut
+        renvoyer 403 au lieu de 404 selon le RBAC ArgoCD.
+        """
+        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=_TIMEOUT, verify=False) as client:
+            resp = await client.get("/api/v1/applications", params={"name": app_name})
+            resp.raise_for_status()
+            return any(item.get("metadata", {}).get("name") == app_name for item in resp.json().get("items") or [])
+
     async def sync_app(self, app_name: str) -> None:
         async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=_TIMEOUT, verify=False) as client:
             resp = await client.post(f"/api/v1/applications/{app_name}/sync", json={})
