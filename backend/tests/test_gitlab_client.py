@@ -351,3 +351,58 @@ def test_cancel_pipeline_best_effort():
 
     client._gl = SimpleNamespace(projects=_Boom())
     assert client.cancel_pipeline(1, 2) is False
+
+
+def _client_with_branch_pipelines(head_sha, successful_ids, missing_branch=False):
+    from types import SimpleNamespace
+
+    calls = {}
+
+    def get_branch(name):
+        if missing_branch:
+            raise GitlabGetError(response_code=404, error_message="not found")
+        return SimpleNamespace(commit={"id": head_sha})
+
+    def list_pipelines(**kwargs):
+        calls.update(kwargs)
+        return [SimpleNamespace(id=i) for i in successful_ids]
+
+    project = SimpleNamespace(
+        branches=SimpleNamespace(get=get_branch),
+        pipelines=SimpleNamespace(list=list_pipelines),
+    )
+    client = GitLabClient.__new__(GitLabClient)
+    client._gl = SimpleNamespace(projects=SimpleNamespace(get=lambda _id, lazy=False: project))
+    return client, calls
+
+
+def test_built_head_commit_cherche_par_sha():
+    client, calls = _client_with_branch_pipelines("abc123", [42])
+    assert client.built_head_commit(1, "feat/x") == ("abc123", 42)
+    # Par sha et non par ref : avec une MR ouverte, les pipelines ont la ref de la MR
+    assert calls["sha"] == "abc123" and calls["status"] == "success"
+    assert "ref" not in calls
+
+
+def test_built_head_commit_none_sans_pipeline_reussi():
+    client, _ = _client_with_branch_pipelines("abc123", [])
+    assert client.built_head_commit(1, "feat/x") is None
+
+
+def test_built_head_commit_none_si_branche_supprimee():
+    client, _ = _client_with_branch_pipelines("abc123", [42], missing_branch=True)
+    assert client.built_head_commit(1, "feat/x") is None
+
+
+def test_read_first_file_prend_le_premier_present():
+    client = GitLabClient.__new__(GitLabClient)
+    files = {"chart/values.yaml": "b: 2"}
+
+    def read_file(project_path, file_path, ref="main"):
+        if file_path not in files:
+            raise GitlabGetError(response_code=404, error_message="not found")
+        return files[file_path]
+
+    client.read_file = read_file
+    assert client.read_first_file("g/app", ("chart/values-dev.yaml", "chart/values.yaml"), ref="abc") == "b: 2"
+    assert client.read_first_file("g/app", ("x.yaml",), ref="abc") is None

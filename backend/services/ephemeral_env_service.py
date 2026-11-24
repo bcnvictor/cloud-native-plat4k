@@ -1,8 +1,10 @@
 """Environnements éphémères créés depuis une branche (4K-286, ADR-0030).
 
 Création : le backend vérifie la branche, déclare l'env et ses ressources plateforme
-dans cnp-gitops en un commit, puis déclenche un pipeline sur la branche. update-gitops
-génère l'Application de l'app après le build de l'image (ADR-0014).
+dans cnp-gitops en un commit, puis déclenche un pipeline sur la branche.
+Déploiement : quand un pipeline a réussi sur le dernier commit de la branche, le worker
+écrit les values et l'Application de l'app pour ce commit (ADR-0014). La CI d'une
+branche ne pousse jamais dans cnp-gitops.
 
 Destruction (4K-288) : l'env passe en destroying, puis ses fichiers cnp-gitops sont
 supprimés en un commit. ArgoCD purge alors le namespace (finalizer). Si la suppression
@@ -13,6 +15,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import anyio
+import yaml
 from fastapi import HTTPException, status
 from shared.models import (
     EphemeralEnvResponse,
@@ -33,9 +36,11 @@ from backend.core.config import settings
 from backend.db.models import Application, ClusterConnection, EphemeralEnvironment, User
 from backend.gitlab.client import GitLabClient
 from backend.gitops.ephemeral import (
+    SOURCE_VALUES_FILES,
     EphemeralTarget,
     argocd_app_names,
     declaration_files,
+    deployment_files,
     destroy_paths,
 )
 from backend.services.audit_service import AuditService
@@ -46,6 +51,7 @@ logger = logging.getLogger(__name__)
 _REQUIRED_BRANCH_FILES = (".gitlab-ci.yml", "Dockerfile", "chart/Chart.yaml")
 _FAILED_PIPELINE_STATUSES = {"failed", "canceled", "skipped"}
 _MAX_DELETE_PASSES = 3
+_DEPLOYABLE = (EphemeralEnvStatus.PROVISIONING, EphemeralEnvStatus.ACTIVE, EphemeralEnvStatus.FAILED)
 
 
 def _get_bot_client() -> GitLabClient:
@@ -58,6 +64,19 @@ def _get_bot_client() -> GitLabClient:
         token=settings.GITLAB_BOT_TOKEN,
         namespace=settings.GITLAB_BOT_NAMESPACE or "",
         use_private_token=True,
+    )
+
+
+def _target(env: EphemeralEnvironment, app: Application) -> EphemeralTarget:
+    return EphemeralTarget(
+        cluster=env.cluster_name,
+        app_slug=app.slug,
+        env_slug=env.slug,
+        branch=env.branch,
+        owner=app.owner,
+        gitops_repo_url=settings.GITOPS_REPO_URL,
+        registry_vault_key=settings.EPHEMERAL_REGISTRY_VAULT_KEY,
+        registry_server=settings.EPHEMERAL_REGISTRY_SERVER,
     )
 
 
@@ -78,20 +97,6 @@ def to_response(env: EphemeralEnvironment, app_slug: str, argocd_status: dict | 
         sync_status=argocd_status.get("sync"),
         health_status=argocd_status.get("health"),
     )
-
-
-def _app_image_tag(images: list[str], app: Application) -> str | None:
-    """Tag de l'image de l'app parmi les images de l'Application (sidecars ignorés).
-
-    L'image est poussée par la CI dans le registry du projet : son dépôt se termine par
-    le chemin du repo de l'app (registry.gitlab.com/<groupe>/<app>:<tag>).
-    """
-    repo_path = extract_project_path(app.repo_url).lower() if app.repo_url else app.slug
-    for image in images:
-        name, sep, tag = image.split("@", 1)[0].rpartition(":")
-        if sep and "/" not in tag and name.lower().endswith(repo_path):
-            return tag
-    return None
 
 
 class EphemeralEnvService:
@@ -196,16 +201,7 @@ class EphemeralEnvService:
             await self.db.rollback()
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Branch '{branch}' already has an ephemeral environment")
 
-        target = EphemeralTarget(
-            cluster=cluster.name,
-            app_slug=app.slug,
-            env_slug=slug,
-            branch=branch,
-            owner=app.owner,
-            gitops_repo_url=settings.GITOPS_REPO_URL,
-            registry_vault_key=settings.EPHEMERAL_REGISTRY_VAULT_KEY,
-            registry_server=settings.EPHEMERAL_REGISTRY_SERVER,
-        )
+        target = _target(env, app)
         gitops_path = extract_project_path(settings.GITOPS_REPO_URL)
         try:
             await anyio.to_thread.run_sync(
@@ -261,9 +257,6 @@ class EphemeralEnvService:
                     "sync": st.get("sync", {}).get("status"),
                     "health": st.get("health", {}).get("status"),
                 }
-                tag = _app_image_tag(st.get("summary", {}).get("images") or [], app)
-                if tag:
-                    env.image_tag = tag
             except Exception as e:
                 # Application pas encore créée par update-gitops (404), ArgoCD injoignable,
                 # ou identifiants Vault/ArgoCD invalides : le statut reste inconnu.
@@ -299,6 +292,60 @@ class EphemeralEnvService:
         argocd_status = await self._refresh(env, app)
         await self.db.commit()
         return to_response(env, app.slug, argocd_status)
+
+    async def deploy_env(self, env: EphemeralEnvironment, app: Application) -> bool:
+        """Déploie le dernier commit de la branche si un pipeline l'a construit. Idempotent.
+
+        Écrit dans cnp-gitops les values (celles de dev lues sur ce commit, avec son tag
+        d'image) et l'Application de l'app, figée sur ce commit. Renvoie True si un
+        nouveau commit a été déployé.
+        """
+        if env.status not in _DEPLOYABLE or not app.gitlab_project_id or not app.repo_url:
+            return False
+        bot = _get_bot_client()
+        built = await anyio.to_thread.run_sync(
+            lambda: bot.built_head_commit(app.gitlab_project_id, env.branch), cancellable=True
+        )
+        if built is None:
+            return False  # build en cours, en échec, ou branche supprimée
+        sha, pipeline_id = built
+        if env.image_tag == sha[:8]:
+            return False
+
+        raw = await anyio.to_thread.run_sync(
+            lambda: bot.read_first_file(extract_project_path(app.repo_url), SOURCE_VALUES_FILES, ref=sha),
+            cancellable=True,
+        )
+        if raw is None:
+            logger.warning("No %s on %s@%s — cannot deploy", " nor ".join(SOURCE_VALUES_FILES), app.slug, sha[:8])
+            return False
+        try:
+            source_values = yaml.safe_load(raw) or {}
+        except yaml.YAMLError:
+            logger.warning("Invalid values file on %s@%s — cannot deploy", app.slug, sha[:8])
+            return False
+
+        # Une destruction a pu commencer pendant les appels GitLab : ne rien repousser
+        await self.db.refresh(env)
+        if env.status not in _DEPLOYABLE:
+            return False
+        target = _target(env, app)
+        await anyio.to_thread.run_sync(
+            lambda: bot.push_files_batch(
+                extract_project_path(settings.GITOPS_REPO_URL),
+                deployment_files(target, source_values, app.repo_url, sha),
+                f"chore(gitops): deploy ephemeral env {target.name} at {sha[:8]}",
+            ),
+            cancellable=True,
+        )
+        env.image_tag = sha[:8]
+        env.pipeline_id = pipeline_id
+        if env.status == EphemeralEnvStatus.FAILED:
+            # Un nouveau commit a été construit : l'env repart, ArgoCD dira s'il est sain
+            env.status = EphemeralEnvStatus.PROVISIONING
+        await self.db.commit()
+        logger.info("Ephemeral env %s deployed at %s", target.name, sha[:8])
+        return True
 
     async def destroy(self, app_id: int, env_id: int, user: User) -> EphemeralEnvResponse:
         app = await self._get_app(app_id)

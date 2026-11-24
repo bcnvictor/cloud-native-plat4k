@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     # Environnements éphémères créés depuis une branche (ADR-0030)
     EPHEMERAL_DEFAULT_TTL_HOURS: int = 24
     EPHEMERAL_MAX_TTL_HOURS: int = 168
-    EPHEMERAL_TTL_WORKER_INTERVAL_MINUTES: int = 5  # destruction des envs expirés et reprise des destructions échouées
+    EPHEMERAL_TTL_WORKER_INTERVAL_MINUTES: int = 2  # déploiement des nouveaux commits, destruction des envs expirés
     # Chaque env émet un certificat Let's Encrypt (50 par semaine sur le domaine) : quota par app
     EPHEMERAL_MAX_PER_APP: int = 3
     # Identifiants registry (clés username/password) lus par ESO pour le pull secret des

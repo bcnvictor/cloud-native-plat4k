@@ -1,6 +1,8 @@
-"""Destruction automatique des environnements éphémères expirés (4K-288, ADR-0030 §9).
+"""Réconciliation des environnements éphémères (4K-286 et 4K-288, ADR-0030 §5 et §9).
 
-Même structure que scale_worker : un tick = une réconciliation. Il détruit les envs
+Même structure que scale_worker : un tick = une réconciliation. Il déploie le dernier
+commit construit de la branche de chaque env vivant (la CI d'une branche ne pousse
+jamais dans cnp-gitops), et il détruit les envs
 dont le TTL est dépassé et fait avancer ceux en destroying : suppression dans
 cnp-gitops à reprendre, ou purge par ArgoCD pas encore terminée.
 """
@@ -35,9 +37,6 @@ async def run_ephemeral_ttl_reconciliation(db: AsyncSession, now: datetime | Non
         ))
     )
     rows = list(result.all())
-    if not rows:
-        return {"destroyed": 0, "pending": 0}
-
     service = EphemeralEnvService(db)
     destroyed = pending = 0
     for env, app in rows:
@@ -47,8 +46,36 @@ async def run_ephemeral_ttl_reconciliation(db: AsyncSession, now: datetime | Non
             destroyed += 1
         else:
             pending += 1
-    logger.info("Ephemeral TTL reconciliation: %d destroyed, %d pending", destroyed, pending)
-    return {"destroyed": destroyed, "pending": pending}
+
+    deployed = await _deploy_alive(db, service, now)
+    if rows or deployed:
+        logger.info("Ephemeral reconciliation: %d deployed, %d destroyed, %d pending", deployed, destroyed, pending)
+    return {"deployed": deployed, "destroyed": destroyed, "pending": pending}
+
+
+async def _deploy_alive(db: AsyncSession, service: EphemeralEnvService, now: datetime) -> int:
+    result = await db.execute(
+        select(EphemeralEnvironment, Application)
+        .join(Application, Application.id == EphemeralEnvironment.app_id)
+        .where(EphemeralEnvironment.status.in_(_EXPIRABLE), EphemeralEnvironment.expires_at > now)
+    )
+    # Ids et noms relevés d'avance : le rollback après un échec expire tous les objets de la
+    # session, et y accéder ensuite en async lèverait MissingGreenlet pour les envs suivants.
+    targets = [(env.id, app.id, f"{app.slug}--{env.slug}") for env, app in result.all()]
+    deployed = 0
+    for env_id, app_id, name in targets:
+        try:
+            env = await db.get(EphemeralEnvironment, env_id)
+            app = await db.get(Application, app_id)
+            if env is None or app is None:
+                continue
+            if await service.deploy_env(env, app):
+                deployed += 1
+        except Exception:
+            # Un env en erreur (GitLab, values invalides…) ne bloque pas les autres
+            logger.exception("Failed to deploy ephemeral env %s — will retry", name)
+            await db.rollback()
+    return deployed
 
 
 async def run_ephemeral_ttl_worker(interval_minutes: int) -> None:
