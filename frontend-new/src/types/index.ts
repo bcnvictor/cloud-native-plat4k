@@ -642,3 +642,26 @@ export interface CveSearchResponse {
   partial: boolean;
   coverage: DependencyCoverage;
 }
+
+// ── Environnements éphémères (ADR-0030, 4K-289) ─────────────────────────────────
+
+export type EphemeralEnvStatus = 'provisioning' | 'active' | 'failed' | 'destroying' | 'destroyed';
+
+export interface EphemeralEnv {
+  id: number;
+  app_id: number;
+  slug: string;
+  /** <app>--<slug> : namespace et nom des Applications ArgoCD */
+  name: string;
+  branch: string;
+  cluster_name: string;
+  status: EphemeralEnvStatus;
+  /** Tag d'image déployé (sha court), null avant le premier build */
+  image_tag: string | null;
+  expires_at: string;
+  created_at: string | null;
+  created_by_user_id: number | null;
+  url: string | null;
+  sync_status: string | null;
+  health_status: string | null;
+}

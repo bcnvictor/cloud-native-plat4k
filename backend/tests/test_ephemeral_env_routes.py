@@ -68,6 +68,12 @@ class FakeBot:
     def get_pipeline_status(self, gitlab_project_id, pipeline_id):
         return self.pipeline_status
 
+    def list_branches(self, project_path, limit=100):
+        return ["feat/login", "main", "feat/other"]
+
+    def get_default_branch(self, project_path):
+        return "main"
+
     def built_head_commit(self, gitlab_project_id, branch):
         return self.built
 
@@ -620,3 +626,20 @@ class TestSecretsEtUrl:
         db_session.expire_all()
         await run_ephemeral_ttl_reconciliation(db_session)
         assert project not in bot.gitops
+
+
+class TestPourLesFronts:
+    """4K-289 : ce dont l'UI et la CLI ont besoin."""
+
+    async def test_url_de_l_env(self, client, app_row, developer, bot):
+        body = (await _create(client, app_row.id, developer)).json()
+        assert body["url"] == "https://my-app--feat-login.cloud-native-plat4k.me"
+
+    async def test_branches_proposees_sans_la_branche_par_defaut(self, client, app_row, developer, bot):
+        resp = await client.get(f"/api/v1/apps/{app_row.id}/ephemeral-envs/branches", headers=_auth(developer))
+        assert resp.status_code == 200
+        assert resp.json() == ["feat/login", "feat/other"]
+
+    async def test_branches_reservees_aux_developers(self, client, app_row, viewer, bot):
+        resp = await client.get(f"/api/v1/apps/{app_row.id}/ephemeral-envs/branches", headers=_auth(viewer))
+        assert resp.status_code == 403

@@ -24,6 +24,16 @@ async def create_ephemeral_env(
     return await EphemeralEnvService(db).create(app_id, payload.branch, payload.ttl_hours, current_user)
 
 
+@router.get("/{app_id}/ephemeral-envs/branches", response_model=list[str])
+async def list_ephemeral_branches(
+    app_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_tier(CnpTier.DEVELOPER)),
+):
+    """Branches proposées à la création (déclarée avant /{env_id})."""
+    return await EphemeralEnvService(db).branches(app_id)
+
+
 @router.get("/{app_id}/ephemeral-envs", response_model=list[EphemeralEnvResponse])
 async def list_ephemeral_envs(
     app_id: int,

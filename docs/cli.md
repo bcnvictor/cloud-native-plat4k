@@ -100,6 +100,29 @@ Maintainer). Voir [le guide d'intégration](guides/keycloak-app-auth.md) pour le
 variables injectées (`OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`) et des
 snippets de validation JWT par stack.
 
+## Environnements éphémères — `cnp ephemeral` (4K-289 / ADR-0030)
+
+Un environnement par branche, dans son propre namespace, avec sa propre URL HTTPS
+(`https://<app>--<slug>.cloud-native-plat4k.me`). Il reprend les variables de `dev` et
+est détruit à l'expiration de son TTL. Toutes les commandes prennent `--app <slug>`.
+
+| Commande                     | Description                                                              |
+|------------------------------|--------------------------------------------------------------------------|
+| `cnp ephemeral list`         | Lister les envs : branche, statut, URL (une fois `active`), TTL restant   |
+| `cnp ephemeral branches`     | Lister les branches utilisables (la branche par défaut est exclue)        |
+| `cnp ephemeral create`       | Créer un env : `--branch <branche>`, `--ttl <heures>` (24 h par défaut)   |
+| `cnp ephemeral destroy <env>`| Détruire un env, désigné par son slug, son nom ou sa branche (`--yes` pour scripter) |
+
+```bash
+cnp ephemeral create --app shop --branch feat/login --ttl 4
+cnp ephemeral list --app shop
+cnp ephemeral destroy --app shop feat/login
+```
+
+Créer et détruire demandent le tier Developer, lister le tier Viewer. Le cluster de l'app
+doit accepter l'exposition publique (`PUBLIC_EXPOSURE_CLUSTERS`). L'env passe `active`
+une fois la branche construite, déployée et son certificat émis.
+
 ## Clusters — `cnp cluster`
 
 | Commande               | Description                          |

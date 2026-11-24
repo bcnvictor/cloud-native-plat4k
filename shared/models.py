@@ -565,9 +565,15 @@ class EphemeralEnvResponse(BaseModel):
     expires_at: datetime
     created_at: Optional[datetime] = None
     created_by_user_id: Optional[int] = None
+    # URL publique de l'env (https://<app>--<slug>.<domaine>), servie une fois l'env active
+    url: Optional[str] = None
     # Lus à la volée dans ArgoCD, None si indisponible
     sync_status: Optional[str] = None
     health_status: Optional[str] = None
+
+
+def ephemeral_env_url(app_slug: str, env_slug: str) -> str:
+    return f"https://{ephemeral_env_name(app_slug, env_slug)}.{CNP_BASE_DOMAIN}"
 
 
 class CiStatusUpdate(BaseModel):

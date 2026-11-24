@@ -22,6 +22,7 @@ from shared.models import (
     EphemeralEnvStatus,
     EphemeralSlugError,
     ephemeral_env_name,
+    ephemeral_env_url,
     ephemeral_slug,
 )
 from sqlalchemy import select
@@ -101,6 +102,7 @@ def to_response(env: EphemeralEnvironment, app_slug: str, argocd_status: dict | 
         expires_at=env.expires_at,
         created_at=env.created_at,
         created_by_user_id=env.created_by_user_id,
+        url=ephemeral_env_url(app_slug, env.slug) if env.status != EphemeralEnvStatus.DESTROYED else None,
         sync_status=argocd_status.get("sync"),
         health_status=argocd_status.get("health"),
     )
@@ -288,6 +290,22 @@ class EphemeralEnvService:
                 if pipeline_status in _FAILED_PIPELINE_STATUSES:
                     env.status = EphemeralEnvStatus.FAILED
         return argocd_status
+
+    async def branches(self, app_id: int) -> list[str]:
+        """Branches du repo de l'app, pour choisir celle de l'env (la branche par défaut,
+        déployée en dev, est retirée)."""
+        app = await self._get_app(app_id)
+        if not app.repo_url:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Application has no GitLab repository")
+        bot = _get_bot_client()
+        repo_path = extract_project_path(app.repo_url)
+        try:
+            names = await anyio.to_thread.run_sync(lambda: bot.list_branches(repo_path), cancellable=True)
+            default = await anyio.to_thread.run_sync(lambda: bot.get_default_branch(repo_path), cancellable=True)
+        except Exception:
+            logger.exception("Failed to list branches of %s", app.slug)
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to list the repository branches")
+        return [n for n in names if n != default]
 
     async def list(self, app_id: int) -> list[EphemeralEnvResponse]:
         app = await self._get_app(app_id)
