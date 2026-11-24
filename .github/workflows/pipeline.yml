@@ -40,6 +40,14 @@ jobs:
       - name: Test — pytest
         run: pytest backend/tests/ -m 'not keycloak_integration and not keycloak_infra' -v
 
+      # La CLI n'a pas de lockfile : ses dépendances propres (typer, rich, toml)
+      # sont résolues depuis cli/setup.cfg, le reste vient du lock backend ci-dessus.
+      - name: Install CLI package
+        run: pip install -e ./cli
+
+      - name: Test — pytest CLI
+        run: pytest cli/tests/ -v
+
   frontend:
     name: Frontend — lint, type check & build
     runs-on: ubuntu-latest

@@ -38,6 +38,31 @@ La configuration est stockée dans `~/.cnp/config.toml` (URL de l'API + clé d'A
 | `cnp app add-member`      | Ajouter un membre                              |
 | `cnp app invite`          | Inviter un membre par email                    |
 | `cnp app access`          | Afficher ses propres droits d'accès            |
+| `cnp app doctor <id>`     | Diagnostiquer une application en panne (CNP Doctor) |
+
+### Diagnostiquer une application — `cnp app doctor`
+
+Lance le diagnostic CNP Doctor d'un environnement (`POST /apps/{id}/doctor/diagnose`) et
+affiche le résultat comme la carte de l'onglet Overview : verdict, constat, source (« IA
+encadrée », « Sans IA », ou « IA indisponible — diagnostic établi par la plateforme »), cause
+et confiance, preuves citées, chronologie (déploiement suspect, dernière version saine, délai
+avant la panne), commits et fichiers modifiés, actions conseillées et signaux manquants.
+
+| Option | Valeurs | Défaut |
+|---|---|---|
+| `--env`, `-e` | `prod` ou `dev` (toute autre valeur est refusée avant l'appel) | `prod` |
+| `--output`, `-o` | `text` (lisible) ou `json` (le JSON brut du diagnostic) | `text` |
+
+```bash
+cnp app doctor 7                  # diagnostic de la prod de l'application 7
+cnp app doctor 7 -e dev -o json   # JSON brut, par exemple pour jq
+```
+
+Rôle developer ou plus sur l'application. La commande **n'exécute aucune action** : pour un
+rollback conseillé, elle donne la version cible et renvoie à l'onglet History de l'application
+dans l'interface web (confirmation par un maintainer). Une erreur de l'API (rôle insuffisant,
+assistant IA désactivé, application inconnue) est affichée et la commande sort avec le code 1.
+Voir le [guide CNP Doctor](guides/cnp-doctor.md).
 
 ## Variables d'environnement — `cnp env`
 

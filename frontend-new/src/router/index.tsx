@@ -14,6 +14,7 @@ import { EnvironmentsTab } from '@/pages/group/app/tabs/EnvironmentsTab';
 import { HistoryTab } from '@/pages/group/app/tabs/HistoryTab';
 import { SettingsTab } from '@/pages/group/app/tabs/SettingsTab';
 import { AssistantTab } from '@/pages/group/app/tabs/AssistantTab';
+import { SecurityTab } from '@/pages/group/app/tabs/SecurityTab';
 import { NewApp } from '@/pages/group/app/NewApp';
 import { Clusters } from '@/pages/admin/Clusters';
 import { FinOps } from '@/pages/admin/FinOps';
@@ -21,6 +22,7 @@ import { AdminApps } from '@/pages/admin/AdminApps';
 import { AdminSettings } from '@/pages/admin/AdminSettings';
 import { AdminUsers } from '@/pages/admin/AdminUsers';
 import { AdminAudit } from '@/pages/admin/AdminAudit';
+import { AdminDependencies } from '@/pages/admin/AdminDependencies';
 import { Profile } from '@/pages/Profile';
 import { GroupMetrics } from '@/pages/group/GroupMetrics';
 
@@ -46,6 +48,7 @@ export const router = createBrowserRouter([
               { path: 'logs', element: <LogsTab /> },
               { path: 'history', element: <HistoryTab /> },
               { path: 'settings', element: <SettingsTab /> },
+              { path: 'security', element: <SecurityTab /> },
               { path: 'assistant', element: <AssistantTab /> },
             ],
           },
@@ -66,6 +69,7 @@ export const router = createBrowserRouter([
           { path: '/admin/finops', element: <FinOps /> },
           { path: '/admin/apps', element: <AdminApps /> },
           { path: '/admin/users', element: <AdminUsers /> },
+          { path: '/admin/dependencies', element: <AdminDependencies /> },
           { path: '/admin/audit', element: <AdminAudit /> },
           { path: '/admin/settings', element: <AdminSettings /> },
           { path: '/admin/settings/:panel', element: <AdminSettings /> },

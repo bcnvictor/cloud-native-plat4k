@@ -59,14 +59,21 @@ async def _deploy_alive(db: AsyncSession, service: EphemeralEnvService, now: dat
         .join(Application, Application.id == EphemeralEnvironment.app_id)
         .where(EphemeralEnvironment.status.in_(_EXPIRABLE), EphemeralEnvironment.expires_at > now)
     )
+    # Ids et noms relevés d'avance : le rollback après un échec expire tous les objets de la
+    # session, et y accéder ensuite en async lèverait MissingGreenlet pour les envs suivants.
+    targets = [(env.id, app.id, f"{app.slug}--{env.slug}") for env, app in result.all()]
     deployed = 0
-    for env, app in result.all():
+    for env_id, app_id, name in targets:
         try:
+            env = await db.get(EphemeralEnvironment, env_id)
+            app = await db.get(Application, app_id)
+            if env is None or app is None:
+                continue
             if await service.deploy_env(env, app):
                 deployed += 1
         except Exception:
             # Un env en erreur (GitLab, values invalides…) ne bloque pas les autres
-            logger.exception("Failed to deploy ephemeral env %s--%s — will retry", app.slug, env.slug)
+            logger.exception("Failed to deploy ephemeral env %s — will retry", name)
             await db.rollback()
     return deployed
 

@@ -42,6 +42,16 @@ def compute_slug(name: str) -> str:
     return s[:50]
 
 
+# Charset of Kubernetes Secret data keys. Env var keys are synced by ESO into the
+# app's Secret: a single key outside this charset makes the whole ExternalSecret
+# fail to sync, freezing every variable of that env (4K-248).
+ENV_VAR_KEY_PATTERN = r"[-._a-zA-Z0-9]+"
+
+
+def is_valid_env_var_key(key: str) -> bool:
+    return re.fullmatch(ENV_VAR_KEY_PATTERN, key) is not None
+
+
 class CloudType(str, Enum):
     AWS = "aws"
     GCP = "gcp"
@@ -91,6 +101,70 @@ class AIPurpose(str, Enum):
     SCAN_SUMMARY = "scan_summary"
     FINOPS = "finops"
     INCIDENT = "incident"
+
+
+# ── CNP Doctor (diagnostic IA encadré) ────────────────────────────────────────
+
+
+class DoctorVerdict(str, Enum):
+    """Conclusion d'un diagnostic. Décidée par la plateforme, jamais par l'IA."""
+    # Sans appel IA
+    HEALTHY = "healthy"
+    STOPPED = "stopped"
+    CLUSTER_OFFLINE = "cluster_offline"
+    DEPLOYING = "deploying"
+    NOT_DEPLOYED = "not_deployed"
+    INCONCLUSIVE = "inconclusive"
+    # Avec appel IA
+    REGRESSION = "regression"      # panne corrélée à un déploiement
+    FAILING = "failing"            # panne sans déploiement corrélé
+    CI_FAILURE = "ci_failure"      # app saine, dernier pipeline en échec
+    UNSTABLE = "unstable"          # en service, mais erreurs ou redémarrages
+
+
+class DoctorSource(str, Enum):
+    RULES = "rules"                    # verdict évident, aucun appel IA
+    AI = "ai"                          # rédigé par l'IA, vérifié par la plateforme
+    RULES_FALLBACK = "rules_fallback"  # l'IA n'a pas répondu : diagnostic de la plateforme
+
+
+class DoctorConfidence(str, Enum):
+    HAUTE = "haute"
+    MOYENNE = "moyenne"
+    FAIBLE = "faible"
+
+
+class DoctorCauseCategory(str, Enum):
+    DEPLOYMENT = "deployment"
+    CONFIG = "config"
+    RESOURCES = "resources"
+    IMAGE = "image"
+    DEPENDENCY = "dependency"
+    PLATFORM = "platform"
+    CI = "ci"
+    UNKNOWN = "unknown"
+
+
+class DoctorActionKind(str, Enum):
+    ROLLBACK = "rollback"
+    RESUME = "resume"
+    VIEW_LOGS = "view_logs"
+    OPEN_PIPELINE = "open_pipeline"
+    VIEW_HISTORY = "view_history"
+    OPEN_REPO_COMPARE = "open_repo_compare"
+    RETRY_LATER = "retry_later"
+    CONTACT_MAINTAINER = "contact_maintainer"
+
+
+class DoctorEvidenceSource(str, Enum):
+    KUBERNETES = "kubernetes"
+    LOGS = "logs"
+    ARGOCD = "argocd"
+    CI = "ci"
+    DEPLOYMENTS = "deployments"
+    EVENTS = "events"
+    GIT = "git"
+    PLATFORM = "platform"
 
 
 class ScanStatus(str, Enum):

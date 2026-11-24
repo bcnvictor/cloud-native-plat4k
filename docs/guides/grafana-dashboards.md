@@ -20,6 +20,7 @@ Grafana est sur la VM OCI `cnp-control`. Voir ADR-0021 pour le détail de l'expo
 |---|---|---|
 | Iframes CNP (embed) | via l'endpoint `/api/v1/groups/{id}/grafana-url` | JWT de 8 h signé par le backend (ADR-0028) |
 | Escape hatch "Voir tout dans Grafana" | Lien retourné par le même endpoint | Même JWT (dans l'URL) |
+| Boutons « ouvrir dans Grafana » des pages d'app (CPU, RAM, logs) | `/api/v1/groups/{id}/grafana-url?panel=cpu\|ram\|logs&env=dev\|prod` | Même JWT (dans l'URL). Ne jamais construire une URL Grafana côté front : sans token, elle renvoie vers le login |
 | Administration / édition | https://grafana.cloud-native-plat4k.me/login | Oui — compte admin |
 
 L'accès anonyme est **désactivé** (`GF_AUTH_ANONYMOUS_ENABLED=false`). Grafana n'est pas accessible directement sans login. Les iframes et l'escape hatch passent par un JWT Viewer, signé par le backend CNP pour l'utilisateur connecté.

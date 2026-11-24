@@ -10,6 +10,9 @@ def print_error(msg: str):
 def print_success(msg: str):
     console.print(f"[green]Success:[/green] {msg}")
 
+def print_warning(msg: str):
+    console.print(f"[yellow]Warning:[/yellow] {msg}")
+
 def print_table(title: str, columns: list, rows: list, format_json: bool = False):
     if format_json:
         # Convert rows to dicts based on columns

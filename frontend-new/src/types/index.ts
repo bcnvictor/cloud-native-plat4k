@@ -555,6 +555,94 @@ export interface AIFinOpsAdvice {
   estimated_cost_usd: number | null;
 }
 
+// ── CNP Doctor ──────────────────────────────────────────────────────────────────
+export * from './doctor';
+
+// ── Security tab (CI trivy/gitleaks summary) ────────────────────────────────────
+
+export type SecuritySeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
+export type SecurityToolName = 'trivy' | 'gitleaks';
+export type SecurityToolStatus = 'ok' | 'failed' | 'skipped';
+export type SecurityGrade = 'A' | 'B' | 'C' | 'D' | 'F';
+
+export interface SecurityFinding {
+  id: string;
+  rule: string;
+  severity: SecuritySeverity;
+  title: string;
+  package?: string | null;
+  installed_version?: string | null;
+  fixed_version?: string | null;
+  file?: string | null;
+  line?: number | null;
+}
+
+export interface SecurityToolReport {
+  status: SecurityToolStatus;
+  counts: Record<string, number>;
+  truncated: boolean;
+  findings: SecurityFinding[];
+}
+
+export interface SecurityReportResponse {
+  report: {
+    pipeline_id: number;
+    pipeline_url: string;
+    commit_sha: string;
+    received_at: string;
+    tools: Partial<Record<SecurityToolName, SecurityToolReport>>;
+  } | null;
+  grade: SecurityGrade | null;
+  partial: boolean;
+}
+
+export interface DependencyRow {
+  app_id: number;
+  app_name: string;
+  app_slug: string;
+  group: string | null;
+  group_slug: string | null;
+  package: string;
+  version: string;
+  ecosystem: string;
+  direct: boolean | null;
+  licenses: string[];
+}
+
+export interface DependencyCoverage {
+  apps_total: number;
+  apps_with_sbom: number;
+  oldest_snapshot: string | null;
+  newest_snapshot: string | null;
+  truncated_apps: number;
+}
+
+export interface DependencySearchResponse {
+  items: DependencyRow[];
+  total: number;
+  limit: number;
+  offset: number;
+  coverage: DependencyCoverage;
+}
+
+export interface CvePackageMatch {
+  ecosystem: string;
+  name: string;
+  mode: 'explicit' | 'range_unevaluated';
+  ranges: string[];
+  matches: DependencyRow[];
+}
+
+export interface CveSearchResponse {
+  cve: string;
+  summary: string | null;
+  aliases: string[];
+  osv_packages: number;
+  packages: CvePackageMatch[];
+  partial: boolean;
+  coverage: DependencyCoverage;
+}
+
 // ── Environnements éphémères (ADR-0030, 4K-289) ─────────────────────────────────
 
 export type EphemeralEnvStatus = 'provisioning' | 'active' | 'failed' | 'destroying' | 'destroyed';
