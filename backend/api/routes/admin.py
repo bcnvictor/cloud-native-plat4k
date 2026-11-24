@@ -9,8 +9,10 @@ from backend.db.models import GitLabGroup, User
 from backend.db.session import get_db
 from backend.services.audit_service import AuditService
 from backend.services.gitlab_sync_service import _build_gitlab_client, run_gitlab_sync
-from backend.services.monitoring_service import get_cost_by_team
-from fastapi import APIRouter, Depends, HTTPException
+from backend.services.monitoring_service import get_cost_by_team, merge_cost_by_team
+from backend.services.monitoring_sources import fan_out, prometheus_urls
+from backend.services.sbom_service import MAX_SEARCH_LIMIT, OsvError, SbomService, search_by_cve
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -162,9 +164,9 @@ async def get_finops_cost_by_team(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> list[TeamCostEntry]:
-    """Coût 30j par équipe (label_cnp_io_group_id), résolu vers le nom du groupe GitLab."""
+    """Coût 30j par équipe (label_cnp_io_group_id), sommé sur tous les clusters et résolu vers le nom du groupe GitLab."""
     try:
-        entries = await get_cost_by_team(settings.PROMETHEUS_URL)
+        entries = merge_cost_by_team(await fan_out(await prometheus_urls(db), get_cost_by_team))
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Prometheus unavailable: {e}")
 
@@ -187,3 +189,30 @@ async def get_finops_cost_by_team(
         )
         for e in entries
     ]
+
+
+@router.get("/dependencies")
+async def search_dependencies(
+    q: Optional[str] = Query(default=None, max_length=200, description="package name contains (case-insensitive)"),
+    version: Optional[str] = Query(default=None, max_length=100, description="exact version"),
+    ecosystem: Optional[str] = Query(default=None, max_length=32),
+    limit: int = Query(default=50, ge=1, le=MAX_SEARCH_LIMIT),
+    offset: int = Query(default=0, ge=0, le=1_000_000),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Which apps use this dependency? Search the latest SBOM inventory of every app (admin only)."""
+    return await SbomService(db).search(q or None, version or None, ecosystem or None, limit, offset)
+
+
+@router.get("/dependencies/by-cve")
+async def search_dependencies_by_cve(
+    id: str = Query(..., min_length=1, max_length=32, description="CVE identifier, e.g. CVE-2021-44228"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Which apps use a package affected by this CVE? Looks the CVE up on OSV.dev (id only is sent)."""
+    try:
+        return await search_by_cve(db, id)
+    except OsvError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

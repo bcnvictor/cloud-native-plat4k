@@ -215,7 +215,27 @@ class GitLabClient:
         pipelines = project.pipelines.list(per_page=1, get_all=False)
         if not pipelines:
             return None
-        pipeline = pipelines[0]
+        return self._pipeline_info(project, pipelines[0], trace_lines)
+
+    def get_last_env_pipeline(self, project_id: int, env: str, trace_lines: int = 60) -> dict | None:
+        """Latest pipeline of the branch that feeds *env* (CNP Doctor, read-only).
+
+        ``prod`` is fed by the default branch (``main``/``master``) and ``dev`` by
+        ``release-dev-*`` branches (ADR-0014): a feature-branch pipeline says nothing
+        about the environment.
+        """
+        project = self._gl.projects.get(project_id)
+        if env == "prod":
+            branch = getattr(project, "default_branch", None) or "main"
+            pipelines = project.pipelines.list(ref=branch, per_page=1, get_all=False)
+        else:
+            recent = project.pipelines.list(per_page=50, get_all=False)
+            pipelines = [p for p in recent if (p.ref or "").startswith("release-dev-")][:1]
+        if not pipelines:
+            return None
+        return self._pipeline_info(project, pipelines[0], trace_lines)
+
+    def _pipeline_info(self, project, pipeline, trace_lines: int) -> dict:
         info = {
             "id": pipeline.id,
             "status": pipeline.status,
@@ -239,6 +259,49 @@ class GitLabClient:
             })
         return info
 
+    def compare_revisions(
+        self, project_id: int, from_sha: str, to_sha: str, max_commits: int = 20, max_files: int = 50
+    ) -> dict:
+        """Commits and changed file paths between two revisions (read-only, CNP Doctor).
+
+        Returns titles and paths only, never file contents.
+        """
+        project = self._gl.projects.get(project_id)
+        result = project.repository_compare(from_sha, to_sha)
+        commits = result.get("commits") or []
+        diffs = result.get("diffs") or []
+        web_url = getattr(project, "web_url", None)
+
+        def _change(diff: dict) -> str:
+            if diff.get("new_file"):
+                return "added"
+            if diff.get("deleted_file"):
+                return "deleted"
+            if diff.get("renamed_file"):
+                return "renamed"
+            return "modified"
+
+        return {
+            "compare_url": f"{web_url}/-/compare/{from_sha[:8]}...{to_sha[:8]}" if web_url else None,
+            # GitLab renvoie les commits du plus ancien au plus récent : le plus récent d'abord.
+            "commits": [
+                {
+                    "sha": (c.get("short_id") or c.get("id") or "")[:8],
+                    "title": c.get("title") or "",
+                    "author": c.get("author_name"),
+                    "at": c.get("created_at") or c.get("committed_date"),
+                    "url": c.get("web_url"),
+                }
+                for c in list(reversed(commits))[:max_commits]
+            ],
+            "files": [
+                {"path": d.get("new_path") or d.get("old_path") or "", "change": _change(d)}
+                for d in diffs[:max_files]
+            ],
+            "truncated": len(commits) > max_commits or len(diffs) > max_files
+            or bool(result.get("compare_timeout")),
+        }
+
     def register_webhook(self, project_path: str, webhook_url: str, secret_token: str = "") -> None:
         """Register a pipeline webhook on the project. No-op if already registered."""
         project = self.get_project(project_path)
@@ -253,6 +316,16 @@ class GitLabClient:
             "enable_ssl_verification": not webhook_url.startswith("http://"),
         })
 
+    def set_ci_variable(self, project_path: str, key: str, value: str, masked: bool = True) -> None:
+        """Create or update a project CI/CD variable (masked + protected=False so it reaches MR-less branch jobs)."""
+        project = self.get_project(project_path)
+        try:
+            var = project.variables.get(key)
+            var.value, var.masked = value, masked
+            var.save()
+        except GitlabGetError:
+            project.variables.create({"key": key, "value": value, "masked": masked, "protected": False})
+
     def create_mr(
         self,
         project_path: str,
@@ -260,16 +333,37 @@ class GitLabClient:
         target_branch: str,
         title: str,
         description: str = "",
+        labels: list[str] | None = None,
     ) -> dict:
         """Create a Merge Request and return its iid and web_url."""
         project = self.get_project(project_path)
-        mr = project.mergerequests.create({
+        data = {
             "source_branch": source_branch,
             "target_branch": target_branch,
             "title": title,
             "description": description,
-        })
+        }
+        if labels:
+            data["labels"] = ",".join(labels)
+        mr = project.mergerequests.create(data)
         return {"iid": mr.iid, "web_url": mr.web_url}
+
+    def branch_exists(self, project_path: str, branch: str) -> bool:
+        project = self.get_project(project_path)
+        try:
+            project.branches.get(branch)
+            return True
+        except GitlabGetError:
+            return False
+
+    def delete_branch(self, project_path: str, branch: str) -> None:
+        self.get_project(project_path).branches.delete(branch)
+
+    def find_mr_url_for_branch(self, project_path: str, branch: str) -> str | None:
+        """web_url of the most recent MR (any state) whose source branch is *branch*."""
+        project = self.get_project(project_path)
+        mrs = project.mergerequests.list(source_branch=branch, order_by="created_at", sort="desc", per_page=1)
+        return mrs[0].web_url if mrs else None
     
     @staticmethod
     def _slugify(name: str) -> str:
