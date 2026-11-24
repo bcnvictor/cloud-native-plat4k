@@ -7,6 +7,7 @@ from backend.ci.build_files import BuildFiles, generate_missing_build_files
 from backend.ci.detector import extract_project_path
 from backend.ci.templates import generate_gitlab_ci
 from backend.gitlab.client import GitLabClient
+from backend.services.security_report_service import compute_token
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,12 @@ def inject_ci(
             description=_mr_description(build_files),
         )
         logger.info("CI MR opened on %s: %s", project_path, mr.get("web_url"))
+
+    try:
+        client.set_ci_variable(project_path, "CNP_REPORT_TOKEN", compute_token(app_id), masked=True)
+    except Exception:
+        # Non-fatal: without the token the cnp-report job is a no-op (no Security tab data).
+        logger.warning("CNP_REPORT_TOKEN injection failed on %s (non-fatal)", project_path, exc_info=True)
 
     if webhook_url:
         try:

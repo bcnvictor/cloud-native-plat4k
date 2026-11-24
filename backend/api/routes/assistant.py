@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Literal, Optional
+from typing import Any, Awaitable, Literal, Optional
 
 import httpx
 from backend.ai.factory import get_provider
@@ -67,13 +67,18 @@ async def _check_limits(db: AsyncSession, user: User) -> None:
 
 
 async def _chat(svc: AssistantService, **kwargs):
-    """Run a chat turn, turning provider failures into readable API errors.
+    """Run a chat turn, turning provider failures into readable API errors."""
+    return await _guard_provider(svc.chat(**kwargs))
+
+
+async def _guard_provider(call: Awaitable[Any]):
+    """Await an LLM-backed call, turning provider failures into readable API errors.
 
     503 is reserved for "assistant disabled" (the UI hides the chat on it), so
     quota errors use 429 and other upstream failures 502.
     """
     try:
-        return await svc.chat(**kwargs)
+        return await call
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 429:
             raise HTTPException(

@@ -86,7 +86,7 @@ Le Grafana central n'est pas encore déployé. L'état de transition :
 | Grafana central multi-sources | 🔲 Planifié — ticket 4K-90 |
 | Sources k3s (`cnp-k3s`) dans le Grafana central | ✅ Datasources `Prometheus cnp-k3s` / `Loki cnp-k3s` via Tailscale |
 
-En production actuelle, `PROMETHEUS_URL` et `LOKI_URL` pointent vers les LoadBalancer externes des clusters (`4.165.251.86:9090` et `4.225.134.29:3100`). Ce n'est pas la cible (les services de monitoring ne devraient pas être publics) — ils seront rapatriés derrière Tailscale une fois le Grafana central déployé.
+En production, `PROMETHEUS_URL` et `LOKI_URL` pointent vers les ClusterIPs figées de `cnp-aks`, joignables via Tailscale (`http://10.0.152.88:9090` et `http://10.0.130.130:3100`) ; plus aucun LoadBalancer public pour le monitoring.
 
 ### Mise en place du Grafana central (4K-90)
 
@@ -96,6 +96,15 @@ En production actuelle, `PROMETHEUS_URL` et `LOKI_URL` pointent vers les LoadBal
 3. Exposer Grafana via LoadBalancer ou Ingress.
 4. Mettre à jour `GRAFANA_URL` dans Vault.
 5. Rapatrier `PROMETHEUS_URL` / `LOKI_URL` vers les IPs internes Tailscale (supprimer les LoadBalancers de monitoring).
+
+### Résolution par cluster
+
+Chaque `ClusterConnection` porte son `prometheus_url` / `loki_url` ; `PROMETHEUS_URL` / `LOKI_URL` restent le repli (champ nul ou vide). Le choix est centralisé dans `backend/services/monitoring_sources.py` :
+
+- **Une app** (logs, métriques, assistant, conseiller FinOps) : `cluster_id` explicite, sinon cluster cible de l'app (`/monitoring/logs?app=<slug>` résout l'app côté serveur), sinon le global.
+- **Un groupe ou toute la plateforme** (coût par groupe, coût par équipe) : tous les `prometheus_url` des clusters plus le global, dédoublonnés après normalisation, interrogés en parallèle (10 s max chacun). Un Prometheus injoignable (AKS est éteint le soir) est ignoré avec un warning ; 503 seulement si tous échouent.
+- **Règle d'exploitation** : le global doit être soit l'URL d'un cluster telle qu'enregistrée, soit une stack distincte. Deux adresses différentes vers un même Prometheus ne sont pas détectables et doubleraient ses coûts.
+- Configuration : UI d'admin (Settings → Clusters), `PUT /api/v1/clusters/{id}` ou `cnp clusters update <id> --prometheus-url … --loki-url …` (chaîne vide pour effacer).
 
 ## Conséquences
 

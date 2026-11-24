@@ -1,6 +1,7 @@
 """Tokens et URLs d'embed Grafana (ADR-0028)."""
 
 import base64
+import json
 import time
 from pathlib import Path
 
@@ -106,6 +107,57 @@ class TestRoutes:
         claims = jwt.decode(_auth_token_of(body["panel_base_url"]), embed_key, algorithms=["ES256"])
         assert claims["sub"] == f"cnp-user-{admin_user.id}"
 
+    @pytest.mark.parametrize(
+        ("panel", "panel_id"), [("cpu", 21), ("ram", 22), ("logs", 41)]
+    )
+    async def test_group_dashboard_url_can_target_a_panel_and_env(
+        self, client: AsyncClient, db_session, embed_key, admin_user: User, admin_token: str,
+        panel: str, panel_id: int,
+    ):
+        await self._add_group_app(db_session)
+
+        resp = await client.get(
+            f"/api/v1/groups/{GROUP_ID}/grafana-url",
+            params={"panel": panel, "env": "prod"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+
+        assert resp.status_code == 200
+        url = resp.json()["dashboard_url"]
+        assert url.startswith("https://grafana.test/d/group-uid?orgId=1&auth_token=")
+        assert f"&var-group_id={GROUP_ID}" in url
+        assert "&var-env=prod" in url
+        assert url.endswith(f"&viewPanel=panel-{panel_id}")
+        claims = jwt.decode(_auth_token_of(url), embed_key, algorithms=["ES256"])
+        assert claims["sub"] == f"cnp-user-{admin_user.id}"
+
+    async def test_group_dashboard_url_without_panel_is_unchanged(
+        self, client: AsyncClient, db_session, embed_key, admin_token: str,
+    ):
+        await self._add_group_app(db_session)
+
+        resp = await client.get(
+            f"/api/v1/groups/{GROUP_ID}/grafana-url", headers={"Authorization": f"Bearer {admin_token}"}
+        )
+
+        url = resp.json()["dashboard_url"]
+        assert url.endswith(f"&var-group_id={GROUP_ID}")
+        assert "viewPanel" not in url and "var-env" not in url
+
+    @pytest.mark.parametrize("params", [{"panel": "nope"}, {"env": "staging"}])
+    async def test_group_url_rejects_unknown_panel_or_env(
+        self, client: AsyncClient, db_session, embed_key, admin_token: str, params: dict,
+    ):
+        await self._add_group_app(db_session)
+
+        resp = await client.get(
+            f"/api/v1/groups/{GROUP_ID}/grafana-url",
+            params=params,
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+
+        assert resp.status_code == 422
+
     async def test_group_urls_empty_without_key(
         self, client: AsyncClient, db_session, embed_key, monkeypatch, admin_token: str,
     ):
@@ -150,3 +202,14 @@ def test_grafana_jwt_config_matches_the_tokens():
     assert f'GF_AUTH_JWT_EXPECT_CLAIMS={{"iss":"{GRAFANA_JWT_ISSUER}"}}' in environment
     # Sans clé publique dans le .env, le JWT reste désactivé : Grafana doit démarrer normalement.
     assert "GF_AUTH_JWT_ENABLED=${GRAFANA_JWT_PUBLIC_KEY_B64:+true}" in environment
+
+
+def test_group_panel_ids_match_the_provisioned_dashboard():
+    from backend.api.routes.groups import _GRAFANA_GROUP_PANEL_IDS
+
+    dashboard = json.loads((COMPOSE_FILE.parent / "infra/grafana/dashboard.json").read_text())["dashboard"]
+    titles = {p["id"]: p["title"] for p in dashboard["panels"]}
+
+    assert titles[_GRAFANA_GROUP_PANEL_IDS["cpu"]] == "CPU by app"
+    assert titles[_GRAFANA_GROUP_PANEL_IDS["ram"]] == "RAM by app"
+    assert titles[_GRAFANA_GROUP_PANEL_IDS["logs"]] == "Application logs"

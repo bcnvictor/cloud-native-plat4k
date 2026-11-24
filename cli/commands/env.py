@@ -1,13 +1,20 @@
+import os
+import re
 from typing import List
+from urllib.parse import quote
 
 import typer
 
 from cli.core.client import client
-from cli.core.output import print_error, print_success, print_table
+from cli.core.output import print_error, print_success, print_table, print_warning
 
 app = typer.Typer(help="Manage application environment variables.")
 
 _VALID_ENVS = ("dev", "prod")
+
+# Same charset as shared.models.ENV_VAR_KEY_PATTERN (the CLI doesn't depend on
+# shared): checked here to fail before any API call, with a readable message.
+_KEY_PATTERN = r"[-._a-zA-Z0-9]+"
 
 
 def _resolve_app_id(slug: str) -> int:
@@ -33,13 +40,18 @@ def list_env(
     app_slug: str = typer.Option(..., "--app", "-a", help="Application slug"),
     env: str = typer.Option(..., "--env", "-e", help="Environment: dev or prod"),
 ):
-    """List environment variable keys and their set/unset status."""
+    """List environment variable keys, their set/unset status, and which ones
+    CNP manages itself (Keycloak's OIDC_* — read-only, set/unset refuse them)."""
     _validate_env(env)
     try:
         app_id = _resolve_app_id(app_slug)
         data = client.get(f"/apps/{app_id}/env/{env}")
-        rows = [[k["key"], "set" if k["is_set"] else "unset"] for k in data["keys"]]
-        print_table(f"Env vars — {app_slug} ({env})", ["Key", "Status"], rows)
+        # .get(): backends predating 4K-15 don't send `managed`.
+        rows = [
+            [k["key"], "set" if k["is_set"] else "unset", "managed by CNP" if k.get("managed", False) else ""]
+            for k in data["keys"]
+        ]
+        print_table(f"Env vars — {app_slug} ({env})", ["Key", "Status", "Managed"], rows)
     except Exception as e:
         print_error(str(e))
         raise typer.Exit(1)
@@ -59,6 +71,9 @@ def set_env(
             print_error(f"Invalid KEY=VALUE pair: '{pair}'")
             raise typer.Exit(1)
         key, value = pair.split("=", 1)
+        if not re.fullmatch(_KEY_PATTERN, key):
+            print_error(f"Invalid variable name '{key}': allowed characters are {_KEY_PATTERN}")
+            raise typer.Exit(1)
         variables[key] = value
 
     try:
@@ -80,12 +95,47 @@ def unset_env(
     _validate_env(env)
     try:
         app_id = _resolve_app_id(app_slug)
-        for key in keys:
-            client.delete(f"/apps/{app_id}/env/{env}/{key}")
-        print_success(f"Removed {len(keys)} variable(s) from {app_slug} ({env})")
     except Exception as e:
         print_error(str(e))
         raise typer.Exit(1)
+
+    # One call per key: try them all and report exactly which ones changed.
+    removed, failed = [], []
+    for key in keys:
+        try:
+            client.delete(f"/apps/{app_id}/env/{env}/{quote(key, safe='')}")
+            removed.append(key)
+        except Exception as e:
+            failed.append(key)
+            print_error(f"{key}: {e}")
+
+    if removed:
+        print_success(f"Removed {len(removed)} variable(s) from {app_slug} ({env}): {', '.join(removed)}")
+    if failed:
+        print_error(f"Not removed: {', '.join(failed)}")
+        raise typer.Exit(1)
+
+
+def _dotenv_line(key: str, value: str) -> str:
+    """Single-quoted: literal for Docker Compose and Node dotenv (no `$`
+    interpolation, `#` kept, multi-line allowed). python-dotenv decodes `\\\\`
+    and `\\'` there, so only backslashes it would consume are doubled (before
+    a backslash, a quote or the end), which keeps `C:\\path` intact for Compose.
+
+    Node dotenv does not decode `\\'`, so a value with an apostrophe goes in
+    double quotes instead, which the three readers take literally as long as it
+    has no `"`, `$` or `\\`. Otherwise no quoting reads the same everywhere:
+    the single-quoted form is kept and `pull` warns (see _node_dotenv_mismatch).
+    """
+    if "'" in value and not _node_dotenv_mismatch(value):
+        return f'{key}="{value}"\n'
+    escaped = re.sub(r"\\(?=[\\']|\Z)", r"\\\\", value).replace("'", "\\'")
+    return f"{key}='{escaped}'\n"
+
+
+def _node_dotenv_mismatch(value: str) -> bool:
+    """True when Node dotenv will read the written value with a stray `\\'`."""
+    return "'" in value and re.search(r'["$\\]', value) is not None
 
 
 @app.command("pull")
@@ -93,19 +143,33 @@ def pull_env(
     app_slug: str = typer.Option(..., "--app", "-a", help="Application slug"),
     env: str = typer.Option("dev", "--env", "-e", help="Environment — dev only"),
     output: str = typer.Option(".env.local", "--output", "-o", help="Output file path"),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite the output file if it exists"),
 ):
     """Write real values to a local .env file. Dev only — prod values are never
     exposed through the API, by design (see ADR-0025 addendum)."""
     if env != "dev":
         print_error("cnp env pull is only available for --env dev — prod values are never exposed via the API.")
         raise typer.Exit(1)
+    if os.path.exists(output) and not force:
+        print_error(f"{output} already exists — pass --force to overwrite it.")
+        raise typer.Exit(1)
     try:
         app_id = _resolve_app_id(app_slug)
         values = client.get(f"/apps/{app_id}/env/dev/values")
-        with open(output, "w") as f:
+        # Real secrets: owner-only, including when overwriting a looser existing file.
+        fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        if hasattr(os, "fchmod"):  # POSIX only before Python 3.13
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as f:
             for key, value in values.items():
-                f.write(f"{key}={value}\n")
+                f.write(_dotenv_line(key, value))
         print_success(f"Wrote {len(values)} variable(s) to {output}")
+        mismatched = [key for key, value in values.items() if _node_dotenv_mismatch(value)]
+        if mismatched:
+            print_warning(
+                f"Node dotenv will read \\' instead of ' in: {', '.join(mismatched)} "
+                "(apostrophe together with \", $ or \\; python-dotenv and Docker Compose read them correctly)."
+            )
     except Exception as e:
         print_error(str(e))
         raise typer.Exit(1)

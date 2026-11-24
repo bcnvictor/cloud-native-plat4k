@@ -1,6 +1,7 @@
 from typing import Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from shared.models import ENV_VAR_KEY_PATTERN, is_valid_env_var_key
 
 
 class EnvVarKeyStatus(BaseModel):
@@ -18,6 +19,17 @@ class EnvVarListResponse(BaseModel):
 
 class EnvVarSetRequest(BaseModel):
     variables: Dict[str, str] = Field(..., min_length=1)
+
+    @field_validator("variables")
+    @classmethod
+    def _keys_are_secret_keys(cls, variables: Dict[str, str]) -> Dict[str, str]:
+        # Write-side only: keys already in Vault are still listed and deletable.
+        invalid = [k for k in variables if not is_valid_env_var_key(k)]
+        if invalid:
+            raise ValueError(
+                f"Invalid variable name(s) {invalid!r}: allowed characters are {ENV_VAR_KEY_PATTERN}"
+            )
+        return variables
 
 
 class EnvVarStatusResponse(BaseModel):
