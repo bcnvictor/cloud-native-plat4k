@@ -176,14 +176,6 @@ class GitLabClient:
         except GitlabGetError:
             return False
 
-    def branch_exists(self, project_path: str, branch: str) -> bool:
-        project = self.get_project(project_path)
-        try:
-            project.branches.get(branch)
-            return True
-        except GitlabGetError:
-            return False
-
     def trigger_pipeline(self, gitlab_project_id: int, ref: str) -> int:
         """Run a pipeline on ref and return its id. Raises on failure."""
         project = self._gl.projects.get(gitlab_project_id)
