@@ -141,6 +141,27 @@ class EphemeralEnvService:
             )
         return ttl
 
+    async def _ensure_project_id(self, bot: GitLabClient, app: Application) -> int:
+        """Id du projet GitLab de l'app, résolu depuis repo_url et enregistré s'il manque.
+
+        Ni le scaffolding ni l'onboarding ne remplissent applications.gitlab_project_id :
+        sans cette résolution, aucune app existante ne pourrait déclencher de pipeline.
+        """
+        if app.gitlab_project_id:
+            return app.gitlab_project_id
+        try:
+            project = await anyio.to_thread.run_sync(
+                lambda: bot.get_project(extract_project_path(app.repo_url)), cancellable=True
+            )
+        except Exception:
+            logger.exception("Cannot resolve the GitLab project of %s from %s", app.slug, app.repo_url)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The GitLab repository of the application is not accessible to CNP",
+            )
+        app.gitlab_project_id = project.id
+        return project.id
+
     async def _check_branch(self, bot: GitLabClient, repo_path: str, branch: str) -> None:
         exists = await anyio.to_thread.run_sync(lambda: bot.branch_exists(repo_path, branch), cancellable=True)
         if not exists:
@@ -164,7 +185,7 @@ class EphemeralEnvService:
         # peuvent ni dépasser EPHEMERAL_MAX_PER_APP ni prendre le même slug. Il est tenu
         # pendant les appels GitLab (quelques secondes), acceptable pour une création.
         app = await self._get_app(app_id, for_update=True)
-        if not app.repo_url or not app.gitlab_project_id:
+        if not app.repo_url:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Application has no GitLab repository")
         cluster = await self._get_cluster(app)
         if not settings.cluster_supports_public_exposure(cluster.name):
@@ -191,6 +212,7 @@ class EphemeralEnvService:
         bot = _get_bot_client()
         repo_path = extract_project_path(app.repo_url)
         await self._check_branch(bot, repo_path, branch)
+        await self._ensure_project_id(bot, app)
 
         env = EphemeralEnvironment(
             app_id=app.id,
@@ -333,9 +355,10 @@ class EphemeralEnvService:
         d'image) et l'Application de l'app, figée sur ce commit. Renvoie True si un
         nouveau commit a été déployé.
         """
-        if env.status not in _DEPLOYABLE or not app.gitlab_project_id or not app.repo_url:
+        if env.status not in _DEPLOYABLE or not app.repo_url:
             return False
         bot = _get_bot_client()
+        await self._ensure_project_id(bot, app)
         built = await anyio.to_thread.run_sync(
             lambda: bot.built_head_commit(app.gitlab_project_id, env.branch), cancellable=True
         )

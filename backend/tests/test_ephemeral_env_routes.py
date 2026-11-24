@@ -46,6 +46,8 @@ class FakeBot:
         self.built: tuple[str, int] | None = None
         self.values_files: dict[str, str] = {"chart/values-dev.yaml": "replicaCount: 1\nimage:\n  repository: registry.gitlab.com/4k-cnp-2027/cnp-apps/my-app\n  tag: latest\ningress:\n  enabled: true\n  host: dev.my-app.cloud-native-plat4k.me\n"}
         self.read_refs: list[str] = []
+        self.project_missing = False
+        self.resolved_paths: list[str] = []
 
     def branch_exists(self, project_path, branch):
         return branch in self.branches
@@ -67,6 +69,14 @@ class FakeBot:
 
     def get_pipeline_status(self, gitlab_project_id, pipeline_id):
         return self.pipeline_status
+
+    def get_project(self, project_path):
+        from types import SimpleNamespace
+
+        if self.project_missing:
+            raise RuntimeError("404 Project Not Found")
+        self.resolved_paths.append(project_path)
+        return SimpleNamespace(id=555)
 
     def list_branches(self, project_path, limit=100):
         return ["feat/login", "main", "feat/other"]
@@ -643,3 +653,45 @@ class TestPourLesFronts:
     async def test_branches_reservees_aux_developers(self, client, app_row, viewer, bot):
         resp = await client.get(f"/api/v1/apps/{app_row.id}/ephemeral-envs/branches", headers=_auth(viewer))
         assert resp.status_code == 403
+
+
+class TestProjetGitLabNonRenseigne:
+    """Ni le scaffolding ni l'onboarding ne remplissent applications.gitlab_project_id :
+    le service le résout depuis repo_url (constaté sur une app scaffoldée en prod)."""
+
+    @pytest.fixture
+    async def scaffolded_app(self, db_session, app_row):
+        app_row.gitlab_project_id = None
+        await db_session.commit()
+        return app_row
+
+    @pytest.fixture
+    async def admin(self, client, db_session) -> str:
+        # Sans gitlab_project_id, l'accès passe par le groupe propriétaire ou un admin
+        user, token = await _user_with_token(client, db_session, "admin@test.com")
+        user.role = UserRole.ADMIN
+        await db_session.commit()
+        return token
+
+    async def test_creation_resout_et_enregistre_l_id(self, client, db_session, scaffolded_app, admin, bot):
+        resp = await _create(client, scaffolded_app.id, admin)
+
+        assert resp.status_code == 201, resp.text
+        assert bot.resolved_paths == ["4k-cnp-2027/cnp-apps/my-app"]
+        assert bot.pipelines == [(555, "feat/login")]
+        await db_session.refresh(scaffolded_app)
+        assert scaffolded_app.gitlab_project_id == 555
+
+    async def test_repo_inaccessible_donne_409(self, client, db_session, scaffolded_app, admin, bot):
+        bot.project_missing = True
+        resp = await _create(client, scaffolded_app.id, admin)
+        assert resp.status_code == 409
+        assert "not accessible" in resp.json()["detail"]
+        assert bot.pushed == []
+
+    async def test_le_worker_deploie_aussi(self, client, db_session, scaffolded_app, admin, bot):
+        await _create(client, scaffolded_app.id, admin)
+        scaffolded_app.gitlab_project_id = None  # comme une app jamais résolue
+        await db_session.commit()
+        bot.built = (SHA, 777)
+        assert (await run_ephemeral_ttl_reconciliation(db_session))["deployed"] == 1
