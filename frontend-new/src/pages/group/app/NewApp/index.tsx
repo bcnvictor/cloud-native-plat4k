@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCurrentGroup } from '@/hooks/useCurrentGroup';
@@ -13,6 +13,7 @@ import { Step2Services } from './Step2Services';
 import { Step3CiDeploy } from './Step3CiDeploy';
 import { Step4Recap } from './Step4Recap';
 import { requestedServices } from './services';
+import { CreationOverlay, useCreationGuard } from './CreationOverlay';
 
 const STEP_LABELS = ['Identity', 'Services', 'CI & Deploy', 'Recap'];
 
@@ -57,8 +58,15 @@ export function NewApp() {
   });
   const { toast } = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const creating = useRef(false);
 
   const createMutation = useMutation({
+    onMutate: () => {
+      creating.current = true;
+    },
+    onSettled: () => {
+      creating.current = false;
+    },
     mutationFn: async () => {
       const services = requestedServices(step2);
 
@@ -87,6 +95,7 @@ export function NewApp() {
     onSuccess: (app) => {
       qc.invalidateQueries({ queryKey: ['apps'] });
       toast({ title: 'App created', description: `${app.name} is being provisioned.` });
+      creating.current = false; // relâché avant la redirection, que le garde bloquerait sinon
       navigate(`/groups/${slug}/apps/${app.slug}`);
     },
     onError: (error: unknown) => {
@@ -96,6 +105,8 @@ export function NewApp() {
       toast({ title: 'Erreur', variant: 'destructive' });
     },
   });
+
+  useCreationGuard(creating, createMutation.isPending);
 
   const steps = STEP_LABELS.map((label, i) => ({
     label,
@@ -146,6 +157,7 @@ export function NewApp() {
           error={submitError}
         />
       )}
+      {createMutation.isPending && <CreationOverlay appName={step1.name} />}
     </div>
   );
 }
