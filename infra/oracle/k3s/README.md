@@ -116,10 +116,10 @@ ArgoCD permet à k3s de se synchroniser sur `argocd/k3s/` du repo `cnp-gitops`, 
 # Depuis le poste avec KUBECONFIG=./cnp-k3s.yaml
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo update
-helm install argocd argo/argo-cd \
+helm upgrade --install argocd argo/argo-cd \
   --version 7.9.1 \
   --namespace argocd --create-namespace \
-  --set configs.params."server.insecure"=true \
+  -f argocd-values.yaml \
   --kubeconfig cnp-k3s.yaml
 
 # Attendre que les pods soient Ready
@@ -128,6 +128,29 @@ kubectl --kubeconfig cnp-k3s.yaml -n argocd wait --for=condition=Available deplo
 # Bootstrap : pointer ArgoCD sur argocd/k3s/ du repo cnp-gitops
 kubectl --kubeconfig cnp-k3s.yaml -n argocd \
   apply -f ../../../cnp-gitops/bootstrap/root-app-k3s.yaml
+```
+
+> **Pas de mode `insecure`.** Le backend CNP appelle ArgoCD en HTTPS (ADR-0019), et
+> l'ACL Tailscale n'ouvre que le port 443 vers les ClusterIP k3s. Avec
+> `server.insecure=true`, argocd-server ne sert que du HTTP, même sur le port 443 du
+> Service : les appels du backend échouent à la poignée de main TLS, les cartes dev/prod
+> restent vides et les apps restent en « Provisioning ». Ne pas passer de `--set` sur des
+> clés à points (`configs.params."server.insecure"`) : Helm les lit comme des clés
+> imbriquées. Tout se règle dans `argocd-values.yaml`.
+
+Brancher ensuite cet ArgoCD dans CNP (backend sur cnp-control, via Tailscale) :
+
+```bash
+# URL interne : ClusterIP de argocd-server, joignable via le Connector Tailscale (10.43.0.0/16)
+kubectl --kubeconfig cnp-k3s.yaml -n argocd get svc argocd-server -o jsonpath='{.spec.clusterIP}'
+
+# Token du compte admin (apiKey activé par argocd-values.yaml)
+argocd account generate-token --account admin --id cnp-backend
+
+# CNP stocke argocd_url en base et le token dans Vault (argocd/<id>)
+curl -X PUT https://<cnp>/api/v1/clusters/<ID_DE_cnp-k3s> \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" -H 'Content-Type: application/json' \
+  -d '{"argocd_url":"https://<CLUSTER_IP>","argocd_token":"<TOKEN>"}'
 ```
 
 Vérifier que l'app root est bien créée :

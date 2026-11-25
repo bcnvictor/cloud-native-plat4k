@@ -1,0 +1,14 @@
+# Valeurs argo-cd 7.9.1 pour cnp-k3s. Commande et vérifications : README section 6.
+configs:
+  params:
+    # TLS (certificat auto-signé), comme l'ArgoCD d'AKS : le backend CNP appelle
+    # https://<ClusterIP argocd-server> via Tailscale (ADR-0019), et l'ACL n'ouvre que 443.
+    # En mode insecure, argocd-server ne parle que HTTP, même sur le port 443 du Service :
+    # la poignée de main TLS du backend échoue et les apps restent en « Provisioning ».
+    server.insecure: false
+  cm:
+    # Compte admin utilisable par token API : le token « cnp-backend » est stocké dans
+    # Vault (argocd/<cluster_id>) et lu par backend/argocd/client.py.
+    accounts.admin: apiKey,login
+    # Sync plus rapide que les 180 s par défaut du chart.
+    timeout.reconciliation: 15s
