@@ -40,6 +40,8 @@ function RecapSection({
 
 export function Step4Recap({ identity, services, ciDeploy, onSubmit, onBack, isPending, error }: Props) {
   const enabledServices = [
+    identity.origin === 'scaffold' && services.database.enabled &&
+      `Database (PostgreSQL ${services.database.pgSize}, ${services.database.password ? 'your password' : 'generated password'})`,
     services.auth.enabled && 'Authentication (Keycloak)',
   ].filter(Boolean) as string[];
 

@@ -12,7 +12,7 @@ import { Step1Identity } from './Step1Identity';
 import { Step2Services } from './Step2Services';
 import { Step3CiDeploy } from './Step3CiDeploy';
 import { Step4Recap } from './Step4Recap';
-import { requestedServices } from './services';
+import { onboardServices, scaffoldingPayload } from './services';
 import { CreationOverlay, useCreationGuard } from './CreationOverlay';
 
 const STEP_LABELS = ['Identity', 'Services', 'CI & Deploy', 'Recap'];
@@ -45,7 +45,7 @@ export function NewApp() {
     repoUrl: '',
   });
   const [step2, setStep2] = useState<ServiceConfig>({
-    database: { enabled: false, dbName: '', pgSize: '1Gi' },
+    database: { enabled: false, dbName: '', pgSize: '1Gi', password: '' },
     auth: { enabled: false },
   });
   const [step3, setStep3] = useState<CiDeployConfig>({
@@ -68,8 +68,6 @@ export function NewApp() {
       creating.current = false;
     },
     mutationFn: async () => {
-      const services = requestedServices(step2);
-
       if (step1.origin === 'scaffold') {
         return appsApi.scaffoldApp({
           name: step1.name,
@@ -78,7 +76,7 @@ export function NewApp() {
           owning_gitlab_group_id: group?.gitlab_group_id,
           expose: step3.expose,
           target_cluster_id: step3.targetClusterId ?? undefined,
-          scaffolding: services.length ? { services } : undefined,
+          scaffolding: scaffoldingPayload(step2),
         });
       } else {
         return appsApi.onboardApp({
@@ -88,7 +86,7 @@ export function NewApp() {
           owning_gitlab_group_id: group?.gitlab_group_id,
           expose: step3.expose,
           target_cluster_id: step3.targetClusterId ?? undefined,
-          services: services.length ? services : undefined,
+          services: onboardServices(step2).length ? onboardServices(step2) : undefined,
         });
       }
     },
@@ -133,6 +131,8 @@ export function NewApp() {
       {step === 2 && (
         <Step2Services
           data={step2}
+          origin={step1.origin}
+          appName={step1.name}
           onChange={(d) => setStep2((p) => ({ ...p, ...d }))}
           onNext={() => setStep(3)}
           onBack={() => setStep(1)}

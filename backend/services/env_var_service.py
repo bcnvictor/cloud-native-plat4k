@@ -18,6 +18,11 @@ VALID_ENVS = ("dev", "prod")
 # without a circular import (it already imports resolve_group_slug/vault_env_path
 # from this module).
 MANAGED_ENV_KEYS = frozenset({"OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"})
+# PostgreSQL géré par la plateforme (database_service) : modifier le mot de passe dans
+# Vault ne changerait pas celui de la base, fixé à son initialisation.
+DB_MANAGED_KEYS = frozenset({
+    "DATABASE_URL", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB",
+})
 
 # Vault path segment used when an app has no GitLab group (owning_gitlab_group_id
 # is nullable — onboarded/imported apps aren't always attached to a group). Shared
@@ -30,7 +35,8 @@ def _managed_keys(app: Application) -> frozenset[str]:
     """OIDC_* are reserved only for apps where Keycloak is enabled — an app without it
     (e.g. an onboarded app with its own identity provider) keeps full control of them.
     """
-    return MANAGED_ENV_KEYS if app.auth_enabled else frozenset()
+    keys = MANAGED_ENV_KEYS if app.auth_enabled else frozenset()
+    return keys | DB_MANAGED_KEYS if app.database_enabled else keys
 
 
 def _validate_env(env: str) -> None:

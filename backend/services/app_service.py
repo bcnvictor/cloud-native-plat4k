@@ -110,6 +110,17 @@ class AppService:
         if payload.expose:
             await self._assert_exposable(target_cluster_id)
         target_namespace = await self._resolve_group_namespace(payload.owning_gitlab_group_id)
+        services = payload.scaffolding.services if payload.scaffolding else []
+        with_database = "postgresql" in services
+        if with_database:
+            # Avant toute création GitLab : sans ces credentials, PostgreSQL ne démarre pas.
+            from backend.services.database_service import provision_database_secrets
+            await provision_database_secrets(
+                group_slug=await resolve_group_slug(self.db, payload.owning_gitlab_group_id),
+                app_slug=slug,
+                app_name=payload.name,
+                params=payload.scaffolding,
+            )
 
         group_path: str | None = None
         if payload.owning_gitlab_group_id:
@@ -143,6 +154,7 @@ class AppService:
             "owning_gitlab_group_id": payload.owning_gitlab_group_id,
             "expose": payload.expose,
             "target_cluster_id": target_cluster_id,
+            "database_enabled": with_database,
         }
         app = await self._save_app(data, scaffolded_project_path=project_path, skip_gitops=payload.skip_first_deploy)
         if payload.expose and settings.GITOPS_REPO_URL and (bot := _get_bot_client()):
@@ -150,7 +162,6 @@ class AppService:
             # Certificate goes to gitops.
             cluster_name = await self._resolve_cluster_name(app.target_cluster_id)
             await self._push_certificates_to_gitops(bot, slug, cluster_name)
-        services = payload.scaffolding.services if payload.scaffolding else []
         if "keycloak" in services:
             await self._provision_keycloak(app)
         return app
@@ -675,6 +686,17 @@ class AppService:
         from backend.k8s.client import k8s_client
 
         app = await self.get_app(app_id)
+        if app.database_enabled:
+            # Base gérée par la CNP : credentials dans Vault, l'env est le namespace (dev/prod).
+            from backend.services.database_service import ENVS, read_database_credentials
+            if namespace not in ENVS:
+                raise HTTPException(status_code=400, detail=f"namespace must be one of {', '.join(ENVS)}")
+            return await read_database_credentials(
+                group_slug=await resolve_group_slug(self.db, app.owning_gitlab_group_id),
+                app_slug=app.slug,
+                env=namespace,
+            )
+        # Apps scaffoldées avant : mot de passe dans le Secret K8s généré par leur chart.
         release_name = app.name
         secret_name = f"{release_name}-postgresql"
         username = "appuser"
