@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/toast';
 import { timeAgo } from '@/utils/timeAgo';
+import { Switch } from '@/components/ui/Switch';
 
 const PREF_CATEGORIES = [
   { key: 'app',     label: 'Applications', description: 'Déploiements, santé, modifications' },
@@ -59,22 +60,10 @@ function NotificationPreferences() {
                 <p className="text-xs font-medium text-foreground">{label}</p>
                 <p className="text-[11px] text-muted-foreground">{description}</p>
               </div>
-              <button
-                role="switch"
-                aria-checked={isEnabled(key)}
-                onClick={() => updatePref.mutate({ category: key, enabled: !isEnabled(key) })}
-                className={[
-                  'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200',
-                  isEnabled(key) ? 'bg-primary' : 'bg-muted',
-                ].join(' ')}
-              >
-                <span
-                  className={[
-                    'pointer-events-none block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5',
-                    isEnabled(key) ? 'translate-x-4' : 'translate-x-0.5',
-                  ].join(' ')}
-                />
-              </button>
+              <Switch
+                checked={isEnabled(key)}
+                onChange={(enabled) => updatePref.mutate({ category: key, enabled })}
+              />
             </li>
           ))}
         </ul>
