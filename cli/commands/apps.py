@@ -21,6 +21,12 @@ def scaffold_app(
     port: int = typer.Option(8000, "--port", "-p", help="Container port"),
     replicas: int = typer.Option(1, "--replicas", "-r", help="Initial number of pods"),
     postgresql: bool = typer.Option(False, "--postgresql", help="Provision a PostgreSQL backing service"),
+    pg_size: str = typer.Option("1Gi", "--pg-size", help="PostgreSQL volume size (with --postgresql)"),
+    db_name: Optional[str] = typer.Option(None, "--db-name", help="Database name (defaults to the app name)"),
+    db_password: bool = typer.Option(
+        False, "--db-password",
+        help="Prompt for the database password (12+ chars); otherwise one is generated per env",
+    ),
     keycloak: bool = typer.Option(
         False, "--keycloak", help="Provision Keycloak app-auth (realm per env, see 'cnp keycloak')"
     ),
@@ -36,11 +42,19 @@ def scaffold_app(
         services.append("postgresql")
     if keycloak:
         services.append("keycloak")
+    scaffolding = {"port": port, "replicas": replicas, "services": services}
+    if postgresql:
+        scaffolding["pg_size"] = pg_size
+        if db_name:
+            scaffolding["db_name"] = db_name
+        if db_password:
+            # Saisi masqué, jamais en argument : il finirait dans l'historique du shell.
+            scaffolding["db_password"] = typer.prompt("Database password", hide_input=True, confirmation_prompt=True)
     payload = {
         "name": name,
         "owner": resolved_owner,
         "template": template,
-        "scaffolding": {"port": port, "replicas": replicas, "services": services},
+        "scaffolding": scaffolding,
     }
 
     try:
@@ -58,6 +72,7 @@ def scaffold_app(
                 ["status", data["status"]],
                 ["ci_injected", data.get("ci_injected")],
                 ["auth_enabled", data.get("auth_enabled")],
+                ["database_enabled", data.get("database_enabled")],
                 ["auth_provisioned", data.get("auth_provisioned")],
             ],
         )

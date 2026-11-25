@@ -7,7 +7,6 @@ Projects are created in GITLAB_APPS_NAMESPACE using the bot token.
 Templates are resolved from GITLAB_TEMPLATES_NAMESPACE/{template}.
 """
 import logging
-import secrets
 from functools import partial
 from typing import Optional
 
@@ -19,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
 from backend.gitlab.client import GitLabClient
+from backend.services.database_service import DB_USER, default_db_name
 
 logger = logging.getLogger(__name__)
 
@@ -81,26 +81,19 @@ def build_values_yaml(
     }
 
     if "postgresql" in params.services:
-        db_password = secrets.token_urlsafe(16)
-        db_username = "appuser"
-        db_name = app_name.replace("-", "_")
-
+        # Aucun secret ici : mot de passe et DATABASE_URL sont dans Vault
+        # (database_service), livrés au pod par le Secret {app}-env.
         data["postgresql"] = {
             "enabled": True,
             "image": {"tag": "16"},
             "auth": {
-                "username": db_username,
-                "password": db_password,
-                "database": db_name,
+                "username": DB_USER,
+                "database": params.db_name or default_db_name(app_name),
             },
             "primary": {
                 "persistence": {"size": params.pg_size},
             },
         }
-
-        env_vars["DATABASE_URL"] = (
-            f"postgresql://{db_username}:{db_password}@{app_name}-postgresql:5432/{db_name}"
-        )
     return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
 
 
@@ -332,18 +325,6 @@ class ScaffoldingService:
 {{- if .Values.postgresql.enabled }}
 ---
 apiVersion: v1
-kind: Secret
-metadata:
-  name: {{ include "app.name" . }}-postgresql
-  labels:
-    {{- include "app.labels" . | nindent 4 }}
-type: Opaque
-stringData:
-  username: {{ .Values.postgresql.auth.username }}
-  password: {{ .Values.postgresql.auth.password }}
-  database: {{ .Values.postgresql.auth.database }}
----
-apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "app.name" . }}-postgresql
@@ -387,8 +368,9 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "app.name" . }}-postgresql
-                  key: password
+                  # Secret synchronisé par ESO depuis Vault (clés gérées par la CNP)
+                  name: {{ include "app.name" . }}-env
+                  key: POSTGRES_PASSWORD
           ports:
             - containerPort: 5432
           volumeMounts:

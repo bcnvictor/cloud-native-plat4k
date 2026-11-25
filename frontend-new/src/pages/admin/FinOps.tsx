@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { IconAlertTriangle, IconExternalLink } from '@tabler/icons-react';
+import { IconExternalLink } from '@tabler/icons-react';
 import { useScopeStore } from '@/store/scope';
 import { useBreadcrumb } from '@/components/nav/BreadcrumbContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -91,13 +91,6 @@ export function FinOps() {
         )}
       </div>
 
-      <div className="flex items-start gap-2 rounded-lg border border-warning-border bg-warning-subtle px-4 py-3 mb-6 text-sm text-warning-text">
-        <IconAlertTriangle size={16} className="shrink-0 mt-0.5" />
-        <p>
-          <span className="font-medium">Oracle (k3s) temporarily unmonitored</span> — costs shown are AKS only.
-        </p>
-      </div>
-
       <div className="grid grid-cols-3 gap-4 mb-4">
         {isLoading ? (
           <>
@@ -106,7 +99,7 @@ export function FinOps() {
           </>
         ) : (
           <>
-            <GrafanaPanel src={urls?.total_cost_panel_url ?? null} title="Total AKS cost (30d)" theme={theme} height={140} />
+            <GrafanaPanel src={urls?.total_cost_panel_url ?? null} title="Total cost (30d)" theme={theme} height={140} />
             <GrafanaPanel src={urls?.trend_panel_url ?? null} title="Recent cost trend (30d)" theme={theme} height={140} className="col-span-2" />
           </>
         )}

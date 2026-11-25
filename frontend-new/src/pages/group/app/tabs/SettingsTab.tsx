@@ -27,6 +27,7 @@ import { cn } from '@/utils/cn';
 import { useToast } from '@/components/ui/toast';
 import { envVarPermissions, isValidEnvVarKey } from '@/utils/envVars';
 import type { KeycloakConsoleAccessResponse, KeycloakEnvState } from '@/types';
+import { Switch } from '@/components/ui/Switch';
 
 const STATE_BADGES: Record<
   KeycloakEnvState,
@@ -561,28 +562,16 @@ export function SettingsTab() {
       <Card>
         <h2 className="text-sm font-medium text-foreground mb-4">Internet exposure</h2>
         <div className="flex items-start gap-3">
-          <button
-            role="switch"
-            aria-checked={expose}
+          <Switch
+            checked={expose}
             aria-label="Expose on internet"
-            onClick={() => {
-              const next = !expose;
+            onChange={(next) => {
               setExpose(next);
               exposeMutation.mutate(next);
             }}
             disabled={!canManageApp || exposeMutation.isPending || exposeLocked}
-            className={cn(
-              'relative mt-0.5 h-5 w-9 shrink-0 rounded-full border-2 transition-colors disabled:opacity-50',
-              expose ? 'bg-info border-info' : 'bg-border border-border'
-            )}
-          >
-            <span
-              className={cn(
-                'absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform',
-                expose ? 'translate-x-4' : 'translate-x-0.5'
-              )}
-            />
-          </button>
+            className="mt-0.5"
+          />
           <div className="flex flex-col gap-1">
             <p className="text-sm font-medium text-foreground">
               {expose ? 'Exposed on internet' : 'Port-forward only'}

@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, SecretStr, field_validator
 
 
 def sanitize_k8s_label_value(value: str) -> str:
@@ -405,6 +405,33 @@ class ScaffoldingParams(BaseModel):
     env: Dict[str, str] = {}
     services: List[str] = []  # backing services to provision (e.g., ["postgresql"])
     pg_size: str = "1Gi"  # PVC size for PostgreSQL (e.g., "1Gi", "5Gi", "20Gi")
+    # PostgreSQL : base et mot de passe choisis par le dev. Mot de passe absent = généré
+    # (un par env). Il ne va que dans Vault, jamais dans le chart ni dans git.
+    db_name: Optional[str] = None
+    db_password: Optional[SecretStr] = None
+
+    @field_validator("pg_size")
+    @classmethod
+    def _validate_pg_size(cls, v: str) -> str:
+        if not re.fullmatch(r"[1-9][0-9]{0,3}Gi", v):
+            raise ValueError("pg_size must look like 1Gi, 5Gi or 20Gi")
+        return v
+
+    @field_validator("db_name")
+    @classmethod
+    def _validate_db_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", v):
+            raise ValueError("db_name: lowercase letters, digits and underscores, 63 characters max")
+        return v
+
+    @field_validator("db_password")
+    @classmethod
+    def _validate_db_password(cls, v: Optional[SecretStr]) -> Optional[SecretStr]:
+        if v is None or not v.get_secret_value():
+            return None
+        if not 12 <= len(v.get_secret_value()) <= 128:
+            raise ValueError("db_password must be 12 to 128 characters long")
+        return v
 
     @field_validator("services")
     @classmethod
@@ -594,6 +621,8 @@ class ApplicationResponse(ApplicationBase):
     updated_at: Optional[datetime] = None
     # Keycloak app-auth service (4K-15/ADR-0027)
     auth_enabled: bool = False
+    # PostgreSQL in-cluster provisionné au scaffold, credentials dans Vault
+    database_enabled: bool = False
     auth_instance_key: str | None = None
     auth_provisioned: Optional[bool] = None  # None = n/a, True/False = last provisioning attempt's outcome
     auth_warnings: Optional[List[str]] = None  # KeycloakAuthWarning values, sent as plain strings

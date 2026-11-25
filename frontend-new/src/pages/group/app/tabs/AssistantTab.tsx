@@ -10,6 +10,7 @@ import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AIContextMode, ChatTurn } from '@/types';
 import { cn } from '@/utils/cn';
+import { Switch } from '@/components/ui/Switch';
 
 interface LocalMessage {
   id: string;
@@ -39,24 +40,7 @@ function Toggle({
   onChange: (v: boolean) => void;
   disabled?: boolean;
 }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!value)}
-      disabled={disabled}
-      className={cn(
-        'relative mt-0.5 h-5 w-9 shrink-0 rounded-full border-2 transition-colors',
-        value ? 'bg-info border-info' : 'bg-border border-border'
-      )}
-    >
-      <span
-        className={cn(
-          'absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform',
-          value ? 'translate-x-4' : 'translate-x-0.5'
-        )}
-      />
-    </button>
-  );
+  return <Switch checked={value} onChange={onChange} disabled={disabled} className="mt-0.5" />;
 }
 
 export function AssistantTab() {

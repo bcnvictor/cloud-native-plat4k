@@ -37,6 +37,9 @@ export function OverviewPanel() {
   const { data: clusters = [] } = useQuery({ queryKey: ['clusters'], queryFn: clustersApi.list });
   const { data: groups = [] } = useQuery({ queryKey: ['admin-gitlab-groups'], queryFn: adminApi.listGitlabGroups });
   const { data: ai } = useQuery({ queryKey: ['ai-global-settings'], queryFn: assistantApi.getGlobalSettings, retry: false });
+  const { data: schedules } = useQuery({ queryKey: ['platform-schedules'], queryFn: adminApi.getPlatformSchedules });
+  const s2z = schedules?.scale_to_zero;
+  const hh = (h: number) => `${String(h).padStart(2, '0')}:00`;
 
   const online = clusters.filter((c) => c.status === 'online').length;
   const offline = clusters.filter((c) => c.status === 'offline').length;
@@ -55,13 +58,13 @@ export function OverviewPanel() {
           badge={offline > 0 ? <Badge variant="danger">{offline} offline</Badge> : undefined}
           value={<>{online}<span className="text-sm font-normal text-muted-foreground"> / {clusters.length} online</span></>}
           sub={`${apps} app${apps !== 1 ? 's' : ''} deployed · Manage connections →`}
-          onClick={() => navigate('/admin/settings/clusters')}
+          onClick={() => navigate('/admin/clusters/connections')}
         />
         <Tile
           label="GitLab groups"
           value={<>{groups.length}<span className="text-sm font-normal text-muted-foreground"> synchronized</span></>}
           sub={lastSync ? `Last sync ${timeAgo(lastSync)}` : 'Never synchronized'}
-          onClick={() => navigate('/admin/settings/gitlab')}
+          onClick={() => navigate('/admin/users/gitlab-groups')}
         />
         <Tile
           label="AI assistant"
@@ -72,9 +75,10 @@ export function OverviewPanel() {
         />
         <Tile
           label="Dev scale-to-zero"
-          badge={<span className="font-mono text-[10px]">4K-82</span>}
-          value={<span className="text-sm font-medium text-muted-foreground">Panel coming soon</span>}
-          sub="Configured through environment variables today"
+          badge={s2z ? <Badge variant={s2z.enabled ? 'success' : 'muted'}>{s2z.enabled ? 'On' : 'Off'}</Badge> : undefined}
+          value={s2z ? `${hh(s2z.scale_down_hour)} → ${hh(s2z.scale_up_hour)}` : '—'}
+          sub={schedules ? `GitLab sync every ${schedules.gitlab_sync.interval_minutes} min · Schedules →` : 'Schedules →'}
+          onClick={() => navigate('/admin/settings/schedules')}
         />
       </div>
       <ConfigHistory title="Recent configuration changes" actions={ALL_CONFIG_ACTIONS} />

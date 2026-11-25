@@ -42,6 +42,7 @@ from backend.k8s.dashboards import FINOPS_DASHBOARD_JSON
 from backend.k8s.discovery import discover_clusters
 from backend.k8s.health_worker import run_health_worker
 from backend.keycloak.client import KeycloakError, KeycloakUnavailable
+from backend.services.app_status_service import run_app_status_worker
 from backend.services.ephemeral_ttl_worker import run_ephemeral_ttl_worker
 from backend.services.gitlab_sync_service import run_gitlab_sync_worker
 from backend.services.platform_knowledge_service import sync_platform_docs_at_startup
@@ -89,6 +90,7 @@ async def lifespan(app: FastAPI):
     # Lancement des workers
     health_task = asyncio.create_task(run_health_worker(settings.CLUSTER_HEALTH_INTERVAL))
     sync_task = asyncio.create_task(run_gitlab_sync_worker(settings.GITLAB_SYNC_INTERVAL_MINUTES))
+    app_status_task = asyncio.create_task(run_app_status_worker(settings.APP_STATUS_REFRESH_INTERVAL_MINUTES))
     scale_task = (
         asyncio.create_task(run_scale_worker(settings.SCALE_SCHEDULE_INTERVAL_MINUTES))
         if settings.SCALE_SCHEDULE_ENABLED else None
@@ -102,6 +104,7 @@ async def lifespan(app: FastAPI):
     yield
     health_task.cancel()
     sync_task.cancel()
+    app_status_task.cancel()
     if ephemeral_task:
         ephemeral_task.cancel()
     if scale_task:

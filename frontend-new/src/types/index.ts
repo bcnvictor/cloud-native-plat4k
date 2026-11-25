@@ -317,15 +317,16 @@ export interface Step1Data {
 }
 
 export interface ServiceConfig {
-  database: { enabled: boolean; dbName: string; pgSize: '1Gi' | '5Gi' | '20Gi' };
+  database: { enabled: boolean; dbName: string; pgSize: '1Gi' | '5Gi' | '20Gi'; password: string };
   auth: { enabled: boolean };
-  cache: { enabled: boolean };
 }
 
 /** Backing services requested at scaffold/onboard time (shared/models.py ScaffoldingParams.services). */
 export interface ScaffoldingServicesPayload {
   services: string[];
   pg_size?: string;
+  db_name?: string;
+  db_password?: string;
 }
 
 export interface CiDeployConfig {

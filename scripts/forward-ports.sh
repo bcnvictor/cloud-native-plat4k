@@ -60,7 +60,7 @@ case "$CMD" in
     start_pf "grafana"       3000  port-forward -n monitoring svc/kube-prometheus-stack-grafana  3000:80
     start_pf "argocd-aks"    8080  port-forward -n argocd      svc/argocd-server                 8080:443
     if [ -f "$K3S_KUBECONFIG" ]; then
-      start_pf "argocd-k3s"  8081  --kubeconfig "$K3S_KUBECONFIG" --context cnp-k3s port-forward -n argocd svc/argocd-server 8081:80
+      start_pf "argocd-k3s"  8081  --kubeconfig "$K3S_KUBECONFIG" --context cnp-k3s port-forward -n argocd svc/argocd-server 8081:443
     else
       warn "argocd-k3s : kubeconfig introuvable ($K3S_KUBECONFIG) — ignoré"
     fi
@@ -70,7 +70,7 @@ case "$CMD" in
     echo -e "  Loki        : http://localhost:3100"
     echo -e "  Grafana     : http://localhost:3000"
     echo -e "  ArgoCD AKS  : https://localhost:8080"
-    echo -e "  ArgoCD k3s  : http://localhost:8081"
+    echo -e "  ArgoCD k3s  : https://localhost:8081"
     ;;
   stop)
     info "Arrêt des port-forwards..."

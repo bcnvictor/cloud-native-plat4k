@@ -1,15 +1,21 @@
 {
   "dashboard": {
-    "id": null,
     "uid": "cnp-finops-overview",
     "title": "CNP — FinOps Overview",
     "description": "Global FinOps view of the platform (AKS cluster only, not parameterized per group)",
-    "tags": ["cnp", "finops", "global"],
+    "tags": [
+      "cnp",
+      "finops",
+      "global"
+    ],
     "timezone": "browser",
     "schemaVersion": 38,
     "version": 1,
     "refresh": "30s",
-    "time": { "from": "now-30d", "to": "now" },
+    "time": {
+      "from": "now-30d",
+      "to": "now"
+    },
     "templating": {
       "list": [
         {
@@ -17,11 +23,24 @@
           "label": "Environment",
           "type": "custom",
           "query": "dev,prod",
-          "current": { "text": "All", "value": "$__all" },
+          "current": {
+            "text": "All",
+            "value": "$__all"
+          },
           "options": [
-            { "text": "All", "value": "$__all", "selected": true },
-            { "text": "dev", "value": "dev" },
-            { "text": "prod", "value": "prod" }
+            {
+              "text": "All",
+              "value": "$__all",
+              "selected": true
+            },
+            {
+              "text": "dev",
+              "value": "dev"
+            },
+            {
+              "text": "prod",
+              "value": "prod"
+            }
           ],
           "includeAll": true,
           "multi": false,
@@ -32,11 +51,20 @@
     "panels": [
       {
         "id": 1,
-        "title": "Total AKS cost (30d)",
+        "title": "Total cost (30d)",
         "type": "stat",
-        "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+        "gridPos": {
+          "x": 0,
+          "y": 0,
+          "w": 6,
+          "h": 5
+        },
         "options": {
-          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ]
+          },
           "colorMode": "background",
           "graphMode": "none",
           "textMode": "auto",
@@ -46,17 +74,28 @@
           "defaults": {
             "unit": "currencyEUR",
             "decimals": 2,
-            "color": { "mode": "fixed", "fixedColor": "#007BA7" },
+            "color": {
+              "mode": "fixed",
+              "fixedColor": "#007BA7"
+            },
             "thresholds": {
               "mode": "absolute",
-              "steps": [{ "color": "#007BA7", "value": null }]
+              "steps": [
+                {
+                  "color": "#007BA7",
+                  "value": null
+                }
+              ]
             },
             "mappings": [
               {
                 "type": "special",
                 "options": {
                   "match": "null+nan",
-                  "result": { "text": "No data", "color": "transparent" }
+                  "result": {
+                    "text": "No data",
+                    "color": "transparent"
+                  }
                 }
               }
             ]
@@ -66,7 +105,53 @@
           {
             "expr": "(\n  sum(\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum(\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
             "legendFormat": "",
-            "refId": "A"
+            "refId": "A_aks",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp"
+            }
+          },
+          {
+            "expr": "(\n  sum(\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum(\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
+            "legendFormat": "",
+            "refId": "A_k3s",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp-k3s"
+            }
+          },
+          {
+            "expr": "(\n  sum(\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum(\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
+            "legendFormat": "",
+            "refId": "A_gke",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp-gke"
+            }
+          }
+        ],
+        "datasource": {
+          "type": "datasource",
+          "uid": "-- Mixed --"
+        },
+        "transformations": [
+          {
+            "id": "joinByField",
+            "options": {
+              "byField": "Time",
+              "mode": "outer"
+            }
+          },
+          {
+            "id": "calculateField",
+            "options": {
+              "mode": "reduceRow",
+              "reduce": {
+                "reducer": "sum"
+              },
+              "alias": "Total",
+              "replaceFields": true
+            }
           }
         ]
       },
@@ -74,90 +159,237 @@
         "id": 2,
         "title": "Cost by team",
         "type": "table",
-        "gridPos": { "x": 0, "y": 5, "w": 12, "h": 9 },
+        "gridPos": {
+          "x": 0,
+          "y": 5,
+          "w": 12,
+          "h": 9
+        },
         "options": {
           "showHeader": true,
-          "sortBy": [{ "displayName": "Cost EUR/month", "desc": true }]
+          "sortBy": [
+            {
+              "displayName": "Cost EUR/month",
+              "desc": true
+            }
+          ]
         },
         "fieldConfig": {
-          "defaults": { "custom": { "align": "auto" } },
+          "defaults": {
+            "custom": {
+              "align": "auto"
+            }
+          },
           "overrides": [
             {
-              "matcher": { "id": "byName", "options": "Cost EUR/month" },
+              "matcher": {
+                "id": "byName",
+                "options": "Cost EUR/month"
+              },
               "properties": [
-                { "id": "unit", "value": "currencyEUR" },
-                { "id": "decimals", "value": 2 },
-                { "id": "custom.displayMode", "value": "color-background" },
+                {
+                  "id": "unit",
+                  "value": "currencyEUR"
+                },
+                {
+                  "id": "decimals",
+                  "value": 2
+                },
+                {
+                  "id": "custom.displayMode",
+                  "value": "color-background"
+                },
                 {
                   "id": "thresholds",
                   "value": {
                     "mode": "absolute",
                     "steps": [
-                      { "color": "green", "value": null },
-                      { "color": "yellow", "value": 5 },
-                      { "color": "red", "value": 20 }
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "yellow",
+                        "value": 5
+                      },
+                      {
+                        "color": "red",
+                        "value": 20
+                      }
                     ]
                   }
                 }
               ]
             },
             {
-              "matcher": { "id": "byName", "options": "CPU cores" },
+              "matcher": {
+                "id": "byName",
+                "options": "CPU cores"
+              },
               "properties": [
-                { "id": "unit", "value": "short" },
-                { "id": "decimals", "value": 3 }
+                {
+                  "id": "unit",
+                  "value": "short"
+                },
+                {
+                  "id": "decimals",
+                  "value": 3
+                }
               ]
             },
             {
-              "matcher": { "id": "byName", "options": "RAM GB" },
+              "matcher": {
+                "id": "byName",
+                "options": "RAM GB"
+              },
               "properties": [
-                { "id": "unit", "value": "short" },
-                { "id": "decimals", "value": 2 }
+                {
+                  "id": "unit",
+                  "value": "short"
+                },
+                {
+                  "id": "decimals",
+                  "value": 2
+                }
               ]
             }
           ]
         },
         "transformations": [
-          { "id": "labelsToFields", "options": { "mode": "columns" } },
-          { "id": "merge", "options": {} },
+          {
+            "id": "labelsToFields",
+            "options": {
+              "mode": "columns",
+              "valueLabel": "metric"
+            }
+          },
+          {
+            "id": "merge",
+            "options": {}
+          },
           {
             "id": "organize",
             "options": {
               "renameByName": {
                 "label_cnp_io_group_id": "Team",
-                "Value #CPU": "CPU cores",
-                "Value #RAM": "RAM GB",
-                "Value #COST": "Cost EUR/month"
+                "CPU": "CPU cores",
+                "RAM": "RAM GB",
+                "COST": "Cost EUR/month",
+                "cluster": "Cluster"
+              },
+              "excludeByName": {
+                "Time": true
               }
             }
           }
         ],
         "targets": [
           {
-            "expr": "sum by (label_cnp_io_group_id) (\n  rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n)",
+            "expr": "label_replace(\nlabel_replace(\nsum by (label_cnp_io_group_id) (\n  rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n)\n, \"cluster\", \"AKS\", \"\", \"\")\n, \"metric\", \"CPU\", \"\", \"\")",
             "legendFormat": "",
-            "refId": "CPU",
-            "instant": true
+            "refId": "CPU_aks",
+            "instant": true,
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp"
+            }
           },
           {
-            "expr": "sum by (label_cnp_io_group_id) (\n  container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n) / 1073741824",
+            "expr": "label_replace(\nlabel_replace(\nsum by (label_cnp_io_group_id) (\n  rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n)\n, \"cluster\", \"k3s\", \"\", \"\")\n, \"metric\", \"CPU\", \"\", \"\")",
             "legendFormat": "",
-            "refId": "RAM",
-            "instant": true
+            "refId": "CPU_k3s",
+            "instant": true,
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp-k3s"
+            }
           },
           {
-            "expr": "(\n  sum by (label_cnp_io_group_id) (\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n    * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum by (label_cnp_io_group_id) (\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n    * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
+            "expr": "label_replace(\nlabel_replace(\nsum by (label_cnp_io_group_id) (\n  rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n)\n, \"cluster\", \"GKE\", \"\", \"\")\n, \"metric\", \"CPU\", \"\", \"\")",
             "legendFormat": "",
-            "refId": "COST",
-            "instant": true
+            "refId": "CPU_gke",
+            "instant": true,
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp-gke"
+            }
+          },
+          {
+            "expr": "label_replace(\nlabel_replace(\nsum by (label_cnp_io_group_id) (\n  container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n) / 1073741824\n, \"cluster\", \"AKS\", \"\", \"\")\n, \"metric\", \"RAM\", \"\", \"\")",
+            "legendFormat": "",
+            "refId": "RAM_aks",
+            "instant": true,
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp"
+            }
+          },
+          {
+            "expr": "label_replace(\nlabel_replace(\nsum by (label_cnp_io_group_id) (\n  container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n) / 1073741824\n, \"cluster\", \"k3s\", \"\", \"\")\n, \"metric\", \"RAM\", \"\", \"\")",
+            "legendFormat": "",
+            "refId": "RAM_k3s",
+            "instant": true,
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp-k3s"
+            }
+          },
+          {
+            "expr": "label_replace(\nlabel_replace(\nsum by (label_cnp_io_group_id) (\n  container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n) / 1073741824\n, \"cluster\", \"GKE\", \"\", \"\")\n, \"metric\", \"RAM\", \"\", \"\")",
+            "legendFormat": "",
+            "refId": "RAM_gke",
+            "instant": true,
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp-gke"
+            }
+          },
+          {
+            "expr": "label_replace(\nlabel_replace(\n(\n  sum by (label_cnp_io_group_id) (\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n    * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum by (label_cnp_io_group_id) (\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n    * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)\n, \"cluster\", \"AKS\", \"\", \"\")\n, \"metric\", \"COST\", \"\", \"\")",
+            "legendFormat": "",
+            "refId": "COST_aks",
+            "instant": true,
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp"
+            }
+          },
+          {
+            "expr": "label_replace(\nlabel_replace(\n(\n  sum by (label_cnp_io_group_id) (\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n    * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum by (label_cnp_io_group_id) (\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n    * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)\n, \"cluster\", \"k3s\", \"\", \"\")\n, \"metric\", \"COST\", \"\", \"\")",
+            "legendFormat": "",
+            "refId": "COST_k3s",
+            "instant": true,
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp-k3s"
+            }
+          },
+          {
+            "expr": "label_replace(\nlabel_replace(\n(\n  sum by (label_cnp_io_group_id) (\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n    * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum by (label_cnp_io_group_id) (\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n    * on(pod, namespace) group_left(label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)\n, \"cluster\", \"GKE\", \"\", \"\")\n, \"metric\", \"COST\", \"\", \"\")",
+            "legendFormat": "",
+            "refId": "COST_gke",
+            "instant": true,
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp-gke"
+            }
           }
-        ]
+        ],
+        "datasource": {
+          "type": "datasource",
+          "uid": "-- Mixed --"
+        }
       },
       {
         "id": 3,
         "title": "Top 5 most expensive apps",
         "type": "barchart",
-        "gridPos": { "x": 12, "y": 5, "w": 12, "h": 9 },
+        "gridPos": {
+          "x": 12,
+          "y": 5,
+          "w": 12,
+          "h": 9
+        },
         "options": {
           "orientation": "horizontal",
           "xField": "label_app_kubernetes_io_name",
@@ -165,47 +397,123 @@
           "stacking": "none",
           "barWidth": 0.6,
           "groupWidth": 0.7,
-          "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false },
-          "tooltip": { "mode": "single" }
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": false
+          },
+          "tooltip": {
+            "mode": "single"
+          }
         },
         "fieldConfig": {
           "defaults": {
             "unit": "currencyEUR",
             "decimals": 2,
-            "color": { "mode": "palette-classic" }
+            "color": {
+              "mode": "palette-classic"
+            }
           }
         },
         "transformations": [
-          { "id": "labelsToFields", "options": { "mode": "columns" } },
+          {
+            "id": "labelsToFields",
+            "options": {
+              "mode": "columns",
+              "valueLabel": "metric"
+            }
+          },
+          {
+            "id": "merge",
+            "options": {}
+          },
           {
             "id": "organize",
             "options": {
-              "excludeByName": { "Time": true },
+              "excludeByName": {
+                "Time": true
+              },
               "renameByName": {
                 "label_app_kubernetes_io_name": "App",
                 "label_cnp_io_group_id": "Team",
-                "Value": "Cost EUR/month"
+                "A": "Cost EUR/month",
+                "cluster": "Cluster"
               }
+            }
+          },
+          {
+            "id": "sortBy",
+            "options": {
+              "sort": [
+                {
+                  "field": "Cost EUR/month",
+                  "desc": true
+                }
+              ]
+            }
+          },
+          {
+            "id": "limit",
+            "options": {
+              "limitField": 5
             }
           }
         ],
         "targets": [
           {
-            "expr": "topk(5,\n  (\n    sum by (label_app_kubernetes_io_name, label_cnp_io_group_id) (\n      rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n      * on(pod, namespace) group_left(label_app_kubernetes_io_name, label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n    ) * 0.048 * 24 * 30\n  )\n  +\n  (\n    sum by (label_app_kubernetes_io_name, label_cnp_io_group_id) (\n      container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n      * on(pod, namespace) group_left(label_app_kubernetes_io_name, label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n    ) / 1073741824 * 0.006 * 24 * 30\n  )\n)",
+            "expr": "label_replace(\nlabel_replace(\ntopk(5,\n  (\n    sum by (label_app_kubernetes_io_name, label_cnp_io_group_id) (\n      rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n      * on(pod, namespace) group_left(label_app_kubernetes_io_name, label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n    ) * 0.048 * 24 * 30\n  )\n  +\n  (\n    sum by (label_app_kubernetes_io_name, label_cnp_io_group_id) (\n      container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n      * on(pod, namespace) group_left(label_app_kubernetes_io_name, label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n    ) / 1073741824 * 0.006 * 24 * 30\n  )\n)\n, \"cluster\", \"AKS\", \"\", \"\")\n, \"metric\", \"A\", \"\", \"\")",
             "legendFormat": "",
-            "refId": "A",
-            "instant": true
+            "refId": "A_aks",
+            "instant": true,
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp"
+            }
+          },
+          {
+            "expr": "label_replace(\nlabel_replace(\ntopk(5,\n  (\n    sum by (label_app_kubernetes_io_name, label_cnp_io_group_id) (\n      rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n      * on(pod, namespace) group_left(label_app_kubernetes_io_name, label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n    ) * 0.048 * 24 * 30\n  )\n  +\n  (\n    sum by (label_app_kubernetes_io_name, label_cnp_io_group_id) (\n      container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n      * on(pod, namespace) group_left(label_app_kubernetes_io_name, label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n    ) / 1073741824 * 0.006 * 24 * 30\n  )\n)\n, \"cluster\", \"k3s\", \"\", \"\")\n, \"metric\", \"A\", \"\", \"\")",
+            "legendFormat": "",
+            "refId": "A_k3s",
+            "instant": true,
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp-k3s"
+            }
+          },
+          {
+            "expr": "label_replace(\nlabel_replace(\ntopk(5,\n  (\n    sum by (label_app_kubernetes_io_name, label_cnp_io_group_id) (\n      rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n      * on(pod, namespace) group_left(label_app_kubernetes_io_name, label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n    ) * 0.048 * 24 * 30\n  )\n  +\n  (\n    sum by (label_app_kubernetes_io_name, label_cnp_io_group_id) (\n      container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n      * on(pod, namespace) group_left(label_app_kubernetes_io_name, label_cnp_io_group_id) kube_pod_labels{namespace=~\"$env\"}\n    ) / 1073741824 * 0.006 * 24 * 30\n  )\n)\n, \"cluster\", \"GKE\", \"\", \"\")\n, \"metric\", \"A\", \"\", \"\")",
+            "legendFormat": "",
+            "refId": "A_gke",
+            "instant": true,
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp-gke"
+            }
           }
-        ]
+        ],
+        "datasource": {
+          "type": "datasource",
+          "uid": "-- Mixed --"
+        }
       },
       {
         "id": 4,
         "title": "Recent cost trend (30d)",
         "type": "timeseries",
-        "gridPos": { "x": 0, "y": 14, "w": 24, "h": 9 },
+        "gridPos": {
+          "x": 0,
+          "y": 14,
+          "w": 24,
+          "h": 9
+        },
         "options": {
-          "tooltip": { "mode": "single" },
-          "legend": { "displayMode": "list", "placement": "bottom" }
+          "tooltip": {
+            "mode": "single"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
         },
         "fieldConfig": {
           "defaults": {
@@ -214,63 +522,151 @@
             "custom": {
               "lineWidth": 2,
               "fillOpacity": 15,
-              "gradientMode": "opacity"
+              "gradientMode": "opacity",
+              "stacking": {
+                "mode": "normal",
+                "group": "A"
+              }
             },
-            "color": { "mode": "fixed", "fixedColor": "purple" }
+            "color": {
+              "mode": "fixed",
+              "fixedColor": "purple"
+            }
           }
         },
         "targets": [
           {
             "expr": "(\n  sum(\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum(\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
-            "legendFormat": "Total AKS cost",
-            "refId": "A"
+            "legendFormat": "AKS",
+            "refId": "A_aks",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp"
+            }
+          },
+          {
+            "expr": "(\n  sum(\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum(\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
+            "legendFormat": "k3s",
+            "refId": "A_k3s",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp-k3s"
+            }
+          },
+          {
+            "expr": "(\n  sum(\n    rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  ) * 0.048 * 24 * 30\n)\n+\n(\n  sum(\n    container_memory_working_set_bytes{namespace=~\"$env\", container!=\"\", container!=\"POD\"}\n  ) / 1073741824 * 0.006 * 24 * 30\n)",
+            "legendFormat": "GKE",
+            "refId": "A_gke",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus-cnp-gke"
+            }
           }
-        ]
+        ],
+        "datasource": {
+          "type": "datasource",
+          "uid": "-- Mixed --"
+        }
       },
       {
         "id": 5,
         "type": "row",
         "title": "Usage/requests ratio (bonus)",
         "collapsed": true,
-        "gridPos": { "x": 0, "y": 23, "w": 24, "h": 1 },
+        "gridPos": {
+          "x": 0,
+          "y": 23,
+          "w": 24,
+          "h": 1
+        },
         "panels": [
           {
             "id": 6,
             "title": "Usage/requests ratio by app",
             "type": "table",
-            "gridPos": { "x": 0, "y": 24, "w": 24, "h": 8 },
-            "options": { "showHeader": true },
+            "gridPos": {
+              "x": 0,
+              "y": 24,
+              "w": 24,
+              "h": 8
+            },
+            "options": {
+              "showHeader": true
+            },
             "fieldConfig": {
-              "defaults": { "custom": { "align": "auto" } },
+              "defaults": {
+                "custom": {
+                  "align": "auto"
+                }
+              },
               "overrides": [
                 {
-                  "matcher": { "id": "byName", "options": "CPU usage (cores)" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "CPU usage (cores)"
+                  },
                   "properties": [
-                    { "id": "unit", "value": "short" },
-                    { "id": "decimals", "value": 3 }
+                    {
+                      "id": "unit",
+                      "value": "short"
+                    },
+                    {
+                      "id": "decimals",
+                      "value": 3
+                    }
                   ]
                 },
                 {
-                  "matcher": { "id": "byName", "options": "CPU requests (cores)" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "CPU requests (cores)"
+                  },
                   "properties": [
-                    { "id": "unit", "value": "short" },
-                    { "id": "decimals", "value": 3 }
+                    {
+                      "id": "unit",
+                      "value": "short"
+                    },
+                    {
+                      "id": "decimals",
+                      "value": 3
+                    }
                   ]
                 },
                 {
-                  "matcher": { "id": "byName", "options": "Usage/requests ratio" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "Usage/requests ratio"
+                  },
                   "properties": [
-                    { "id": "unit", "value": "percentunit" },
-                    { "id": "decimals", "value": 2 },
-                    { "id": "custom.displayMode", "value": "color-background" },
+                    {
+                      "id": "unit",
+                      "value": "percentunit"
+                    },
+                    {
+                      "id": "decimals",
+                      "value": 2
+                    },
+                    {
+                      "id": "custom.displayMode",
+                      "value": "color-background"
+                    },
                     {
                       "id": "thresholds",
                       "value": {
                         "mode": "absolute",
                         "steps": [
-                          { "color": "red", "value": null },
-                          { "color": "yellow", "value": 0.3 },
-                          { "color": "green", "value": 0.6 }
+                          {
+                            "color": "red",
+                            "value": null
+                          },
+                          {
+                            "color": "yellow",
+                            "value": 0.3
+                          },
+                          {
+                            "color": "green",
+                            "value": 0.6
+                          }
                         ]
                       }
                     }
@@ -279,47 +675,113 @@
               ]
             },
             "transformations": [
-              { "id": "labelsToFields", "options": { "mode": "columns" } },
-              { "id": "merge", "options": {} },
+              {
+                "id": "labelsToFields",
+                "options": {
+                  "mode": "columns",
+                  "valueLabel": "metric"
+                }
+              },
+              {
+                "id": "merge",
+                "options": {}
+              },
               {
                 "id": "calculateField",
                 "options": {
                   "mode": "binary",
                   "binary": {
-                    "left": "Value #USAGE",
+                    "left": "USAGE",
                     "operator": "/",
-                    "right": "Value #REQUESTS"
+                    "right": "REQUESTS"
                   },
                   "alias": "Usage/requests ratio",
-                  "reduce": { "reducer": "sum" }
+                  "reduce": {
+                    "reducer": "sum"
+                  }
                 }
               },
               {
                 "id": "organize",
                 "options": {
-                  "excludeByName": { "Time": true },
+                  "excludeByName": {
+                    "Time": true
+                  },
                   "renameByName": {
                     "label_app_kubernetes_io_name": "App",
-                    "Value #USAGE": "CPU usage (cores)",
-                    "Value #REQUESTS": "CPU requests (cores)"
+                    "USAGE": "CPU usage (cores)",
+                    "REQUESTS": "CPU requests (cores)",
+                    "cluster": "Cluster"
                   }
                 }
               }
             ],
             "targets": [
               {
-                "expr": "sum by (label_app_kubernetes_io_name) (\n  rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{namespace=~\"$env\"}\n)",
+                "expr": "label_replace(\nlabel_replace(\nsum by (label_app_kubernetes_io_name) (\n  rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{namespace=~\"$env\"}\n)\n, \"cluster\", \"AKS\", \"\", \"\")\n, \"metric\", \"USAGE\", \"\", \"\")",
                 "legendFormat": "",
-                "refId": "USAGE",
-                "instant": true
+                "refId": "USAGE_aks",
+                "instant": true,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus-cnp"
+                }
               },
               {
-                "expr": "sum by (label_app_kubernetes_io_name) (\n  kube_pod_container_resource_requests{resource=\"cpu\", namespace=~\"$env\"}\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{namespace=~\"$env\"}\n)",
+                "expr": "label_replace(\nlabel_replace(\nsum by (label_app_kubernetes_io_name) (\n  rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{namespace=~\"$env\"}\n)\n, \"cluster\", \"k3s\", \"\", \"\")\n, \"metric\", \"USAGE\", \"\", \"\")",
                 "legendFormat": "",
-                "refId": "REQUESTS",
-                "instant": true
+                "refId": "USAGE_k3s",
+                "instant": true,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus-cnp-k3s"
+                }
+              },
+              {
+                "expr": "label_replace(\nlabel_replace(\nsum by (label_app_kubernetes_io_name) (\n  rate(container_cpu_usage_seconds_total{namespace=~\"$env\", container!=\"\", container!=\"POD\"}[5m])\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{namespace=~\"$env\"}\n)\n, \"cluster\", \"GKE\", \"\", \"\")\n, \"metric\", \"USAGE\", \"\", \"\")",
+                "legendFormat": "",
+                "refId": "USAGE_gke",
+                "instant": true,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus-cnp-gke"
+                }
+              },
+              {
+                "expr": "label_replace(\nlabel_replace(\nsum by (label_app_kubernetes_io_name) (\n  kube_pod_container_resource_requests{resource=\"cpu\", namespace=~\"$env\"}\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{namespace=~\"$env\"}\n)\n, \"cluster\", \"AKS\", \"\", \"\")\n, \"metric\", \"REQUESTS\", \"\", \"\")",
+                "legendFormat": "",
+                "refId": "REQUESTS_aks",
+                "instant": true,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus-cnp"
+                }
+              },
+              {
+                "expr": "label_replace(\nlabel_replace(\nsum by (label_app_kubernetes_io_name) (\n  kube_pod_container_resource_requests{resource=\"cpu\", namespace=~\"$env\"}\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{namespace=~\"$env\"}\n)\n, \"cluster\", \"k3s\", \"\", \"\")\n, \"metric\", \"REQUESTS\", \"\", \"\")",
+                "legendFormat": "",
+                "refId": "REQUESTS_k3s",
+                "instant": true,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus-cnp-k3s"
+                }
+              },
+              {
+                "expr": "label_replace(\nlabel_replace(\nsum by (label_app_kubernetes_io_name) (\n  kube_pod_container_resource_requests{resource=\"cpu\", namespace=~\"$env\"}\n  * on(pod, namespace) group_left(label_app_kubernetes_io_name) kube_pod_labels{namespace=~\"$env\"}\n)\n, \"cluster\", \"GKE\", \"\", \"\")\n, \"metric\", \"REQUESTS\", \"\", \"\")",
+                "legendFormat": "",
+                "refId": "REQUESTS_gke",
+                "instant": true,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus-cnp-gke"
+                }
               }
-            ]
+            ],
+            "datasource": {
+              "type": "datasource",
+              "uid": "-- Mixed --"
+            }
           }
         ]
       }

@@ -105,7 +105,7 @@ export function AIAssistantPanel() {
     <div className="flex flex-col gap-5">
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-medium text-foreground">Assistant IA</h2>
+          <h2 className="text-sm font-medium text-foreground">Configuration</h2>
           {aiSettings && <Badge variant="muted">source&nbsp;: {aiSettings.source}</Badge>}
         </div>
         <div className="flex flex-col gap-4">

@@ -128,7 +128,7 @@ Le dashboard a d'abord été créé sans UID explicite, ce qui a fait que Grafan
 
 ## Dashboard FinOps Overview (`cnp-finops-overview`)
 
-Vue FinOps globale non paramétrique (pas de `$group_id`), scope cluster AKS uniquement — le cluster Oracle k3s n'est pas encore instrumenté (cf ADR-0020, 4K-90). Fichier versionné : `infra/grafana/cnp-finops-overview.json`, UID `cnp-finops-overview`.
+Vue FinOps globale non paramétrique (pas de `$group_id`), sur les trois clusters (voir « Multi-cluster » ci-dessous). Fichier versionné : `infra/grafana/cnp-finops-overview.json`, UID `cnp-finops-overview`.
 
 Comme `dashboard.json`, ce fichier contient déjà l'enveloppe complète attendue par `/api/dashboards/import`. Le pousser directement :
 
@@ -146,6 +146,36 @@ curl -s https://grafana.cloud-native-plat4k.me/api/dashboards/uid/cnp-finops-ove
   -u admin:$(vault kv get -field=GRAFANA_ADMIN_PASSWORD secret/cnp/platform) \
   | jq '{dashboard: .dashboard, folderId: 0, overwrite: true}' > infra/grafana/cnp-finops-overview.json
 ```
+
+## Multi-cluster (AKS, k3s, GKE)
+
+Les deux dashboards (`cnp-group-overview`, `cnp-finops-overview`) interrogent les trois
+clusters dans chaque panel : datasource `-- Mixed --`, et chaque requête existe en trois
+exemplaires (refId suffixé `_aks`, `_k3s`, `_gke`) sur les datasources provisionnées
+(`infra/grafana/provisioning/datasources/cnp.yaml`) :
+
+| Cluster | Prometheus | Loki |
+|---|---|---|
+| AKS | `prometheus-cnp` (par défaut) | `loki-cnp` |
+| cnp-k3s | `prometheus-cnp-k3s` | `loki-cnp-k3s` |
+| cnp-gke | `prometheus-cnp-gke` | `loki-cnp-gke` |
+
+Un cluster éteint (AKS/GKE le soir) ne fait échouer que sa requête : le panel affiche les
+autres et un triangle d'erreur. `GF_DATAPROXY_DIALTIMEOUT=3` (docker-compose) limite l'attente
+à 3 s par requête vers un cluster injoignable.
+
+Selon le type de panel :
+
+- **Stat** : `joinByField` (Time) puis `calculateField` réduction par ligne `sum` → le total des clusters.
+- **Timeseries, PieChart, BarGauge, Gauge** : une série par cluster, cluster en fin de légende (`{{label_app_kubernetes_io_name}} · k3s`).
+  La tendance de coût FinOps est empilée : la hauteur est le total.
+- **Table, BarChart** : chaque requête ajoute `cluster` et `metric` (= refId d'origine) par `label_replace`,
+  puis `labelsToFields` avec `valueLabel: metric` et `merge` → une ligne par (cluster, app|équipe),
+  une colonne par métrique. Grafana 13 nomme la valeur d'après les labels de la série : sans
+  `valueLabel`, `merge` ne peut pas aligner CPU / RAM / coût. Le top 5 FinOps est re-trié puis
+  limité après fusion (`sortBy` + `limit`).
+
+Pour ajouter une requête à un panel, l'ajouter pour les trois datasources avec le même schéma.
 
 ## Ajouter un panel
 
@@ -169,7 +199,7 @@ curl -s https://grafana.cloud-native-plat4k.me/api/dashboards/uid/cnp-finops-ove
 | 22 | Timeseries | RAM par app |
 | 31 | BarGauge | Restarts par pod |
 | 32 | Gauge | Pod readiness |
-| 41 | Logs | Logs (Loki) |
+| 41 | Logs | Logs (Loki, label de stream `cnp_io_group_id`) |
 
 ## Apps existantes sans le label `cnp.io/group-id`
 

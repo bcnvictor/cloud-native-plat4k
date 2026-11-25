@@ -151,6 +151,11 @@ services:
       - LOKI_URL=${LOKI_URL:-http://loki.monitoring.svc.cluster.local:3100}
       - K3S_PROMETHEUS_URL=${K3S_PROMETHEUS_URL:-http://10.43.200.90:9090}
       - K3S_LOKI_URL=${K3S_LOKI_URL:-http://10.43.200.100:3100}
+      - GKE_PROMETHEUS_URL=${GKE_PROMETHEUS_URL:-http://34.118.228.76:9090}
+      - GKE_LOKI_URL=${GKE_LOKI_URL:-http://34.118.236.67:3100}
+      # Un cluster éteint (AKS/GKE le soir) bloque chaque requête jusqu'au délai de connexion
+      # (10 s par défaut) : les dashboards multi-cluster en lancent un par cluster et par panel.
+      - GF_DATAPROXY_DIALTIMEOUT=3
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

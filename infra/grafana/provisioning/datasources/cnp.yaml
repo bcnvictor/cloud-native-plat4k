@@ -35,3 +35,21 @@ datasources:
     editable: false
     jsonData:
       maxLines: 1000
+
+  # cnp-gke via le Connector Tailscale (Service CIDR 34.118.224.0/20)
+  - name: Prometheus cnp-gke
+    type: prometheus
+    uid: prometheus-cnp-gke
+    url: ${GKE_PROMETHEUS_URL}
+    editable: false
+    jsonData:
+      timeInterval: 30s
+      httpMethod: POST
+
+  - name: Loki cnp-gke
+    type: loki
+    uid: loki-cnp-gke
+    url: ${GKE_LOKI_URL}
+    editable: false
+    jsonData:
+      maxLines: 1000

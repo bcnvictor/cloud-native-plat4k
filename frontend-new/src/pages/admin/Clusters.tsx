@@ -43,7 +43,7 @@ export function Clusters() {
           <h1 className="text-xl font-semibold text-foreground">Clusters</h1>
           <p className="text-sm text-muted-foreground">{clusters.length} cluster{clusters.length !== 1 ? 's' : ''}</p>
         </div>
-        <Button icon={<IconSettings size={14} />} onClick={() => navigate('/admin/settings/clusters')}>
+        <Button icon={<IconSettings size={14} />} onClick={() => navigate('/admin/clusters/connections')}>
           Manage connections
         </Button>
       </div>

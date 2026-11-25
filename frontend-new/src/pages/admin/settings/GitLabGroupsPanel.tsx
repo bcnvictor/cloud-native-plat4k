@@ -65,7 +65,7 @@ export function GitLabGroupsPanel() {
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-foreground">GitLab groups</h2>
+          <h1 className="text-xl font-semibold text-foreground">GitLab groups</h1>
           <p className="text-sm text-muted-foreground max-w-prose">
             Groups whose members are mirrored into the CNP. The service account is configured on the server
             (<span className="font-mono">GITLAB_BOT_TOKEN</span>).
