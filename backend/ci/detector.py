@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 _PYTHON_INDICATORS = {"requirements.txt", "pyproject.toml", "setup.py", "setup.cfg", "Pipfile"}
 _GO_INDICATORS = {"go.mod"}
 _NODE_INDICATORS = {"package.json"}
+# Extensions d'un code applicatif Python, Go ou Node à la racine : un repo qui en contient
+# n'est pas un simple site statique, même avec un index.html.
+_CODE_EXTENSIONS = (".py", ".go", ".js", ".mjs", ".cjs", ".ts")
 
 
 def extract_project_path(repo_url: str) -> str:
@@ -26,7 +29,8 @@ def detect_framework(client: GitLabClient, repo_url: str) -> str:
     """Inspect the repo root tree and return the detected framework name.
 
     Returns one of 'python', 'nodejs', 'go' when matching sentinel files are
-    found at the repo root, 'generic' otherwise. Falls back to 'generic' on any
+    found at the repo root, 'static' for an index.html with no Python, Go or Node
+    code at the root (served as is by nginx), 'generic' otherwise. Falls back to 'generic' on any
     GitLab API error. The returned value must match a CI framework key in
     backend.ci.templates._ALLOWED_FRAMEWORKS.
     """
@@ -40,6 +44,8 @@ def detect_framework(client: GitLabClient, repo_url: str) -> str:
             return "go"
         if filenames & _NODE_INDICATORS:
             return "nodejs"
+        if "index.html" in filenames and not any(f.endswith(_CODE_EXTENSIONS) for f in filenames):
+            return "static"
     except Exception:
         logger.warning("Framework detection failed for %s, falling back to generic", repo_url)
     return "generic"

@@ -3,7 +3,9 @@ from shared.models import sanitize_k8s_label_value
 from backend.core.config import settings
 from backend.services.security_report_service import callback_url
 
-_ALLOWED_FRAMEWORKS = {"python", "nodejs", "go", "generic"}
+_ALLOWED_FRAMEWORKS = {"python", "nodejs", "go", "static", "generic"}
+# Frameworks sans module CI de langage (frameworks/<name>.yml) : socle commun seulement.
+_NO_FRAMEWORK_MODULE = {"generic", "static"}
 
 # Maps template/framework names to their CI framework key.
 # Scaffolded apps store the template name as their framework (see app_service),
@@ -13,6 +15,7 @@ _FRAMEWORK_ALIASES = {
     "python-flask": "python",
     "react-vite": "nodejs",
     "node-express": "nodejs",
+    "static-site": "static",
 }
 
 
@@ -68,7 +71,7 @@ def generate_gitlab_ci(app_slug: str, app_id: int, framework: str, owner: str = 
         "    ref: main\n",
         "    file: '/security/cnp-report.yml'\n",
     ]
-    if framework != "generic":
+    if framework not in _NO_FRAMEWORK_MODULE:
         lines += [
             f"  - project: '{templates_project}'\n",
             "    ref: main\n",

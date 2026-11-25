@@ -56,3 +56,27 @@ def test_detect_framework_falls_back_on_error():
     client = MagicMock()
     client.list_tree.side_effect = Exception("GitLab API error")
     assert detect_framework(client, "https://gitlab.com/ns/repo") == "generic"
+
+
+@pytest.mark.parametrize("tree", [
+    ["index.html"],
+    ["index.html", "css", "slides", "README.md"],
+    ["index.html", "assets", "favicon.ico"],
+])
+def test_detect_framework_static_site(tree):
+    client = _mock_client([{"name": n} for n in tree])
+    assert detect_framework(client, "https://gitlab.com/ns/slides") == "static"
+
+
+@pytest.mark.parametrize("tree,expected", [
+    (["index.html", "requirements.txt"], "python"),
+    (["index.html", "package.json"], "nodejs"),
+    (["index.html", "go.mod"], "go"),
+    (["index.html", "server.py"], "generic"),   # code Python sans fichier de dépendances
+    (["index.html", "main.go"], "generic"),
+    (["index.html", "server.js"], "generic"),
+    (["README.md"], "generic"),
+])
+def test_index_html_with_code_is_not_static(tree, expected):
+    client = _mock_client([{"name": n} for n in tree])
+    assert detect_framework(client, "https://gitlab.com/ns/repo") == expected
