@@ -319,7 +319,6 @@ export interface Step1Data {
 export interface ServiceConfig {
   database: { enabled: boolean; dbName: string; pgSize: '1Gi' | '5Gi' | '20Gi' };
   auth: { enabled: boolean };
-  cache: { enabled: boolean };
 }
 
 /** Backing services requested at scaffold/onboard time (shared/models.py ScaffoldingParams.services). */

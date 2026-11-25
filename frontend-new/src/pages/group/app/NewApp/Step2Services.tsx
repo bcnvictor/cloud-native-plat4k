@@ -1,7 +1,6 @@
 import {
   IconDatabase,
   IconLock,
-  IconBolt,
   IconCircleCheckFilled,
 } from '@tabler/icons-react';
 import { ServiceConfig } from '@/types';
@@ -17,11 +16,11 @@ interface Props {
 
 // `badge`: why a service can't be picked in the wizard (null = selectable).
 const SERVICES: {
-  key: 'database' | 'auth' | 'cache';
+  key: 'database' | 'auth';
   icon: JSX.Element;
   label: string;
   desc: string;
-  badge: 'CLI/API' | 'Soon' | null;
+  badge: 'CLI/API' | null;
 }[] = [
   {
     key: 'database',
@@ -38,13 +37,6 @@ const SERVICES: {
     desc: 'Keycloak — dedicated realm per env, delegated admin console',
     badge: null,
   },
-  {
-    key: 'cache',
-    icon: <IconBolt size={18} />,
-    label: 'Cache',
-    desc: 'Redis — memory cache',
-    badge: 'Soon',
-  },
 ];
 
 export function Step2Services({ data, onChange, onNext, onBack }: Props) {
@@ -56,12 +48,7 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
 
       {SERVICES.map((svc) => {
         const unavailable = svc.badge !== null;
-        const enabled =
-          svc.key === 'database'
-            ? data.database.enabled
-            : svc.key === 'auth'
-            ? data.auth.enabled
-            : data.cache.enabled;
+        const enabled = svc.key === 'database' ? data.database.enabled : data.auth.enabled;
 
         return (
           <div
@@ -86,10 +73,8 @@ export function Step2Services({ data, onChange, onNext, onBack }: Props) {
                 if (unavailable) return;
                 if (svc.key === 'database') {
                   onChange({ database: { ...data.database, enabled: !data.database.enabled } });
-                } else if (svc.key === 'auth') {
-                  onChange({ auth: { enabled: !data.auth.enabled } });
                 } else {
-                  onChange({ cache: { enabled: !data.cache.enabled } });
+                  onChange({ auth: { enabled: !data.auth.enabled } });
                 }
               }}
             >

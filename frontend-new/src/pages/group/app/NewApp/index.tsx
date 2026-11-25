@@ -46,7 +46,6 @@ export function NewApp() {
   const [step2, setStep2] = useState<ServiceConfig>({
     database: { enabled: false, dbName: '', pgSize: '1Gi' },
     auth: { enabled: false },
-    cache: { enabled: false },
   });
   const [step3, setStep3] = useState<CiDeployConfig>({
     trigger: 'on_commit',

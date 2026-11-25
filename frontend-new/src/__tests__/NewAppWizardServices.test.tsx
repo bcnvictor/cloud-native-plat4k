@@ -9,7 +9,6 @@ afterEach(cleanup);
 const services = (database: boolean): ServiceConfig => ({
   database: { enabled: database, dbName: 'app_db', pgSize: '5Gi' },
   auth: { enabled: true },
-  cache: { enabled: false },
 });
 
 describe('Step2Services', () => {
@@ -24,15 +23,14 @@ describe('Step2Services', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('badges the database "CLI/API", not "Soon", and the cache "Soon"', () => {
+  it('badges the database "CLI/API" and offers no unavailable "Soon" service', () => {
     render(<Step2Services data={services(false)} onChange={() => {}} onNext={() => {}} onBack={() => {}} />);
 
     const database = screen.getByRole('button', { name: /Database/ });
     expect(within(database).getByText('CLI/API')).toBeTruthy();
     expect(within(database).queryByText('Soon')).toBeNull();
-    const cache = screen.getByRole('button', { name: /Cache/ });
-    expect(within(cache).getByText('Soon')).toBeTruthy();
-    expect(cache.hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByText('Soon')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Cache/ })).toBeNull();
   });
 
   it('keeps authentication selectable', () => {

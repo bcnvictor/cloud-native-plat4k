@@ -5,7 +5,6 @@ import type { ServiceConfig } from '@/types';
 const step2 = (database: boolean, auth: boolean): ServiceConfig => ({
   database: { enabled: database, dbName: 'app_db', pgSize: '5Gi' },
   auth: { enabled: auth },
-  cache: { enabled: false },
 });
 
 describe('requestedServices', () => {

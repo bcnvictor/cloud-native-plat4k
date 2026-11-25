@@ -41,7 +41,6 @@ function RecapSection({
 export function Step4Recap({ identity, services, ciDeploy, onSubmit, onBack, isPending, error }: Props) {
   const enabledServices = [
     services.auth.enabled && 'Authentication (Keycloak)',
-    services.cache.enabled && 'Cache (Redis)',
   ].filter(Boolean) as string[];
 
   return (
