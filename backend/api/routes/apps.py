@@ -1,7 +1,6 @@
 import hmac
 from typing import List
 
-import httpx
 import yaml
 from backend.alerting.constants import EventType
 from backend.alerting.emitter import emit_event
@@ -32,6 +31,7 @@ from backend.gitlab.client import GitLabClient
 from backend.k8s.client import get_k8s_client_for_cluster
 from backend.k8s.manifests import sanitize_k8s_name
 from backend.services.app_service import AppService
+from backend.services.app_status_service import error_message, refresh_app_status
 from backend.services.audit_service import AuditService
 from backend.services.gitops_versions import history_image_tag
 from backend.services.gitops_versions import values_path as gitops_values_path
@@ -121,52 +121,14 @@ async def get_app_runtime_status(
     except Exception as e:
         payload["k8s_error"] = str(e)
 
-    # ArgoCD sync / health / image / last sync (dev + prod)
+    # ArgoCD sync / health / image / last sync (dev + prod) ; persiste last_known_status
     try:
-        argocd = get_argocd_client_for_cluster(cluster)
-
-        async def _fetch_env(name: str) -> dict:
-            try:
-                data = await argocd.get_app_status(name)
-                s = data.get("status", {})
-                images = s.get("summary", {}).get("images", [])
-                return {
-                    "sync_status": s.get("sync", {}).get("status"),
-                    "health_status": s.get("health", {}).get("status"),
-                    "image": images[0] if images else None,
-                    "last_sync_at": s.get("operationState", {}).get("finishedAt"),
-                }
-            except Exception as exc:
-                return {"error": str(exc)}
-
-        dev_data = await _fetch_env(f"{app.slug}-dev")
-        prod_data = await _fetch_env(f"{app.slug}-prod")
+        dev_data, prod_data = await refresh_app_status(db, app, cluster)
         payload["argocd_dev"] = dev_data
         payload["argocd_prod"] = prod_data
-
-        # Persist last_known_status: prefer prod health, fallback to dev
-        from shared.models import ApplicationStatus
-        ref_env = "prod" if prod_data.get("health_status") else "dev"
-        ref = prod_data if ref_env == "prod" else dev_data
-        health = ref.get("health_status")
-        sync = ref.get("sync_status")
-        old_status = app.last_known_status
-        # `env` : l'environnement dont la santé a décidé du statut (le CNP Doctor filtre dessus).
-        if health in ("Degraded", "Missing"):
-            app.last_known_status = ApplicationStatus.DEGRADED
-            if old_status != ApplicationStatus.DEGRADED:
-                await emit_event(db, EventType.APP_HEALTH_DEGRADED, "critical", "argocd",
-                                 app_id=app.id, payload={"name": app.name, "health": health, "env": ref_env})
-        elif sync == "Synced" and health == "Healthy":
-            app.last_known_status = ApplicationStatus.DEPLOYED
-            if old_status == ApplicationStatus.DEGRADED:
-                await emit_event(db, EventType.APP_HEALTH_RECOVERED, "info", "argocd",
-                                 app_id=app.id, payload={"name": app.name, "env": ref_env})
         await db.commit()
-    except (HTTPException, httpx.HTTPError) as e:
-        payload["argocd_error"] = str(e)
-    except Exception as e:
-        payload["argocd_error"] = str(e)
+    except Exception as e:  # HTTPException (ArgoCD non configuré, token absent), erreurs réseau
+        payload["argocd_error"] = error_message(e)
 
     return AppRuntimeStatus(**payload)
 

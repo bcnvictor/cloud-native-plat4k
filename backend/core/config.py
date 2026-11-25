@@ -112,6 +112,7 @@ class Settings(BaseSettings):
     EPHEMERAL_TLS_CLUSTER_ISSUER: str = ""
 
     CLUSTER_HEALTH_INTERVAL: int = 300      # secondes entre deux sondes
+    APP_STATUS_REFRESH_INTERVAL_MINUTES: int = 5  # statut ArgoCD des apps recalculé en tâche de fond
     CLUSTER_HEALTH_FAILURE_THRESHOLD: int = 2  # sondes échouées consécutives avant de marquer OFFLINE (grace period)
     KUBECONFIG_DIR: Optional[str] = None    # répertoire de kubeconfigs, optionnel
 
