@@ -19,7 +19,14 @@ import { NewApp } from '@/pages/group/app/NewApp';
 import { Clusters } from '@/pages/admin/Clusters';
 import { FinOps } from '@/pages/admin/FinOps';
 import { AdminApps } from '@/pages/admin/AdminApps';
-import { AdminSettings } from '@/pages/admin/AdminSettings';
+import {
+  AdminSettings,
+  AdminAISettings,
+  AdminClusterConnections,
+  AdminGitlabGroups,
+  AdminSettingsLegacyRedirect,
+  AdminSchedules,
+} from '@/pages/admin/AdminSettings';
 import { AdminUsers } from '@/pages/admin/AdminUsers';
 import { AdminAudit } from '@/pages/admin/AdminAudit';
 import { AdminDependencies } from '@/pages/admin/AdminDependencies';
@@ -66,13 +73,17 @@ export const router = createBrowserRouter([
         element: <RootLayout />,
         children: [
           { path: '/admin/clusters', element: <Clusters /> },
+          { path: '/admin/clusters/connections', element: <AdminClusterConnections /> },
           { path: '/admin/finops', element: <FinOps /> },
           { path: '/admin/apps', element: <AdminApps /> },
           { path: '/admin/users', element: <AdminUsers /> },
+          { path: '/admin/users/gitlab-groups', element: <AdminGitlabGroups /> },
           { path: '/admin/dependencies', element: <AdminDependencies /> },
           { path: '/admin/audit', element: <AdminAudit /> },
           { path: '/admin/settings', element: <AdminSettings /> },
-          { path: '/admin/settings/:panel', element: <AdminSettings /> },
+          { path: '/admin/settings/ai', element: <AdminAISettings /> },
+          { path: '/admin/settings/schedules', element: <AdminSchedules /> },
+          { path: '/admin/settings/:panel', element: <AdminSettingsLegacyRedirect /> },
         ],
       },
     ],

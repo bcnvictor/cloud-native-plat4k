@@ -42,6 +42,25 @@ class FinopsGrafanaUrls(BaseModel):
     dashboard_url: Optional[str] = None
 
 
+class ScaleToZeroSchedule(BaseModel):
+    enabled: bool
+    interval_minutes: int
+    scale_down_hour: int
+    scale_up_hour: int
+    timezone: str
+    weekdays_only: bool
+
+
+class GitLabSyncSchedule(BaseModel):
+    enabled: bool
+    interval_minutes: int
+
+
+class PlatformSchedules(BaseModel):
+    scale_to_zero: ScaleToZeroSchedule
+    gitlab_sync: GitLabSyncSchedule
+
+
 class TeamCostEntry(BaseModel):
     group_id: str
     group_name: str
@@ -133,6 +152,27 @@ async def deregister_gitlab_group(
     await AuditService(db).log_action(current_user.id, "admin.deregister_gitlab_group",
                                       extra={"group_id": gitlab_group_id, "name": group_name})
     await db.commit()
+
+
+@router.get("/platform-schedules", response_model=PlatformSchedules)
+async def get_platform_schedules(_: User = Depends(require_admin)) -> PlatformSchedules:
+    """Planification des workers plateforme, en lecture seule : elle vient des variables
+    d'environnement du backend et n'est lue qu'au démarrage des workers."""
+    return PlatformSchedules(
+        scale_to_zero=ScaleToZeroSchedule(
+            enabled=settings.SCALE_SCHEDULE_ENABLED,
+            interval_minutes=settings.SCALE_SCHEDULE_INTERVAL_MINUTES,
+            scale_down_hour=settings.DEV_SCALE_DOWN_HOUR,
+            scale_up_hour=settings.DEV_SCALE_UP_HOUR,
+            timezone=settings.DEV_SCALE_TIMEZONE,
+            weekdays_only=settings.DEV_SCALE_WEEKDAYS_ONLY,
+        ),
+        # Le worker tourne toujours, mais ne synchronise rien sans token (_build_gitlab_client).
+        gitlab_sync=GitLabSyncSchedule(
+            enabled=bool(settings.GITLAB_BOT_TOKEN or settings.GITLAB_TOKEN),
+            interval_minutes=settings.GITLAB_SYNC_INTERVAL_MINUTES,
+        ),
+    )
 
 
 @router.get("/finops/grafana-urls", response_model=FinopsGrafanaUrls)

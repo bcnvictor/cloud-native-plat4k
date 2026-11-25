@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useState } from 'react';
 import type { ReactNode } from 'react';
 
-interface BreadcrumbItem {
+export interface BreadcrumbItem {
   label: string;
   to?: string;
 }

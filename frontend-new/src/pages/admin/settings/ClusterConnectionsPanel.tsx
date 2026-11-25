@@ -44,7 +44,7 @@ export function ClusterConnectionsPanel() {
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-foreground">Cluster connections</h2>
+          <h1 className="text-xl font-semibold text-foreground">Cluster connections</h1>
           <p className="text-sm text-muted-foreground max-w-prose">
             Kubernetes clusters targeted by deployments. Kubeconfigs and ArgoCD tokens are stored in Vault and never displayed again.
           </p>
