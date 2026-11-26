@@ -392,6 +392,9 @@ async def test_route_contract_and_access(client: AsyncClient, admin_token: str, 
     assert body["app_slug"] == "demo-shop" and body["group_slug"] == "team-a"
     assert body["changes"]["files"] == [{"path": "app/config.py", "change": "modified"}]
     assert {"id", "source", "label", "cited"} <= set(body["evidence"][0])
+    chain = {step["step"]: step for step in body["chain"]}
+    assert list(chain) == ["pipeline", "argocd", "cluster", "pods", "logs"]
+    assert chain["pods"]["status"] == "failing" and chain["pods"]["evidence_ids"]
     assert viewer.status_code == 403
     assert bad_env.status_code == 422
     assert missing.status_code == 404

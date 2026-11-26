@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -65,11 +65,13 @@ function usePageUrl(diagnosis: DoctorDiagnosis): { base: string | null; url: str
   return { base, url };
 }
 
+/** La justification n'accompagne que l'action principale : les autres restent des boutons. */
+const ShowDescription = createContext(true);
+
 function Description({ action }: { action: DoctorAction }) {
-  return action.description ? (
-    // Pas de text-muted-foreground : sur le fond teinté de l'action principale, il passe
-    // sous 4,5:1 en thème clair.
-    <p className="text-xs text-foreground/65">{action.description}</p>
+  const show = useContext(ShowDescription);
+  return show && action.description ? (
+    <p className="text-xs text-muted-foreground">{action.description}</p>
   ) : null;
 }
 
@@ -408,21 +410,23 @@ function ActionBody(props: ItemProps) {
   }
 }
 
-/** Actions proposées par la plateforme, l'action principale en premier. */
+/**
+ * Actions proposées par la plateforme : l'action principale seule sur sa ligne, avec sa
+ * justification, puis les autres côte à côte.
+ */
 export function DoctorActions({ diagnosis, appId }: { diagnosis: DoctorDiagnosis; appId: number }) {
   const actions = [...diagnosis.actions].sort((a, b) => Number(b.primary) - Number(a.primary));
   if (actions.length === 0) return null;
   return (
-    <ul className="flex flex-col gap-2">
+    <ul className="flex flex-wrap items-start gap-2">
       {actions.map((action) => (
         <li
           key={action.id}
-          className={cn(
-            'flex flex-col gap-1.5 rounded-md border p-2.5',
-            action.primary ? 'border-primary-border bg-primary-subtle' : 'border-border bg-background'
-          )}
+          className={cn('flex min-w-0 max-w-full flex-col gap-1.5', action.primary && 'basis-full')}
         >
-          <ActionBody action={action} diagnosis={diagnosis} appId={appId} />
+          <ShowDescription.Provider value={action.primary}>
+            <ActionBody action={action} diagnosis={diagnosis} appId={appId} />
+          </ShowDescription.Provider>
         </li>
       ))}
     </ul>

@@ -15,6 +15,7 @@ from shared.models import (
 from backend.db.models import Application, ClusterConnection
 from backend.services.doctor_rules import (
     build_actions,
+    build_chain,
     build_ledger,
     build_timeline,
     decide_verdict,
@@ -30,6 +31,7 @@ from backend.services.doctor_signals import (
     K8sState,
     LogLine,
     LogsState,
+    MissingSignal,
     PipelineState,
     PlatformEvent,
     PodState,
@@ -411,3 +413,88 @@ def test_a_deployment_on_another_day_reads_naturally():
     labels = [e.label for e in build_ledger(s, DoctorVerdict.UNSTABLE, build_timeline(s, False), None)]
     deploy = next(label for label in labels if label.startswith("Dernier déploiement"))
     assert " à le " not in deploy and " le 13/11 à " in deploy
+
+
+# ── Chaîne de santé ───────────────────────────────────────────────────────────
+
+
+def _chain(s: Signals):
+    verdict, timeline = _verdict(s)
+    ledger = build_ledger(s, verdict, timeline, None)
+    return {step.step: step for step in build_chain(s, ledger)}, {e.id: e for e in ledger}
+
+
+def test_chain_lists_the_five_steps_in_reading_order():
+    s = _healthy()
+    verdict, timeline = _verdict(s)
+    steps = build_chain(s, build_ledger(s, verdict, timeline, None))
+    assert [step.step for step in steps] == ["pipeline", "argocd", "cluster", "pods", "logs"]
+
+
+def test_chain_of_a_healthy_app_is_all_ok():
+    chain, _ = _chain(_healthy())
+    assert {k: v.status for k, v in chain.items()} == dict.fromkeys(chain, "ok")
+    assert chain["pods"].label == "2/2 prêts"
+    assert chain["pipeline"].label == "Réussi"
+
+
+def test_chain_of_a_regression_points_at_the_pods_and_their_logs():
+    s = _broken(pipeline=PipelineState(available=True, id=483, status="success", ref="main", sha="f4e5d6c7"))
+    s.argo.health = "Progressing"
+    chain, ledger = _chain(s)
+
+    assert (chain["pods"].status, chain["pods"].label) == ("failing", "Crash en boucle")
+    assert (chain["logs"].status, chain["logs"].label) == ("failing", "Erreurs")
+    assert (chain["argocd"].status, chain["argocd"].label) == ("warning", "En cours")
+    assert chain["cluster"].status == "ok" and chain["pipeline"].status == "ok"
+    assert chain["pods"].evidence_ids
+    assert {ledger[i].source for i in chain["pods"].evidence_ids} == {DoctorEvidenceSource.KUBERNETES}
+    assert any("KeyError" in ledger[i].label for i in chain["logs"].evidence_ids)
+
+
+def test_chain_when_the_cluster_is_offline_and_the_env_stopped():
+    s = _broken(
+        argo=ArgoState(), k8s=K8sState(), logs=LogsState(),
+        stopped=StopState(reason="manual", stopped_at=NOW - timedelta(days=100)),
+        missing=[
+            MissingSignal(DoctorEvidenceSource.ARGOCD, "ArgoCD indisponible (ConnectTimeout)"),
+            MissingSignal(DoctorEvidenceSource.KUBERNETES, "Kubernetes indisponible (MaxRetryError)"),
+            MissingSignal(DoctorEvidenceSource.LOGS, "Logs indisponibles (ConnectTimeout)"),
+            MissingSignal(DoctorEvidenceSource.CI, "L'application n'est pas rattachée à un projet GitLab"),
+        ],
+    )
+    s.cluster.status = ClusterStatus.OFFLINE
+    s.cluster.last_seen_at = NOW - timedelta(hours=12)
+    chain, ledger = _chain(s)
+
+    assert (chain["cluster"].status, chain["cluster"].label) == ("failing", "Hors ligne")
+    assert any("hors ligne" in ledger[i].label for i in chain["cluster"].evidence_ids)
+    assert (chain["pods"].status, chain["pods"].label) == ("stopped", "Arrêtés")
+    assert any("arrêté" in ledger[i].label for i in chain["pods"].evidence_ids)
+    for step in ("argocd", "logs", "pipeline"):
+        assert (chain[step].status, chain[step].label) == ("unknown", "Inconnu")
+    assert chain["argocd"].detail == "ArgoCD indisponible (ConnectTimeout)"
+    assert chain["pipeline"].detail == "L'application n'est pas rattachée à un projet GitLab"
+
+
+def test_chain_without_a_target_cluster():
+    s = _healthy()
+    s.cluster = None
+    chain, _ = _chain(s)
+    assert (chain["cluster"].status, chain["cluster"].label) == ("failing", "Aucun cluster")
+
+
+def test_errors_in_the_logs_of_a_running_app_are_a_warning():
+    s = _healthy(logs=LogsState(available=True, total=50, errors=[
+        LogLine(at=NOW - timedelta(minutes=2), level="ERROR", msg="Timeout calling the payment API"),
+    ]))
+    chain, _ = _chain(s)
+    assert (chain["logs"].status, chain["logs"].label) == ("warning", "Erreurs")
+    assert chain["pods"].status == "ok"
+
+
+def test_failed_pipeline_breaks_the_first_step():
+    s = _healthy(pipeline=PipelineState(available=True, id=490, status="failed", ref="main", sha="f4e5d6c7"))
+    chain, _ = _chain(s)
+    assert (chain["pipeline"].status, chain["pipeline"].label) == ("failing", "En échec")
+

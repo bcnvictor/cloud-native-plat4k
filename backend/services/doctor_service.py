@@ -46,9 +46,11 @@ from backend.services.doctor_rules import (
     VERDICT_LABELS,
     Action,
     Cause,
+    ChainStep,
     Evidence,
     Timeline,
     build_actions,
+    build_chain,
     build_ledger,
     build_timeline,
     decide_verdict,
@@ -150,6 +152,8 @@ class DoctorResult:
     missing_signals: list[MissingSignal] = field(default_factory=list)
     raw_text: Optional[str] = None
     ai: AIInfo = field(default_factory=AIInfo)
+    # Chaîne de santé du pipeline aux logs, calculée par la plateforme.
+    chain: list[ChainStep] = field(default_factory=list)
 
 
 @dataclass
@@ -336,6 +340,7 @@ class DoctorService:
             # La chronologie n'est renvoyée que lorsqu'elle sert à lire une panne.
             timeline=timeline if verdict in (DoctorVerdict.REGRESSION, DoctorVerdict.FAILING) else None,
             changes=changes, actions=actions, missing_signals=list(signals.missing),
+            chain=build_chain(signals, ledger),
         )
 
         if verdict in RULES_ONLY_VERDICTS:
