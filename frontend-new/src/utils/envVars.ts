@@ -17,9 +17,11 @@ export interface EnvVarPermissions {
 // Mirrors _require_env_tier in backend/api/routes/env_vars.py (ADR-0025 §3):
 // dev is readable by every tier and writable from Developer up; prod is
 // Maintainer/Owner only, for reads (even key names) as well as writes.
+// A non-member (tier null) has no access at all (ADR-0017 §7).
 export function envVarPermissions(access: MyAccessResponse | undefined, env: EnvName): EnvVarPermissions {
   if (!access) return { canRead: false, canWrite: false };
   if (access.is_admin) return { canRead: true, canWrite: true };
+  if (access.tier === null) return { canRead: false, canWrite: false };
   const maintainerUp = access.tier === 'maintainer' || access.tier === 'owner';
   if (env === 'prod') return { canRead: maintainerUp, canWrite: maintainerUp };
   return { canRead: true, canWrite: access.tier !== 'viewer' };

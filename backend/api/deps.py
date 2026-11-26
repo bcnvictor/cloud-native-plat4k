@@ -19,7 +19,22 @@ from backend.services.tier_service import TIER_ORDER as _TIER_ORDER  # noqa: F40
 from backend.services.tier_service import (
     access_level_to_tier as _access_level_to_tier,  # noqa: F401
 )
-from backend.services.tier_service import get_effective_tier
+from backend.services.tier_service import get_effective_tier, tier_at_least
+
+
+async def log_admin_bypass(db: AsyncSession, current_user: User, app_id: int, min_tier: CnpTier) -> None:
+    """Audit one use of the admin override of the app tiers (ADR-0017 §4).
+
+    Committed right away: get_db never commits, so on a read-only route the row would
+    otherwise be dropped with the session. Called from tier checks, which run before the
+    handler, so nothing else is pending in the session yet.
+    """
+    await AuditService(db).log_action(
+        user_id=current_user.id,
+        action=f"ADMIN_BYPASS_TIER:{min_tier.value}",
+        app_id=app_id,
+    )
+    await db.commit()
 
 
 def require_tier(min_tier: CnpTier, app_id_param: str = "app_id"):
@@ -31,11 +46,7 @@ def require_tier(min_tier: CnpTier, app_id_param: str = "app_id"):
         if current_user.is_admin:
             raw_id = request.path_params.get(app_id_param)
             if raw_id:
-                await AuditService(db).log_action(
-                    user_id=current_user.id,
-                    action=f"ADMIN_BYPASS_TIER:{min_tier.value}",
-                    app_id=int(raw_id),
-                )
+                await log_admin_bypass(db, current_user, int(raw_id), min_tier)
             return current_user
 
         raw_id = request.path_params.get(app_id_param)
@@ -43,7 +54,7 @@ def require_tier(min_tier: CnpTier, app_id_param: str = "app_id"):
             raise ForbiddenException()
 
         tier = await get_effective_tier(current_user.id, int(raw_id), db)
-        if _TIER_ORDER.index(tier) < _TIER_ORDER.index(min_tier):
+        if not tier_at_least(tier, min_tier):
             raise ForbiddenException()
         return current_user
 

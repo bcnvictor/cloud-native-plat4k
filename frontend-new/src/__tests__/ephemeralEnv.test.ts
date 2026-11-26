@@ -21,6 +21,7 @@ describe('canManageEphemeral', () => {
     expect(canManageEphemeral({ tier: 'developer', is_admin: false })).toBe(true);
     expect(canManageEphemeral({ tier: 'owner', is_admin: false })).toBe(true);
     expect(canManageEphemeral(undefined)).toBe(false);
+    expect(canManageEphemeral({ tier: null, is_admin: false })).toBe(false);
   });
 });
 

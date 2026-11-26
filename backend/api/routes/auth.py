@@ -9,6 +9,7 @@ from backend.api.deps import get_current_user
 from backend.api.schemas.auth import LoginPayload, RefreshTokenPayload, Token
 from backend.core.config import settings
 from backend.core.exceptions import UnauthorizedException
+from backend.core.rate_limit import LOGIN_RATE_LIMIT, limiter
 from backend.db.models import APIKey, User
 from backend.db.session import AsyncSessionLocal, get_db
 from backend.services.auth_service import AuthService
@@ -36,6 +37,7 @@ async def _trigger_user_sync(user_id: int) -> None:
 router = APIRouter()
 
 @router.post("/login", response_model=Token)
+@limiter.limit(LOGIN_RATE_LIMIT)
 async def login(
     response: Response,
     request: Request,

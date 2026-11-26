@@ -23,7 +23,7 @@ L'autorisation repose sur **deux axes** :
 | Moyen d'authentification | Usage | Protection |
 |---|---|---|
 | **SSO GitLab (OAuth)** | Connexion principale au portail | Restreint aux membres de `GITLAB_OAUTH_ALLOWED_GROUP` ; paramètre `state` en cookie `HttpOnly` contre le CSRF OAuth |
-| **Compte local (email + mot de passe)** | Comptes de service, bootstrap admin | Mot de passe en bcrypt |
+| **Compte local (email + mot de passe)** | Comptes de service, bootstrap admin | Mot de passe en bcrypt ; 10 tentatives par minute et par IP client, puis 429 |
 | **Clé API** (`X-API-Key`) | CLI `cnp`, serveur MCP, scripts | Seul le hash SHA-256 est stocké ; révocable ; `last_used_at` tracé |
 
 Après authentification, le backend émet :
@@ -83,15 +83,16 @@ log reçoit `ADMIN_BYPASS_TIER:<tier>` avec l'app et l'utilisateur.
 
 Le tier effectif est le maximum entre l'appartenance au **projet** et au **sous-groupe d'équipe**
 propriétaire (une app scaffoldée est gérable avant que ses membres de projet soient synchronisés).
-Un non-membre obtient aussi le tier Viewer (`get_effective_tier` renvoie Viewer à défaut
-d'appartenance) : la colonne Viewer ci-dessous s'applique donc à **tout utilisateur connecté**,
-membre de l'équipe ou non (voir [§6](#6-ecarts-entre-la-decision-et-le-code)).
+Un **non-membre n'a aucun tier** (`get_effective_tier` renvoie `None`, `my-access` renvoie
+`tier: null`) : il voit l'app dans le catalogue, mais toutes les routes de la matrice lui répondent
+403, y compris celles du niveau Viewer (ADR-0017 §7). Un Guest ou un Reporter GitLab est, lui,
+membre : il est Viewer.
 
 ### Matrice des droits (état du code)
 
 | Action | Viewer | Developer | Maintainer | Owner |
 |---|:-:|:-:|:-:|:-:|
-| Voir l'historique, l'état de scale, les membres, le statut Keycloak | ✓ | ✓ | ✓ | ✓ |
+| Voir l'historique, l'état de scale, les membres, le statut Keycloak, les logs | ✓ | ✓ | ✓ | ✓ |
 | Lire les **noms** de variables `dev` | ✓ | ✓ | ✓ | ✓ |
 | Poser une question à l'assistant IA de l'app | ✓ | ✓ | ✓ | ✓ |
 | Voir l'onglet Security (findings, note) et le prompt de correction | ✓ | ✓ | ✓ | ✓ |
@@ -103,11 +104,13 @@ membre de l'équipe ou non (voir [§6](#6-ecarts-entre-la-decision-et-le-code)).
 | Lancer un diagnostic CNP Doctor | | ✓ | ✓ | ✓ |
 | Lire ou écrire les variables `prod` (noms compris) | | | ✓ | ✓ |
 | Lire les credentials PostgreSQL de l'app | | | ✓ | ✓ |
-| Rollback, stop, resume, exposition publique | | | ✓ | ✓ |
+| Rollback, exposition publique | | | ✓ | ✓ |
+| Stop, resume (dev) | | | ✓ | ✓ |
+| Stop, resume (prod), recréer le realm Keycloak de prod | | | | ✓ |
 | Ajouter un membre, inviter par email | | | ✓ | ✓ |
 | Activer Keycloak, accès console du realm | | | ✓ | ✓ |
 | Réglages de l'assistant IA de l'app | | | ✓ | ✓ |
-| Supprimer l'app | | | ✓ | ✓ |
+| Supprimer l'app | | | | ✓ |
 
 Les **valeurs** des variables d'environnement ne sont renvoyées à personne, admin compris : l'API
 est en écriture seule.
@@ -124,15 +127,22 @@ est en écriture seule.
 
 ## 6. Écarts entre la décision et le code
 
-Relevés pendant l'inventaire 4K-47. Ils sont repris dans la
-[roadmap DevSecOps](../devsecops.md#5-ecarts-et-roadmap).
+### Restants
 
 | Écart | Décision | Code |
 |---|---|---|
-| Suppression d'une app | Owner uniquement (ADR-0017 §5) | `DELETE /apps/{id}` exige Maintainer |
-| Détail réservé aux membres | Logs, métriques, coût et actions réservés à l'équipe propriétaire ; le catalogue est le plancher des non-membres (ADR-0017 §7) | Un non-membre a le tier Viewer, donc accès aux routes `require_tier(VIEWER)` : historique, membres, chat de l'assistant, findings Security |
-| Logs Loki | Réservés aux membres de l'équipe (ADR-0017 §7) | `GET /monitoring/logs` exige seulement d'être connecté, `namespace` et `app` sont libres |
-| Bypass admin sur les variables d'env | Tout bypass est tracé (ADR-0017 §4) | Le contrôle de `env_vars.py` laisse passer l'admin sans écrire `ADMIN_BYPASS_TIER` |
 | Token bot | Group Access Token | PAT personnel, faute de GAT en free tier (ADR-0011, 4K-41) |
 | Kubeconfigs | Moindre privilège | `cluster-admin` sur AKS, GKE et k3s |
 | Authentification de la plateforme | MFA souhaitée | Pas de MFA côté CNP : elle dépend de la configuration GitLab de chaque utilisateur. Keycloak comme IdP de CNP est prévu en phase 2 |
+| Coût par groupe | Détail réservé à l'équipe (ADR-0017 §7) | `GET /monitoring/cost?group_id=` exige seulement d'être connecté, comme le filtre Grafana accepté par ADR-0028 |
+
+### Corrigés dans 4K-47
+
+| Écart | Avant | Après |
+|---|---|---|
+| Détail réservé aux membres (ADR-0017 §7) | Un non-membre avait le tier Viewer | Aucun tier : 403 sur toutes les routes `require_tier` et sur les variables d'env |
+| Logs Loki | Ouverts à tout utilisateur connecté | Membres de l'app ; `namespace` et `app` validés (plus d'injection LogQL) |
+| Suppression d'une app (ADR-0017 §5) | Maintainer | Owner |
+| Bypass admin (ADR-0017 §4) | Non tracé sur les variables d'env ; ailleurs, perdu sur les routes en lecture | Tracé partout et commité immédiatement |
+
+Détail et contexte : [posture DevSecOps §5](../devsecops.md#5-ecarts-et-roadmap).

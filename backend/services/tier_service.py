@@ -3,6 +3,8 @@
 Service-layer home of the tier helpers, so services can use them without importing
 backend.api.*; backend.api.deps re-exports them for the routes.
 """
+from typing import Optional
+
 from shared.models import CnpTier, MemberStatus
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,15 +24,22 @@ def access_level_to_tier(access_level: int) -> CnpTier:
     return CnpTier.VIEWER
 
 
-def tier_at_least(tier: CnpTier, min_tier: CnpTier) -> bool:
-    return TIER_ORDER.index(tier) >= TIER_ORDER.index(min_tier)
+def tier_at_least(tier: Optional[CnpTier], min_tier: CnpTier) -> bool:
+    """False for a non-member (tier None): no tier, not even Viewer."""
+    return tier is not None and TIER_ORDER.index(tier) >= TIER_ORDER.index(min_tier)
 
 
-async def get_effective_tier(user_id: int, app_id: int, db: AsyncSession) -> CnpTier:
+async def get_effective_tier(user_id: int, app_id: int, db: AsyncSession) -> Optional[CnpTier]:
+    """Best tier from the app's project and owning-group memberships.
+
+    None when the user is a member of neither (or the app does not exist): a
+    non-member only sees the catalog, never an app's detail (ADR-0017 §7), so
+    they get no tier at all, not Viewer.
+    """
     result = await db.execute(select(Application).where(Application.id == app_id))
     app = result.scalar_one_or_none()
     if not app:
-        return CnpTier.VIEWER
+        return None
 
     access_levels: list[int] = []
 
@@ -57,6 +66,6 @@ async def get_effective_tier(user_id: int, app_id: int, db: AsyncSession) -> Cnp
         access_levels.extend(result.scalars().all())
 
     if not access_levels:
-        return CnpTier.VIEWER
+        return None
 
     return access_level_to_tier(max(access_levels))

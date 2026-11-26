@@ -72,7 +72,7 @@ export function SecurityTab() {
     queryFn: () => appsApi.getMyAccess(app!.id),
     enabled: !!app?.id,
   });
-  const canFix = !!myAccess && (myAccess.is_admin || ['developer', 'maintainer', 'owner'].includes(myAccess.tier));
+  const canFix = !!myAccess && (myAccess.is_admin || (myAccess.tier !== null && ['developer', 'maintainer', 'owner'].includes(myAccess.tier)));
 
   const rows: Row[] = useMemo(() => {
     const tools = data?.report?.tools ?? {};

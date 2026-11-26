@@ -27,7 +27,7 @@ class GroupRead(BaseModel):
 
 
 class MyAccessResponse(BaseModel):
-    tier: CnpTier
+    tier: Optional[CnpTier]  # None: not a member of the app's project or team
     is_admin: bool
 
 

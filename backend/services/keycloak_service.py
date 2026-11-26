@@ -63,7 +63,7 @@ USER_OWNER_ATTRIBUTE = "cnp_user_id"
 CONSOLE_ACCESS_TIER = CnpTier.MAINTAINER
 
 
-def has_console_tier(tier: CnpTier) -> bool:
+def has_console_tier(tier: CnpTier | None) -> bool:
     return tier_at_least(tier, CONSOLE_ACCESS_TIER)
 
 

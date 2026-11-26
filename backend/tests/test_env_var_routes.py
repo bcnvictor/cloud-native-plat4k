@@ -285,7 +285,7 @@ class TestProdAccess:
     async def test_dev_write_forbidden_without_membership(
         self, client: AsyncClient, developer_token: str, cluster: ClusterConnection, db_session
     ):
-        """developer_token's user has no AppMember row on this app -> VIEWER tier -> below DEVELOPER gate for writes."""
+        """developer_token's user has no AppMember row on this app -> no tier -> no access (ADR-0017 §7)."""
         application = Application(name="otherapp", slug="otherapp", owner="o", target_cluster_id=cluster.id)
         db_session.add(application)
         await db_session.commit()
@@ -298,12 +298,12 @@ class TestProdAccess:
         )
         assert resp.status_code == 403
 
-        # But VIEWER tier is still enough to read dev keys.
+        # Not even the dev key names: a non-member is not a Viewer of the app.
         resp = await client.get(
             f"/api/v1/apps/{application.id}/env/dev",
             headers={"Authorization": f"Bearer {developer_token}"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 403
 
     async def test_admin_bypasses_tier_gate_for_prod(
         self, client: AsyncClient, admin_token: str, app_with_developer: Application

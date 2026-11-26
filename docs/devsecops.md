@@ -21,8 +21,8 @@ CNP applique la sécurité à **deux niveaux** :
    d'audit, logs centralisés dans **Loki** et champ **`ci_injected`** pour la preuve.
 
 Ce qui manque est identifié et daté : AppRole Vault (fin des tokens statiques), Keycloak comme IdP de
-la plateforme, policy-as-code à l'admission (Kyverno, 4K-80), et quelques écarts relevés dans le code
-(voir [§5](#5-ecarts-et-roadmap)).
+la plateforme, policy-as-code à l'admission (Kyverno, 4K-80). Les écarts trouvés dans le code pendant
+l'inventaire ont été corrigés dans la foulée ; ceux qui restent sont listés (voir [§5](#5-ecarts-et-roadmap)).
 
 ## 1. Le modèle DICP
 
@@ -79,10 +79,12 @@ Pipeline GitHub Actions `.github/workflows/pipeline.yml` ([ADR-0010](adr/0010-ci
 | C11 | **Lint + tests** | ruff, pytest (backend, MCP), ESLint, Vitest, build TypeScript | ○ | ● | | |
 | C12 | **Déploiement après CI verte, depuis `main` uniquement** | Le job `deploy` dépend des 3 jobs de test et ne tourne que sur un push sur `main` | ● | ● | | ○ |
 | C13 | **Secrets de déploiement dans GitHub Secrets** | `OCI_HOST`, `OCI_SSH_PRIVATE_KEY` jamais dans le repo | | | ● | |
+| C14 | **Le socle des apps appliqué à CNP** | Job `security` : gitleaks sur tout l'historique, hadolint sur les 3 Dockerfiles, trivy sur tous les lockfiles (HIGH/CRITICAL avec correctif). Le déploiement en dépend | ○ | ● | ● | |
 
-!!! warning "À dire honnêtement en soutenance"
-    Le repo CNP lui-même **n'exécute pas** hadolint, gitleaks ni trivy : ces scanners ne sont
-    appliqués qu'aux apps des équipes. C'est l'écart le plus visible, voir [§5](#5-ecarts-et-roadmap).
+Configs du job : `.gitleaks.toml` (exceptions : faux tokens des tests de redaction, placeholder du
+runbook Vault), `.hadolint.yaml` (DL3008 ignorée : épingler les versions `apt` casse le build à
+chaque mise à jour Debian). Une CVE sans correctif ne bloque pas ; une exception assumée va dans
+`.trivyignore`.
 
 ### 2.3 Gestion des secrets
 
@@ -121,10 +123,12 @@ l'audit lisible. Détail complet dans le [modèle d'accès](architecture/access-
 |---|---|---|---|---|---|---|
 | A1 | **SSO GitLab (OAuth)** restreint à un groupe | `GITLAB_OAUTH_ALLOWED_GROUP` : hors du groupe, pas de connexion | | | ● | |
 | A2 | **Sessions courtes** | Access token 15 min ; refresh 7 jours en cookie `HttpOnly`, `SameSite=Lax`, `Secure` en prod ; rôle relu en base à chaque refresh | | | ● | |
-| A3 | **Autorisation dérivée de GitLab** | Tier Viewer / Developer / Maintainer / Owner calculé à **chaque requête** depuis le miroir des membres (jamais figé dans le JWT). Matrice complète dans le [modèle d'accès](architecture/access-model.md#4-tiers-par-app) | | ● | ● | |
+| A3 | **Autorisation dérivée de GitLab** | Tier Viewer / Developer / Maintainer / Owner calculé à **chaque requête** depuis le miroir des membres (jamais figé dans le JWT). Un non-membre n'a **aucun** tier : il voit le catalogue, pas le détail d'une app. Matrice complète dans le [modèle d'accès](architecture/access-model.md#4-tiers-par-app) | | ● | ● | |
 | A4 | **Soft-revoke** | Un membre retiré de GitLab passe en `left` : accès coupé, ligne conservée pour l'audit | | | ● | ● |
-| A5 | **Break-glass tracé** | L'admin passe outre les tiers, mais chaque usage écrit `ADMIN_BYPASS_TIER:<tier>` dans l'audit log | | | | ● |
+| A5 | **Break-glass tracé** | L'admin passe outre les tiers, mais chaque usage écrit `ADMIN_BYPASS_TIER:<tier>` dans l'audit log, commité immédiatement (y compris sur les routes en lecture et les variables d'environnement) | | | | ● |
+| A5b | **Suppression réservée à l'Owner** | `DELETE /apps/{id}` exige Owner, comme la suppression d'un projet GitLab | ○ | ● | | |
 | A6 | **Clés API révocables** | Flag `revoked`, `last_used_at` mis à jour à chaque appel | | | ● | ● |
+| A6b | **Login par mot de passe limité** | 10 tentatives par minute et par IP client (`CF-Connecting-IP`, sinon `X-Forwarded-For`), puis 429. Pas de limite globale : derrière nginx, tous les utilisateurs partageraient le même compteur | ● | | ● | |
 | A7 | **Keycloak par app** (mode dormant, activé instance par instance) | Un realm par app et par env ; le compte console d'équipe a un périmètre restreint (ni `realm-admin`, ni `impersonation`) ; realm `master` bloqué publiquement | | | ● | ○ |
 
 Sources : [ADR-0009](adr/0009-role-jwt-payload.md), [ADR-0017](adr/0017-gitlab-appartenance-autorisation.md),
@@ -157,7 +161,7 @@ Sources : [ADR-0009](adr/0009-role-jwt-payload.md), [ADR-0017](adr/0017-gitlab-a
 | P1 | **Audit log applicatif** | Table `audit_logs` : user, action, app, IP, horodatage, métadonnées. Consultation et **export CSV** réservés aux admins | | | | ● |
 | P2 | **Actions sensibles tracées** | `ADMIN_BYPASS_TIER:*`, `SECURITY_AUTOFIX_MR`, `security_scan.created`, `security_scan.critical_finding_viewed`, `ai_settings.updated`, `ai_assistant.tools_used`… | | | | ● |
 | P3 | **`ci_injected`** | Champ nullable sur chaque app : `true` CI baseline en place, `false` échec, `null` non applicable. Prouve que le socle de sécurité est (ou n'est pas) appliqué | | ● | | ● |
-| P4 | **Loki** | Logs des pods centralisés par cluster, consultables dans l'UI CNP et dans Grafana ([ADR-0020](adr/0020-observabilite-centralisee.md)) | ○ | | | ● |
+| P4 | **Loki** | Logs des pods centralisés par cluster, consultables dans l'UI CNP (membres de l'équipe uniquement, filtres LogQL validés) et dans Grafana ([ADR-0020](adr/0020-observabilite-centralisee.md)) | ○ | | ● | ● |
 | P5 | **Historique Git et ArgoCD** | Tout changement de déploiement est un commit dans `cnp-gitops` ; `/api/v1/deployments` agrège l'historique ArgoCD | | ● | | ● |
 | P6 | **ADR** | Chaque décision de sécurité est écrite et datée (`docs/adr/`) | | | | ● |
 
@@ -167,7 +171,7 @@ Sources : [ADR-0009](adr/0009-role-jwt-payload.md), [ADR-0017](adr/0017-gitlab-a
 |---|---|---|---|---|
 | CI des apps (hadolint, gitleaks, trivy, injection) | ○ | ● | ● | ● |
 | Restitution des scans (Security, SBOM) | | ● | ● | ● |
-| CI de la plateforme | ● | ● | ○ | ○ |
+| CI de la plateforme (dont scanners) | ● | ● | ● | ○ |
 | Secrets (Vault, ESO, write-only) | ○ | ● | ● | |
 | Tokens machine séparés | | ● | ● | ● |
 | Identité et autorisation | | ● | ● | ● |
@@ -206,24 +210,32 @@ demande un unseal manuel.
 | **Callback CI** | `CNP_CALLBACK_TOKEN` posé à la main | Provisioning automatique de la variable CI | I | 4K-41 |
 | **Kubeconfigs `cluster-admin`** | Le backend a les droits `cluster-admin` sur chaque cluster | ServiceAccount avec un `ClusterRole` limité à ce que CNP crée | C, I | `infra/gke/create-cnp-kubeconfig.sh` |
 
-### 5.2 Écarts relevés pendant l'inventaire (non tracés jusqu'ici)
+### 5.2 Écarts restants
 
-Ils sont signalés ici pour être transformés en tickets, ce document ne les corrige pas.
+Relevés pendant l'inventaire 4K-47 et pas encore corrigés.
 
 | Écart | Constat | Risque | Pilier |
 |---|---|---|---|
-| **Rate limiting non branché** | `backend/main.py` crée un `Limiter` slowapi (`100/minute`) mais aucun middleware ni décorateur ne l'applique | Pas de limite sur `/auth/login` (force brute) ni sur l'API en général | D, C |
-| **Logs Loki sans contrôle de tier** | `GET /monitoring/logs` exige seulement d'être connecté, `namespace` et `app` sont libres | Un utilisateur peut lire les logs d'une app d'une autre équipe, contrairement à ADR-0017 §7 | C |
-| **Tier Viewer = tout utilisateur connecté** | Un non-membre reçoit le tier Viewer par défaut, donc les routes `require_tier(VIEWER)` (historique, membres, chat de l'assistant, **findings de l'onglet Security**) lui sont ouvertes | Lecture du détail d'une app d'une autre équipe, contrairement à ADR-0017 §7 | C |
-| **Suppression d'app à Maintainer** | `DELETE /apps/{id}` exige Maintainer, ADR-0017 §5 réserve la suppression à l'Owner | Action destructrice ouverte à un tier de trop | I, D |
-| **Bypass admin non tracé sur les variables d'env** | `env_vars.py` laisse passer l'admin sans écrire `ADMIN_BYPASS_TIER` | Trou dans la preuve des accès aux secrets | P |
-| **Scanners absents de la CI CNP** | hadolint, gitleaks, trivy tournent sur les apps, pas sur le repo CNP | Une image CNP vulnérable ou un secret committé passeraient | I, C |
 | **Actions GitHub épinglées par tag** | `appleboy/ssh-action@v1.2.0`, `actions/*@v4`… | Un tag déplacé exécute du code tiers avec la clé SSH de prod | I |
 | **Clé Fernet dérivée** | Sans `ENCRYPTION_KEY`, la clé est dérivée des 32 premiers octets de `SECRET_KEY` | Une rotation de `SECRET_KEY` rend les credentials illisibles | C, D |
 | **Webhooks sans secret acceptés** | Si `GITLAB_WEBHOOK_SECRET` / `ARGOCD_WEBHOOK_SECRET` est absent, seul un warning est loggué | Webhooks forgeables en cas de mauvaise configuration | I |
 | **Isolation Grafana par paramètre d'URL** | `var-group_id` est modifiable | Lecture des métriques d'un autre groupe (accepté dans ADR-0028) | C |
+| **Coût par groupe sans contrôle d'appartenance** | `GET /monitoring/cost?group_id=` exige seulement d'être connecté | Lecture du coût d'une autre équipe (même périmètre que Grafana) | C |
 
-### 5.3 Pistes au-delà du MVP
+### 5.3 Corrigés dans 4K-47
+
+| Écart corrigé | Avant | Après | Pilier |
+|---|---|---|---|
+| **Non-membres traités comme Viewer** | Un non-membre recevait le tier Viewer : historique, membres, chat de l'assistant, findings Security et noms des variables `dev` d'une autre équipe lui étaient ouverts | `get_effective_tier` renvoie `None` : un non-membre n'a accès qu'au catalogue (ADR-0017 §7) | C |
+| **Logs Loki ouverts** | Tout utilisateur connecté lisait les logs de n'importe quel namespace | Membres de l'app uniquement (`app` obligatoire hors admin) | C |
+| **Injection LogQL** | `namespace` et `app` étaient insérés tels quels dans le sélecteur : une valeur avec `"}` sortait du filtre | `namespace` doit être un nom DNS Kubernetes, `app` un slug d'app (ou un nom DNS pour un admin), sinon 422 | C, I |
+| **Suppression d'app à Maintainer** | `DELETE /apps/{id}` exigeait Maintainer | Owner (bouton désactivé dans l'UI pour les autres) | I, D |
+| **Bypass admin perdu ou absent** | Non tracé sur les variables d'env ; ailleurs, ligne d'audit seulement `flush`ée, donc perdue sur une route en lecture (la session n'est jamais commitée) | Tracé partout, commité immédiatement | P |
+| **Rate limiting non branché** | `Limiter` slowapi déclaré (`100/minute`) mais jamais appliqué | 10 logins/min par IP client ; la limite globale fictive est retirée | D, C |
+| **Scanners absents de la CI CNP** | hadolint, gitleaks, trivy uniquement sur les apps | Job `security` bloquant pour le déploiement (C14) | I, C |
+| **Dépendances vulnérables** | Premier passage de trivy : 29 CVE HIGH/CRITICAL avec correctif (`aiohttp`, `certifi`, `dnspython`, `oauthlib`, `pyasn1`, `axios`, `follow-redirects`) | Versions corrigées dans les lockfiles | I |
+
+### 5.4 Pistes au-delà du MVP
 
 - Signature des images (cosign), vérifiée à l'admission par Kyverno.
 - SBOM de l'**image déployée** (aujourd'hui : lockfiles de la branche par défaut) et veille CVE
@@ -255,5 +267,6 @@ Chaque bypass est écrit dans l'audit log (A5, P1), exportable en CSV.
 
 **« Quel est votre point le plus faible ? »**
 La disponibilité de cnp-control (VM unique, unseal manuel) et les tokens statiques de Vault. Les deux
-sont dans la roadmap (§5.1). Côté code, le rate limiting non branché et le contrôle d'accès des logs
-(§5.2).
+sont dans la roadmap (§5.1). Côté code, l'inventaire a fait apparaître de vrais écarts (non-membres vus
+comme Viewer, logs ouverts, injection LogQL, CVE dans nos dépendances) : ils sont corrigés (§5.3),
+et le job `security` empêche désormais une CVE corrigeable d'atteindre la production.

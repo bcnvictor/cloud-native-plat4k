@@ -451,7 +451,8 @@ async def update_app_ci_status(
 async def delete_app(
     app_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_tier(CnpTier.MAINTAINER)),
+    # Destructive: Owner only, like deleting the GitLab project (ADR-0017 §5)
+    current_user: User = Depends(require_tier(CnpTier.OWNER)),
 ):
     app = await AppService(db).get_app(app_id)
     app_name = app.name

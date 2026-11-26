@@ -6,9 +6,8 @@ from functools import partial
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 from backend.api.routes import (
     admin,
@@ -36,6 +35,7 @@ from backend.api.routes import (
     webhooks,
 )
 from backend.core.config import bootstrap_from_vault, settings
+from backend.core.rate_limit import limiter
 from backend.db.session import AsyncSessionLocal
 from backend.k8s.client import k8s_client
 from backend.k8s.dashboards import FINOPS_DASHBOARD_JSON
@@ -120,15 +120,6 @@ async def lifespan(app: FastAPI):
         with suppress(asyncio.CancelledError):
             await scale_task
 
-
-# Rate limiting setup
-def get_identifier(request: Request):
-    api_key = request.headers.get("X-API-Key")
-    if api_key:
-        return api_key
-    return get_remote_address(request)
-
-limiter = Limiter(key_func=get_identifier, default_limits=["100/minute"])
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

@@ -168,12 +168,30 @@ class TestAccessLevelToTier:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestGetEffectiveTier:
-    async def test_no_app_members_returns_viewer(self, db_session, regular_user, app_with_project):
+    async def test_no_app_members_returns_no_tier(self, db_session, regular_user, app_with_project):
+        """A non-member gets no tier at all, not Viewer (ADR-0017 §7)."""
         tier = await get_effective_tier(regular_user.id, app_with_project.id, db_session)
-        assert tier == CnpTier.VIEWER
+        assert tier is None
 
-    async def test_app_without_gitlab_project_returns_viewer(self, db_session, regular_user, app_without_project):
+    async def test_app_without_gitlab_project_returns_no_tier(self, db_session, regular_user, app_without_project):
         tier = await get_effective_tier(regular_user.id, app_without_project.id, db_session)
+        assert tier is None
+
+    async def test_unknown_app_returns_no_tier(self, db_session, regular_user):
+        assert await get_effective_tier(regular_user.id, 999_999, db_session) is None
+
+    async def test_reporter_is_viewer(self, db_session, regular_user, app_with_project):
+        """Guest/Planner/Reporter members are Viewer: still a member, unlike a non-member."""
+        db_session.add(AppMember(
+            gitlab_project_id=app_with_project.gitlab_project_id,
+            gitlab_user_id=regular_user.gitlab_user_id,
+            access_level=20,
+            cnp_user_id=regular_user.id,
+            status=MemberStatus.ACTIVE,
+        ))
+        await db_session.commit()
+
+        tier = await get_effective_tier(regular_user.id, app_with_project.id, db_session)
         assert tier == CnpTier.VIEWER
 
     async def test_group_membership_grants_tier_when_project_membership_missing(
@@ -241,7 +259,7 @@ class TestGetEffectiveTier:
         tier = await get_effective_tier(regular_user.id, app_with_project.id, db_session)
         assert tier == CnpTier.MAINTAINER
 
-    async def test_left_member_returns_viewer(self, db_session, regular_user, app_with_project):
+    async def test_left_member_returns_no_tier(self, db_session, regular_user, app_with_project):
         """Soft-revoked member (status=left) must not grant any tier."""
         db_session.add(AppMember(
             gitlab_project_id=app_with_project.gitlab_project_id,
@@ -253,7 +271,7 @@ class TestGetEffectiveTier:
         await db_session.commit()
 
         tier = await get_effective_tier(regular_user.id, app_with_project.id, db_session)
-        assert tier == CnpTier.VIEWER
+        assert tier is None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -261,7 +279,7 @@ class TestGetEffectiveTier:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestMyAccess:
-    async def test_returns_viewer_when_no_membership(
+    async def test_returns_no_tier_when_no_membership(
         self, client, db_session, app_with_project, regular_user
     ):
         token = await _token_for(client, "regular@test.com", "pass123")
@@ -271,7 +289,7 @@ class TestMyAccess:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["tier"] == "viewer"
+        assert body["tier"] is None
         assert body["is_admin"] is False
 
     async def test_returns_is_admin_true_for_admin(
