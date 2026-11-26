@@ -10,7 +10,7 @@ from backend.db.session import get_db
 from backend.services.ai_limits_service import AILimitExceeded, AILimitsService
 from backend.services.ai_settings_service import AISettingsService
 from backend.services.finops_advisor_service import FinOpsAdvisorService
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from shared.models import CnpTier
 from sqlalchemy import select
@@ -105,15 +105,20 @@ async def get_ai_advice(
                 status_code=429,
                 detail=(
                     "Quota du fournisseur IA atteint. Réessayez dans une minute ; si cela "
-                    "persiste, un administrateur peut changer de provider dans Réglages "
-                    "plateforme → Assistant IA."
+                    "persiste, un administrateur peut changer de provider dans "
+                    "Platform → Settings → AI assistant."
                 ),
             ) from exc
+        # 424, jamais 502 : Cloudflare remplace toute 502 de l'origine par sa propre
+        # page d'erreur, et ce message n'arriverait pas à l'utilisateur.
         raise HTTPException(
-            status_code=502,
+            status_code=status.HTTP_424_FAILED_DEPENDENCY,
             detail=f"Le fournisseur IA a renvoyé une erreur ({exc.response.status_code}). Réessayez.",
         ) from exc
     except httpx.TransportError as exc:
-        raise HTTPException(status_code=502, detail="Le fournisseur IA est injoignable.") from exc
+        raise HTTPException(
+            status_code=status.HTTP_424_FAILED_DEPENDENCY,
+            detail="Le fournisseur IA est injoignable.",
+        ) from exc
 
     return AIAdviceResponse(**asdict(result))
