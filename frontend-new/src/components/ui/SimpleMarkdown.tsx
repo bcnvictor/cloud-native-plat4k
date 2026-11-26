@@ -10,8 +10,8 @@ import { Link, useInRouterContext } from 'react-router-dom';
 
 const LINK_CLASS = 'font-medium text-primary underline underline-offset-2 hover:opacity-80';
 
-/** Chemin interne de la CNP (`/groups/...`), pas `//autre-domaine`. */
-const isInternalPath = (href: string) => /^\/(?!\/)/.test(href);
+/** Chemin interne de la CNP (`/groups/...`), pas `//autre-domaine` ni `/\autre-domaine` (le navigateur lit `\` comme `/`). */
+const isInternalPath = (href: string) => /^\/(?![/\\])/.test(href);
 const isHttps = (href: string) => /^https:\/\//i.test(href);
 
 /** Lien interne : navigation du routeur (le panneau reste ouvert), `<a>` hors routeur. */
@@ -63,7 +63,7 @@ function renderInline(text: string): ReactNode[] {
     if (m[2] !== undefined) {
       nodes.push(renderLink(m[2], m[3], key++));
     } else if (m[4] !== undefined) {
-      nodes.push(<strong key={key++}>{m[4]}</strong>);
+      nodes.push(<strong key={key++}>{renderInline(m[4])}</strong>);
     } else if (m[5] !== undefined) {
       nodes.push(
         <code
@@ -74,7 +74,7 @@ function renderInline(text: string): ReactNode[] {
         </code>
       );
     } else if (m[6] !== undefined) {
-      nodes.push(<em key={key++}>{m[6]}</em>);
+      nodes.push(<em key={key++}>{renderInline(m[6])}</em>);
     }
     last = m.index + m[0].length;
   }

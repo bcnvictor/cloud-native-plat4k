@@ -51,11 +51,24 @@ describe('SimpleMarkdown', () => {
 
   it('ne fait pas de lien vers un schéma dangereux ou un autre domaine relatif', () => {
     const { container } = render(
-      <SimpleMarkdown content="[clic](javascript:alert(1)) [ailleurs](//evil.example) [http](http://x.test)" />
+      <SimpleMarkdown
+        content={'[clic](javascript:alert(1)) [ailleurs](//evil.example) [antislash](/\\evil.example) [http](http://x.test)'}
+      />
     );
     expect(container.querySelector('a')).toBeNull();
     expect(container.textContent).toContain('clic');
     expect(container.textContent).not.toContain('javascript');
+  });
+
+  it('garde le lien quand le modèle le met en gras ou en italique', () => {
+    const { container } = render(
+      <SimpleMarkdown content="- **[Booking worker 1](/groups/booking/apps/booking-worker-1)** : dégradée, *[logs](/groups/booking/apps/booking-worker-1/logs)*" />
+    );
+    const bold = screen.getByRole('link', { name: 'Booking worker 1' });
+    expect(bold.getAttribute('href')).toBe('/groups/booking/apps/booking-worker-1');
+    expect(bold.closest('strong')).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'logs' }).closest('em')).not.toBeNull();
+    expect(container.textContent).not.toContain('](');
   });
 
   it('garde un lien interne utilisable hors routeur', () => {
