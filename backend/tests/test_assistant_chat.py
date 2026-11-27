@@ -430,3 +430,95 @@ async def test_global_chat_unauthenticated_returns_401(client: AsyncClient):
         json={"message": "Hello"},
     )
     assert resp.status_code == 401
+
+
+# ── Provider failures: 424, never 502 ────────────────────────────────────────
+# Cloudflare (tunnel devant cnp.cloud-native-plat4k.me) remplace toute 502 de
+# l'origine par sa propre page d'erreur : le message en français n'arrivait pas.
+
+
+def _failing_provider(exc: Exception):
+    from backend.ai.provider import MockProvider
+
+    class _Failing(MockProvider):
+        async def complete(self, *a, **k):
+            raise exc
+
+    return _Failing()
+
+
+def _provider_http_error(status_code: int):
+    import httpx
+
+    request = httpx.Request("POST", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+    return httpx.HTTPStatusError(
+        "provider error", request=request, response=httpx.Response(status_code, request=request)
+    )
+
+
+@pytest.mark.anyio
+async def test_global_chat_provider_error_returns_424_with_readable_detail(
+    client: AsyncClient, admin_token: str
+):
+    with (
+        patch.object(settings, "AI_ASSISTANT_ENABLED", True),
+        patch(
+            "backend.api.routes.assistant.get_provider",
+            return_value=_failing_provider(_provider_http_error(503)),
+        ),
+    ):
+        resp = await client.post(
+            "/api/v1/assistant/chat",
+            json={"message": "Quelles applications sont en erreur en ce moment ?"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+
+    assert resp.status_code == 424
+    assert resp.json()["detail"] == "The AI provider returned an error (503). Please try again."
+
+
+@pytest.mark.anyio
+async def test_global_chat_provider_unreachable_returns_424(
+    client: AsyncClient, admin_token: str
+):
+    import httpx
+
+    with (
+        patch.object(settings, "AI_ASSISTANT_ENABLED", True),
+        patch(
+            "backend.api.routes.assistant.get_provider",
+            return_value=_failing_provider(httpx.ConnectError("boom")),
+        ),
+    ):
+        resp = await client.post(
+            "/api/v1/assistant/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+
+    assert resp.status_code == 424
+    assert "unreachable" in resp.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_global_chat_provider_credits_depleted_says_what_to_do(
+    client: AsyncClient, admin_token: str
+):
+    """Gemini prépayé à solde nul : 402 sur toutes les clés du projet, réessayer ne sert à rien."""
+    with (
+        patch.object(settings, "AI_ASSISTANT_ENABLED", True),
+        patch(
+            "backend.api.routes.assistant.get_provider",
+            return_value=_failing_provider(_provider_http_error(402)),
+        ),
+    ):
+        resp = await client.post(
+            "/api/v1/assistant/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+
+    assert resp.status_code == 424
+    detail = resp.json()["detail"]
+    assert "credits" in detail and "Platform → Settings → AI assistant" in detail
+    assert "try again" not in detail

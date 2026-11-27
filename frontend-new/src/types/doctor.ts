@@ -174,6 +174,24 @@ export interface DoctorAIInfo {
   error: DoctorAIError | null;
 }
 
+/** Étapes de la chaîne de santé, dans l'ordre de lecture : du code jusqu'aux logs. */
+export type DoctorChainStepId = 'pipeline' | 'argocd' | 'cluster' | 'pods' | 'logs';
+
+/** ok · warning (en cours, à surveiller) · failing · stopped (arrêt voulu) · unknown (signal indisponible). */
+export type DoctorChainStatus = 'ok' | 'warning' | 'failing' | 'stopped' | 'unknown';
+
+/** Une étape de la chaîne de santé, évaluée par la plateforme (jamais par l'IA). */
+export interface DoctorChainStep {
+  step: DoctorChainStepId;
+  status: DoctorChainStatus;
+  /** Un ou deux mots, affichés sous l'étape. */
+  label: string;
+  /** Une phrase pour le panneau de l'étape (raison d'un signal indisponible). */
+  detail: string | null;
+  /** Preuves du registre qui concernent l'étape. */
+  evidence_ids: string[];
+}
+
 export interface DoctorDiagnosis {
   app_id: number;
   app_name: string;
@@ -199,4 +217,6 @@ export interface DoctorDiagnosis {
   raw_text: string | null;
   ai: DoctorAIInfo;
   user_role: CnpTier | 'admin';
+  /** Chaîne de santé, du pipeline aux logs (absente des réponses antérieures). */
+  chain?: DoctorChainStep[];
 }

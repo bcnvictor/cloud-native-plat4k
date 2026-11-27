@@ -101,6 +101,15 @@ class ActionSchema(BaseModel):
     url: Optional[str] = None
 
 
+class ChainStepSchema(BaseModel):
+    """Une étape de la chaîne de santé : son statut, un mot pour la carte, ses preuves."""
+    step: Literal["pipeline", "argocd", "cluster", "pods", "logs"]
+    status: Literal["ok", "warning", "failing", "stopped", "unknown"]
+    label: str
+    detail: Optional[str] = None
+    evidence_ids: list[str]
+
+
 class MissingSignalSchema(BaseModel):
     source: DoctorEvidenceSource
     reason: str
@@ -144,6 +153,8 @@ class DoctorDiagnosisResponse(BaseModel):
     raw_text: Optional[str] = None
     ai: AIInfoSchema
     user_role: str
+    # Du pipeline aux logs, dans l'ordre de lecture de la carte.
+    chain: list[ChainStepSchema] = []
 
 
 def _ref(dep: Optional[Deployment], ran_for: Optional[float] = None) -> Optional[DeploymentRefSchema]:
@@ -213,6 +224,11 @@ def to_response(r: DoctorResult, app_slug: str, group_slug: Optional[str]) -> Do
             estimated_cost_usd=r.ai.estimated_cost_usd, error=r.ai.error,
         ),
         user_role=r.user_role,
+        chain=[
+            ChainStepSchema(step=c.step, status=c.status, label=c.label, detail=c.detail,
+                            evidence_ids=c.evidence_ids)
+            for c in r.chain
+        ],
     )
 
 

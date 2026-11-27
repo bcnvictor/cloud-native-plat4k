@@ -10,7 +10,7 @@ from backend.db.session import get_db
 from backend.services.ai_limits_service import AILimitExceeded, AILimitsService
 from backend.services.ai_settings_service import AISettingsService
 from backend.services.finops_advisor_service import FinOpsAdvisorService
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from shared.models import CnpTier
 from sqlalchemy import select
@@ -105,14 +105,19 @@ async def get_ai_advice(
                 status_code=429,
                 detail=(
                     "AI provider quota reached. Try again in a minute; if it persists, "
-                    "an administrator can change the provider in Settings → AI assistant."
+                    "an administrator can change the provider in Platform → Settings → AI assistant."
                 ),
             ) from exc
+        # 424, jamais 502 : Cloudflare remplace toute 502 de l'origine par sa propre
+        # page d'erreur, et ce message n'arriverait pas à l'utilisateur.
         raise HTTPException(
-            status_code=502,
+            status_code=status.HTTP_424_FAILED_DEPENDENCY,
             detail=f"The AI provider returned an error ({exc.response.status_code}). Please try again.",
         ) from exc
     except httpx.TransportError as exc:
-        raise HTTPException(status_code=502, detail="The AI provider is unreachable.") from exc
+        raise HTTPException(
+            status_code=status.HTTP_424_FAILED_DEPENDENCY,
+            detail="The AI provider is unreachable.",
+        ) from exc
 
     return AIAdviceResponse(**asdict(result))

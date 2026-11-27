@@ -143,7 +143,7 @@ class ClusterService:
                 await self.db.commit()
                 raise HTTPException(
                     status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                    detail="Vault timeout lors du stockage du kubeconfig (> 15 s)",
+                    detail="Vault timed out while storing the kubeconfig (> 15 s)",
                 )
         except HTTPException:
             raise

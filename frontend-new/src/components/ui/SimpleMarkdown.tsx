@@ -1,32 +1,80 @@
 import { ReactNode } from 'react';
+import { Link, useInRouterContext } from 'react-router-dom';
 
 /**
  * Minimal, dependency-free markdown renderer for chat answers.
- * Supports: paragraphs, `#` headings, `-`/`*` and `1.` lists, **bold**, *italic*, `code`.
+ * Supports: paragraphs, `#` headings, `-`/`*` and `1.` lists, **bold**, *italic*, `code`,
+ * and `[label](href)` links.
  * Renders to React elements only (no dangerouslySetInnerHTML) — safe by design.
  */
+
+const LINK_CLASS = 'font-medium text-primary underline underline-offset-2 hover:opacity-80';
+
+/** Chemin interne de la CNP (`/groups/...`), pas `//autre-domaine` ni `/\autre-domaine` (le navigateur lit `\` comme `/`). */
+const isInternalPath = (href: string) => /^\/(?![/\\])/.test(href);
+const isHttps = (href: string) => /^https:\/\//i.test(href);
+
+/** Lien interne : navigation du routeur (le panneau reste ouvert), `<a>` hors routeur. */
+function InternalLink({ to, children }: { to: string; children: ReactNode }) {
+  if (!useInRouterContext()) {
+    return (
+      <a href={to} className={LINK_CLASS}>
+        {children}
+      </a>
+    );
+  }
+  return (
+    <Link to={to} className={LINK_CLASS}>
+      {children}
+    </Link>
+  );
+}
+
+function renderLink(label: string, href: string, key: number): ReactNode {
+  const children = renderInline(label);
+  if (isInternalPath(href)) {
+    return (
+      <InternalLink key={key} to={href}>
+        {children}
+      </InternalLink>
+    );
+  }
+  if (isHttps(href)) {
+    return (
+      <a key={key} href={href} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
+        {children}
+      </a>
+    );
+  }
+  // Autre schéma (javascript:, http:, mailto:…) : le libellé seul, sans lien.
+  return <span key={key}>{children}</span>;
+}
+
 function renderInline(text: string): ReactNode[] {
   const nodes: ReactNode[] = [];
   // *italic* must not start/end with a space, so « 2 * 3 * 4 » stays literal.
-  const re = /(\*\*([^*]+)\*\*|`([^`]+)`|\*([^*\s](?:[^*]*[^*\s])?)\*)/g;
+  const re =
+    /(\[([^\]\n]+)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*|`([^`]+)`|\*([^*\s](?:[^*]*[^*\s])?)\*)/g;
   let last = 0;
   let key = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) nodes.push(text.slice(last, m.index));
     if (m[2] !== undefined) {
-      nodes.push(<strong key={key++}>{m[2]}</strong>);
-    } else if (m[3] !== undefined) {
+      nodes.push(renderLink(m[2], m[3], key++));
+    } else if (m[4] !== undefined) {
+      nodes.push(<strong key={key++}>{renderInline(m[4])}</strong>);
+    } else if (m[5] !== undefined) {
       nodes.push(
         <code
           key={key++}
           className="px-1 py-0.5 rounded bg-background font-mono text-[0.85em]"
         >
-          {m[3]}
+          {m[5]}
         </code>
       );
-    } else if (m[4] !== undefined) {
-      nodes.push(<em key={key++}>{m[4]}</em>);
+    } else if (m[6] !== undefined) {
+      nodes.push(<em key={key++}>{renderInline(m[6])}</em>);
     }
     last = m.index + m[0].length;
   }

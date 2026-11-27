@@ -87,28 +87,37 @@ l'application doit faire partie de la sélection.
 
 ## Lire la carte
 
-- **Verdict et constat** : l'état en quelques mots, puis le constat en une phrase.
-- **Source** : « IA encadrée » (explication rédigée par l'IA puis vérifiée par la plateforme),
-  « Sans IA » (cas évident tranché par la plateforme), « IA indisponible — diagnostic établi
-  par la plateforme » (l'IA n'a pas répondu : quota, erreur ou limite atteinte).
-- **Cause probable et confiance** : haute, moyenne ou faible. La confiance n'est jamais
-  supérieure à ce que les preuves permettent.
-- **Chronologie** : les derniers déploiements de l'environnement, le premier signal d'échec,
-  la dégradation et un pipeline en échec, dans l'ordre. Le déploiement suspect et la dernière
-  version saine sont marqués, avec le délai entre le déploiement et la panne.
-- **Preuves** : les preuves retenues par le diagnostic (source, libellé, heure, détail comme
-  des lignes de log ou un message Kubernetes, lien). Les autres signaux collectés restent
-  accessibles dans une section repliée.
-- **Ce qui a changé** : les commits (20 au plus) et les fichiers modifiés (50 au plus) entre la
-  dernière version saine et la version en panne, avec un lien de comparaison GitLab. Si
-  GitLab refuse l'accès ou si l'application n'a pas de projet GitLab, la carte affiche
-  « comparaison indisponible » et la raison ; le reste du diagnostic est complet.
-- **Actions** : dans l'ordre conseillé, la première étant l'action principale. Une action non
-  autorisée pour le rôle de l'utilisateur est désactivée et indique le rôle requis. Les autres actions ouvrent
-  l'onglet Logs, l'onglet History, le pipeline ou la comparaison GitLab.
-- **Autres boutons** : relancer le diagnostic, « Copier le diagnostic » (résumé lisible à coller
-  dans un ticket ou une discussion), « Approfondir avec l'assistant » pour poser des questions
-  de suite.
+La carte se lit de haut en bas, en quatre temps.
+
+- **Verdict** : l'état et l'environnement sur une ligne, puis le constat en une phrase.
+- **Où ça casse** : la chaîne de santé de l'environnement, du code jusqu'aux logs :
+  Pipeline → ArgoCD → Cluster → Pods → Logs. Chaque étape porte son état, calculé par la
+  plateforme : vert (OK), orange (en cours ou à surveiller), rouge (en panne), gris (arrêt
+  voulu) ou gris en pointillés (signal indisponible). Le maillon à l'origine de la panne est
+  ouvert d'emblée (le cluster avant les pods, les pods avant ArgoCD qui ne fait que constater
+  leur panne). Un clic sur une étape affiche ses preuves : libellé, heure, détail comme des
+  lignes de log ou un message Kubernetes, lien. Pour une étape grise, le panneau dit pourquoi
+  le signal manque.
+- **Pourquoi** : la cause probable, avec sa confiance (haute, moyenne ou faible, jamais
+  supérieure à ce que les preuves permettent), puis la chronologie (derniers déploiements,
+  premier signal d'échec, dégradation, pipeline en échec ; le déploiement suspect et la dernière
+  version saine sont marqués, avec le délai entre le déploiement et la panne) et ce qui a
+  changé : les commits (20 au plus) et les fichiers modifiés (50 au plus) entre la dernière
+  version saine et la version en panne, avec un lien de comparaison GitLab. Si GitLab refuse
+  l'accès ou si l'application n'a pas de projet GitLab, la carte affiche « comparaison
+  indisponible » et la raison. Les preuves qui ne relèvent d'aucune étape (déploiement,
+  commit, événement de la plateforme) restent accessibles dans une section repliée.
+- **Que faire** : l'action principale en premier, avec sa justification, puis les autres. Une
+  action non autorisée pour le rôle de l'utilisateur est désactivée et indique le rôle requis.
+  Les autres actions ouvrent l'onglet Logs, l'onglet History, le pipeline ou la comparaison
+  GitLab.
+
+En pied de carte : « Copier le diagnostic » (résumé lisible à coller dans un ticket ou une
+discussion), « Approfondir avec l'assistant » pour poser des questions de suite, et l'origine
+du diagnostic : « IA encadrée » (explication rédigée par l'IA puis vérifiée par la
+plateforme), « Sans IA » (cas évident tranché par la plateforme) ou « IA indisponible »
+(l'IA n'a pas répondu : quota, erreur ou limite atteinte). Le bouton de relance est en haut
+de la carte.
 
 ## Verdicts
 

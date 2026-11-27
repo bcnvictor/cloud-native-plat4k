@@ -263,6 +263,42 @@ async def test_provider_rate_limit_maps_to_429(client: AsyncClient, admin_token:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    "error, detail",
+    [
+        ("http_503", "The AI provider returned an error (503). Please try again."),
+        ("unreachable", "The AI provider is unreachable."),
+    ],
+)
+async def test_provider_failure_maps_to_424(client: AsyncClient, admin_token: str,
+                                            db_session: AsyncSession, error: str, detail: str):
+    """Jamais 502 : Cloudflare remplacerait la réponse par sa propre page d'erreur."""
+    app = await _app(db_session)
+    request = httpx.Request("POST", "https://api.mistral.ai/v1/chat/completions")
+    exc = (
+        httpx.HTTPStatusError("unavailable", request=request,
+                              response=httpx.Response(503, request=request))
+        if error == "http_503"
+        else httpx.ConnectError("boom", request=request)
+    )
+
+    class _Failing(MockProvider):
+        async def complete(self, *a, **k):
+            raise exc
+
+    with (
+        patch.object(settings, "AI_ASSISTANT_ENABLED", True),
+        patch("backend.services.finops_advisor_service.get_app_resource_usage",
+              new=AsyncMock(return_value=_USAGE)),
+        patch("backend.services.finops_advisor_service.get_provider", return_value=_Failing()),
+    ):
+        resp = await client.get(f"/api/v1/apps/{app.id}/ai-advice",
+                                headers={"Authorization": f"Bearer {admin_token}"})
+    assert resp.status_code == 424
+    assert resp.json()["detail"] == detail
+
+
+@pytest.mark.anyio
 async def test_guards(client: AsyncClient, admin_token: str, db_session: AsyncSession):
     app = await _app(db_session)
     headers = {"Authorization": f"Bearer {admin_token}"}

@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Literal, Optional
 
@@ -18,7 +19,7 @@ from backend.services.assistant_tools import PageContext
 from backend.services.audit_service import AuditService
 from backend.services.platform_knowledge_service import PlatformKnowledgeService
 from backend.services.security_scan_service import SecurityScanService
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from shared.models import (
     AIContextMode,
@@ -27,6 +28,8 @@ from shared.models import (
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 global_router = APIRouter()
@@ -75,27 +78,45 @@ async def _guard_provider(call: Awaitable[Any]):
     """Await an LLM-backed call, turning provider failures into readable API errors.
 
     503 is reserved for "assistant disabled" (the UI hides the chat on it), so
-    quota errors use 429 and other upstream failures 502.
+    quota errors use 429 and other upstream failures 424. Never 502: Cloudflare,
+    in front of the public URL, replaces any origin 502 with its own error page
+    and the readable French detail never reaches the user.
     """
     try:
         return await call
     except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "AI provider error: HTTP %s — %s",
+            exc.response.status_code,
+            exc.response.text[:500],
+        )
         if exc.response.status_code == 429:
             raise HTTPException(
                 status_code=429,
                 detail=(
                     "AI provider quota reached (per-minute or per-day limit). "
                     "Try again in a minute; if it persists, an administrator can change "
-                    "the model or provider in Settings → AI assistant."
+                    "the model or provider in Platform → Settings → AI assistant."
+                ),
+            ) from exc
+        if exc.response.status_code == 402:
+            # Gemini prépayé à solde nul : toutes les clés du projet sont bloquées.
+            raise HTTPException(
+                status_code=status.HTTP_424_FAILED_DEPENDENCY,
+                detail=(
+                    "The AI provider's prepaid credits are exhausted. An administrator "
+                    "must top up the balance with the provider, or enter another key "
+                    "in Platform → Settings → AI assistant."
                 ),
             ) from exc
         raise HTTPException(
-            status_code=502,
+            status_code=status.HTTP_424_FAILED_DEPENDENCY,
             detail=f"The AI provider returned an error ({exc.response.status_code}). Please try again.",
         ) from exc
     except httpx.TransportError as exc:
+        logger.warning("AI provider unreachable: %r", exc)
         raise HTTPException(
-            status_code=502,
+            status_code=status.HTTP_424_FAILED_DEPENDENCY,
             detail="The AI provider is unreachable right now. Please try again.",
         ) from exc
 
@@ -542,7 +563,7 @@ async def reindex_platform_kb(
             status_code=400,
             detail=(
                 "Platform knowledge base is disabled "
-                "(Settings → AI assistant → CNP data access)."
+                "(Platform → Settings → AI assistant → CNP data access)."
             ),
         )
 

@@ -4,6 +4,8 @@
  */
 import type {
   DoctorAction,
+  DoctorChainStep,
+  DoctorChainStepId,
   DoctorConfidence,
   DoctorDiagnosis,
   DoctorEvidenceSource,
@@ -74,6 +76,32 @@ export const TIMELINE_KIND_LABEL: Record<DoctorTimelineKind, string> = {
 };
 
 export const SAFETY_SENTENCE = 'The Doctor changes nothing: every action requires your approval.';
+
+/** Rappel court, en tête des actions de la carte. */
+export const ACTIONS_SAFETY = 'Nothing is changed without your approval';
+
+export const CHAIN_STEP_LABEL: Record<DoctorChainStepId, string> = {
+  pipeline: 'Pipeline',
+  argocd: 'ArgoCD',
+  cluster: 'Cluster',
+  pods: 'Pods',
+  logs: 'Logs',
+};
+
+/**
+ * Ordre de recherche du maillon à l'origine : le cluster avant les pods qu'il héberge, les
+ * pods avant ArgoCD et les logs, qui ne font souvent que constater leur panne.
+ */
+const FOCUS_ORDER: DoctorChainStepId[] = ['cluster', 'pods', 'pipeline', 'argocd', 'logs'];
+
+/** L'étape ouverte d'emblée : le maillon en panne, sinon à surveiller, sinon arrêté. */
+export function focusStep(chain: DoctorChainStep[]): DoctorChainStepId | null {
+  for (const status of ['failing', 'warning', 'stopped'] as const) {
+    const step = FOCUS_ORDER.find((id) => chain.some((s) => s.step === id && s.status === status));
+    if (step) return step;
+  }
+  return null;
+}
 
 // ── Formats ────────────────────────────────────────────────────────────────
 
