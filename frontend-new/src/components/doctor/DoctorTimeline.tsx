@@ -1,6 +1,7 @@
 import type { DoctorTimeline as Timeline, DoctorTimelineEntry } from '@/types';
 import { cn } from '@/utils/cn';
 import {
+  LEVEL_LABEL,
   TIMELINE_KIND_LABEL,
   formatClock,
   formatDateTime,
@@ -55,14 +56,14 @@ function title(e: DoctorTimelineEntry): string {
 }
 
 function tag(marker: Marker): { text: string; className: string } | null {
-  if (marker === 'suspect') return { text: 'suspecte', className: 'text-danger-text' };
-  if (marker === 'healthy') return { text: 'saine', className: 'text-success-text' };
+  if (marker === 'suspect') return { text: 'suspect', className: 'text-danger-text' };
+  if (marker === 'healthy') return { text: 'healthy', className: 'text-success-text' };
   return null;
 }
 
 function spokenStatus(marker: Marker): string {
-  if (marker === 'suspect') return ' (déploiement suspect)';
-  if (marker === 'healthy') return ' (dernière version saine)';
+  if (marker === 'suspect') return ' (suspect deployment)';
+  if (marker === 'healthy') return ' (last healthy version)';
   return '';
 }
 
@@ -75,15 +76,15 @@ function gapLabel(prev: DoctorTimelineEntry, cur: DoctorTimelineEntry): string |
 export function timelineSummary(t: Timeline): string[] {
   const parts: string[] = [];
   if (t.onset_delay_seconds != null) {
-    const of = t.suspect ? ` de ${shortRev(t.suspect.revision)}` : '';
-    parts.push(`Panne ${formatDuration(t.onset_delay_seconds)} après le déploiement${of}`);
+    const of = t.suspect ? ` of ${shortRev(t.suspect.revision)}` : '';
+    parts.push(`Failure ${formatDuration(t.onset_delay_seconds)} after the deployment${of}`);
   }
   if (t.last_healthy?.ran_for_seconds != null) {
     parts.push(
-      `${shortRev(t.last_healthy.revision)} avait tourné ${formatDuration(t.last_healthy.ran_for_seconds)} sans incident`
+      `${shortRev(t.last_healthy.revision)} had run ${formatDuration(t.last_healthy.ran_for_seconds)} without incident`
     );
   }
-  if (t.correlation) parts.push(`corrélation ${t.correlation}`);
+  if (t.correlation) parts.push(`${LEVEL_LABEL[t.correlation] ?? t.correlation} correlation`);
   return parts;
 }
 
@@ -162,12 +163,12 @@ export function DoctorTimeline({ timeline, compact = false }: { timeline: Timeli
         </ol>
       </div>
 
-      <ol className="sr-only" aria-label="Chronologie">
+      <ol className="sr-only" aria-label="Timeline">
         {entries.map((e, i) => {
           const marker = markerOf(e);
           return (
             <li key={`${e.at}-${i}`}>
-              {`${formatDateTime(e.at)} : ${e.label}${spokenStatus(marker)}`}
+              {`${formatDateTime(e.at)}: ${e.label}${spokenStatus(marker)}`}
             </li>
           );
         })}

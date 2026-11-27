@@ -35,12 +35,12 @@ describe('pageContextFrom', () => {
 describe('suggestionsFor', () => {
   it('propose des questions sur le groupe courant', () => {
     const labels = suggestionsFor({ group_slug: 'team-a' }).map((s) => s.label);
-    expect(labels).toContain('Membres du groupe');
+    expect(labels).toContain('Group members');
   });
 
   it("propose des questions sur l'app courante", () => {
     const labels = suggestionsFor({ group_slug: 'g', app_slug: 'a' }).map((s) => s.label);
-    expect(labels).toContain('État de cette app');
+    expect(labels).toContain('App status');
   });
 });
 
@@ -49,18 +49,18 @@ describe('doctorSuggestionsFor', () => {
     const { hint, items } = doctorSuggestionsFor({ group_slug: 'g', app_slug: 'demo-shop' });
     expect(hint).toBeNull();
     expect(items.filter((s) => s.kind === 'diagnose')).toEqual([
-      { kind: 'diagnose', label: 'Diagnostiquer prod', env: 'prod' },
-      { kind: 'diagnose', label: 'Diagnostiquer dev', env: 'dev' },
+      { kind: 'diagnose', label: 'Diagnose prod', env: 'prod' },
+      { kind: 'diagnose', label: 'Diagnose dev', env: 'dev' },
     ]);
     const ask = items.find((s) => s.kind === 'ask');
-    expect(ask?.label).toBe("Que s'est-il passé récemment ?");
+    expect(ask?.label).toBe('What happened recently?');
   });
 
   it('explique comment lancer un diagnostic hors application', () => {
     const { hint, items } = doctorSuggestionsFor({ path: '/groups/g', group_slug: 'g' });
-    expect(hint).toBe('Ouvre une application pour lancer un diagnostic.');
+    expect(hint).toBe('Open an application to run a diagnosis.');
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ kind: 'ask', label: 'Quelles apps sont en erreur ?' });
+    expect(items[0]).toMatchObject({ kind: 'ask', label: 'Which apps are failing?' });
     expect(items.some((s) => s.kind === 'diagnose')).toBe(false);
   });
 });
@@ -77,7 +77,7 @@ describe('greetingFor / modeNotice', () => {
     expect(modeNotice('doctor', 'demo-shop')).toContain('**demo-shop**');
     expect(greetingFor('doctor', 'demo-shop')).toContain('demo-shop');
     expect(modeNotice('doctor')).toBe(DOCTOR_GREETING);
-    expect(modeNotice('chat')).toMatch(/mode assistant/);
+    expect(modeNotice('chat')).toMatch(/assistant mode/);
   });
 });
 
@@ -110,7 +110,7 @@ describe('docSources', () => {
 describe('waitHint', () => {
   it("reste silencieux les premières secondes puis rassure l'utilisateur", () => {
     expect(waitHint(2_000)).toBeNull();
-    expect(waitHint(8_000)).toMatch(/consulte/);
-    expect(waitHint(30_000)).toMatch(/sollicité/);
+    expect(waitHint(8_000)).toMatch(/Checking platform data/);
+    expect(waitHint(30_000)).toMatch(/heavy load/);
   });
 });

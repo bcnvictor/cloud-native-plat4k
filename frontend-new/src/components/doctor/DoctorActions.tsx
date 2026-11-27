@@ -98,12 +98,12 @@ function RestrictedAction({ action, diagnosis }: ItemProps) {
           icon={<IconCopy size={13} aria-hidden="true" />}
           onClick={() =>
             copy(maintainerRequestText(diagnosis, action, url), {
-              title: 'Demande copiée',
-              description: 'Collez-la dans un message à un maintainer de l’application.',
+              title: 'Request copied',
+              description: 'Paste it in a message to a maintainer of the application.',
             })
           }
         >
-          Copier la demande
+          Copy request
         </Button>
       </div>
       <p id={roleId} className="flex items-center gap-1 text-xs font-medium text-foreground">
@@ -142,8 +142,8 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
     onSuccess: () => {
       toast(
         isRollback
-          ? { title: `Rollback ${env} lancé`, description: `La version ${target} est en cours de déploiement.` }
-          : { title: `Relance de ${env} lancée`, description: 'Les réplicas sont remis en service.' }
+          ? { title: `Rollback of ${env} started`, description: `Version ${target} is being deployed.` }
+          : { title: `Restart of ${env} started`, description: 'Replicas are being brought back up.' }
       );
       // L'état live (/status) met à jour le statut enregistré de l'application ; on relit
       // ensuite l'application pour que l'en-tête et le bandeau d'erreur suivent sans attendre.
@@ -160,8 +160,8 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
         actionErrorMessage(
           err,
           isRollback
-            ? 'Le rollback n’a pas pu être lancé. Réessayez dans un instant, ou passez par l’onglet History.'
-            : 'La relance n’a pas pu être lancée. Réessayez dans un instant.'
+            ? 'The rollback could not be started. Try again in a moment, or use the History tab.'
+            : 'The restart could not be started. Please try again in a moment.'
         )
       );
       restoreFocus.current = true;
@@ -199,8 +199,8 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
         <span className="flex items-center gap-1.5 text-xs font-medium text-success-text">
           <IconCircleCheck size={14} aria-hidden="true" className="shrink-0" />
           {isRollback
-            ? `Rollback lancé : ${target} est en cours de déploiement en ${env}.`
-            : `Relance lancée : l’environnement ${env} redémarre.`}
+            ? `Rollback started: ${target} is being deployed to ${env}.`
+            : `Restart started: the ${env} environment is restarting.`}
         </span>
         <Button
           data-doctor-recheck
@@ -209,7 +209,7 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
           icon={<IconRefresh size={13} aria-hidden="true" />}
           onClick={() => useDoctorStore.getState().diagnose(appId, env)}
         >
-          Revérifier l’état
+          Check status again
         </Button>
       </div>
     );
@@ -226,8 +226,8 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
       >
         <p id={questionId} className="text-sm font-medium text-foreground">
           {isRollback
-            ? `Revenir à ${target} pour ${diagnosis.app_name} en ${env} ? La version en panne sera remplacée.`
-            : `Relancer l’environnement ${env} de ${diagnosis.app_name} ? Les réplicas seront remis en service.`}
+            ? `Roll back ${diagnosis.app_name} in ${env} to ${target}? The failing version will be replaced.`
+            : `Restart the ${env} environment of ${diagnosis.app_name}? Replicas will be brought back up.`}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -237,12 +237,12 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
             loading={mutation.isPending}
             onClick={() => mutation.mutate()}
           >
-            {isRollback ? `Revenir à ${target}` : `Relancer ${env}`}
+            {isRollback ? `Roll back to ${target}` : `Restart ${env}`}
           </Button>
           <Button data-doctor-cancel size="sm" variant="ghost" onClick={cancel} disabled={mutation.isPending}>
-            Annuler
+            Cancel
           </Button>
-          <span className="text-xs text-muted-foreground">Échap pour annuler</span>
+          <span className="text-xs text-muted-foreground">Esc to cancel</span>
         </div>
       </div>
     );
@@ -269,7 +269,7 @@ function ConfirmedAction({ action, diagnosis, appId }: ItemProps) {
       <Description action={action} />
       {missingTarget && (
         <p className="text-xs text-muted-foreground">
-          Version cible inconnue : choisissez-la dans l’onglet History.
+          Unknown target version: pick it in the History tab.
         </p>
       )}
       {error && (
@@ -324,7 +324,7 @@ function LinkAction({ action }: ItemProps) {
             <span className="shrink-0">{ICON[action.kind]}</span>
             {action.label}
             <IconExternalLink size={12} aria-hidden="true" className="shrink-0 opacity-70" />
-            <span className="sr-only"> (nouvel onglet)</span>
+            <span className="sr-only"> (new tab)</span>
           </a>
         ) : (
           <Button size="sm" variant="secondary" icon={ICON[action.kind]} disabled className={WRAP}>
@@ -373,12 +373,12 @@ function ContactAction({ action, diagnosis }: ItemProps) {
           icon={<IconCopy size={13} aria-hidden="true" />}
           onClick={() =>
             copy(maintainerRequestText(diagnosis, recommended, url), {
-              title: 'Demande copiée',
-              description: 'Collez-la dans un message à un maintainer de l’application.',
+              title: 'Request copied',
+              description: 'Paste it in a message to a maintainer of the application.',
             })
           }
         >
-          Copier la demande
+          Copy request
         </Button>
       </div>
       <Description action={action} />

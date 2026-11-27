@@ -56,12 +56,12 @@ function metaLine(d: DoctorDiagnosis): string {
   if (d.ai.used) {
     const who = d.ai.model ?? d.ai.provider;
     if (who) parts.push(who);
-    parts.push(`${(d.ai.input_tokens + d.ai.output_tokens).toLocaleString('fr-FR')} tokens`);
+    parts.push(`${(d.ai.input_tokens + d.ai.output_tokens).toLocaleString('en-US')} tokens`);
   } else {
     parts.push(SOURCE_META[d.source].meta);
   }
   const at = formatClock(d.generated_at);
-  if (at) parts.push(`généré à ${at}`);
+  if (at) parts.push(`generated at ${at}`);
   return parts.join(' · ');
 }
 
@@ -113,8 +113,8 @@ export function DoctorDiagnosisView({
 
   const deepen = () =>
     askAssistant(
-      `Le CNP Doctor a diagnostiqué ${d.app_name} en ${d.env} : « ${d.headline} » ` +
-        'Aide-moi à comprendre la cause et à corriger le problème.'
+      `The CNP Doctor diagnosed ${d.app_name} in ${d.env}: "${d.headline}". ` +
+        'Help me understand the cause and fix the problem.'
     );
 
   return (
@@ -156,7 +156,7 @@ export function DoctorDiagnosisView({
             <div className="flex flex-col gap-1">
               {d.cause && (
                 <p className="text-sm text-foreground">
-                  <span className="font-medium">Cause probable : </span>
+                  <span className="font-medium">Probable cause: </span>
                   {d.cause.summary}
                 </p>
               )}
@@ -171,19 +171,19 @@ export function DoctorDiagnosisView({
           )}
 
           {hasTimeline && d.timeline && (
-            <Section title="Chronologie">
+            <Section title="Timeline">
               <DoctorTimeline timeline={d.timeline} compact={compact} />
             </Section>
           )}
 
           {hasEvidence && (
-            <Section title="Preuves">
+            <Section title="Evidence">
               <DoctorEvidence evidence={d.evidence} missing={d.missing_signals} />
             </Section>
           )}
 
           {d.changes && (
-            <Section title="Ce qui a changé">
+            <Section title="What changed">
               <DoctorChanges changes={d.changes} />
             </Section>
           )}
@@ -191,7 +191,7 @@ export function DoctorDiagnosisView({
 
         {hasActions && (
           <Section
-            title="Actions conseillées"
+            title="Recommended actions"
             className={cn(twoColumns && 'self-start')}
           >
             <DoctorActions diagnosis={d} appId={appId} />
@@ -208,15 +208,15 @@ export function DoctorDiagnosisView({
             icon={<IconCopy size={13} aria-hidden="true" />}
             onClick={() =>
               copy(diagnosisAsText(d), {
-                title: 'Diagnostic copié',
-                description: 'Le résumé est prêt à être collé dans un ticket ou un message.',
+                title: 'Diagnosis copied',
+                description: 'The summary is ready to paste into a ticket or a message.',
               })
             }
           >
-            Copier le diagnostic
+            Copy diagnosis
           </Button>
           <Button size="sm" variant="ghost" icon={<IconSparkles size={13} aria-hidden="true" />} onClick={deepen}>
-            Approfondir avec l’assistant
+            Dig deeper with the assistant
           </Button>
         </div>
         {fallback && <CopyFallback text={fallback} onClose={dismiss} />}

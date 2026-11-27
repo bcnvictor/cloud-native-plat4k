@@ -4,10 +4,10 @@ import { cn } from '@/utils/cn';
 import './doctor.css';
 
 export const DOCTOR_STEPS = [
-  'Collecte des signaux',
-  'Chronologie des déploiements',
-  'Analyse',
-  'Vérification des preuves',
+  'Collecting signals',
+  'Deployment timeline',
+  'Analysis',
+  'Checking evidence',
 ] as const;
 
 /** Une seule requête est en vol : les étapes avancent sur une horloge depuis le lancement. */
@@ -67,19 +67,19 @@ export function DoctorProgress({ startedAt, compact = false }: { startedAt?: num
               </span>
               <span className={cn(state === 'current' && 'font-medium')}>{label}</span>
               <span className="sr-only">
-                {state === 'done' ? ' : terminé' : state === 'current' ? ' : en cours' : ' : à venir'}
+                {state === 'done' ? ': done' : state === 'current' ? ': in progress' : ': upcoming'}
               </span>
             </li>
           );
         })}
       </ol>
       <p className="sr-only" aria-live="polite">
-        {`Étape ${active + 1} sur ${DOCTOR_STEPS.length} : ${DOCTOR_STEPS[active]}, en cours.`}
+        {`Step ${active + 1} of ${DOCTOR_STEPS.length}: ${DOCTOR_STEPS[active]}, in progress.`}
       </p>
       {slow && (
         <p className="text-xs text-muted-foreground" aria-live="polite">
-          L’analyse prend plus de temps que d’habitude : le fournisseur IA peut mettre jusqu’à une
-          minute à répondre. Le reste de la page reste utilisable.
+          The analysis is taking longer than usual: the AI provider may take up to a
+          minute to respond. The rest of the page remains usable.
         </p>
       )}
     </div>

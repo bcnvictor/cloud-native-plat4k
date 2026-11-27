@@ -15,35 +15,42 @@ import type {
 export type DoctorTone = 'danger' | 'warning' | 'success' | 'info' | 'muted' | 'primary';
 
 export const VERDICT_META: Record<DoctorVerdict, { label: string; tone: DoctorTone }> = {
-  regression: { label: 'Régression', tone: 'danger' },
-  failing: { label: 'En panne', tone: 'danger' },
-  ci_failure: { label: 'Pipeline en échec', tone: 'warning' },
-  unstable: { label: 'Instable', tone: 'warning' },
-  healthy: { label: 'En bonne santé', tone: 'success' },
-  stopped: { label: 'Arrêtée', tone: 'muted' },
-  deploying: { label: 'Déploiement en cours', tone: 'info' },
-  not_deployed: { label: 'Pas encore déployée', tone: 'muted' },
-  inconclusive: { label: 'Diagnostic incomplet', tone: 'muted' },
-  cluster_offline: { label: 'Cluster injoignable', tone: 'info' },
+  regression: { label: 'Regression', tone: 'danger' },
+  failing: { label: 'Failing', tone: 'danger' },
+  ci_failure: { label: 'Pipeline failed', tone: 'warning' },
+  unstable: { label: 'Unstable', tone: 'warning' },
+  healthy: { label: 'Healthy', tone: 'success' },
+  stopped: { label: 'Stopped', tone: 'muted' },
+  deploying: { label: 'Deploying', tone: 'info' },
+  not_deployed: { label: 'Not deployed yet', tone: 'muted' },
+  inconclusive: { label: 'Inconclusive', tone: 'muted' },
+  cluster_offline: { label: 'Cluster unreachable', tone: 'info' },
 };
 
 export const SOURCE_META: Record<DoctorSource, { label: string; tone: DoctorTone; meta: string }> = {
-  ai: { label: 'IA encadrée', tone: 'primary', meta: 'Rédigé par l’IA à partir des preuves de la plateforme' },
-  rules: { label: 'Sans IA', tone: 'muted', meta: 'Sans IA : établi par les règles de la plateforme' },
+  ai: { label: 'Guided AI', tone: 'primary', meta: 'Written by AI from platform evidence' },
+  rules: { label: 'No AI', tone: 'muted', meta: 'No AI: based on platform rules' },
   rules_fallback: {
-    label: 'IA indisponible',
+    label: 'AI unavailable',
     tone: 'warning',
-    meta: 'Sans IA : établi par les règles de la plateforme',
+    meta: 'No AI: based on platform rules',
   },
 };
 
 export const FALLBACK_NOTICE =
-  'L’IA n’a pas répondu ; voici le diagnostic établi par la plateforme.';
+  'The AI did not respond; here is the diagnosis based on platform rules.';
 
 export const CONFIDENCE_LABEL: Record<DoctorConfidence, string> = {
-  haute: 'Confiance haute',
-  moyenne: 'Confiance moyenne',
-  faible: 'Confiance faible',
+  haute: 'High confidence',
+  moyenne: 'Medium confidence',
+  faible: 'Low confidence',
+};
+
+/** Niveau seul (« high »), pour la force d'une corrélation. */
+export const LEVEL_LABEL: Record<DoctorConfidence, string> = {
+  haute: 'high',
+  moyenne: 'medium',
+  faible: 'low',
 };
 
 export const EVIDENCE_SOURCE_LABEL: Record<DoctorEvidenceSource, string> = {
@@ -51,22 +58,22 @@ export const EVIDENCE_SOURCE_LABEL: Record<DoctorEvidenceSource, string> = {
   logs: 'Logs',
   argocd: 'ArgoCD',
   ci: 'CI',
-  deployments: 'Déploiements',
-  events: 'Événements',
+  deployments: 'Deployments',
+  events: 'Events',
   git: 'Git',
-  platform: 'Plateforme',
+  platform: 'Platform',
 };
 
 export const TIMELINE_KIND_LABEL: Record<DoctorTimelineKind, string> = {
-  deployment: 'Déploiement',
+  deployment: 'Deployment',
   rollback: 'Rollback',
-  failure_onset: 'Début de panne',
-  degraded: 'Dégradée',
-  recovered: 'Rétablie',
-  pipeline_failed: 'Pipeline en échec',
+  failure_onset: 'Failure onset',
+  degraded: 'Degraded',
+  recovered: 'Recovered',
+  pipeline_failed: 'Pipeline failed',
 };
 
-export const SAFETY_SENTENCE = 'Le Doctor ne modifie rien : chaque action est validée par vous.';
+export const SAFETY_SENTENCE = 'The Doctor changes nothing: every action requires your approval.';
 
 // ── Formats ────────────────────────────────────────────────────────────────
 
@@ -83,21 +90,21 @@ function validDate(iso: string | null | undefined): Date | null {
 /** « 14:02 » (heure locale). */
 export function formatClock(iso: string | null | undefined): string {
   const d = validDate(iso);
-  return d ? d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+  return d ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
 }
 
 /** « 16/11 14:02 » (heure locale). */
 export function formatDateTime(iso: string | null | undefined): string {
   const d = validDate(iso);
   return d
-    ? d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    ? d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
     : '';
 }
 
 /** « 16/11 » (date locale). */
 export function formatDay(iso: string | null | undefined): string {
   const d = validDate(iso);
-  return d ? d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '';
+  return d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) : '';
 }
 
 export function sameLocalDay(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -117,7 +124,7 @@ export function formatDuration(seconds: number): string {
     return m > 0 && m < 60 ? `${h} h ${String(m).padStart(2, '0')}` : `${h} h`;
   }
   const d = Math.floor(s / 86_400);
-  return `${d} jour${d > 1 ? 's' : ''}`;
+  return `${d} day${d > 1 ? 's' : ''}`;
 }
 
 // ── Navigation ─────────────────────────────────────────────────────────────
@@ -144,8 +151,8 @@ export function rollbackTarget(action: DoctorAction, diagnosis: DoctorDiagnosis)
 
 export function roleRequirement(action: DoctorAction): string {
   return action.required_role
-    ? `Réservé au rôle ${action.required_role}`
-    : 'Action non autorisée pour votre rôle';
+    ? `Requires the ${action.required_role} role`
+    : 'Your role does not allow this action';
 }
 
 /** Action conseillée : la principale, sinon la première. */
@@ -157,11 +164,11 @@ function describeAction(action: DoctorAction, d: DoctorDiagnosis): string {
   const env = actionEnv(action, d);
   let text = action.label;
   if (action.kind === 'rollback') {
-    text += ` (rollback de ${env} vers la version ${rollbackTarget(action, d)})`;
+    text += ` (roll back ${env} to version ${rollbackTarget(action, d)})`;
   } else if (action.kind === 'resume') {
-    text += ` (environnement ${env})`;
+    text += ` (${env} environment)`;
   }
-  if (action.description) text += ` : ${action.description}`;
+  if (action.description) text += `: ${action.description}`;
   if (action.url) text += ` ${action.url}`;
   return text;
 }
@@ -171,7 +178,7 @@ export function actionErrorMessage(err: unknown, fallback: string): string {
   const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
   if (typeof detail === 'string' && detail.trim()) return detail;
   const status = (err as { response?: { status?: number } })?.response?.status;
-  if (status === 403) return 'Votre rôle ne permet pas cette action sur cette application.';
+  if (status === 403) return 'Your role does not allow this action on this application.';
   return fallback;
 }
 
@@ -179,37 +186,37 @@ export function actionErrorMessage(err: unknown, fallback: string): string {
 
 function causeLine(d: DoctorDiagnosis): string | null {
   return d.cause
-    ? `Cause probable (${CONFIDENCE_LABEL[d.cause.confidence].toLowerCase()}) : ${d.cause.summary}`
+    ? `Probable cause (${CONFIDENCE_LABEL[d.cause.confidence].toLowerCase()}): ${d.cause.summary}`
     : null;
 }
 
 /** Résumé en texte brut (lisible tel quel et compatible markdown). */
 export function diagnosisAsText(d: DoctorDiagnosis): string {
   const lines: string[] = [];
-  lines.push(`CNP Doctor : ${d.app_name} (${d.env}), ${formatDateTime(d.generated_at)}`);
-  lines.push(`Verdict : ${VERDICT_META[d.verdict].label}`);
-  lines.push(`Constat : ${d.headline}`);
+  lines.push(`CNP Doctor: ${d.app_name} (${d.env}), ${formatDateTime(d.generated_at)}`);
+  lines.push(`Verdict: ${VERDICT_META[d.verdict].label}`);
+  lines.push(`Finding: ${d.headline}`);
   const cause = causeLine(d);
   if (cause) lines.push(cause);
-  if (d.explanation) lines.push(`Explication : ${d.explanation}`);
+  if (d.explanation) lines.push(`Explanation: ${d.explanation}`);
 
   const cited = d.evidence.filter((e) => e.cited);
   if (cited.length > 0) {
-    lines.push('', 'Preuves :');
+    lines.push('', 'Evidence:');
     for (const e of cited) {
       const when = formatDateTime(e.at);
       lines.push(`- [${EVIDENCE_SOURCE_LABEL[e.source]}] ${e.label}${when ? ` (${when})` : ''}`);
     }
   }
   if (d.missing_signals.length > 0) {
-    lines.push(`Signaux indisponibles : ${d.missing_signals.map((m) => m.reason).join(' ')}`);
+    lines.push(`Unavailable signals: ${d.missing_signals.map((m) => m.reason).join(' ')}`);
   }
 
   const action = recommendedAction(d);
-  if (action) lines.push('', `Action conseillée : ${describeAction(action, d)}`);
+  if (action) lines.push('', `Recommended action: ${describeAction(action, d)}`);
 
   const source = SOURCE_META[d.source].label + (d.ai.used && d.ai.model ? ` (${d.ai.model})` : '');
-  lines.push('', `Source : ${source}. ${SAFETY_SENTENCE}`);
+  lines.push('', `Source: ${source}. ${SAFETY_SENTENCE}`);
   return lines.join('\n');
 }
 
@@ -221,18 +228,18 @@ export function maintainerRequestText(
 ): string {
   const role = action?.required_role ?? 'maintainer';
   const lines: string[] = [
-    'Bonjour,',
+    'Hi,',
     '',
-    `Le CNP Doctor a diagnostiqué un problème sur ${d.app_name} (${d.env}). ` +
-      `L'action conseillée demande le rôle ${role} : pouvez-vous la lancer ?`,
+    `The CNP Doctor found a problem on ${d.app_name} (${d.env}). ` +
+      `The recommended action requires the ${role} role: could you run it?`,
     '',
-    `Constat : ${d.headline}`,
+    `Finding: ${d.headline}`,
   ];
   const cause = causeLine(d);
   if (cause) lines.push(cause);
-  if (action) lines.push(`Action demandée : ${describeAction(action, d)}`);
-  if (pageUrl) lines.push(`Application : ${pageUrl}`);
-  lines.push('', 'Merci !');
+  if (action) lines.push(`Requested action: ${describeAction(action, d)}`);
+  if (pageUrl) lines.push(`Application: ${pageUrl}`);
+  lines.push('', 'Thanks!');
   return lines.join('\n');
 }
 

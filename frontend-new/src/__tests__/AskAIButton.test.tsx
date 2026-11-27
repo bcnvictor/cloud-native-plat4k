@@ -31,7 +31,7 @@ describe('AskAIButton', () => {
     window.addEventListener(ASSISTANT_ASK_EVENT, listener);
 
     renderButton(true);
-    fireEvent.click(await screen.findByRole('button', { name: /Expliquer avec l’IA/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Explain with AI/ }));
     expect(received).toEqual(['Pourquoi web est en erreur ?']);
 
     window.removeEventListener(ASSISTANT_ASK_EVENT, listener);

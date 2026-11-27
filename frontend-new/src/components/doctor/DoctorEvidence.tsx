@@ -57,7 +57,7 @@ function EvidenceItem({ evidence }: { evidence: Evidence }) {
             >
               <span className="min-w-0 flex-1 break-words">{evidence.label}</span>
               <IconChevronDown size={14} aria-hidden="true" className={cn('mt-0.5', chevronClass(open))} />
-              <span className="sr-only">{open ? ' (masquer le détail)' : ' (afficher le détail)'}</span>
+              <span className="sr-only">{open ? ' (hide details)' : ' (show details)'}</span>
             </button>
           ) : (
             <span className="min-w-0 grow basis-48 break-words text-xs text-foreground">{evidence.label}</span>
@@ -74,8 +74,8 @@ function EvidenceItem({ evidence }: { evidence: Evidence }) {
             target="_blank"
             rel="noopener noreferrer"
             className="-m-1 shrink-0 rounded-sm p-1 text-muted-foreground hover:text-foreground"
-            aria-label={`Ouvrir la source (${sourceLabel}) dans un nouvel onglet`}
-            title="Ouvrir la source"
+            aria-label={`Open source (${sourceLabel}) in a new tab`}
+            title="Open source"
           >
             <IconExternalLink size={14} aria-hidden="true" />
           </a>
@@ -96,7 +96,7 @@ function EvidenceItem({ evidence }: { evidence: Evidence }) {
 
 function missingText(m: DoctorMissingSignal): string {
   const label = EVIDENCE_SOURCE_LABEL[m.source] ?? m.source;
-  return m.reason.toLowerCase().includes(label.toLowerCase()) ? m.reason : `${label} : ${m.reason}`;
+  return m.reason.toLowerCase().includes(label.toLowerCase()) ? m.reason : `${label}: ${m.reason}`;
 }
 
 /** Preuves citées d'abord ; les autres signaux derrière une section repliée. */
@@ -124,7 +124,7 @@ export function DoctorEvidence({
         </ul>
       ) : (
         evidence.length > 0 && (
-          <p className="text-xs text-muted-foreground">Aucune preuve n’a été retenue par le diagnostic.</p>
+          <p className="text-xs text-muted-foreground">The diagnosis did not retain any evidence.</p>
         )
       )}
 
@@ -139,8 +139,8 @@ export function DoctorEvidence({
           >
             <IconChevronDown size={13} aria-hidden="true" className={chevronClass(showOthers)} />
             {others.length === 1
-              ? `${showOthers ? 'Masquer' : 'Voir'} l’autre signal`
-              : `${showOthers ? 'Masquer' : 'Voir'} les ${others.length} autres signaux`}
+              ? `${showOthers ? 'Hide' : 'Show'} the other signal`
+              : `${showOthers ? 'Hide' : 'Show'} the ${others.length} other signals`}
           </button>
           {/* `hidden` seul ne suffit pas : la classe `flex` l'emporterait sur [hidden]. */}
           <ul
@@ -158,7 +158,7 @@ export function DoctorEvidence({
       {missing.length > 0 && (
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <IconInfoCircle size={13} aria-hidden="true" className="mt-0.5 shrink-0" />
-          <span>Signaux indisponibles : {missing.map(missingText).join(' ')}</span>
+          <span>Unavailable signals: {missing.map(missingText).join(' ')}</span>
         </p>
       )}
     </div>

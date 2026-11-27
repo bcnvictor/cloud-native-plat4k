@@ -9,7 +9,7 @@ interface Props {
 }
 
 /** Small "i" button that toggles a popover with reference information. */
-export function InfoPopover({ children, label = 'Plus d’informations', className }: Props) {
+export function InfoPopover({ children, label = 'More information', className }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 

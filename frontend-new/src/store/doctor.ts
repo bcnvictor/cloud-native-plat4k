@@ -71,10 +71,10 @@ export function doctorErrorMessage(err: unknown): string {
   if (typeof detail === 'string' && detail.trim()) return detail;
   const status = (err as { response?: { status?: number } })?.response?.status;
   if (status === 403) {
-    return 'Le diagnostic est réservé aux rôles developer et supérieurs sur cette application.';
+    return 'Diagnosis requires the developer role or higher on this application.';
   }
-  if (status === 503) return "L'assistant IA est désactivé sur cette plateforme.";
-  return "Le diagnostic n'a pas pu aboutir. Réessayez dans un instant.";
+  if (status === 503) return 'The AI assistant is disabled on this platform.';
+  return 'The diagnosis could not be completed. Please try again in a moment.';
 }
 
 export const useDoctorStore = create<DoctorState>((set, get) => ({

@@ -17,7 +17,7 @@ export const ALL_CONFIG_ACTIONS = Object.values(CONFIG_ACTIONS).flat();
 function target(log: AuditLog): string {
   const extra = log.extra ?? {};
   if (typeof extra.name === 'string') return extra.name;
-  if (log.action.startsWith('ai_global_settings.')) return 'Assistant IA';
+  if (log.action.startsWith('ai_global_settings.')) return 'AI assistant';
   if (log.action === 'admin.sync_gitlab') return 'GitLab';
   return '—';
 }

@@ -23,7 +23,7 @@ export function AdminUsers() {
   useEffect(() => { setScope('admin'); }, [setScope]);
 
   useEffect(() => {
-    setBreadcrumb([{ label: 'Plateforme', to: '/admin/clusters' }, { label: 'Users' }]);
+    setBreadcrumb([{ label: 'Platform', to: '/admin/clusters' }, { label: 'Users' }]);
     return () => setBreadcrumb([]);
   }, [setBreadcrumb]);
 
@@ -75,7 +75,7 @@ export function AdminUsers() {
             disabled={syncMutation.isPending}
           >
             <IconRefresh size={14} className={syncMutation.isPending ? 'animate-spin' : ''} />
-            {syncMutation.isPending ? 'Sync en cours…' : 'Sync teams & users'}
+            {syncMutation.isPending ? 'Syncing…' : 'Sync teams & users'}
           </Button>
         </div>
       </div>

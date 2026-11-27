@@ -52,8 +52,8 @@ describe('store du CNP Doctor', () => {
     const run = selectRun(7, 'prod')(useDoctorStore.getState());
     expect(run.status).toBe('error');
     expect(run.error).toBe('Accès refusé pour ce rôle.');
-    expect(doctorErrorMessage({ response: { status: 503 } })).toMatch(/désactivé/);
-    expect(doctorErrorMessage(new Error('réseau'))).toMatch(/Réessayez/);
+    expect(doctorErrorMessage({ response: { status: 503 } })).toMatch(/disabled/);
+    expect(doctorErrorMessage(new Error('réseau'))).toMatch(/try again/);
   });
 
   it('ne remplace pas un choix manuel par la bascule automatique', () => {

@@ -49,13 +49,13 @@ describe('AIFinOpsAdvisor', () => {
   it('lance l’analyse au clic et affiche les recommandations', async () => {
     const spy = vi.spyOn(assistantApi, 'getAiAdvice').mockResolvedValue(ADVICE);
     renderAdvisor();
-    fireEvent.click(await screen.findByRole('button', { name: /Analyser la consommation/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Analyze usage/ }));
 
     expect(await screen.findByText('Réduire les requests CPU')).toBeTruthy();
     expect(spy).toHaveBeenCalledWith(1);
     expect(screen.getByText('my-app est très surdimensionnée.')).toBeTruthy();
     expect(screen.getByText('−$3.52')).toBeTruthy();
-    expect(screen.getByText(/rien n'est appliqué automatiquement/)).toBeTruthy();
+    expect(screen.getByText(/nothing is applied automatically/)).toBeTruthy();
   });
 
   it("affiche le message d'erreur de l'API", async () => {
@@ -63,7 +63,7 @@ describe('AIFinOpsAdvisor', () => {
       response: { data: { detail: 'Quota du fournisseur IA atteint. Réessayez dans une minute.' } },
     });
     renderAdvisor();
-    fireEvent.click(await screen.findByRole('button', { name: /Analyser la consommation/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Analyze usage/ }));
     expect(await screen.findByText(/Quota du fournisseur IA atteint/)).toBeTruthy();
   });
 
@@ -73,7 +73,7 @@ describe('AIFinOpsAdvisor', () => {
       received.push((e as CustomEvent<AssistantAskDetail>).detail.question);
     window.addEventListener(ASSISTANT_ASK_EVENT, listener);
     renderAdvisor();
-    fireEvent.click(await screen.findByRole('button', { name: /Approfondir avec l’assistant/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Dig deeper with the assistant/ }));
     window.removeEventListener(ASSISTANT_ASK_EVENT, listener);
     expect(received).toHaveLength(1);
     expect(received[0]).toContain('my-app');
@@ -82,6 +82,6 @@ describe('AIFinOpsAdvisor', () => {
   it("reste masqué quand l'assistant IA est désactivé", async () => {
     renderAdvisor(false);
     await waitFor(() => expect(assistantApi.getUiSettings).toHaveBeenCalled());
-    expect(screen.queryByText('Conseiller FinOps IA')).toBeNull();
+    expect(screen.queryByText('AI FinOps Advisor')).toBeNull();
   });
 });

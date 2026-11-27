@@ -98,7 +98,7 @@ export function ScopeSwitcher({ collapsed = false }: ScopeSwitcherProps) {
         </span>
       </div>
     ) : (
-      <span className="text-sm text-muted-foreground">Sélectionner un groupe</span>
+      <span className="text-sm text-muted-foreground">Select a group</span>
     );
 
   if (isSingleGroup) {

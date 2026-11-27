@@ -244,7 +244,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
   useEffect(() => {
     if (previousMode.current === mode) return;
     previousMode.current = mode;
-    setAnnouncement(mode === 'doctor' ? 'Mode Doctor activé' : 'Mode Assistant activé');
+    setAnnouncement(mode === 'doctor' ? 'Doctor mode enabled' : 'Assistant mode enabled');
     const consulted = currentApp?.name ?? appSlug;
     setMessages((prev) => {
       const id = `mode-${Date.now()}`;
@@ -331,7 +331,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
       const detail =
         typeof response?.data?.detail === 'string'
           ? response.data.detail
-          : "Une erreur est survenue lors de la requête à l'assistant. Réessayez.";
+          : 'Something went wrong while contacting the assistant. Please try again.';
       setMessages((prev) => [
         ...prev,
         { id: 'err' + Date.now(), role: 'assistant', content: `⚠️ ${detail}` },
@@ -381,12 +381,12 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
     return () => window.removeEventListener(ASSISTANT_ASK_EVENT, onAsk);
   }, []);
 
-  const title = isDoctor ? 'CNP Doctor' : 'Assistant Plat4k';
+  const title = isDoctor ? 'CNP Doctor' : 'Plat4k Assistant';
   const status = isDoctor
     ? appSlug
-      ? `En consultation · ${currentApp?.name ?? appSlug}`
-      : 'Prêt pour un diagnostic'
-    : 'En ligne · prêt à vous aider';
+      ? `Examining · ${currentApp?.name ?? appSlug}`
+      : 'Ready for a diagnosis'
+    : 'Online · ready to help';
   // Robot docké, tiroir fermé, application en erreur : proposer le diagnostic.
   const offerDiagnosis = !open && !globallyDisabled && isDoctor && appUnhealthy;
 
@@ -442,7 +442,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
           )}
           <button
             onClick={onClose}
-            aria-label="Fermer"
+            aria-label="Close"
             className="absolute right-3.5 top-3.5 flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-foreground/5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
           >
             <IconX size={16} />
@@ -472,10 +472,10 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
         {globallyDisabled ? (
           <div className="flex flex-1 items-center justify-center p-6 text-center">
             <div>
-              <p className="text-sm font-medium text-foreground">Assistant IA inactif</p>
+              <p className="text-sm font-medium text-foreground">AI assistant inactive</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                La fonctionnalité IA est désactivée sur cette plateforme. Un administrateur
-                peut l’activer dans Réglages plateforme → Assistant IA.
+                The AI feature is disabled on this platform. An administrator
+                can enable it in Platform settings → AI assistant.
               </p>
             </div>
           </div>
@@ -508,7 +508,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
                       </div>
                       {m.citations && m.citations.length > 0 && (
                         <div className="mt-1 pl-1 text-[11px] text-muted-foreground">
-                          <span className="font-medium">Sources :</span> {m.citations.join(' · ')}
+                          <span className="font-medium">Sources:</span> {m.citations.join(' · ')}
                         </div>
                       )}
                     </div>
@@ -535,7 +535,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
                   {graphicalBotEnabled && <BotAvatar mode={mode} />}
                   <div className="rounded-[4px_15px_15px_15px] bg-muted px-[15px] py-[13px]">
                     {/* Pas de modificateur d'opacité : les couleurs sont des var() CSS */}
-                    <div className="flex gap-[5px]" aria-label="L'assistant réfléchit">
+                    <div className="flex gap-[5px]" aria-label="The assistant is thinking">
                       <TypingDots className="bg-muted-foreground" />
                     </div>
                     {pendingSince !== null && hint && (
@@ -592,17 +592,17 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
             <div className="flex-none border-t border-border px-4 pb-[18px] pt-3.5">
               <div className="flex items-center gap-[9px] rounded-[26px] border-[1.5px] border-border bg-muted py-[5px] pl-4 pr-[5px] focus-within:border-primary focus-within:ring-2 focus-within:ring-ring">
                 <input
-                  aria-label="Message à l’assistant"
+                  aria-label="Message to the assistant"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && ask(input)}
-                  placeholder="Écrivez un message…"
+                  placeholder="Type a message…"
                   className="min-w-0 flex-1 border-none bg-transparent py-1.5 text-[13.5px] text-foreground outline-none placeholder:text-muted-foreground focus:outline-none"
                 />
                 <button
                   onClick={() => ask(input)}
                   disabled={!input.trim() || chatMutation.isPending}
-                  aria-label="Envoyer"
+                  aria-label="Send"
                   className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
                 >
                   <IconSend size={16} />
@@ -625,7 +625,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
               className="flex items-center gap-1.5 max-sm:hidden rounded-[14px_14px_4px_14px] border border-danger-border bg-card px-3.5 py-[9px] text-xs font-medium text-foreground shadow-[0_8px_20px_rgba(31,44,84,.12)] animate-[bubblePop_.3s_cubic-bezier(.2,1.3,.5,1)_both] hover:border-primary"
             >
               <IconStethoscope size={14} aria-hidden="true" className="text-danger" />
-              Besoin d'un diagnostic ?
+              Need a diagnosis?
             </button>
           ) : (
             attn &&
@@ -639,7 +639,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
           <button
             ref={robotBtnRef}
             onClick={onToggle}
-            aria-label={open ? "Fermer l'assistant" : "Ouvrir l'assistant"}
+            aria-label={open ? 'Close the assistant' : 'Open the assistant'}
             className="relative cursor-pointer border-none bg-transparent p-0 animate-[mascotPop_.5s_cubic-bezier(.2,1.3,.5,1)_both]"
           >
             <span className="m-ring absolute inset-x-1.5 bottom-1 top-1.5 rounded-full bg-primary opacity-0" />

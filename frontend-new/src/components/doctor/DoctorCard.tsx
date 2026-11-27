@@ -47,7 +47,7 @@ function EnvSelector({
     <div
       ref={group}
       role="radiogroup"
-      aria-label="Environnement à diagnostiquer"
+      aria-label="Environment to diagnose"
       onKeyDown={onKeyDown}
       className="inline-flex rounded-md border border-border bg-background-subtle p-0.5"
     >
@@ -69,7 +69,7 @@ function EnvSelector({
           >
             {broken[env] && <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-danger" />}
             {env}
-            {broken[env] && <span className="sr-only"> (en erreur)</span>}
+            {broken[env] && <span className="sr-only"> (failing)</span>}
           </button>
         );
       })}
@@ -149,7 +149,7 @@ export function DoctorCard({ appId, appName }: { appId: number; appName: string 
               />
               {done ? (
                 <Button size="sm" variant="ghost" icon={<IconRefresh size={13} aria-hidden="true" />} onClick={launch}>
-                  Relancer
+                  Run again
                 </Button>
               ) : run.status !== 'error' ? (
                 <Button
@@ -159,7 +159,7 @@ export function DoctorCard({ appId, appName }: { appId: number; appName: string 
                   disabled={running}
                   onClick={launch}
                 >
-                  {`Diagnostiquer ${env}`}
+                  {`Diagnose ${env}`}
                 </Button>
               ) : null}
             </div>
@@ -173,15 +173,15 @@ export function DoctorCard({ appId, appName }: { appId: number; appName: string 
                 {run.error}
               </p>
               <Button size="sm" variant="secondary" icon={<IconRefresh size={13} aria-hidden="true" />} onClick={launch}>
-                Réessayer
+                Retry
               </Button>
             </div>
           ) : done && run.data ? (
             <DoctorDiagnosisView diagnosis={run.data} appId={appId} />
           ) : (
             <p className="text-sm text-muted-foreground">
-              Vérifie l’état de {appName} en croisant pods, logs, ArgoCD, pipeline et derniers
-              déploiements, puis explique la panne preuves à l’appui ; rien n’est modifié sans votre accord.
+              Checks the status of {appName} by cross-referencing pods, logs, ArgoCD, the pipeline and recent
+              deployments, then explains the failure with evidence; nothing is changed without your approval.
             </p>
           )}
         </section>

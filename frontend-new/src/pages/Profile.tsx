@@ -24,9 +24,9 @@ import { timeAgo } from '@/utils/timeAgo';
 import { Switch } from '@/components/ui/Switch';
 
 const PREF_CATEGORIES = [
-  { key: 'app',     label: 'Applications', description: 'Déploiements, santé, modifications' },
-  { key: 'cluster', label: 'Clusters',     description: 'Mise hors ligne / rétablissement' },
-  { key: 'group',   label: 'Groupes',      description: 'Membres ajoutés / retirés, renommage' },
+  { key: 'app',     label: 'Applications', description: 'Deployments, health, changes' },
+  { key: 'cluster', label: 'Clusters',     description: 'Going offline / back online' },
+  { key: 'group',   label: 'Groups',       description: 'Members added / removed, renaming' },
 ];
 
 function NotificationPreferences() {
@@ -49,7 +49,7 @@ function NotificationPreferences() {
 
   return (
     <Card>
-      <h2 className="text-sm font-medium text-foreground mb-4">Préférences de notification</h2>
+      <h2 className="text-sm font-medium text-foreground mb-4">Notification preferences</h2>
       {isLoading ? (
         <Spinner size="sm" />
       ) : (
@@ -185,7 +185,7 @@ export function Profile() {
     mutationFn: groupsApi.syncTeams,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['my-groups'] });
-      toast({ title: 'Synchronisation effectuée' });
+      toast({ title: 'Sync completed' });
     },
   });
 

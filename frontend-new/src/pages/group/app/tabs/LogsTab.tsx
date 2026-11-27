@@ -113,8 +113,8 @@ export function LogsTab() {
         )}
         {logs.some((l) => l.level === 'ERROR') && (
           <AskAIButton
-            label="Expliquer les erreurs"
-            question={`Analyse les erreurs récentes des logs ${env} de ${appSlug} : quelle est la cause probable et comment corriger ?`}
+            label="Explain the errors"
+            question={`Analyze the recent errors in the ${env} logs of ${appSlug}: what is the probable cause and how do I fix it?`}
           />
         )}
         <Button

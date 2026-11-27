@@ -15,7 +15,7 @@ interface Props {
  * « Expliquer avec l'IA » : ouvre l'assistant sur la question pré-remplie.
  * Masqué tant que l'assistant n'est pas activé sur la plateforme.
  */
-export function AskAIButton({ question, label = 'Expliquer avec l’IA', className }: Props) {
+export function AskAIButton({ question, label = 'Explain with AI', className }: Props) {
   const { data: uiSettings } = useQuery({
     queryKey: ['ai-ui-settings'],
     queryFn: assistantApi.getUiSettings,
