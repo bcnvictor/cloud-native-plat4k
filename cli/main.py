@@ -23,9 +23,9 @@ app = typer.Typer(
 
 @app.command()
 def docs():
-    """Ouvre la documentation CNP dans le navigateur."""
+    """Open the CNP documentation in the browser."""
     import webbrowser
-    typer.echo(f"Ouverture de la documentation : {DOCS_URL}")
+    typer.echo(f"Opening the documentation: {DOCS_URL}")
     webbrowser.open(DOCS_URL)
 
 app.add_typer(auth.app, name="auth")
