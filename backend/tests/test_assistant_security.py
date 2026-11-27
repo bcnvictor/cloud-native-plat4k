@@ -94,7 +94,7 @@ async def test_rate_limit_per_minute_returns_429(
             headers={"Authorization": f"Bearer {dev_token}"},
         )
     assert resp.status_code == 429
-    assert "par minute" in resp.json()["detail"]
+    assert "per minute" in resp.json()["detail"]
 
 
 @pytest.mark.anyio
@@ -230,7 +230,7 @@ async def test_profile_uses_role_of_current_page(db_session: AsyncSession, dev_u
     await _group_with(db_session, dev_user, 40, gid=101)  # maintainer
     await _group_with(db_session, dev_user, 20, gid=202)  # viewer
     on_b = PlatformTools(db_session, dev_user, page=PageContext(group_slug="team-202"))
-    assert await on_b.profile() == ("viewer", "dans le groupe Team 202")
+    assert await on_b.profile() == ("viewer", "in group Team 202")
     on_a_app = PlatformTools(db_session, dev_user,
                              page=PageContext(group_slug="team-101", app_slug="app-101"))
     assert (await on_a_app.profile())[0] == "maintainer"
@@ -291,7 +291,7 @@ async def test_system_prompt_carries_profile_style(db_session: AsyncSession, dev
     await svc.chat(message="?", agent="platform", current_user=dev_user,
                    page=PageContext(group_slug="team-101"))
     system = provider.calls[0]["messages"][0].content
-    assert "Profil : viewer (dans le groupe Team 101)" in system
-    assert "non techniques" in system
+    assert "Profile: viewer (in group Team 101)" in system
+    assert "non-technical" in system
     offered = {t["function"]["name"] for t in provider.calls[0]["tools"]}
     assert "list_env_var_keys" not in offered

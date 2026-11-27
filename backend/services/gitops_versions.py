@@ -86,7 +86,7 @@ def image_tag_at(gl: Any, gitops_project: str, path: str, revision: str) -> Opti
 def gitops_client() -> tuple[Any, str]:
     """Client GitLab du bot et chemin du dépôt GitOps. Lève RuntimeError si non configuré."""
     if not settings.GITOPS_REPO_URL or not settings.GITLAB_BOT_TOKEN:
-        raise RuntimeError("dépôt GitOps non configuré")
+        raise RuntimeError("GitOps repository not configured")
     from backend.ci.detector import extract_project_path
     from backend.gitlab.client import GitLabClient
 

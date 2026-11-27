@@ -273,7 +273,7 @@ def test_changes_enter_the_ledger():
                       files=[{"path": "app/config.py", "change": "modified"}])
     ledger = build_ledger(s, verdict, timeline, changes)
     git = [e for e in ledger if e.source == DoctorEvidenceSource.GIT]
-    assert git[0].label == "Commit f4e5d6c7 : « feat(payment): nouveau client »"
+    assert git[0].label == 'Commit f4e5d6c7: "feat(payment): nouveau client"'
     assert "app/config.py" in git[1].detail
 
 
@@ -312,7 +312,7 @@ def test_rule_cause_for_a_regression_mentions_the_delay():
     verdict, timeline = _verdict(s)
     cause = rule_cause(s, verdict, timeline)
     assert cause.confidence == DoctorConfidence.HAUTE
-    assert "1 min après" in cause.summary
+    assert "1 min after" in cause.summary
 
 
 def test_degraded_event_before_the_deploy_lowers_confidence():
@@ -333,7 +333,7 @@ def test_a_degradation_of_the_other_env_is_ignored():
     assert timeline.correlation == DoctorConfidence.HAUTE
     assert all(e.kind != "degraded" for e in timeline.entries)
     ledger = build_ledger(s, DoctorVerdict.REGRESSION, timeline, None)
-    assert not any("dégradée" in ev.label for ev in ledger)
+    assert not any("degraded" in ev.label for ev in ledger)
 
 
 def test_a_degradation_without_env_only_counts_when_the_cluster_went_offline():
@@ -401,7 +401,7 @@ def test_errors_left_by_the_previous_version_do_not_make_a_rollback_unstable():
     verdict, timeline = _verdict(s)
     assert verdict == DoctorVerdict.HEALTHY
     labels = [e.label for e in build_ledger(s, verdict, timeline, None)]
-    assert "Aucune ligne d'erreur depuis le dernier déploiement" in labels
+    assert "No error lines since the latest deployment" in labels
     assert not any("PAYMENT_API_URL" in label or "BackOff" in label for label in labels)
 
 
@@ -409,5 +409,5 @@ def test_a_deployment_on_another_day_reads_naturally():
     s = _healthy(argo=ArgoState(available=True, sync="Synced", health="Healthy", image_tag="a1b2c3d4",
                                 history=[_dep(11, GOOD, NOW - timedelta(days=3))]))
     labels = [e.label for e in build_ledger(s, DoctorVerdict.UNSTABLE, build_timeline(s, False), None)]
-    deploy = next(label for label in labels if label.startswith("Dernier déploiement"))
-    assert " à le " not in deploy and " le 13/11 à " in deploy
+    deploy = next(label for label in labels if label.startswith("Latest deployment"))
+    assert " at on " not in deploy and " on 13/11 at " in deploy

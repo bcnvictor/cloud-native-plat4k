@@ -217,7 +217,7 @@ async def test_test_rejects_unsafe_kubeconfig(client: AsyncClient, admin_token: 
                                  headers=_auth(admin_token))
 
     assert resp.status_code == 422
-    assert "non autorisés" in resp.json()["detail"]
+    assert "forbidden fields" in resp.json()["detail"]
     k8s_cls.assert_not_called()
 
 

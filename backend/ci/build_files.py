@@ -66,8 +66,8 @@ def generate_missing_build_files(
         if dockerfile is None:
             dockerfile = _skeleton_dockerfile(framework)
             result.todos.append(
-                "`Dockerfile` : CNP n'a pas pu déduire comment construire et démarrer l'application. "
-                "Complétez-le — le build échoue volontairement tant que ce n'est pas fait."
+                "`Dockerfile`: CNP could not infer how to build and start the application. "
+                "Complete it — the build fails on purpose until this is done."
             )
         result.files["Dockerfile"] = dockerfile
 

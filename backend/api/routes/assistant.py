@@ -33,11 +33,11 @@ global_router = APIRouter()
 
 # Warning obligatoire avant activation de metadata_and_code (plan §Gouvernance)
 _CODE_ACCESS_WARNING = (
-    "Vous autorisez l'assistant IA à envoyer des extraits rédigés du code source de ce repo "
-    "au provider IA configuré pour CNP. Les secrets, tokens, kubeconfigs, .env et valeurs "
-    "masquées sont exclus, mais le code et les noms de fichiers peuvent rester sensibles pour "
-    "l'entreprise. Vérifiez que le provider, sa juridiction et ses conditions de traitement des "
-    "données sont acceptables avant d'activer cette option."
+    "You are allowing the AI assistant to send redacted excerpts of this repository's source "
+    "code to the AI provider configured for CNP. Secrets, tokens, kubeconfigs, .env files and "
+    "masked values are excluded, but the code and file names may still be sensitive for the "
+    "company. Check that the provider, its jurisdiction and its data processing terms are "
+    "acceptable before enabling this option."
 )
 
 
@@ -84,19 +84,19 @@ async def _guard_provider(call: Awaitable[Any]):
             raise HTTPException(
                 status_code=429,
                 detail=(
-                    "Quota du fournisseur IA atteint (limite par minute ou par jour). "
-                    "Réessayez dans une minute ; si cela persiste, un administrateur peut "
-                    "changer de modèle ou de provider dans Réglages plateforme → Assistant IA."
+                    "AI provider quota reached (per-minute or per-day limit). "
+                    "Try again in a minute; if it persists, an administrator can change "
+                    "the model or provider in Settings → AI assistant."
                 ),
             ) from exc
         raise HTTPException(
             status_code=502,
-            detail=f"Le fournisseur IA a renvoyé une erreur ({exc.response.status_code}). Réessayez.",
+            detail=f"The AI provider returned an error ({exc.response.status_code}). Please try again.",
         ) from exc
     except httpx.TransportError as exc:
         raise HTTPException(
             status_code=502,
-            detail="Le fournisseur IA est injoignable pour le moment. Réessayez.",
+            detail="The AI provider is unreachable right now. Please try again.",
         ) from exc
 
 
@@ -200,8 +200,8 @@ async def patch_assistant_settings(
                     "code": "WARNING_NOT_ACCEPTED",
                     "warning": _CODE_ACCESS_WARNING,
                     "message": (
-                        "Renvoyez la requête avec accept_code_access_warning=true "
-                        "pour confirmer l'activation de metadata_and_code."
+                        "Send the request again with accept_code_access_warning=true "
+                        "to confirm enabling metadata_and_code."
                     ),
                 },
             )
@@ -542,7 +542,7 @@ async def reindex_platform_kb(
             status_code=400,
             detail=(
                 "Platform knowledge base is disabled "
-                "(Réglages plateforme → Assistant IA → Accès aux données de la CNP)."
+                "(Settings → AI assistant → CNP data access)."
             ),
         )
 
@@ -719,13 +719,13 @@ async def summarize_security_scan(
         + (f"\n  {f.description}" if f.description else "")
         + (f"\n  Remediation: {f.remediation}" if f.remediation else "")
         for f in scan.findings
-    ) or "Aucun finding détecté."
+    ) or "No findings detected."
 
     prompt = (
-        f"Voici les résultats d'un scan sécurité (ref: {scan.ref}) pour l'application {app.name}.\n\n"
+        f"Here are the results of a security scan (ref: {scan.ref}) for the application {app.name}.\n\n"
         f"{findings_text}\n\n"
-        "Fournis une synthèse concise en français : sévérité globale, principaux risques, "
-        "recommandations prioritaires. Ne génère pas de code. Ne propose pas de MR ou de deploy automatique."
+        "Provide a concise summary in English: overall severity, main risks, "
+        "priority recommendations. Do not generate code. Do not suggest an MR or an automatic deploy."
     )
 
     await _check_limits(db, current_user)

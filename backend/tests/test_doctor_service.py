@@ -227,7 +227,7 @@ async def test_regression_one_ai_call_with_verified_evidence(db_session: AsyncSe
     assert len(provider.calls) == 1
     assert "tools" not in provider.calls[0]
     prompt = provider.calls[0]["messages"][-1].content
-    assert "Déploiement suspect : f4e5d6c7" in prompt
+    assert "Suspect deployment: f4e5d6c7" in prompt
     assert "[A1] (rollback)" in prompt
     assert SECRET not in prompt
 
@@ -300,7 +300,7 @@ async def test_provider_failure_falls_back_to_the_platform_diagnosis(
     assert result.ai.error == code and not result.ai.used
     assert result.verdict == DoctorVerdict.REGRESSION
     assert result.timeline is not None and result.actions[0].kind.value == "rollback"
-    assert result.cause is not None and "Régression probable" in result.cause.summary
+    assert result.cause is not None and "Probable regression" in result.cause.summary
     assert any(e.cited for e in result.evidence)
     assert await _usage_rows(db_session) == []
 
@@ -311,7 +311,7 @@ async def test_unstructured_answer_is_kept_as_raw_text(db_session: AsyncSession,
     result = await _diagnose(db_session, app, dev_user, ScriptedProvider("Je pense que c'est la base."))
     assert result.source == DoctorSource.AI
     assert result.raw_text == "Je pense que c'est la base."
-    assert result.headline.startswith("demo-shop est en échec en prod")   # constat de la plateforme
+    assert result.headline.startswith("demo-shop has been failing in prod")   # constat de la plateforme
 
 
 @pytest.mark.anyio

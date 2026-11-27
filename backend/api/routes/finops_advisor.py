@@ -104,16 +104,15 @@ async def get_ai_advice(
             raise HTTPException(
                 status_code=429,
                 detail=(
-                    "Quota du fournisseur IA atteint. Réessayez dans une minute ; si cela "
-                    "persiste, un administrateur peut changer de provider dans Réglages "
-                    "plateforme → Assistant IA."
+                    "AI provider quota reached. Try again in a minute; if it persists, "
+                    "an administrator can change the provider in Settings → AI assistant."
                 ),
             ) from exc
         raise HTTPException(
             status_code=502,
-            detail=f"Le fournisseur IA a renvoyé une erreur ({exc.response.status_code}). Réessayez.",
+            detail=f"The AI provider returned an error ({exc.response.status_code}). Please try again.",
         ) from exc
     except httpx.TransportError as exc:
-        raise HTTPException(status_code=502, detail="Le fournisseur IA est injoignable.") from exc
+        raise HTTPException(status_code=502, detail="The AI provider is unreachable.") from exc
 
     return AIAdviceResponse(**asdict(result))

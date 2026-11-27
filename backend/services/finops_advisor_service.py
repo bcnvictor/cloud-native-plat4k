@@ -49,39 +49,43 @@ _MIN_RAM_MIB = 32
 _MAX_OUTPUT_TOKENS = 2048
 
 _SYSTEM_PROMPT = """\
-Tu es le conseiller FinOps de la Cloud Native Platform (CNP). Tu analyses la consommation \
-réelle d'une application Kubernetes et tu recommandes des ajustements de ressources \
-(right-sizing) ou d'autres optimisations de coût.
+You are the FinOps advisor of the Cloud Native Platform (CNP). You analyse the actual \
+consumption of a Kubernetes application and recommend resource adjustments \
+(right-sizing) or other cost optimisations.
 
-Règles :
-- Appuie-toi UNIQUEMENT sur les données fournies ; n'invente aucune valeur.
-- Utilise les chiffres de la « proposition de référence » (déjà calculés) pour les ressources \
-proposées et les économies ; ne refais pas les calculs.
-- Mémoire : ne propose jamais une request inférieure au maximum observé (risque d'OOMKill).
-- Si la couverture des métriques est courte (moins de 24 h) ou s'il y a des redémarrages, \
-baisse le niveau de confiance et dis-le.
-- Si l'app est déjà bien dimensionnée, dis-le et ne force pas de recommandation.
-- Les actions se font dans le chart Helm de l'app (resources.requests / resources.limits) ; \
-rien n'est appliqué automatiquement, l'équipe valide.
-- Réponds en français, de façon concise.
+Rules:
+- Rely ONLY on the data provided; never invent a value.
+- Use the figures of the "reference proposal" (already computed) for the proposed resources \
+and the savings; do not redo the calculations.
+- Memory: never propose a request below the observed maximum (OOMKill risk).
+- If the metrics coverage is short (less than 24 h) or there are restarts, lower the \
+confidence level and say so.
+- If the app is already right-sized, say so and do not force a recommendation.
+- Changes are made in the app's Helm chart (resources.requests / resources.limits); \
+nothing is applied automatically, the team validates.
+- Write every text field in English, concisely, even when the data is labelled in French.
 
-Réponds avec UN SEUL objet JSON, sans texte autour, au format :
+Answer with ONE SINGLE JSON object, with no text around it, in this format:
 {
-  "summary": "2 phrases maximum : état général et gain possible",
+  "summary": "2 sentences maximum: overall state and possible gain",
   "recommendations": [
     {
-      "title": "titre court",
+      "title": "short title",
       "env": "prod | dev | toutes",
-      "action": "ce qu'il faut changer, concrètement",
-      "current": "valeur actuelle",
-      "proposed": "valeur proposée",
+      "action": "what to change, concretely",
+      "current": "current value",
+      "proposed": "proposed value",
       "monthly_savings_usd": 0.0,
       "risk": "bas | moyen | élevé",
       "confidence": "haute | moyenne | faible",
-      "rationale": "justification courte basée sur les métriques"
+      "rationale": "short justification based on the metrics"
     }
   ]
 }
+
+JSON keys and enum values are a fixed contract, never translate them: "env" is exactly one \
+of prod, dev or toutes (all environments); "risk" is exactly one of bas, moyen or élevé \
+(low, medium, high); "confidence" is exactly one of haute, moyenne or faible (high, medium, low).
 """
 
 _LEVELS = {"bas", "moyen", "élevé"}
@@ -200,32 +204,32 @@ def build_snapshot(env: str, raw: dict, step_seconds: int) -> EnvSnapshot:
 
 
 def _fmt(value: Optional[float], unit: str) -> str:
-    return "non défini" if value is None else f"{value:g} {unit}"
+    return "not set" if value is None else f"{value:g} {unit}"
 
 
 def build_user_prompt(app: Application, snapshots: list[EnvSnapshot], window_hours: int) -> str:
     lines = [
-        f"Application : {app.name} (slug {app.slug}, framework {app.framework or 'non spécifié'})",
-        f"Fenêtre demandée : {window_hours} h. Tarifs : CPU ${CPU_CORE_HOUR_USD}/cœur·h, "
-        f"RAM ${RAM_GIB_HOUR_USD}/GiB·h, mois = {HOURS_PER_MONTH} h.",
+        f"Application: {app.name} (slug {app.slug}, framework {app.framework or 'not specified'})",
+        f"Requested window: {window_hours} h. Prices: CPU ${CPU_CORE_HOUR_USD}/core·h, "
+        f"RAM ${RAM_GIB_HOUR_USD}/GiB·h, month = {HOURS_PER_MONTH} h.",
     ]
     for s in snapshots:
         lines += [
-            f"\n=== Environnement {s.env} ===",
-            f"Pods : {s.pods} — redémarrages sur la fenêtre : {s.restarts} — "
-            f"couverture réelle des métriques : {s.coverage_hours} h",
-            f"CPU consommé : moyenne {s.cpu_avg_mcpu} mCPU, p95 {s.cpu_p95_mcpu}, max {s.cpu_max_mcpu}",
-            f"RAM consommée : moyenne {s.ram_avg_mib} MiB, p95 {s.ram_p95_mib}, max {s.ram_max_mib}",
-            f"Requests : CPU {_fmt(s.cpu_request_mcpu, 'mCPU')}, RAM {_fmt(s.ram_request_mib, 'MiB')} — "
-            f"Limits : CPU {_fmt(s.cpu_limit_mcpu, 'mCPU')}, RAM {_fmt(s.ram_limit_mib, 'MiB')}",
-            f"Coût mensuel réservé (requests) : "
-            f"{'$' + str(s.reserved_cost_month_usd) if s.reserved_cost_month_usd is not None else 'requests absentes'}"
-            f" — coût de la consommation réelle : ${s.used_cost_month_usd}",
-            f"Proposition de référence : requests CPU {s.proposed_cpu_request_mcpu} mCPU "
+            f"\n=== Environment {s.env} ===",
+            f"Pods: {s.pods} — restarts over the window: {s.restarts} — "
+            f"actual metrics coverage: {s.coverage_hours} h",
+            f"CPU used: average {s.cpu_avg_mcpu} mCPU, p95 {s.cpu_p95_mcpu}, max {s.cpu_max_mcpu}",
+            f"RAM used: average {s.ram_avg_mib} MiB, p95 {s.ram_p95_mib}, max {s.ram_max_mib}",
+            f"Requests: CPU {_fmt(s.cpu_request_mcpu, 'mCPU')}, RAM {_fmt(s.ram_request_mib, 'MiB')} — "
+            f"Limits: CPU {_fmt(s.cpu_limit_mcpu, 'mCPU')}, RAM {_fmt(s.ram_limit_mib, 'MiB')}",
+            f"Reserved monthly cost (requests): "
+            f"{'$' + str(s.reserved_cost_month_usd) if s.reserved_cost_month_usd is not None else 'no requests'}"
+            f" — cost of actual usage: ${s.used_cost_month_usd}",
+            f"Reference proposal: requests CPU {s.proposed_cpu_request_mcpu} mCPU "
             f"(p95 × {_HEADROOM}), RAM {s.proposed_ram_request_mib} MiB (max × {_HEADROOM}) → "
-            f"${s.proposed_cost_month_usd}/mois"
+            f"${s.proposed_cost_month_usd}/month"
             + (
-                f", économie potentielle ${s.potential_savings_month_usd}/mois"
+                f", potential saving ${s.potential_savings_month_usd}/month"
                 if s.potential_savings_month_usd is not None
                 else ""
             ),
@@ -235,15 +239,15 @@ def build_user_prompt(app: Application, snapshots: list[EnvSnapshot], window_hou
 
 # Rules handed to the global assistant with the figures (get_finops_advice).
 _ASSISTANT_GUIDANCE = """\
-Consignes pour rédiger les recommandations FinOps :
-- Reprends les chiffres de la « proposition de référence » ; ne refais pas les calculs.
-- Mémoire : ne propose jamais une request inférieure au maximum observé (risque d'OOMKill).
-- Couverture < 24 h ou redémarrages : baisse le niveau de confiance et dis-le.
-- App déjà bien dimensionnée : dis-le, sans forcer de recommandation.
-- Pour chaque recommandation : environnement, valeur actuelle → proposée, économie mensuelle,
-  risque (bas / moyen / élevé) et confiance (haute / moyenne / faible).
-- Les changements se font dans le chart Helm de l'app (resources.requests / resources.limits) ;
-  rien n'est appliqué automatiquement, l'équipe valide."""
+Guidelines for writing the FinOps recommendations:
+- Reuse the figures of the "reference proposal"; do not redo the calculations.
+- Memory: never propose a request below the observed maximum (OOMKill risk).
+- Coverage < 24 h or restarts: lower the confidence level and say so.
+- App already right-sized: say so, without forcing a recommendation.
+- For each recommendation: environment, current → proposed value, monthly saving,
+  risk (low / medium / high) and confidence (high / medium / low).
+- Changes are made in the app's Helm chart (resources.requests / resources.limits);
+  nothing is applied automatically, the team validates."""
 
 
 async def _prometheus_url(db: AsyncSession, app: Application) -> str:
@@ -261,7 +265,7 @@ async def analyze_usage(db: AsyncSession, app: Application) -> UsageAnalysis:
         logger.warning("FinOps advisor: Prometheus query failed for %s", app.slug, exc_info=True)
         return UsageAnalysis(
             status="metrics_unavailable", window_hours=window,
-            message=f"Métriques indisponibles : Prometheus injoignable ({type(exc).__name__}).",
+            message=f"Metrics unavailable: Prometheus unreachable ({type(exc).__name__}).",
         )
 
     snapshots = [
@@ -273,8 +277,8 @@ async def analyze_usage(db: AsyncSession, app: Application) -> UsageAnalysis:
         return UsageAnalysis(
             status="no_data", window_hours=window,
             message=(
-                f"Aucune métrique pour {app.name} sur les {window} dernières heures : l'app "
-                "n'est pas déployée, est arrêtée, ou ses pods n'ont pas le label "
+                f"No metrics for {app.name} over the last {window} hours: the app "
+                "is not deployed, is stopped, or its pods do not have the label "
                 "app.kubernetes.io/managed-by=cnp."
             ),
         )
@@ -286,7 +290,7 @@ def describe_analysis(app: Application, analysis: UsageAnalysis) -> str:
     if analysis.status != "ok":
         return analysis.message
     return (
-        f"Analyse FinOps de {app.name} (Prometheus, {analysis.window_hours} dernières heures) :\n"
+        f"FinOps analysis of {app.name} (Prometheus, last {analysis.window_hours} hours):\n"
         f"{build_user_prompt(app, analysis.snapshots, analysis.window_hours)}\n\n"
         f"{_ASSISTANT_GUIDANCE}"
     )
