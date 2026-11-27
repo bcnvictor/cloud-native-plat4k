@@ -129,6 +129,8 @@ class Evidence:
     cited: bool = False
     # Preuve que la plateforme retient d'elle-même (repli sans IA, ou IA qui ne cite rien).
     key: bool = False
+    # Étape de la chaîne de santé qui affiche la preuve (None : chronologie, commits, événements).
+    step: Optional[str] = None
 
 
 @dataclass
@@ -472,16 +474,17 @@ def build_ledger(
         since = f" depuis {fmt_clock(signals.stopped.stopped_at, now)}" if signals.stopped.stopped_at else ""
         reason = {"schedule": " (arrêt planifié)", "manual": " (arrêt manuel)"}.get(signals.stopped.reason or "", "")
         add(Evidence(DoctorEvidenceSource.PLATFORM, f"Environnement {env} arrêté{reason}{since}",
-                     at=signals.stopped.stopped_at, key=True))
+                     at=signals.stopped.stopped_at, key=True, step="pods"))
     if signals.cluster is None:
-        add(Evidence(DoctorEvidenceSource.PLATFORM, "Aucun cluster cible n'est défini pour cette application", key=True))
+        add(Evidence(DoctorEvidenceSource.PLATFORM, "Aucun cluster cible n'est défini pour cette application",
+                     key=True, step="cluster"))
     elif signals.cluster.status == ClusterStatus.OFFLINE:
         seen = signals.cluster.last_seen_at
         add(Evidence(
             DoctorEvidenceSource.PLATFORM,
             f"Cluster {signals.cluster.name} hors ligne"
             + (f" (dernier contact {fmt_clock(seen, now)})" if seen else ""),
-            at=seen, key=True,
+            at=seen, key=True, step="cluster",
         ))
 
     # Déploiement suspect.
@@ -521,7 +524,7 @@ def build_ledger(
             parts.append(f"{reason} : {hint[0]}.")
         add(Evidence(DoctorEvidenceSource.KUBERNETES,
                      f"Pod {pod.name} : {reason}, {c.restarts} redémarrage{'s' if c.restarts > 1 else ''}",
-                     detail=" ".join(parts) or None, at=pod.start_time, key=True))
+                     detail=" ".join(parts) or None, at=pod.start_time, key=True, step="pods"))
     if k8s.available:
         restarts = _restarts(signals)
         suffix = "aucun redémarrage" if restarts == 0 else f"{restarts} redémarrage{'s' if restarts > 1 else ''}"
@@ -529,11 +532,12 @@ def build_ledger(
             suffix = "aucun pod"
         add(Evidence(DoctorEvidenceSource.KUBERNETES,
                      f"{k8s.replicas_ready}/{k8s.replicas_desired} réplicas prêts, {suffix}",
-                     key=verdict in (DoctorVerdict.HEALTHY, DoctorVerdict.DEPLOYING) or (restarts > 0 and not failing)))
+                     key=verdict in (DoctorVerdict.HEALTHY, DoctorVerdict.DEPLOYING) or (restarts > 0 and not failing),
+                     step="pods"))
         for w in current_warnings(signals)[:3]:
             add(Evidence(DoctorEvidenceSource.KUBERNETES,
                          f"Événement {w.reason} ×{w.count} sur {w.object or 'le déploiement'}",
-                         detail=w.message or None, at=w.first_seen))
+                         detail=w.message or None, at=w.first_seen, step="pods"))
 
     # Logs.
     logs = signals.logs
@@ -543,14 +547,14 @@ def build_ledger(
         if not groups:
             quiet = "depuis le dernier déploiement" if _since_current_deploy(signals) else "sur la dernière heure"
             add(Evidence(DoctorEvidenceSource.LOGS, f"Aucune ligne d'erreur {quiet}",
-                         key=verdict == DoctorVerdict.HEALTHY))
+                         key=verdict == DoctorVerdict.HEALTHY, step="logs"))
         tail = "\n".join(
             f"{fmt_clock(line.at, now)} [{line.level}] {line.msg}" for line in current_errors(signals)[-8:]
         )
         for i, (msg, count, first) in enumerate(groups[:4]):
             add(Evidence(DoctorEvidenceSource.LOGS,
                          f"{msg} (×{count} {window})" if count > 1 else msg,
-                         detail=tail if i == 0 else None, at=first, key=i == 0))
+                         detail=tail if i == 0 else None, at=first, key=i == 0, step="logs"))
 
     # ArgoCD.
     argo = signals.argo
@@ -560,9 +564,11 @@ def build_ledger(
                      f"ArgoCD : sync {argo.sync or '?'}, santé {argo.health or '?'}{image}",
                      at=argo.last_sync_at,
                      key=verdict in (DoctorVerdict.HEALTHY, DoctorVerdict.DEPLOYING, DoctorVerdict.CI_FAILURE)
-                     or (not k8s.available and is_failing(signals))))
+                     or (not k8s.available and is_failing(signals)),
+                     step="argocd"))
     elif argo.not_found:
-        add(Evidence(DoctorEvidenceSource.ARGOCD, f"Aucune application ArgoCD {app.slug}-{env}", key=True))
+        add(Evidence(DoctorEvidenceSource.ARGOCD, f"Aucune application ArgoCD {app.slug}-{env}",
+                     key=True, step="argocd"))
 
     # Ce qui a changé.
     if changes is not None and not changes.unavailable_reason:
@@ -584,13 +590,14 @@ def build_ledger(
         add(Evidence(DoctorEvidenceSource.CI,
                      f"Dernier pipeline #{pipe.id} : {pipe.status} (branche {pipe.ref}, commit {pipe.sha})",
                      at=pipe.created_at, url=pipe.web_url,
-                     key=verdict == DoctorVerdict.CI_FAILURE and not pipe.failed_jobs))
+                     key=verdict == DoctorVerdict.CI_FAILURE and not pipe.failed_jobs, step="pipeline"))
         for job in pipe.failed_jobs[:2]:
             why = f", raison : {job.failure_reason}" if job.failure_reason else ""
             add(Evidence(DoctorEvidenceSource.CI,
                          f"Job « {job.name} » en échec (stage {job.stage or '?'}{why})",
                          detail="\n".join(job.log_tail.splitlines()[-15:]) or None,
-                         at=pipe.created_at, url=job.web_url, key=verdict == DoctorVerdict.CI_FAILURE))
+                         at=pipe.created_at, url=job.web_url, key=verdict == DoctorVerdict.CI_FAILURE,
+                         step="pipeline"))
 
     # Événements CNP utiles au diagnostic.
     labels = {
@@ -613,6 +620,142 @@ def build_ledger(
         if ev.detail:
             ev.detail = _clip(redact(ev.detail).text, _MAX_DETAIL)
     return out
+
+
+# ── Chaîne de santé ───────────────────────────────────────────────────────────
+
+# Du code à l'utilisateur : l'ordre dans lequel la carte affiche les étapes.
+CHAIN_STEPS = ("pipeline", "argocd", "cluster", "pods", "logs")
+
+# Statuts d'une étape : ok · warning (en cours, à surveiller) · failing · stopped (arrêt
+# voulu) · unknown (signal indisponible).
+_STEP_OF_SOURCE = {
+    DoctorEvidenceSource.CI: "pipeline",
+    DoctorEvidenceSource.ARGOCD: "argocd",
+    DoctorEvidenceSource.PLATFORM: "cluster",
+    DoctorEvidenceSource.KUBERNETES: "pods",
+    DoctorEvidenceSource.LOGS: "logs",
+}
+
+_POD_REASON_LABEL = {
+    "CrashLoopBackOff": "Crash en boucle",
+    "OOMKilled": "Mémoire saturée",
+    "ImagePullBackOff": "Image introuvable",
+    "ErrImagePull": "Image introuvable",
+    "InvalidImageName": "Image invalide",
+    "CreateContainerConfigError": "Config invalide",
+}
+
+_PIPELINE_STEP = {
+    "success": ("ok", "Réussi"),
+    "failed": ("failing", "En échec"),
+    "canceled": ("warning", "Annulé"),
+    "skipped": ("warning", "Ignoré"),
+    "manual": ("warning", "En attente"),
+}
+
+
+@dataclass
+class ChainStep:
+    """Une étape de la chaîne de santé, évaluée par le code (jamais par l'IA)."""
+    step: str
+    status: str
+    label: str                      # un ou deux mots, sous l'étape
+    detail: Optional[str] = None    # une phrase pour le panneau (raison d'un signal manquant)
+    evidence_ids: list[str] = field(default_factory=list)
+
+
+def _missing_reason(signals: Signals, step: str) -> Optional[str]:
+    return next((m.reason for m in signals.missing if _STEP_OF_SOURCE.get(m.source) == step), None)
+
+
+def _pipeline_step(signals: Signals) -> tuple[str, str, Optional[str]]:
+    pipe = signals.pipeline
+    if not pipe.available:
+        return "unknown", "Inconnu", _missing_reason(signals, "pipeline")
+    if pipe.id is None:
+        return "unknown", "Aucun pipeline", None
+    if (pipe.status or "") in _PIPELINE_RUNNING:
+        return "warning", "En cours", None
+    status, label = _PIPELINE_STEP.get(pipe.status or "", ("unknown", pipe.status or "Inconnu"))
+    return status, label, None
+
+
+def _argocd_step(signals: Signals) -> tuple[str, str, Optional[str]]:
+    argo = signals.argo
+    if argo.not_found:
+        return "failing", "Introuvable", None
+    if not argo.available:
+        return "unknown", "Inconnu", _missing_reason(signals, "argocd")
+    if argo.health == "Degraded":
+        return "failing", "Dégradé", None
+    if argo.health == "Missing":
+        return "failing", "Absent", None
+    if argo.health == "Progressing" or argo.operation_phase == "Running":
+        return "warning", "En cours", None
+    if argo.health == "Suspended":
+        return "warning", "Suspendu", None
+    if argo.health == "Healthy":
+        return ("warning", "Désynchronisé", None) if argo.sync == "OutOfSync" else ("ok", "Synchronisé", None)
+    return "unknown", "Inconnu", None
+
+
+def _cluster_step(signals: Signals) -> tuple[str, str, Optional[str]]:
+    cluster = signals.cluster
+    if cluster is None:
+        return "failing", "Aucun cluster", None
+    if cluster.status == ClusterStatus.OFFLINE:
+        return "failing", "Hors ligne", None
+    if cluster.status == ClusterStatus.ONLINE:
+        return "ok", "En ligne", None
+    return "unknown", "Inconnu", None
+
+
+def _pods_step(signals: Signals) -> tuple[str, str, Optional[str]]:
+    if signals.stopped is not None:
+        return "stopped", "Arrêtés", None
+    k8s = signals.k8s
+    if k8s.not_found:
+        return "failing", "Introuvables", None
+    if not k8s.available:
+        return "unknown", "Inconnu", _missing_reason(signals, "pods")
+    failing = failing_containers(signals)
+    if failing:
+        reason = failing[0][2]
+        return "failing", _POD_REASON_LABEL.get(reason, reason), None
+    ready = f"{k8s.replicas_ready}/{k8s.replicas_desired} prêts"
+    if k8s.replicas_desired == 0:
+        return "warning", "Aucun pod", None
+    if k8s.replicas_ready < k8s.replicas_desired:
+        return "warning", ready, None
+    if _restarts(signals) > 0:
+        return "warning", "Redémarrages", None
+    return "ok", ready, None
+
+
+def _logs_step(signals: Signals, pods_status: str) -> tuple[str, str, Optional[str]]:
+    if not signals.logs.available:
+        return "unknown", "Inconnu", _missing_reason(signals, "logs")
+    if current_errors(signals):
+        # Des erreurs dans une application qui tourne sont à surveiller, pas une panne.
+        return ("failing" if pods_status == "failing" else "warning"), "Erreurs", None
+    return "ok", "Rien à signaler", None
+
+
+def build_chain(signals: Signals, ledger: list[Evidence]) -> list[ChainStep]:
+    """La chaîne de santé de l'environnement, du pipeline aux logs, avec les preuves de chaque étape."""
+    pods = _pods_step(signals)
+    evaluated = {
+        "pipeline": _pipeline_step(signals),
+        "argocd": _argocd_step(signals),
+        "cluster": _cluster_step(signals),
+        "pods": pods,
+        "logs": _logs_step(signals, pods[0]),
+    }
+    return [
+        ChainStep(step, *evaluated[step], evidence_ids=[e.id for e in ledger if e.step == step])
+        for step in CHAIN_STEPS
+    ]
 
 
 # ── Actions ───────────────────────────────────────────────────────────────────

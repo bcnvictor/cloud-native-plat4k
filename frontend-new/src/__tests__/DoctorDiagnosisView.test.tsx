@@ -78,6 +78,44 @@ afterEach(() => {
   Reflect.deleteProperty(document, 'execCommand');
 });
 
+const REGRESSION_WITH_CHAIN: DoctorDiagnosis = {
+  ...REGRESSION_DIAGNOSIS,
+  chain: [
+    { step: 'pipeline', status: 'ok', label: 'Réussi', detail: null, evidence_ids: ['E6'] },
+    { step: 'argocd', status: 'failing', label: 'Dégradé', detail: null, evidence_ids: ['E4'] },
+    { step: 'cluster', status: 'ok', label: 'En ligne', detail: null, evidence_ids: [] },
+    { step: 'pods', status: 'failing', label: 'Crash en boucle', detail: null, evidence_ids: ['E1'] },
+    { step: 'logs', status: 'failing', label: 'Erreurs', detail: null, evidence_ids: ['E2'] },
+  ],
+};
+
+describe('DoctorDiagnosisView : chaîne de santé', () => {
+  it('se lit dans l’ordre : où ça casse, pourquoi, que faire', () => {
+    renderView(REGRESSION_WITH_CHAIN);
+    const titles = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(titles).toEqual(['Où ça casse', 'Pourquoi', 'Que faire']);
+    expect(screen.getByRole('list', { name: 'Chaîne de santé' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Pods : Crash en boucle' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('Pod demo-shop-7d9f8b6c5-x2k4q : CrashLoopBackOff, 6 redémarrages')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Preuves' })).toBeNull();
+  });
+
+  it('range les preuves hors chaîne (déploiement, commit) dans « Pourquoi », repliées', () => {
+    renderView(REGRESSION_WITH_CHAIN);
+    const toggle = screen.getByRole('button', { name: 'Voir les 2 autres preuves' });
+    expect(screen.queryByText('Déploiement de f4e5d6c7 en prod à 14:01, 1 minute avant la panne')).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('Déploiement de f4e5d6c7 en prod à 14:01, 1 minute avant la panne')).toBeTruthy();
+  });
+
+  it('garde la liste des preuves pour une réponse sans chaîne', () => {
+    renderView(REGRESSION_DIAGNOSIS);
+    expect(screen.getByRole('heading', { name: 'Preuves' })).toBeTruthy();
+    expect(screen.queryByRole('list', { name: 'Chaîne de santé' })).toBeNull();
+  });
+});
+
 describe('DoctorDiagnosisView : lecture du résultat', () => {
   it('montre une régression : verdict, chronologie, preuves citées, commits et rollback en premier', () => {
     renderView();
@@ -105,10 +143,10 @@ describe('DoctorDiagnosisView : lecture du résultat', () => {
     expect(compare.getAttribute('href')).toBe(REGRESSION_DIAGNOSIS.changes!.compare_url);
 
     // le rollback est la première action
-    const actions = screen.getByRole('heading', { name: 'Actions conseillées' }).parentElement!;
+    const actions = screen.getByRole('heading', { name: 'Que faire' }).closest('section')!;
     const first = within(actions).getAllByRole('listitem')[0];
     expect(within(first).getByRole('button', { name: /Revenir à la version a1b2c3d4/ })).toBeTruthy();
-    expect(screen.getByText(/Le Doctor ne modifie rien : chaque action est validée par vous\./)).toBeTruthy();
+    expect(within(actions).getByText('Rien n’est modifié sans votre accord')).toBeTruthy();
   });
 
   it('indique un verdict établi sans IA', () => {
@@ -117,7 +155,7 @@ describe('DoctorDiagnosisView : lecture du résultat', () => {
     expect(screen.getByText('Sans IA')).toBeTruthy();
     expect(screen.getByText(/établi par les règles de la plateforme/)).toBeTruthy();
     expect(screen.queryByText('IA encadrée')).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Actions conseillées' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Que faire' })).toBeNull();
   });
 
   it("signale le repli quand l'IA n'a pas répondu", () => {

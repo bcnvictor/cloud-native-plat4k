@@ -31,7 +31,7 @@ const SOURCE_ICON: Record<DoctorEvidenceSource, TablerIcon> = {
 const chevronClass = (open: boolean) =>
   cn('shrink-0 text-muted-foreground motion-reduce:transition-none', open && 'rotate-180');
 
-function EvidenceItem({ evidence }: { evidence: Evidence }) {
+export function EvidenceItem({ evidence }: { evidence: Evidence }) {
   const [open, setOpen] = useState(false);
   const detailId = useId();
   const Icon = SOURCE_ICON[evidence.source] ?? IconInfoCircle;

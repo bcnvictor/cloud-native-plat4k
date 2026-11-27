@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
 
-from shared.models import MemberStatus
+from shared.models import ClusterStatus, MemberStatus
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -88,7 +88,7 @@ _TIER_BY_LEVEL = ((50, "owner"), (40, "maintainer"), (30, "developer"))
 
 _APP_NOT_ALLOWED = (
     "Accès aux données détaillées de l'application « {name} » non autorisé : un "
-    "administrateur doit l'ajouter dans Réglages plateforme (Settings) → Assistant IA → "
+    "administrateur doit l'ajouter dans Platform → Settings → AI assistant → "
     "« Accès aux données d'une application / repo GitLab »."
 )
 
@@ -532,7 +532,8 @@ class PlatformTools:
 
     def _app_link(self, app: Application, groups: dict[int, GitLabGroup]) -> str:
         g = groups.get(app.owning_gitlab_group_id or -1)
-        return f"/groups/{_group_slug(g)}/apps/{app.slug}" if g else f"/admin/apps ({app.slug})"
+        # Chemin seul : le chat en fait un lien cliquable vers la page.
+        return f"/groups/{_group_slug(g)}/apps/{app.slug}" if g else "/admin/apps"
 
     # ── tools ─────────────────────────────────────────────────────────────
 
@@ -566,7 +567,7 @@ class PlatformTools:
             )
         groups = await self._group_names()
         clusters = {
-            c.id: c.name
+            c.id: c.name + (" (hors ligne)" if c.status == ClusterStatus.OFFLINE else "")
             for c in (await self.db.execute(select(ClusterConnection))).scalars().all()
         }
         scale = await self._scale_states([a.id for a in apps])
@@ -592,10 +593,13 @@ class PlatformTools:
         legend = (
             "Légende statut : onboarding = en cours de création/1er pipeline, ready = "
             "pipeline OK pas encore déployée, deployed = déployée et saine, degraded = "
-            "ArgoCD signale un problème de santé."
+            "ArgoCD a signalé Degraded ou Missing, ou le cluster est hors ligne. "
+            "Le statut est le dernier état connu, pas une mesure en temps réel : il est "
+            "rafraîchi à l'ouverture de la page de l'application, ou quand son cluster "
+            "tombe ou revient."
         )
         return ToolResult(
-            f"{len(apps)} application(s) {scope} ({summary}) :\n"
+            f"{len(apps)} application(s) {scope}, dernier état connu ({summary}) :\n"
             + "\n".join(lines)
             + "\n"
             + legend
@@ -742,7 +746,7 @@ class PlatformTools:
         if not allowed:
             return ToolResult(
                 "Métriques non accessibles : aucune de ces applications n'est autorisée "
-                "pour l'assistant (Réglages plateforme → Assistant IA)."
+                "pour l'assistant (Platform → Settings → AI assistant)."
             )
         # Chaque app n'a ses métriques que dans le Prometheus de son cluster cible
         url_of = {a.id: await resolve_prometheus_url(self.db, app=a) for a in allowed}

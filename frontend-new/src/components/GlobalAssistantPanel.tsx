@@ -475,7 +475,7 @@ export function GlobalAssistantPanel({ open, onToggle, onClose }: Props) {
               <p className="text-sm font-medium text-foreground">Assistant IA inactif</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 La fonctionnalité IA est désactivée sur cette plateforme. Un administrateur
-                peut l’activer dans Réglages plateforme → Assistant IA.
+                peut l’activer dans Platform → Settings → AI assistant.
               </p>
             </div>
           </div>

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 from httpx import AsyncClient
-from shared.models import MemberStatus
+from shared.models import ClusterStatus, MemberStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.ai.provider import LLMMessage, LLMResponse, MockProvider
@@ -107,6 +107,36 @@ async def test_list_apps_scoped_to_user_groups(db_session: AsyncSession, dev_use
     assert "secret-b" not in result.text
     assert "degraded" in result.text
     assert "arrêtée en dev" in result.text
+
+
+@pytest.mark.anyio
+async def test_list_apps_gives_clickable_paths_and_offline_clusters(
+    db_session: AsyncSession, admin_user: User, dev_user: User
+):
+    """Chaque app a un chemin de page valide (lien du chat) et son cluster hors ligne est signalé."""
+    apps = await _seed(db_session, dev_user)
+    aks = ClusterConnection(name="cnp-aks", endpoint="https://aks", kubeconfig_secret_ref="ref",
+                            status=ClusterStatus.OFFLINE)
+    db_session.add(aks)
+    await db_session.commit()
+    apps["web"].target_cluster_id = aks.id
+    db_session.add(Application(name="orphan", slug="orphan", owner="x",
+                               last_known_status=ApplicationStatus.DEGRADED))
+    await db_session.commit()
+
+    text = (await PlatformTools(db_session, admin_user).call("list_apps", "{}")).text
+    lines = {line.split(" (slug ")[0].lstrip("- "): line for line in text.splitlines()}
+
+    assert lines["web-a"].endswith("page : /groups/team-a/apps/web-a")
+    assert lines["orphan"].endswith("page : /admin/apps")
+    assert "cluster : cnp-aks (hors ligne)" in lines["web-a"]
+    assert "dernier état connu" in text
+
+
+def test_system_prompt_asks_for_markdown_links():
+    from backend.services.assistant_service import _PLATFORM_SYSTEM_PROMPT
+
+    assert "[Nom de l'app](/groups/" in _PLATFORM_SYSTEM_PROMPT
 
 
 @pytest.mark.anyio
