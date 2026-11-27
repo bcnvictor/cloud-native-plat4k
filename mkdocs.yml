@@ -76,6 +76,9 @@ nav:
       - Use case IA — Chatbot par projet: architecture/ai-chatbot-use-case.md
       - Onglet Security et correction en un clic: architecture/security-tab.md
       - Inventaire des dépendances (SBOM): architecture/sbom-inventory.md
+  - Sécurité:
+      - Posture DevSecOps (DICP): devsecops.md
+      - Modèle d'accès: architecture/access-model.md
   - Guides opérationnels:
       - Setup ArgoCD & GitOps: guides/argocd-setup.md
       - Service discovery & health: guides/cluster-health-monitoring.md

@@ -1,4 +1,4 @@
-from backend.api.deps import get_current_user, get_effective_tier
+from backend.api.deps import get_current_user, get_effective_tier, log_admin_bypass
 from backend.api.schemas.env_vars import (
     EnvVarListResponse,
     EnvVarSetRequest,
@@ -8,13 +8,12 @@ from backend.core.exceptions import ForbiddenException
 from backend.db.models import User
 from backend.db.session import get_db
 from backend.services.env_var_service import EnvVarService
+from backend.services.tier_service import tier_at_least
 from fastapi import APIRouter, Depends
 from shared.models import CnpTier
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
-
-_TIER_ORDER = [CnpTier.VIEWER, CnpTier.DEVELOPER, CnpTier.MAINTAINER, CnpTier.OWNER]
 
 
 async def _require_env_tier(app_id: int, env: str, write: bool, current_user: User, db: AsyncSession) -> None:
@@ -24,14 +23,15 @@ async def _require_env_tier(app_id: int, env: str, write: bool, current_user: Us
     prod: Developer has NO access at all (not even key names) — Maintainer/Owner
     required for both read and write.
     """
-    if current_user.is_admin:
-        return
     if env == "prod":
         min_tier = CnpTier.MAINTAINER
     else:
         min_tier = CnpTier.DEVELOPER if write else CnpTier.VIEWER
+    if current_user.is_admin:
+        await log_admin_bypass(db, current_user, app_id, min_tier)
+        return
     tier = await get_effective_tier(current_user.id, app_id, db)
-    if _TIER_ORDER.index(tier) < _TIER_ORDER.index(min_tier):
+    if not tier_at_least(tier, min_tier):
         raise ForbiddenException(
             f"{'Managing' if write else 'Reading'} '{env}' environment variables requires "
             f"{min_tier.value} tier or admin"
@@ -93,9 +93,11 @@ async def get_env_var_values(
     """
     if env != "dev":
         raise ForbiddenException("Value retrieval is only available for the 'dev' environment")
-    if not current_user.is_admin:
+    if current_user.is_admin:
+        await log_admin_bypass(db, current_user, app_id, CnpTier.DEVELOPER)
+    else:
         tier = await get_effective_tier(current_user.id, app_id, db)
-        if _TIER_ORDER.index(tier) < _TIER_ORDER.index(CnpTier.DEVELOPER):
+        if not tier_at_least(tier, CnpTier.DEVELOPER):
             raise ForbiddenException("Reading dev environment variable values requires Developer tier or admin")
     return await EnvVarService(db).get_values(app_id, env)
 

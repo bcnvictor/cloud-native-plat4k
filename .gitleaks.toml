@@ -1,0 +1,12 @@
+# Config gitleaks du repo CNP (job « Security » de .github/workflows/pipeline.yml, 4K-47).
+# Règles par défaut de gitleaks, plus deux exceptions justifiées :
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Faux secrets volontaires"
+# Tests de la redaction IA, du Doctor et des scans : ils contiennent de faux tokens
+# (glpat-…, clés PEM) précisément pour vérifier qu'ils sont masqués.
+paths = ['''^backend/tests/''']
+# Placeholder du runbook Vault (SECRET_KEY="VotreCleSecreteDePlusDe32Caracteres").
+regexes = ['''VotreCleSecrete''']

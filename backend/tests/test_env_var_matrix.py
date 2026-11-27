@@ -44,7 +44,8 @@ ACCESS_LEVELS = {
 PRINCIPALS = [*ACCESS_LEVELS, "admin"]
 OPERATIONS = ["list", "status", "put", "delete", "values"]
 
-_READ_OK_DEV = set(PRINCIPALS)
+# A non-member has no tier at all, not Viewer: an app's detail is for its team (ADR-0017 §7)
+_READ_OK_DEV = set(PRINCIPALS) - {"none"}
 _WRITE_OK_DEV = {"developer", "maintainer", "owner", "admin"}
 _ALL_OK_PROD = {"maintainer", "owner", "admin"}
 

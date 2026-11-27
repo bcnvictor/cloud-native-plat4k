@@ -32,8 +32,8 @@ export function ttlRemaining(expiresAt: string, now: Date = new Date()): string 
 }
 
 /** Créer et détruire : Developer et plus (ADR-0030 §10). Lire : tout membre. */
-export function canManageEphemeral(access: { tier: CnpTier; is_admin: boolean } | undefined): boolean {
-  return !!access && (access.is_admin || access.tier !== 'viewer');
+export function canManageEphemeral(access: { tier: CnpTier | null; is_admin: boolean } | undefined): boolean {
+  return !!access && (access.is_admin || (access.tier !== null && access.tier !== 'viewer'));
 }
 
 /** L'URL n'est utile qu'une fois l'env servi (certificat prêt). */

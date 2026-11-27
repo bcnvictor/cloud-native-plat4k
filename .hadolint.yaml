@@ -1,0 +1,6 @@
+# Config hadolint des Dockerfiles CNP (job « Security » de .github/workflows/pipeline.yml, 4K-47).
+failure-threshold: warning
+ignored:
+  # Épingler les versions apt (pkg=1.2.3) casse le build dès que Debian publie une mise à
+  # jour de sécurité du paquet : on s'appuie sur l'image de base épinglée à la place.
+  - DL3008

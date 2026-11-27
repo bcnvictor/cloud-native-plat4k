@@ -3,10 +3,11 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from shared.models import MemberStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
-from backend.db.models import Application, ClusterConnection, GitLabGroup
+from backend.db.models import Application, AppMember, ClusterConnection, GitLabGroup, User
 
 pytestmark = pytest.mark.anyio
 
@@ -60,7 +61,23 @@ def _cost(app: str, total: float) -> dict:
 # ── logs ──────────────────────────────────────────────────────────────────────
 
 
-async def test_logs_uses_app_cluster_loki(client, dev_token, clusters):
+@pytest.fixture
+async def dev_member(db_session: AsyncSession, clusters, dev_user: User) -> None:
+    """dev_user is a Developer of api-k3s (project membership)."""
+    app = (await db_session.execute(
+        Application.__table__.select().where(Application.slug == "api-k3s")
+    )).first()
+    await db_session.execute(
+        Application.__table__.update().where(Application.id == app.id).values(gitlab_project_id=4242)
+    )
+    db_session.add(AppMember(
+        gitlab_project_id=4242, gitlab_user_id=77, access_level=30,
+        cnp_user_id=dev_user.id, status=MemberStatus.ACTIVE,
+    ))
+    await db_session.commit()
+
+
+async def test_logs_uses_app_cluster_loki(client, dev_token, dev_member):
     with patch("backend.api.routes.monitoring.get_logs", AsyncMock(return_value=[])) as m:
         r = await client.get("/api/v1/monitoring/logs", params={"app": "api-k3s", "namespace": "prod"},
                              headers=_auth(dev_token))
@@ -68,21 +85,54 @@ async def test_logs_uses_app_cluster_loki(client, dev_token, clusters):
     assert m.await_args.args[0] == "http://k3s:3100"
 
 
-async def test_logs_unknown_slug_uses_global(client, dev_token, clusters):
+async def test_logs_unknown_slug_uses_global(client, admin_token, clusters):
     with patch("backend.api.routes.monitoring.get_logs", AsyncMock(return_value=[])) as m:
         r = await client.get("/api/v1/monitoring/logs", params={"app": "some-container"},
-                             headers=_auth(dev_token))
+                             headers=_auth(admin_token))
     assert r.status_code == 200
     assert m.await_args.args[0] == "http://aks:3100"
 
 
-async def test_logs_explicit_cluster_id_wins(client, dev_token, clusters):
+async def test_logs_explicit_cluster_id_wins(client, dev_token, dev_member, clusters):
     with patch("backend.api.routes.monitoring.get_logs", AsyncMock(return_value=[])) as m:
         r = await client.get("/api/v1/monitoring/logs",
                              params={"app": "api-k3s", "cluster_id": clusters["gke"].id},
                              headers=_auth(dev_token))
     assert r.status_code == 200
     assert m.await_args.args[0] == "http://gke:3100"
+
+
+@pytest.mark.parametrize("params", [
+    {"app": "api-k3s"},              # existing app, not a member
+    {"app": "some-container"},       # not a CNP app
+    {"namespace": "prod"},           # no app: whole namespace
+    {},                              # everything
+])
+async def test_logs_forbidden_to_non_members(client, dev_token, clusters, params):
+    """Logs are an app's detail, for its team only (ADR-0017 §7)."""
+    with patch("backend.api.routes.monitoring.get_logs", AsyncMock(return_value=[])) as m:
+        r = await client.get("/api/v1/monitoring/logs", params=params, headers=_auth(dev_token))
+    assert r.status_code == 403
+    m.assert_not_awaited()
+
+
+@pytest.mark.parametrize("params", [
+    {"app": "api-k3s", "namespace": 'prod"} or {namespace=~".+'},
+    {"app": "api-k3s", "namespace": "Prod"},
+])
+async def test_logs_rejects_logql_injection_in_namespace(client, dev_token, dev_member, params):
+    with patch("backend.api.routes.monitoring.get_logs", AsyncMock(return_value=[])) as m:
+        r = await client.get("/api/v1/monitoring/logs", params=params, headers=_auth(dev_token))
+    assert r.status_code == 422
+    m.assert_not_awaited()
+
+
+async def test_logs_rejects_logql_injection_in_admin_container(client, admin_token, clusters):
+    with patch("backend.api.routes.monitoring.get_logs", AsyncMock(return_value=[])) as m:
+        r = await client.get("/api/v1/monitoring/logs", params={"app": 'x"} or {namespace=~".+'},
+                             headers=_auth(admin_token))
+    assert r.status_code == 422
+    m.assert_not_awaited()
 
 
 # ── métriques ─────────────────────────────────────────────────────────────────

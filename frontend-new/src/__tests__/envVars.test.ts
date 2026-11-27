@@ -29,6 +29,12 @@ describe('envVarPermissions', () => {
     expect(envVarPermissions(access, env)).toEqual({ canRead, canWrite });
   });
 
+  it('refuse tout à un non-membre (tier null), dev compris', () => {
+    expect(envVarPermissions({ tier: null, is_admin: false }, 'dev')).toEqual({ canRead: false, canWrite: false });
+    expect(envVarPermissions({ tier: null, is_admin: false }, 'prod')).toEqual({ canRead: false, canWrite: false });
+    expect(envVarPermissions({ tier: null, is_admin: true }, 'prod')).toEqual({ canRead: true, canWrite: true });
+  });
+
   it('refuse tout tant que les droits ne sont pas chargés', () => {
     expect(envVarPermissions(undefined, 'dev')).toEqual({ canRead: false, canWrite: false });
     expect(envVarPermissions(undefined, 'prod')).toEqual({ canRead: false, canWrite: false });

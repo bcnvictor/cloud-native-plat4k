@@ -221,7 +221,8 @@ export interface EnvVarListResponse {
 }
 
 export interface MyAccessResponse {
-  tier: CnpTier;
+  /** null: not a member of the app's project or team (no access to its detail, ADR-0017 §7) */
+  tier: CnpTier | null;
   is_admin: boolean;
 }
 

@@ -642,12 +642,12 @@ export function SettingsTab() {
           Deletion is irreversible.
           {app.origin === 'scaffold' && ' The associated GitLab repository will also be deleted.'}
         </p>
-        <Button variant="danger" size="sm" onClick={() => setDeleteOpen(true)} disabled={!canManageApp}>
+        <Button variant="danger" size="sm" onClick={() => setDeleteOpen(true)} disabled={!isOwner}>
           Delete this app
         </Button>
-        {!canManageApp && (
+        {!isOwner && (
           <p className="text-xs text-muted-foreground mt-2">
-            Only maintainers and owners can delete this app.
+            Only owners can delete this app.
           </p>
         )}
       </Card>

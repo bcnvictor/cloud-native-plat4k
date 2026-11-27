@@ -23,6 +23,7 @@ from httpx import ASGITransport, AsyncClient
 from shared.models import UserRole
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from backend.core.rate_limit import limiter
 from backend.core.security import get_password_hash
 from backend.db.models import Base, User
 from backend.db.session import get_db
@@ -44,6 +45,14 @@ def mock_vault_bootstrap():
     """
     with patch("backend.core.config.bootstrap_from_vault", return_value=None):
         yield
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limits():
+    """The limiter is process-wide and in memory: each test starts with empty buckets,
+    otherwise the many logins of the suite would hit the login limit."""
+    limiter.reset()
+    yield
 
 
 @pytest.fixture

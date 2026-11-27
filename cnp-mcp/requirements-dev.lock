@@ -17,7 +17,7 @@ attrs==26.1.0
     #   -c cnp-mcp/requirements.lock
     #   jsonschema
     #   referencing
-certifi==2026.10.18
+certifi==2026.11.20
     # via
     #   -c cnp-mcp/requirements.lock
     #   httpcore
