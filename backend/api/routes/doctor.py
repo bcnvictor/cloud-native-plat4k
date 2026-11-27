@@ -271,6 +271,6 @@ async def diagnose_app(
     except DoctorAccessDenied as exc:
         raise HTTPException(
             status_code=403,
-            detail="Le diagnostic est réservé aux rôles developer et supérieurs sur cette application.",
+            detail="Diagnosis is reserved for the developer role and above on this application.",
         ) from exc
     return to_response(result, app_slug, group_slug)

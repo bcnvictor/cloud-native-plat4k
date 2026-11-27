@@ -9,11 +9,11 @@ afterEach(cleanup);
 const EVIDENCE = REGRESSION_DIAGNOSIS.evidence;
 
 const REGRESSION_CHAIN: DoctorChainStep[] = [
-  { step: 'pipeline', status: 'ok', label: 'Réussi', detail: null, evidence_ids: ['E6'] },
-  { step: 'argocd', status: 'failing', label: 'Dégradé', detail: null, evidence_ids: ['E4'] },
-  { step: 'cluster', status: 'ok', label: 'En ligne', detail: null, evidence_ids: [] },
-  { step: 'pods', status: 'failing', label: 'Crash en boucle', detail: null, evidence_ids: ['E1'] },
-  { step: 'logs', status: 'failing', label: 'Erreurs', detail: null, evidence_ids: ['E2'] },
+  { step: 'pipeline', status: 'ok', label: 'Passed', detail: null, evidence_ids: ['E6'] },
+  { step: 'argocd', status: 'failing', label: 'Degraded', detail: null, evidence_ids: ['E4'] },
+  { step: 'cluster', status: 'ok', label: 'Online', detail: null, evidence_ids: [] },
+  { step: 'pods', status: 'failing', label: 'Crash loop', detail: null, evidence_ids: ['E1'] },
+  { step: 'logs', status: 'failing', label: 'Errors', detail: null, evidence_ids: ['E2'] },
 ];
 
 const POD_EVIDENCE = 'Pod demo-shop-7d9f8b6c5-x2k4q : CrashLoopBackOff, 6 redémarrages';
@@ -24,15 +24,15 @@ const step = (name: RegExp) => screen.getByRole('button', { name });
 describe('DoctorChain', () => {
   it('affiche les cinq étapes dans l’ordre, avec leur état', () => {
     render(<DoctorChain chain={REGRESSION_CHAIN} evidence={EVIDENCE} />);
-    const names = within(screen.getByRole('list', { name: 'Chaîne de santé' }))
+    const names = within(screen.getByRole('list', { name: 'Health chain' }))
       .getAllByRole('button')
       .map((b) => b.getAttribute('aria-label'));
     expect(names).toEqual([
-      'Pipeline : Réussi',
-      'ArgoCD : Dégradé',
-      'Cluster : En ligne',
-      'Pods : Crash en boucle',
-      'Logs : Erreurs',
+      'Pipeline: Passed',
+      'ArgoCD: Degraded',
+      'Cluster: Online',
+      'Pods: Crash loop',
+      'Logs: Errors',
     ]);
   });
 
@@ -54,17 +54,17 @@ describe('DoctorChain', () => {
 
   it('explique pourquoi une étape est inconnue', () => {
     const chain: DoctorChainStep[] = [
-      { step: 'pipeline', status: 'unknown', label: 'Inconnu', detail: null, evidence_ids: [] },
+      { step: 'pipeline', status: 'unknown', label: 'Unknown', detail: null, evidence_ids: [] },
       {
         step: 'argocd',
         status: 'unknown',
-        label: 'Inconnu',
+        label: 'Unknown',
         detail: 'ArgoCD indisponible (ConnectTimeout)',
         evidence_ids: [],
       },
-      { step: 'cluster', status: 'failing', label: 'Hors ligne', detail: null, evidence_ids: [] },
-      { step: 'pods', status: 'stopped', label: 'Arrêtés', detail: null, evidence_ids: [] },
-      { step: 'logs', status: 'unknown', label: 'Inconnu', detail: null, evidence_ids: [] },
+      { step: 'cluster', status: 'failing', label: 'Offline', detail: null, evidence_ids: [] },
+      { step: 'pods', status: 'stopped', label: 'Stopped', detail: null, evidence_ids: [] },
+      { step: 'logs', status: 'unknown', label: 'Unknown', detail: null, evidence_ids: [] },
     ];
     render(<DoctorChain chain={chain} evidence={[]} />);
     expect(step(/^Cluster/).getAttribute('aria-pressed')).toBe('true');

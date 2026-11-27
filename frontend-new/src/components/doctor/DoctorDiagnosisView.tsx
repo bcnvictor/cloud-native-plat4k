@@ -83,7 +83,7 @@ function OtherEvidence({ items }: { items: DoctorDiagnosis['evidence'] }) {
   const [open, setOpen] = useState(false);
   const listId = useId();
   if (items.length === 0) return null;
-  const label = items.length === 1 ? 'l’autre preuve' : `les ${items.length} autres preuves`;
+  const label = items.length === 1 ? 'the other piece of evidence' : `the ${items.length} other pieces of evidence`;
   return (
     <div className="flex flex-col gap-1.5">
       <button
@@ -98,7 +98,7 @@ function OtherEvidence({ items }: { items: DoctorDiagnosis['evidence'] }) {
           aria-hidden="true"
           className={cn('shrink-0 motion-reduce:transition-none', open && 'rotate-180')}
         />
-        {`${open ? 'Masquer' : 'Voir'} ${label}`}
+        {`${open ? 'Hide' : 'Show'} ${label}`}
       </button>
       {open && (
         <ul id={listId} className="flex flex-col gap-1.5">
@@ -116,12 +116,12 @@ function metaLine(d: DoctorDiagnosis): string {
   if (d.ai.used) {
     const who = d.ai.model ?? d.ai.provider;
     if (who) parts.push(who);
-    parts.push(`${(d.ai.input_tokens + d.ai.output_tokens).toLocaleString('fr-FR')} tokens`);
+    parts.push(`${(d.ai.input_tokens + d.ai.output_tokens).toLocaleString('en-US')} tokens`);
   } else {
-    parts.push('établi par les règles de la plateforme');
+    parts.push('based on platform rules');
   }
   const at = formatClock(d.generated_at);
-  if (at) parts.push(`généré à ${at}`);
+  if (at) parts.push(`generated at ${at}`);
   return parts.join(' · ');
 }
 
@@ -181,8 +181,8 @@ export function DoctorDiagnosisView({
 
   const deepen = () =>
     askAssistant(
-      `Le CNP Doctor a diagnostiqué ${d.app_name} en ${d.env} : « ${d.headline} » ` +
-        'Aide-moi à comprendre la cause et à corriger le problème.'
+      `The CNP Doctor diagnosed ${d.app_name} in ${d.env}: "${d.headline}". ` +
+        'Help me understand the cause and fix the problem.'
     );
 
   return (
@@ -202,7 +202,7 @@ export function DoctorDiagnosisView({
           <p className={cn('text-sm font-medium', tone.text)}>
             <span>{verdict.label}</span>
             <span aria-hidden="true"> · </span>
-            <span className="sr-only">, environnement </span>
+            <span className="sr-only">, environment </span>
             <span>{d.env}</span>
           </p>
           <p
@@ -226,7 +226,7 @@ export function DoctorDiagnosisView({
       )}
 
       {chain.length > 0 ? (
-        <Section title="Où ça casse" aside={roomy && !compact ? 'Choisissez une étape pour voir ses preuves' : null}>
+        <Section title="Where it breaks" aside={roomy && !compact ? 'Pick a step to see its evidence' : null}>
           <DoctorChain
             key={`${d.env}-${d.generated_at}`}
             chain={chain}
@@ -236,14 +236,14 @@ export function DoctorDiagnosisView({
         </Section>
       ) : (
         hasEvidence && (
-          <Section title="Preuves">
+          <Section title="Evidence">
             <DoctorEvidence evidence={d.evidence} missing={d.missing_signals} />
           </Section>
         )
       )}
 
       {hasWhy && (
-        <Section title="Pourquoi" aside={d.cause ? <ConfidenceMeter confidence={d.cause.confidence} /> : null}>
+        <Section title="Why" aside={d.cause ? <ConfidenceMeter confidence={d.cause.confidence} /> : null}>
           {d.cause && (
             <p className={cn('text-foreground', compact ? 'text-sm' : 'text-base')}>{d.cause.summary}</p>
           )}
@@ -256,7 +256,7 @@ export function DoctorDiagnosisView({
           {hasTimeline && d.timeline && <DoctorTimeline timeline={d.timeline} compact={compact} />}
           {d.changes && (
             <div className="flex flex-col gap-1.5">
-              <p className="text-xs text-muted-foreground">Ce qui a changé</p>
+              <p className="text-xs text-muted-foreground">What changed</p>
               <DoctorChanges changes={d.changes} />
             </div>
           )}
@@ -265,7 +265,7 @@ export function DoctorDiagnosisView({
       )}
 
       {hasActions && (
-        <Section title="Que faire" aside={ACTIONS_SAFETY}>
+        <Section title="What to do" aside={ACTIONS_SAFETY}>
           <DoctorActions diagnosis={d} appId={appId} />
         </Section>
       )}
@@ -280,15 +280,15 @@ export function DoctorDiagnosisView({
               icon={<IconCopy size={13} aria-hidden="true" />}
               onClick={() =>
                 copy(diagnosisAsText(d), {
-                  title: 'Diagnostic copié',
-                  description: 'Le résumé est prêt à être collé dans un ticket ou un message.',
+                  title: 'Diagnosis copied',
+                  description: 'The summary is ready to paste into a ticket or a message.',
                 })
               }
             >
-              Copier le diagnostic
+              Copy diagnosis
             </Button>
             <Button size="sm" variant="ghost" icon={<IconSparkles size={13} aria-hidden="true" />} onClick={deepen}>
-              Approfondir avec l’assistant
+              Dig deeper with the assistant
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">

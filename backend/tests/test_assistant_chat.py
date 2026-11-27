@@ -474,7 +474,7 @@ async def test_global_chat_provider_error_returns_424_with_readable_detail(
         )
 
     assert resp.status_code == 424
-    assert resp.json()["detail"] == "Le fournisseur IA a renvoyé une erreur (503). Réessayez."
+    assert resp.json()["detail"] == "The AI provider returned an error (503). Please try again."
 
 
 @pytest.mark.anyio
@@ -497,7 +497,7 @@ async def test_global_chat_provider_unreachable_returns_424(
         )
 
     assert resp.status_code == 424
-    assert "injoignable" in resp.json()["detail"]
+    assert "unreachable" in resp.json()["detail"]
 
 
 @pytest.mark.anyio
@@ -520,5 +520,5 @@ async def test_global_chat_provider_credits_depleted_says_what_to_do(
 
     assert resp.status_code == 424
     detail = resp.json()["detail"]
-    assert "crédits" in detail and "Platform → Settings → AI assistant" in detail
-    assert "Réessayez" not in detail
+    assert "credits" in detail and "Platform → Settings → AI assistant" in detail
+    assert "try again" not in detail

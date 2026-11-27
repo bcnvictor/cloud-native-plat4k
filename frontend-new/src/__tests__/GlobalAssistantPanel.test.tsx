@@ -106,10 +106,10 @@ afterEach(() => {
 describe('GlobalAssistantPanel — interrupteur Assistant / Doctor', () => {
   it('passe en mode docteur au clic, avec animation, titre et annonce, et marque le choix manuel', async () => {
     const { container } = renderPanel({ path: '/groups/team-a' });
-    const group = screen.getByRole('radiogroup', { name: /Mode de l'assistant/ });
+    const group = screen.getByRole('radiogroup', { name: /Assistant mode/ });
     const doctor = within(group).getByRole('radio', { name: /Doctor/ });
     expect(doctor.getAttribute('aria-checked')).toBe('false');
-    expect(screen.getByText('Assistant Plat4k')).toBeTruthy();
+    expect(screen.getByText('Plat4k Assistant')).toBeTruthy();
     expect(mascotMode(container)).toBe('chat');
 
     fireEvent.click(doctor);
@@ -118,12 +118,12 @@ describe('GlobalAssistantPanel — interrupteur Assistant / Doctor', () => {
     expect(store().manual).toBe(true);
     expect(doctor.getAttribute('aria-checked')).toBe('true');
     expect(screen.getByText('CNP Doctor')).toBeTruthy();
-    expect(screen.getByText('Prêt pour un diagnostic')).toBeTruthy();
+    expect(screen.getByText('Ready for a diagnosis')).toBeTruthy();
     expect(mascotMode(container)).toBe('doctor');
     expect(container.querySelector('.m-robot')!.classList.contains('is-changing-to-doctor')).toBe(true);
     expect(container.querySelector('[data-part="coat"]')).toBeTruthy();
     expect(container.querySelector('[data-part="avatar-cross"]')).toBeTruthy();
-    expect(screen.getByText('Mode Doctor activé')).toBeTruthy();
+    expect(screen.getByText('Doctor mode enabled')).toBeTruthy();
   });
 
   it('se pilote au clavier : les flèches déplacent le choix et le focus', () => {
@@ -142,7 +142,7 @@ describe('GlobalAssistantPanel — interrupteur Assistant / Doctor', () => {
     fireEvent.keyDown(doctor, { key: 'ArrowLeft' });
     expect(store().mode).toBe('chat');
     expect(document.activeElement).toBe(chat);
-    expect(screen.getByText('Mode Assistant activé')).toBeTruthy();
+    expect(screen.getByText('Assistant mode enabled')).toBeTruthy();
   });
 
   it("reste disponible sans robot graphique : pas de mascotte, pas d'animation", async () => {
@@ -159,16 +159,16 @@ describe('GlobalAssistantPanel — interrupteur Assistant / Doctor', () => {
   it('ajoute un message au fil au changement de mode, sans effacer la conversation', async () => {
     vi.spyOn(assistantApi, 'chatGlobal').mockResolvedValue(ANSWER);
     renderPanel({ path: '/groups/team-a' });
-    fireEvent.change(screen.getByPlaceholderText('Écrivez un message…'), {
+    fireEvent.change(screen.getByPlaceholderText('Type a message…'), {
       target: { value: 'Bonjour ?' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     expect(await screen.findByText('Tout va bien.')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('radio', { name: /Doctor/ }));
     expect(screen.getByText('Bonjour ?')).toBeTruthy();
     expect(screen.getByText('Tout va bien.')).toBeTruthy();
-    expect(screen.getByText(/je suis le CNP Doctor/)).toBeTruthy();
+    expect(screen.getByText(/I'm the CNP Doctor/)).toBeTruthy();
   });
 });
 
@@ -178,10 +178,10 @@ describe('GlobalAssistantPanel — bascule automatique', () => {
     await waitFor(() => expect(store().mode).toBe('doctor'));
     expect(store().manual).toBe(false);
     expect(store().context).toBe('demo-shop');
-    expect(await screen.findByText('En consultation · demo-shop')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Diagnostiquer prod/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Diagnostiquer dev/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: "Que s'est-il passé récemment ?" })).toBeTruthy();
+    expect(await screen.findByText('Examining · demo-shop')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Diagnose prod/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Diagnose dev/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'What happened recently?' })).toBeTruthy();
   });
 
   it('reste en chatbot sur une application saine', async () => {
@@ -218,18 +218,18 @@ describe('GlobalAssistantPanel — bascule automatique', () => {
     expect(store().context).toBeNull();
     expect(mascotMode(container)).toBe('chat');
     expect(container.querySelector('.m-robot')!.classList.contains('is-changing-to-chat')).toBe(true);
-    expect(screen.getByText('Assistant Plat4k')).toBeTruthy();
+    expect(screen.getByText('Plat4k Assistant')).toBeTruthy();
   });
 
   it("affiche la bulle « Besoin d'un diagnostic ? » tiroir fermé, qui ouvre le tiroir", async () => {
     const { onToggle } = renderPanel({ path: '/groups/team-a/apps/demo-shop', open: false });
-    const bubble = await screen.findByRole('button', { name: "Besoin d'un diagnostic ?" });
+    const bubble = await screen.findByRole('button', { name: 'Need a diagnosis?' });
     fireEvent.click(bubble);
     expect(onToggle).toHaveBeenCalledTimes(1);
 
     // choix manuel « Assistant » : plus de bulle
     act(() => store().setModeManual('chat'));
-    expect(screen.queryByRole('button', { name: "Besoin d'un diagnostic ?" })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Need a diagnosis?' })).toBeNull();
   });
 });
 
@@ -237,9 +237,9 @@ describe('GlobalAssistantPanel — mode docteur', () => {
   it("hors application, invite à ouvrir une application et propose les apps en erreur", () => {
     renderPanel({ path: '/groups/team-a' });
     act(() => store().setModeManual('doctor'));
-    expect(screen.getByText('Ouvre une application pour lancer un diagnostic.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Quelles apps sont en erreur ?' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Diagnostiquer/ })).toBeNull();
+    expect(screen.getByText('Open an application to run a diagnosis.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Which apps are failing?' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Diagnose/ })).toBeNull();
   });
 
   it('lance un diagnostic depuis le panneau et affiche le résultat du store dans le fil', async () => {
@@ -250,7 +250,7 @@ describe('GlobalAssistantPanel — mode docteur', () => {
     renderPanel({ path: '/groups/team-a/apps/demo-shop' });
     await waitFor(() => expect(store().mode).toBe('doctor'));
 
-    fireEvent.click(screen.getByRole('button', { name: /Diagnostiquer prod/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Diagnose prod/ }));
     expect(diagnose).toHaveBeenCalledWith(7, 'prod');
     expect(await screen.findByTestId('doctor-progress')).toBeTruthy();
 
@@ -266,13 +266,13 @@ describe('GlobalAssistantPanel — mode docteur', () => {
     vi.spyOn(assistantApi, 'diagnose').mockResolvedValue(REGRESSION_DIAGNOSIS);
     renderPanel({ path: '/groups/team-a/apps/demo-shop' });
     await waitFor(() => expect(store().mode).toBe('doctor'));
-    await waitFor(() => expect(screen.getByText('En consultation · demo-shop')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Examining · demo-shop')).toBeTruthy());
 
     await act(async () => {
       await store().diagnose(7, 'dev');
     });
     expect((await screen.findByTestId('diagnosis-view')).textContent).toContain('app 7');
-    expect(screen.getByText(/Diagnostic dev/)).toBeTruthy();
+    expect(screen.getByText(/Diagnosis dev/)).toBeTruthy();
   });
 
   it("propose « Réessayer » quand le diagnostic échoue", async () => {
@@ -282,10 +282,10 @@ describe('GlobalAssistantPanel — mode docteur', () => {
       .mockResolvedValueOnce(REGRESSION_DIAGNOSIS);
     renderPanel({ path: '/groups/team-a/apps/demo-shop' });
     await waitFor(() => expect(store().mode).toBe('doctor'));
-    fireEvent.click(await screen.findByRole('button', { name: /Diagnostiquer prod/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Diagnose prod/ }));
     expect(await screen.findByText('Collecte impossible.')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: /Réessayer/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Retry/ }));
     expect(await screen.findByTestId('diagnosis-view')).toBeTruthy();
     expect(diagnose).toHaveBeenCalledTimes(2);
   });
@@ -296,13 +296,13 @@ describe('GlobalAssistantPanel — mode docteur', () => {
     renderPanel({ path: '/groups/team-a/apps/demo-shop' });
     await waitFor(() => expect(store().mode).toBe('doctor'));
 
-    fireEvent.click(await screen.findByRole('button', { name: /Diagnostiquer prod/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Diagnose prod/ }));
     await screen.findByTestId('diagnosis-view');
 
-    fireEvent.change(screen.getByPlaceholderText('Écrivez un message…'), {
+    fireEvent.change(screen.getByPlaceholderText('Type a message…'), {
       target: { value: 'Pourquoi ça plante ?' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     expect(await screen.findByText('Tout va bien.')).toBeTruthy();
 
     expect(chat).toHaveBeenCalledTimes(1);
@@ -359,7 +359,7 @@ describe('GlobalAssistantPanel — clavier du tiroir', () => {
     opener.focus();
     fireEvent.click(opener);
 
-    const drawer = await screen.findByRole('region', { name: 'Assistant Plat4k' });
+    const drawer = await screen.findByRole('region', { name: 'Plat4k Assistant' });
     await waitFor(() => expect(document.activeElement).toBe(drawer));
 
     fireEvent.keyDown(drawer, { key: 'Escape' });

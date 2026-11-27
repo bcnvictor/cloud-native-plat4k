@@ -17,8 +17,8 @@ export function useCopyText() {
     } else {
       setFallback(text);
       toast({
-        title: 'Copie automatique impossible',
-        description: 'Le texte est affiché dans la carte : sélectionnez-le pour le copier.',
+        title: 'Automatic copy unavailable',
+        description: 'The text is shown in the card: select it to copy it.',
       });
     }
   };
@@ -38,7 +38,7 @@ export function CopyFallback({ text, onClose }: { text: string; onClose: () => v
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-xs text-muted-foreground">
-        Le navigateur bloque la copie automatique : sélectionnez le texte puis copiez-le (Ctrl+C).
+        The browser blocks automatic copying: select the text, then copy it (Ctrl+C).
       </label>
       <textarea
         id={id}
@@ -49,7 +49,7 @@ export function CopyFallback({ text, onClose }: { text: string; onClose: () => v
         className="w-full resize-y rounded-md border border-border bg-background-subtle p-2 font-mono text-xs text-foreground"
       />
       <Button variant="ghost" size="sm" className="self-start" onClick={onClose}>
-        Fermer
+        Close
       </Button>
     </div>
   );

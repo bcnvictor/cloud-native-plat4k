@@ -136,7 +136,7 @@ async def test_list_apps_gives_clickable_paths_and_offline_clusters(
 def test_system_prompt_asks_for_markdown_links():
     from backend.services.assistant_service import _PLATFORM_SYSTEM_PROMPT
 
-    assert "[Nom de l'app](/groups/" in _PLATFORM_SYSTEM_PROMPT
+    assert "[App name](/groups/" in _PLATFORM_SYSTEM_PROMPT
 
 
 @pytest.mark.anyio
@@ -243,7 +243,7 @@ async def test_platform_agent_runs_tools_then_answers(db_session: AsyncSession, 
     first, second = provider.calls
     assert first["tools"] and any(t["function"]["name"] == "list_apps" for t in first["tools"])
     system = first["messages"][0].content
-    assert "groupe « team-a »" in system
+    assert 'group "team-a"' in system
     # history: user/assistant kept, injected "system" turn dropped
     roles = [m.role for m in first["messages"]]
     assert roles == ["system", "user", "assistant", "user"]
@@ -345,12 +345,12 @@ async def test_global_chat_rejects_invalid_history_role(client: AsyncClient, dev
 
 
 def test_describe_page_variants():
-    assert "inconnue" in describe_page(None)
+    assert "unknown" in describe_page(None)
     assert "Settings (admin)" in describe_page(PageContext(path="/admin/settings"))
     assert "page Metrics" in describe_page(
         PageContext(path="/groups/team-a/metrics", group_slug="team-a")
     )
-    assert "onglet Logs" in describe_page(
+    assert "tab Logs" in describe_page(
         PageContext(path="/groups/team-a/apps/web/logs", group_slug="team-a", app_slug="web")
     )
     assert "New app" in describe_page(
@@ -422,10 +422,10 @@ async def test_finops_advice_tool_returns_reference_sizing(db_session: AsyncSess
     with _patch_usage(_FINOPS_USAGE):
         result = await tools.call("get_finops_advice", json.dumps({"app": "api-a"}))
     text = result.text
-    assert "api-a" in text and "Environnement prod" in text and "Environnement dev" in text
-    assert "Proposition de référence" in text and "Requests : CPU 100 mCPU" in text
+    assert "api-a" in text and "=== Environment prod ===" in text and "=== Environment dev ===" in text
+    assert "Reference proposal" in text and "Requests: CPU 100 mCPU" in text
     # The model is told to reuse the computed figures and never apply anything.
-    assert "ne refais pas les calculs" in text and "rien n'est appliqué automatiquement" in text
+    assert "do not redo the calculations" in text and "nothing is applied automatically" in text
 
 
 @pytest.mark.anyio
@@ -436,7 +436,7 @@ async def test_finops_advice_tool_filters_env_and_uses_page_app(
     tools = PlatformTools(db_session, dev_user, page=PageContext(app_slug="api-a"))
     with _patch_usage(_FINOPS_USAGE):
         result = await tools.call("get_finops_advice", json.dumps({"env": "dev"}))
-    assert "Environnement dev" in result.text and "Environnement prod" not in result.text
+    assert "=== Environment dev ===" in result.text and "=== Environment prod ===" not in result.text
     bad = await tools.call("get_finops_advice", json.dumps({"env": "staging"}))
     assert "Environnement inconnu" in bad.text
 
@@ -447,7 +447,7 @@ async def test_finops_advice_tool_without_metrics(db_session: AsyncSession, dev_
     tools = PlatformTools(db_session, dev_user)
     with _patch_usage({}):
         result = await tools.call("get_finops_advice", json.dumps({"app": "api-a"}))
-    assert "Aucune métrique" in result.text
+    assert "No metrics" in result.text
 
 
 @pytest.mark.anyio

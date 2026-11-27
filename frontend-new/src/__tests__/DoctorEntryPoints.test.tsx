@@ -121,7 +121,7 @@ describe('Diagnostic depuis le bandeau d’erreur', () => {
     expect(await screen.findByText('The application is in error.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'View logs' })).toBeTruthy();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Diagnostiquer demo-shop en prod' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Diagnose demo-shop in prod' }));
 
     expect(diagnose).toHaveBeenCalledWith(7, 'prod');
     expect(await screen.findByRole('heading', { name: 'CNP Doctor' })).toBeTruthy();
@@ -135,7 +135,7 @@ describe('Diagnostic depuis le bandeau d’erreur', () => {
     renderApp(`${APP_PATH}/logs`);
     expect(await screen.findByText('The application is in error.')).toBeTruthy();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Diagnostiquer demo-shop en dev' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Diagnose demo-shop in dev' }));
 
     expect(diagnose).toHaveBeenCalledWith(7, 'dev');
   });
@@ -145,7 +145,7 @@ describe('Diagnostic depuis le bandeau d’erreur', () => {
     renderApp(`${APP_PATH}/logs`);
     expect(await screen.findByRole('button', { name: 'View logs' })).toBeTruthy();
     await waitFor(() => expect(assistantApi.getUiSettings).toHaveBeenCalled());
-    expect(screen.queryByRole('button', { name: /Diagnostiquer/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Diagnose/ })).toBeNull();
   });
 });
 
@@ -154,9 +154,9 @@ describe('Diagnostic depuis une carte d’environnement', () => {
     const diagnose = setup({ appStatus: 'deployed', prod: 'Healthy', dev: 'Degraded' });
     renderApp(APP_PATH);
 
-    const launch = await screen.findByRole('button', { name: 'Diagnostiquer demo-shop en dev' });
-    expect(screen.queryByRole('button', { name: /Expliquer/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Diagnostiquer demo-shop en prod' })).toBeNull();
+    const launch = await screen.findByRole('button', { name: 'Diagnose demo-shop in dev' });
+    expect(screen.queryByRole('button', { name: /Explain/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Diagnose demo-shop in prod' })).toBeNull();
 
     fireEvent.click(launch);
 

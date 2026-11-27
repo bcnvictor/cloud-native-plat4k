@@ -60,31 +60,31 @@ _PIPELINE_RUNNING = {"running", "pending", "created", "preparing", "waiting_for_
 
 # Explication courte d'une raison Kubernetes, et catégorie de cause associée.
 _REASON_HINTS: dict[str, tuple[str, DoctorCauseCategory]] = {
-    "CrashLoopBackOff": ("le conteneur plante au démarrage, en boucle", DoctorCauseCategory.UNKNOWN),
-    "OOMKilled": ("le conteneur dépasse sa limite de mémoire", DoctorCauseCategory.RESOURCES),
-    "ImagePullBackOff": ("l'image est introuvable ou le registre inaccessible", DoctorCauseCategory.IMAGE),
-    "ErrImagePull": ("l'image est introuvable ou le registre inaccessible", DoctorCauseCategory.IMAGE),
-    "InvalidImageName": ("le nom de l'image est invalide", DoctorCauseCategory.IMAGE),
+    "CrashLoopBackOff": ("the container keeps crashing on startup", DoctorCauseCategory.UNKNOWN),
+    "OOMKilled": ("the container exceeds its memory limit", DoctorCauseCategory.RESOURCES),
+    "ImagePullBackOff": ("the image cannot be found or the registry is unreachable", DoctorCauseCategory.IMAGE),
+    "ErrImagePull": ("the image cannot be found or the registry is unreachable", DoctorCauseCategory.IMAGE),
+    "InvalidImageName": ("the image name is invalid", DoctorCauseCategory.IMAGE),
     "CreateContainerConfigError": (
-        "la configuration du conteneur est invalide (secret ou variable manquante)",
+        "the container configuration is invalid (missing secret or variable)",
         DoctorCauseCategory.CONFIG,
     ),
-    "Error": ("le processus s'est arrêté en erreur", DoctorCauseCategory.UNKNOWN),
+    "Error": ("the process exited with an error", DoctorCauseCategory.UNKNOWN),
 }
 
 _ROLE_RANK = {"viewer": 0, "developer": 1, "maintainer": 2, "owner": 3, "admin": 4}
 
 VERDICT_LABELS: dict[DoctorVerdict, str] = {
-    DoctorVerdict.HEALTHY: "application saine",
-    DoctorVerdict.STOPPED: "environnement arrêté volontairement",
-    DoctorVerdict.CLUSTER_OFFLINE: "cluster hors ligne",
-    DoctorVerdict.DEPLOYING: "déploiement en cours",
-    DoctorVerdict.NOT_DEPLOYED: "application jamais déployée dans cet environnement",
-    DoctorVerdict.INCONCLUSIVE: "signaux insuffisants",
-    DoctorVerdict.REGRESSION: "panne corrélée au dernier déploiement",
-    DoctorVerdict.FAILING: "panne sans déploiement récent corrélé",
-    DoctorVerdict.CI_FAILURE: "application en service, dernier pipeline en échec",
-    DoctorVerdict.UNSTABLE: "application en service mais instable",
+    DoctorVerdict.HEALTHY: "healthy application",
+    DoctorVerdict.STOPPED: "environment stopped on purpose",
+    DoctorVerdict.CLUSTER_OFFLINE: "cluster offline",
+    DoctorVerdict.DEPLOYING: "deployment in progress",
+    DoctorVerdict.NOT_DEPLOYED: "application never deployed in this environment",
+    DoctorVerdict.INCONCLUSIVE: "not enough signals",
+    DoctorVerdict.REGRESSION: "failure correlated with the latest deployment",
+    DoctorVerdict.FAILING: "failure with no correlated recent deployment",
+    DoctorVerdict.CI_FAILURE: "application running, latest pipeline failed",
+    DoctorVerdict.UNSTABLE: "application running but unstable",
 }
 
 RULES_ONLY_VERDICTS = {
@@ -166,15 +166,15 @@ def _tz() -> ZoneInfo:
 def fmt_clock(dt: datetime, now: Optional[datetime] = None) -> str:
     """Heure locale lisible : « 14 h 01 », précédée du jour si ce n'est pas aujourd'hui."""
     local = dt.astimezone(_tz())
-    clock = f"{local.hour} h {local.minute:02d}"
+    clock = f"{local.hour:02d}:{local.minute:02d}"
     today = (now or datetime.now(timezone.utc)).astimezone(_tz()).date()
-    return clock if local.date() == today else f"le {local.day:02d}/{local.month:02d} à {clock}"
+    return clock if local.date() == today else f"on {local.day:02d}/{local.month:02d} at {clock}"
 
 
 def at_clock(dt: datetime, now: Optional[datetime] = None) -> str:
     """« à 14 h 01 » aujourd'hui, « le 17/11 à 18 h 31 » un autre jour."""
     text = fmt_clock(dt, now)
-    return text if text.startswith("le ") else f"à {text}"
+    return text if text.startswith("on ") else f"at {text}"
 
 
 def fmt_duration(seconds: float) -> str:
@@ -186,7 +186,7 @@ def fmt_duration(seconds: float) -> str:
     if seconds < 36 * 3600:
         return f"{round(seconds / 3600)} h"
     days = round(seconds / 86400)
-    return f"{days} jour{'s' if days > 1 else ''}"
+    return f"{days} day{'s' if days > 1 else ''}"
 
 
 def _clip(text: str, limit: int) -> str:
@@ -393,23 +393,23 @@ def build_timeline(signals: Signals, failing: bool) -> Optional[Timeline]:
             healthy = True
         timeline.entries.append(TimelineEntry(
             at=dep.deployed_at, kind="rollback" if is_rollback else "deployment",
-            label=("Rollback vers " if is_rollback else "Déploiement de ") + dep.revision,
+            label=("Rollback to " if is_rollback else "Deployment of ") + dep.revision,
             revision=dep.revision, history_id=dep.history_id, suspect=suspect, healthy=healthy,
         ))
     if timeline.onset_at is not None:
         timeline.entries.append(TimelineEntry(
-            at=timeline.onset_at, kind="failure_onset", label="Premier signal d'échec",
+            at=timeline.onset_at, kind="failure_onset", label="First failure signal",
         ))
     first_shown = timeline.entries[0].at if timeline.entries else now
     degraded = sorted(at for at in _degraded_times(signals) if at >= current.deployed_at)
     if failing and degraded:
         timeline.entries.append(TimelineEntry(
-            at=degraded[0], kind="degraded", label="Application marquée dégradée",
+            at=degraded[0], kind="degraded", label="Application marked degraded",
         ))
     if signals.pipeline.status == "failed" and signals.pipeline.created_at and signals.pipeline.created_at >= first_shown:
         timeline.entries.append(TimelineEntry(
             at=signals.pipeline.created_at, kind="pipeline_failed",
-            label=f"Pipeline #{signals.pipeline.id} en échec",
+            label=f"Pipeline #{signals.pipeline.id} failed",
         ))
     timeline.entries.sort(key=lambda e: e.at)
     return timeline
@@ -471,19 +471,19 @@ def build_ledger(
 
     # Plateforme : arrêt volontaire, cluster.
     if signals.stopped is not None:
-        since = f" depuis {fmt_clock(signals.stopped.stopped_at, now)}" if signals.stopped.stopped_at else ""
-        reason = {"schedule": " (arrêt planifié)", "manual": " (arrêt manuel)"}.get(signals.stopped.reason or "", "")
-        add(Evidence(DoctorEvidenceSource.PLATFORM, f"Environnement {env} arrêté{reason}{since}",
+        since = f" since {fmt_clock(signals.stopped.stopped_at, now)}" if signals.stopped.stopped_at else ""
+        reason = {"schedule": " (scheduled stop)", "manual": " (manual stop)"}.get(signals.stopped.reason or "", "")
+        add(Evidence(DoctorEvidenceSource.PLATFORM, f"Environment {env} stopped{reason}{since}",
                      at=signals.stopped.stopped_at, key=True, step="pods"))
     if signals.cluster is None:
-        add(Evidence(DoctorEvidenceSource.PLATFORM, "Aucun cluster cible n'est défini pour cette application",
+        add(Evidence(DoctorEvidenceSource.PLATFORM, "No target cluster is defined for this application",
                      key=True, step="cluster"))
     elif signals.cluster.status == ClusterStatus.OFFLINE:
         seen = signals.cluster.last_seen_at
         add(Evidence(
             DoctorEvidenceSource.PLATFORM,
-            f"Cluster {signals.cluster.name} hors ligne"
-            + (f" (dernier contact {fmt_clock(seen, now)})" if seen else ""),
+            f"Cluster {signals.cluster.name} offline"
+            + (f" (last contact {fmt_clock(seen, now)})" if seen else ""),
             at=seen, key=True, step="cluster",
         ))
 
@@ -491,22 +491,22 @@ def build_ledger(
     if timeline is not None and timeline.suspect is not None and timeline.correlation is not None:
         dep = timeline.suspect
         delay = (
-            f", {fmt_duration(timeline.onset_delay_s)} avant le premier signal d'échec"
+            f", {fmt_duration(timeline.onset_delay_s)} before the first failure signal"
             if timeline.onset_delay_s is not None else ""
         )
         add(Evidence(DoctorEvidenceSource.DEPLOYMENTS,
-                     f"Déploiement de {dep.revision} en {env} {at_clock(dep.deployed_at, now)}{delay}",
+                     f"Deployment of {dep.revision} to {env} {at_clock(dep.deployed_at, now)}{delay}",
                      at=dep.deployed_at, key=True))
         if timeline.last_healthy is not None and timeline.last_healthy_ran_for_s is not None:
             prev = timeline.last_healthy
             add(Evidence(DoctorEvidenceSource.DEPLOYMENTS,
-                         f"Version précédente {prev.revision} : en service pendant "
-                         f"{fmt_duration(timeline.last_healthy_ran_for_s)} avant ce déploiement",
+                         f"Previous version {prev.revision}: in service for "
+                         f"{fmt_duration(timeline.last_healthy_ran_for_s)} before this deployment",
                          at=prev.deployed_at))
     elif timeline is not None and deployed_versions(signals):
         dep = deployed_versions(signals)[-1]
         add(Evidence(DoctorEvidenceSource.DEPLOYMENTS,
-                     f"Dernier déploiement en {env} : {dep.revision} {at_clock(dep.deployed_at, now)}",
+                     f"Latest deployment to {env}: {dep.revision} {at_clock(dep.deployed_at, now)}",
                      at=dep.deployed_at))
 
     # Kubernetes.
@@ -518,35 +518,35 @@ def build_ledger(
             parts.append(c.waiting_message)
         if c.last_terminated_reason:
             when = f" {at_clock(c.last_finished_at, now)}" if c.last_finished_at else ""
-            parts.append(f"Dernier arrêt : {c.last_terminated_reason} (code {c.last_exit_code}){when}.")
+            parts.append(f"Last termination: {c.last_terminated_reason} (code {c.last_exit_code}){when}.")
         hint = _REASON_HINTS.get(reason)
         if hint:
-            parts.append(f"{reason} : {hint[0]}.")
+            parts.append(f"{reason}: {hint[0]}.")
         add(Evidence(DoctorEvidenceSource.KUBERNETES,
-                     f"Pod {pod.name} : {reason}, {c.restarts} redémarrage{'s' if c.restarts > 1 else ''}",
+                     f"Pod {pod.name}: {reason}, {c.restarts} restart{'s' if c.restarts > 1 else ''}",
                      detail=" ".join(parts) or None, at=pod.start_time, key=True, step="pods"))
     if k8s.available:
         restarts = _restarts(signals)
-        suffix = "aucun redémarrage" if restarts == 0 else f"{restarts} redémarrage{'s' if restarts > 1 else ''}"
+        suffix = "no restarts" if restarts == 0 else f"{restarts} restart{'s' if restarts > 1 else ''}"
         if not k8s.pods:
-            suffix = "aucun pod"
+            suffix = "no pods"
         add(Evidence(DoctorEvidenceSource.KUBERNETES,
-                     f"{k8s.replicas_ready}/{k8s.replicas_desired} réplicas prêts, {suffix}",
+                     f"{k8s.replicas_ready}/{k8s.replicas_desired} replicas ready, {suffix}",
                      key=verdict in (DoctorVerdict.HEALTHY, DoctorVerdict.DEPLOYING) or (restarts > 0 and not failing),
                      step="pods"))
         for w in current_warnings(signals)[:3]:
             add(Evidence(DoctorEvidenceSource.KUBERNETES,
-                         f"Événement {w.reason} ×{w.count} sur {w.object or 'le déploiement'}",
+                         f"Event {w.reason} ×{w.count} on {w.object or 'the deployment'}",
                          detail=w.message or None, at=w.first_seen, step="pods"))
 
     # Logs.
     logs = signals.logs
     if logs.available:
         groups = _log_groups(signals)
-        window = "depuis le dernier déploiement" if _since_current_deploy(signals) else "sur la dernière heure"
+        window = "since the latest deployment" if _since_current_deploy(signals) else "over the last hour"
         if not groups:
-            quiet = "depuis le dernier déploiement" if _since_current_deploy(signals) else "sur la dernière heure"
-            add(Evidence(DoctorEvidenceSource.LOGS, f"Aucune ligne d'erreur {quiet}",
+            quiet = "since the latest deployment" if _since_current_deploy(signals) else "over the last hour"
+            add(Evidence(DoctorEvidenceSource.LOGS, f"No error lines {quiet}",
                          key=verdict == DoctorVerdict.HEALTHY, step="logs"))
         tail = "\n".join(
             f"{fmt_clock(line.at, now)} [{line.level}] {line.msg}" for line in current_errors(signals)[-8:]
@@ -561,50 +561,50 @@ def build_ledger(
     if argo.available:
         image = f", image {argo.image_tag}" if argo.image_tag else ""
         add(Evidence(DoctorEvidenceSource.ARGOCD,
-                     f"ArgoCD : sync {argo.sync or '?'}, santé {argo.health or '?'}{image}",
+                     f"ArgoCD: sync {argo.sync or '?'}, health {argo.health or '?'}{image}",
                      at=argo.last_sync_at,
                      key=verdict in (DoctorVerdict.HEALTHY, DoctorVerdict.DEPLOYING, DoctorVerdict.CI_FAILURE)
                      or (not k8s.available and is_failing(signals)),
                      step="argocd"))
     elif argo.not_found:
-        add(Evidence(DoctorEvidenceSource.ARGOCD, f"Aucune application ArgoCD {app.slug}-{env}",
+        add(Evidence(DoctorEvidenceSource.ARGOCD, f"No ArgoCD application {app.slug}-{env}",
                      key=True, step="argocd"))
 
     # Ce qui a changé.
     if changes is not None and not changes.unavailable_reason:
         for i, commit in enumerate(changes.commits[:5]):
-            add(Evidence(DoctorEvidenceSource.GIT, f"Commit {commit['sha']} : « {commit['title']} »",
+            add(Evidence(DoctorEvidenceSource.GIT, f"Commit {commit['sha']}: \"{commit['title']}\"",
                          at=None, url=commit.get("url"), key=i == 0))
         if changes.files:
             paths = ", ".join(f["path"] for f in changes.files[:12])
             more = f" (+{len(changes.files) - 12})" if len(changes.files) > 12 else ""
             add(Evidence(DoctorEvidenceSource.GIT,
-                         f"{len(changes.files)} fichier{'s' if len(changes.files) > 1 else ''} "
-                         f"modifié{'s' if len(changes.files) > 1 else ''} entre {changes.from_revision} "
-                         f"et {changes.to_revision}",
+                         f"{len(changes.files)} file{'s' if len(changes.files) > 1 else ''} "
+                         f"changed between {changes.from_revision} "
+                         f"and {changes.to_revision}",
                          detail=paths + more, url=changes.compare_url))
 
     # Pipeline.
     pipe = signals.pipeline
     if pipe.available and pipe.id is not None:
         add(Evidence(DoctorEvidenceSource.CI,
-                     f"Dernier pipeline #{pipe.id} : {pipe.status} (branche {pipe.ref}, commit {pipe.sha})",
+                     f"Latest pipeline #{pipe.id}: {pipe.status} (branch {pipe.ref}, commit {pipe.sha})",
                      at=pipe.created_at, url=pipe.web_url,
                      key=verdict == DoctorVerdict.CI_FAILURE and not pipe.failed_jobs, step="pipeline"))
         for job in pipe.failed_jobs[:2]:
-            why = f", raison : {job.failure_reason}" if job.failure_reason else ""
+            why = f", reason: {job.failure_reason}" if job.failure_reason else ""
             add(Evidence(DoctorEvidenceSource.CI,
-                         f"Job « {job.name} » en échec (stage {job.stage or '?'}{why})",
+                         f"Job \"{job.name}\" failed (stage {job.stage or '?'}{why})",
                          detail="\n".join(job.log_tail.splitlines()[-15:]) or None,
                          at=pipe.created_at, url=job.web_url, key=verdict == DoctorVerdict.CI_FAILURE,
                          step="pipeline"))
 
     # Événements CNP utiles au diagnostic.
     labels = {
-        "app.health.degraded": "Application marquée dégradée par la plateforme",
-        "app.health.recovered": "Application marquée rétablie par la plateforme",
-        "app.rollback": "Rollback lancé depuis la plateforme",
-        "app.deployed": "Déploiement enregistré par la plateforme",
+        "app.health.degraded": "Application marked degraded by the platform",
+        "app.health.recovered": "Application marked recovered by the platform",
+        "app.rollback": "Rollback started from the platform",
+        "app.deployed": "Deployment recorded by the platform",
     }
     shown = 0
     for event in signals.events:
@@ -638,20 +638,20 @@ _STEP_OF_SOURCE = {
 }
 
 _POD_REASON_LABEL = {
-    "CrashLoopBackOff": "Crash en boucle",
-    "OOMKilled": "Mémoire saturée",
-    "ImagePullBackOff": "Image introuvable",
-    "ErrImagePull": "Image introuvable",
-    "InvalidImageName": "Image invalide",
-    "CreateContainerConfigError": "Config invalide",
+    "CrashLoopBackOff": "Crash loop",
+    "OOMKilled": "Out of memory",
+    "ImagePullBackOff": "Image not found",
+    "ErrImagePull": "Image not found",
+    "InvalidImageName": "Invalid image",
+    "CreateContainerConfigError": "Invalid config",
 }
 
 _PIPELINE_STEP = {
-    "success": ("ok", "Réussi"),
-    "failed": ("failing", "En échec"),
-    "canceled": ("warning", "Annulé"),
-    "skipped": ("warning", "Ignoré"),
-    "manual": ("warning", "En attente"),
+    "success": ("ok", "Passed"),
+    "failed": ("failing", "Failed"),
+    "canceled": ("warning", "Canceled"),
+    "skipped": ("warning", "Skipped"),
+    "manual": ("warning", "Pending"),
 }
 
 
@@ -672,12 +672,12 @@ def _missing_reason(signals: Signals, step: str) -> Optional[str]:
 def _pipeline_step(signals: Signals) -> tuple[str, str, Optional[str]]:
     pipe = signals.pipeline
     if not pipe.available:
-        return "unknown", "Inconnu", _missing_reason(signals, "pipeline")
+        return "unknown", "Unknown", _missing_reason(signals, "pipeline")
     if pipe.id is None:
-        return "unknown", "Aucun pipeline", None
+        return "unknown", "No pipeline", None
     if (pipe.status or "") in _PIPELINE_RUNNING:
-        return "warning", "En cours", None
-    status, label = _PIPELINE_STEP.get(pipe.status or "", ("unknown", pipe.status or "Inconnu"))
+        return "warning", "In progress", None
+    status, label = _PIPELINE_STEP.get(pipe.status or "", ("unknown", pipe.status or "Unknown"))
     return status, label, None
 
 
@@ -686,60 +686,60 @@ def _argocd_step(signals: Signals) -> tuple[str, str, Optional[str]]:
     if argo.not_found:
         return "failing", "Introuvable", None
     if not argo.available:
-        return "unknown", "Inconnu", _missing_reason(signals, "argocd")
+        return "unknown", "Unknown", _missing_reason(signals, "argocd")
     if argo.health == "Degraded":
-        return "failing", "Dégradé", None
+        return "failing", "Degraded", None
     if argo.health == "Missing":
         return "failing", "Absent", None
     if argo.health == "Progressing" or argo.operation_phase == "Running":
-        return "warning", "En cours", None
+        return "warning", "In progress", None
     if argo.health == "Suspended":
         return "warning", "Suspendu", None
     if argo.health == "Healthy":
-        return ("warning", "Désynchronisé", None) if argo.sync == "OutOfSync" else ("ok", "Synchronisé", None)
-    return "unknown", "Inconnu", None
+        return ("warning", "Out of sync", None) if argo.sync == "OutOfSync" else ("ok", "Synced", None)
+    return "unknown", "Unknown", None
 
 
 def _cluster_step(signals: Signals) -> tuple[str, str, Optional[str]]:
     cluster = signals.cluster
     if cluster is None:
-        return "failing", "Aucun cluster", None
+        return "failing", "No cluster", None
     if cluster.status == ClusterStatus.OFFLINE:
-        return "failing", "Hors ligne", None
+        return "failing", "Offline", None
     if cluster.status == ClusterStatus.ONLINE:
-        return "ok", "En ligne", None
-    return "unknown", "Inconnu", None
+        return "ok", "Online", None
+    return "unknown", "Unknown", None
 
 
 def _pods_step(signals: Signals) -> tuple[str, str, Optional[str]]:
     if signals.stopped is not None:
-        return "stopped", "Arrêtés", None
+        return "stopped", "Stopped", None
     k8s = signals.k8s
     if k8s.not_found:
         return "failing", "Introuvables", None
     if not k8s.available:
-        return "unknown", "Inconnu", _missing_reason(signals, "pods")
+        return "unknown", "Unknown", _missing_reason(signals, "pods")
     failing = failing_containers(signals)
     if failing:
         reason = failing[0][2]
         return "failing", _POD_REASON_LABEL.get(reason, reason), None
-    ready = f"{k8s.replicas_ready}/{k8s.replicas_desired} prêts"
+    ready = f"{k8s.replicas_ready}/{k8s.replicas_desired} ready"
     if k8s.replicas_desired == 0:
-        return "warning", "Aucun pod", None
+        return "warning", "No pods", None
     if k8s.replicas_ready < k8s.replicas_desired:
         return "warning", ready, None
     if _restarts(signals) > 0:
-        return "warning", "Redémarrages", None
+        return "warning", "Restarts", None
     return "ok", ready, None
 
 
 def _logs_step(signals: Signals, pods_status: str) -> tuple[str, str, Optional[str]]:
     if not signals.logs.available:
-        return "unknown", "Inconnu", _missing_reason(signals, "logs")
+        return "unknown", "Unknown", _missing_reason(signals, "logs")
     if current_errors(signals):
         # Des erreurs dans une application qui tourne sont à surveiller, pas une panne.
-        return ("failing" if pods_status == "failing" else "warning"), "Erreurs", None
-    return "ok", "Rien à signaler", None
+        return ("failing" if pods_status == "failing" else "warning"), "Errors", None
+    return "ok", "All clear", None
 
 
 def build_chain(signals: Signals, ledger: list[Evidence]) -> list[ChainStep]:
@@ -785,51 +785,51 @@ def build_actions(
     if verdict == DoctorVerdict.REGRESSION:
         if rollback_target is not None:
             ran = (
-                f" Elle a tourné {fmt_duration(timeline.last_healthy_ran_for_s)} avant ce déploiement."
+                f" It ran for {fmt_duration(timeline.last_healthy_ran_for_s)} before this deployment."
                 if timeline and timeline.last_healthy_ran_for_s else ""
             )
-            add(DoctorActionKind.ROLLBACK, f"Revenir à la version {rollback_target.revision}",
-                f"Dernière version en service avant la panne.{ran}", required="maintainer",
+            add(DoctorActionKind.ROLLBACK, f"Roll back to version {rollback_target.revision}",
+                f"Last version in service before the failure.{ran}", required="maintainer",
                 params={"env": env, "history_id": rollback_target.history_id,
                         "revision": rollback_target.revision})
         if compare_url:
-            add(DoctorActionKind.OPEN_REPO_COMPARE, "Voir ce qui a changé sur GitLab",
-                "Comparer les deux versions pour corriger le commit en cause.", url=compare_url)
-        add(DoctorActionKind.VIEW_LOGS, "Voir les logs", "Lire les erreurs complètes dans l'onglet Logs.",
+            add(DoctorActionKind.OPEN_REPO_COMPARE, "See what changed on GitLab",
+                "Compare both versions to fix the faulty commit.", url=compare_url)
+        add(DoctorActionKind.VIEW_LOGS, "View logs", "Read the full errors in the Logs tab.",
             params={"env": env})
     elif verdict == DoctorVerdict.FAILING:
-        add(DoctorActionKind.VIEW_LOGS, "Voir les logs", "Lire les erreurs complètes dans l'onglet Logs.",
+        add(DoctorActionKind.VIEW_LOGS, "View logs", "Read the full errors in the Logs tab.",
             params={"env": env})
-        add(DoctorActionKind.VIEW_HISTORY, "Voir l'historique des déploiements",
-            "Vérifier ce qui a été déployé récemment.")
+        add(DoctorActionKind.VIEW_HISTORY, "View deployment history",
+            "Check what was deployed recently.")
         if rollback_target is not None:
-            add(DoctorActionKind.ROLLBACK, f"Revenir à la version {rollback_target.revision}",
-                "Possible, mais la panne ne suit pas un déploiement récent : le rollback peut ne rien changer.",
+            add(DoctorActionKind.ROLLBACK, f"Roll back to version {rollback_target.revision}",
+                "Possible, but the failure does not follow a recent deployment: a rollback may change nothing.",
                 required="maintainer",
                 params={"env": env, "history_id": rollback_target.history_id,
                         "revision": rollback_target.revision})
     elif verdict == DoctorVerdict.CI_FAILURE:
         if pipe.web_url:
-            add(DoctorActionKind.OPEN_PIPELINE, f"Ouvrir le pipeline #{pipe.id}",
-                "Lire le log complet du job en échec.", url=pipe.web_url)
+            add(DoctorActionKind.OPEN_PIPELINE, f"Open pipeline #{pipe.id}",
+                "Read the full log of the failed job.", url=pipe.web_url)
     elif verdict == DoctorVerdict.UNSTABLE:
-        add(DoctorActionKind.VIEW_LOGS, "Voir les logs", "Lire les erreurs complètes dans l'onglet Logs.",
+        add(DoctorActionKind.VIEW_LOGS, "View logs", "Read the full errors in the Logs tab.",
             params={"env": env})
-        add(DoctorActionKind.VIEW_HISTORY, "Voir l'historique des déploiements",
-            "Vérifier ce qui a été déployé récemment.")
+        add(DoctorActionKind.VIEW_HISTORY, "View deployment history",
+            "Check what was deployed recently.")
     elif verdict == DoctorVerdict.STOPPED:
         # Même règle que la route existante : la prod se relance avec le rôle owner.
-        add(DoctorActionKind.RESUME, f"Relancer l'environnement {env}", "Remet les réplicas en service.",
+        add(DoctorActionKind.RESUME, f"Resume the {env} environment", "Brings the replicas back into service.",
             required="owner" if env == "prod" else "maintainer", params={"env": env})
     elif verdict == DoctorVerdict.DEPLOYING:
-        add(DoctorActionKind.RETRY_LATER, "Revérifier dans une minute",
-            "Le déploiement n'est pas terminé : relance le diagnostic une fois qu'il l'est.")
+        add(DoctorActionKind.RETRY_LATER, "Check again in a minute",
+            "The deployment is not finished: run the diagnosis again once it is.")
     elif verdict == DoctorVerdict.INCONCLUSIVE:
-        add(DoctorActionKind.RETRY_LATER, "Réessayer dans une minute",
-            "Les sources de signaux ne répondent pas pour le moment.")
+        add(DoctorActionKind.RETRY_LATER, "Try again in a minute",
+            "The signal sources are not responding right now.")
     elif verdict == DoctorVerdict.CLUSTER_OFFLINE:
-        add(DoctorActionKind.CONTACT_MAINTAINER, "Prévenir un administrateur de la plateforme",
-            "Le cluster ne répond pas : la panne ne vient pas de l'application.")
+        add(DoctorActionKind.CONTACT_MAINTAINER, "Notify a platform administrator",
+            "The cluster is not responding: the failure does not come from the application.")
 
     for i, action in enumerate(out, 1):
         action.id = f"A{i}"
@@ -843,33 +843,33 @@ def build_actions(
 def rule_headline(signals: Signals, verdict: DoctorVerdict, timeline: Optional[Timeline]) -> str:
     name, env, now = signals.app.name, signals.env, signals.collected_at
     if verdict == DoctorVerdict.HEALTHY:
-        return f"{name} fonctionne normalement en {env} : rien à signaler."
+        return f"{name} is running normally in {env}: nothing to report."
     if verdict == DoctorVerdict.STOPPED:
         since = (
-            f" depuis {fmt_clock(signals.stopped.stopped_at, now)}"
+            f" since {fmt_clock(signals.stopped.stopped_at, now)}"
             if signals.stopped and signals.stopped.stopped_at else ""
         )
-        return f"{name} n'est pas en panne en {env} : l'environnement est arrêté{since}."
+        return f"{name} is not failing in {env}: the environment has been stopped{since}."
     if verdict == DoctorVerdict.CLUSTER_OFFLINE:
-        cluster = signals.cluster.name if signals.cluster else "cible"
-        return f"Le cluster {cluster} ne répond pas : la panne ne vient pas de {name}."
+        cluster = signals.cluster.name if signals.cluster else "target"
+        return f"The {cluster} cluster is not responding: the failure does not come from {name}."
     if verdict == DoctorVerdict.DEPLOYING:
-        return f"Un déploiement de {name} est en cours en {env} : attends la fin avant de diagnostiquer."
+        return f"A deployment of {name} is in progress in {env}: wait for it to finish before diagnosing."
     if verdict == DoctorVerdict.NOT_DEPLOYED:
-        return f"{name} n'est pas encore déployée en {env}."
+        return f"{name} is not deployed in {env} yet."
     if verdict == DoctorVerdict.INCONCLUSIVE:
-        return f"Je n'ai pas assez de signaux pour diagnostiquer {name} en {env}."
+        return f"There are not enough signals to diagnose {name} in {env}."
     if verdict == DoctorVerdict.REGRESSION and timeline and timeline.suspect:
         dep = timeline.suspect
         return (
-            f"{name} est en échec en {env} depuis le déploiement de {dep.revision} "
+            f"{name} has been failing in {env} since the deployment of {dep.revision} "
             f"({fmt_clock(dep.deployed_at, now)})."
         )
     if verdict == DoctorVerdict.FAILING:
-        return f"{name} est en échec en {env}, sans lien avec un déploiement récent."
+        return f"{name} is failing in {env}, with no link to a recent deployment."
     if verdict == DoctorVerdict.CI_FAILURE:
-        return f"{name} tourne en {env}, mais le dernier pipeline a échoué : la nouvelle version n'est pas déployée."
-    return f"{name} est en service en {env}, mais des erreurs ou des redémarrages sont visibles."
+        return f"{name} is running in {env}, but the latest pipeline failed: the new version is not deployed."
+    return f"{name} is running in {env}, but errors or restarts are visible."
 
 
 def rule_cause(signals: Signals, verdict: DoctorVerdict, timeline: Optional[Timeline]) -> Optional[Cause]:
@@ -879,22 +879,22 @@ def rule_cause(signals: Signals, verdict: DoctorVerdict, timeline: Optional[Time
     hint = _REASON_HINTS.get(reason or "")
     if verdict == DoctorVerdict.REGRESSION and timeline and timeline.correlation:
         delay = (
-            f" : la panne a commencé {fmt_duration(timeline.onset_delay_s)} après"
+            f": the failure started {fmt_duration(timeline.onset_delay_s)} after it"
             if timeline.onset_delay_s is not None else ""
         )
         extra = f" ({hint[0]})" if hint else ""
-        return Cause(f"Régression probable du dernier déploiement{delay}{extra}.",
+        return Cause(f"Probable regression from the latest deployment{delay}{extra}.",
                      timeline.correlation, DoctorCauseCategory.DEPLOYMENT)
     if verdict == DoctorVerdict.FAILING:
         if hint:
-            return Cause(f"{reason} : {hint[0]}.", DoctorConfidence.FAIBLE, hint[1])
-        return Cause("La cause n'a pas pu être établie sans l'analyse de l'IA.",
+            return Cause(f"{reason}: {hint[0]}.", DoctorConfidence.FAIBLE, hint[1])
+        return Cause("The cause could not be established without the AI analysis.",
                      DoctorConfidence.FAIBLE, DoctorCauseCategory.UNKNOWN)
     if verdict == DoctorVerdict.CI_FAILURE:
         jobs = signals.pipeline.failed_jobs
-        what = f"Le job « {jobs[0].name} » du dernier pipeline a échoué." if jobs else "Le dernier pipeline a échoué."
+        what = f"The \"{jobs[0].name}\" job of the latest pipeline failed." if jobs else "The latest pipeline failed."
         return Cause(what, DoctorConfidence.MOYENNE, DoctorCauseCategory.CI)
     if verdict == DoctorVerdict.UNSTABLE:
-        return Cause("Des erreurs ou des redémarrages sont visibles, sans interruption de service.",
+        return Cause("Errors or restarts are visible, without service interruption.",
                      DoctorConfidence.FAIBLE, DoctorCauseCategory.UNKNOWN)
     return None

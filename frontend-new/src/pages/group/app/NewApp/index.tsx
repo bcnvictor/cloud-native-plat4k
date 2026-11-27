@@ -100,7 +100,7 @@ export function NewApp() {
       // e.g. 422 when exposure is refused on the target cluster: show the backend's reason.
       const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
       setSubmitError(typeof detail === 'string' ? detail : 'Creation failed. Please try again.');
-      toast({ title: 'Erreur', variant: 'destructive' });
+      toast({ title: 'Error', variant: 'destructive' });
     },
   });
 

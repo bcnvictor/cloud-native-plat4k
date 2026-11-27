@@ -35,7 +35,7 @@ def _committed_paths(client) -> list[str]:
 def test_import_proposes_ci_and_generated_files_in_one_commit_and_mr(monkeypatch):
     generated = BuildFiles(
         files={"Dockerfile": "FROM python\n", "chart/Chart.yaml": "name: my-import\n"},
-        todos=["`Dockerfile` : à compléter"],
+        todos=["`Dockerfile`: to complete"],
     )
     monkeypatch.setattr(injector, "generate_missing_build_files", lambda *a, **kw: generated)
     client = _client()
@@ -53,7 +53,7 @@ def test_import_proposes_ci_and_generated_files_in_one_commit_and_mr(monkeypatch
     assert mr["target_branch"] == "master"
     assert "Dockerfile" in mr["description"]
     assert "chart/Chart.yaml" in mr["description"]
-    assert "à compléter" in mr["description"]
+    assert "To complete before the merge" in mr["description"] and "`Dockerfile`: to complete" in mr["description"]
 
 
 def test_import_with_nothing_missing_only_injects_ci(monkeypatch):

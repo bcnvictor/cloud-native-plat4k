@@ -93,7 +93,7 @@ async def gitlab_setup_guide(current_user: User = Depends(get_current_user)):
     return {
         "pat_url": PAT_URL,
         "required_scopes": ["api", "write_repository"],
-        "note": "Le token commence par 'glpat-'. Il ne sera affiché qu'une seule fois.",
+        "note": "The token starts with 'glpat-'. It will only be shown once.",
     }
 
 
@@ -167,14 +167,14 @@ async def gitlab_healthcheck(
     if not cred:
         return {
             "status": "not_configured",
-            "detail": "Aucun token GitLab configuré. Renseignez votre PAT dans la section Credentials.",
+            "detail": "No GitLab token configured. Enter your PAT in the Credentials section.",
         }
     try:
         token = await _ensure_access_token(cred, db)
     except HTTPException as exc:
         return {"status": "error", "detail": exc.detail}
     except Exception:
-        return {"status": "error", "detail": "Impossible de déchiffrer le token stocké."}
+        return {"status": "error", "detail": "Unable to decrypt the stored token."}
 
     client = GitLabClient(token=token, namespace=cred.namespace)
     return client.healthcheck()
@@ -188,13 +188,13 @@ async def list_gitlab_projects(
     """Liste les projets GitLab accessibles par l'utilisateur courant."""
     cred = await _get_user_gitlab_cred(current_user.id, db)
     if not cred:
-        raise HTTPException(status_code=409, detail="Aucun token GitLab configuré")
+        raise HTTPException(status_code=409, detail="No GitLab token configured")
     try:
         token = await _ensure_access_token(cred, db)
     except HTTPException as exc:
         raise exc
     except Exception:
-        raise HTTPException(status_code=500, detail="Impossible de déchiffrer le token stocké")
+        raise HTTPException(status_code=500, detail="Unable to decrypt the stored token")
 
     client = GitLabClient(token=token, namespace=cred.namespace)
     return client.list_projects()

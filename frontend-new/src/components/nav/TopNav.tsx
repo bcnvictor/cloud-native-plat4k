@@ -17,7 +17,7 @@ export function TopNav() {
         <button
           onClick={toggle}
           className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          aria-label={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           {theme === 'dark' ? <IconMoon size={16} /> : <IconSun size={16} />}
         </button>

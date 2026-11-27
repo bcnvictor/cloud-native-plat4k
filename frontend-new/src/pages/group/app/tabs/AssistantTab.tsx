@@ -96,7 +96,7 @@ export function AssistantTab() {
     onError: (err: unknown) => {
       const content = getApiMessage(
         err,
-        "Une erreur est survenue lors de la requête à l'assistant. Réessayez."
+        'Something went wrong while contacting the assistant. Please try again.'
       );
       setMessages((prev) => [
         ...prev,
@@ -121,7 +121,7 @@ export function AssistantTab() {
               <p className="text-sm font-medium text-foreground">AI assistant inactive</p>
               <p className="text-xs text-muted-foreground mt-1">
                 The AI feature is disabled on this platform. An administrator can enable
-                it in Platform settings → Assistant IA.
+                it in Platform settings → AI assistant.
               </p>
             </div>
           </div>

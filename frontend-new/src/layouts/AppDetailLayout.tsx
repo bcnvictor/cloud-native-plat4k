@@ -149,7 +149,7 @@ export function AppDetailLayout() {
               <span>The last CI pipeline failed.</span>
               <span className="ml-auto">
                 <AskAIButton
-                  question={`Pourquoi le dernier pipeline CI de ${app.name} a-t-il échoué et comment le corriger ?`}
+                  question={`Why did the last CI pipeline of ${app.name} fail, and how do I fix it?`}
                 />
               </span>
             </div>

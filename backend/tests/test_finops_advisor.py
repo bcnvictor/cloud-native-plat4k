@@ -122,7 +122,7 @@ async def test_analyze_usage_ok_and_description(db_session: AsyncSession):
     # No target cluster → platform Prometheus.
     assert usage.await_args.args[:3] == (settings.PROMETHEUS_URL, "my-app", 24)
     text = describe_analysis(app, analysis)
-    assert "Proposition de référence" in text and "Requests : CPU 100 mCPU" in text
+    assert "Reference proposal" in text and "Requests: CPU 100 mCPU" in text
 
 
 @pytest.mark.anyio
@@ -150,7 +150,7 @@ async def test_analyze_usage_without_metrics_or_prometheus(db_session: AsyncSess
     with patch("backend.services.finops_advisor_service.get_app_resource_usage",
                new=AsyncMock(return_value={})):
         empty = await analyze_usage(db_session, app)
-    assert empty.status == "no_data" and "Aucune métrique" in empty.message
+    assert empty.status == "no_data" and "No metrics" in empty.message
     assert describe_analysis(app, empty) == empty.message
     with patch("backend.services.finops_advisor_service.get_app_resource_usage",
                new=AsyncMock(side_effect=httpx.ConnectError("down"))):
@@ -186,8 +186,8 @@ async def test_ai_advice_nominal(client: AsyncClient, admin_token: str, db_sessi
     assert usage.await_args.args[1] == "my-app"  # queried by slug, 24 h window
     # Prompt carries app name, observed usage and the reference sizing.
     prompt = provider.calls[0][1].content
-    assert "my-app" in prompt and "Requests : CPU 100 mCPU" in prompt
-    assert "Proposition de référence" in prompt
+    assert "my-app" in prompt and "Requests: CPU 100 mCPU" in prompt
+    assert "Reference proposal" in prompt
     record = (await db_session.execute(select(AIUsageRecord))).scalar_one()
     assert record.purpose == AIPurpose.FINOPS
 
@@ -266,8 +266,8 @@ async def test_provider_rate_limit_maps_to_429(client: AsyncClient, admin_token:
 @pytest.mark.parametrize(
     "error, detail",
     [
-        ("http_503", "Le fournisseur IA a renvoyé une erreur (503). Réessayez."),
-        ("unreachable", "Le fournisseur IA est injoignable."),
+        ("http_503", "The AI provider returned an error (503). Please try again."),
+        ("unreachable", "The AI provider is unreachable."),
     ],
 )
 async def test_provider_failure_maps_to_424(client: AsyncClient, admin_token: str,

@@ -97,26 +97,26 @@ def inject_ci(
 
 def _mr_description(build_files: BuildFiles) -> str:
     description = (
-        "Ce MR a été créé automatiquement par CNP pour injecter le pipeline CI baseline.\n\n"
-        "Reviewez et mergez pour activer la sécurité et les hooks de déploiement."
+        "This MR was created automatically by CNP to inject the baseline CI pipeline.\n\n"
+        "Review and merge it to enable the security checks and deployment hooks."
     )
     if not build_files.files:
         return description
 
     generated = "\n".join(f"- `{path}`" for path in build_files.files)
     description += (
-        "\n\n## Fichiers de build générés\n\n"
-        "Le repo n'avait pas de `Dockerfile` et/ou de chart Helm `chart/`, nécessaires au build "
-        "de l'image et au déploiement ArgoCD. CNP propose :\n\n"
+        "\n\n## Generated build files\n\n"
+        "The repo had no `Dockerfile` and/or `chart/` Helm chart, which are required to build "
+        "the image and deploy it with ArgoCD. CNP suggests:\n\n"
         f"{generated}\n\n"
-        "Tout est modifiable avant le merge. Rien d'existant n'a été écrasé.\n"
+        "Everything can be edited before the merge. Nothing existing was overwritten.\n"
     )
     if "chart/values.yaml" in build_files.files:
         description += (
-            "\nLes probes Kubernetes vérifient le port TCP (`probes.type: tcp` dans `chart/values.yaml`). "
-            "Si l'app expose un endpoint de santé, passez à `probes: {type: http, path: /health}`.\n"
+            "\nThe Kubernetes probes check the TCP port (`probes.type: tcp` in `chart/values.yaml`). "
+            "If the app exposes a health endpoint, switch to `probes: {type: http, path: /health}`.\n"
         )
     if build_files.todos:
         todos = "\n".join(f"- [ ] {todo}" for todo in build_files.todos)
-        description += f"\n## À compléter avant le merge\n\n{todos}\n"
+        description += f"\n## To complete before the merge\n\n{todos}\n"
     return description

@@ -219,28 +219,28 @@ def test_regression_text_shows_every_part_of_the_diagnosis(doctor_cli):
     out = _flat(result.stdout)
 
     # Verdict, constat, source, cause et confiance.
-    assert "Régression après un déploiement" in out
+    assert "Regression after a deployment" in out
     assert "demo-shop redémarre en boucle en prod depuis le déploiement de 14 h 01." in out
-    assert "IA encadrée" in out
-    assert "PAYMENT_API_URL" in out and "(confiance haute)" in out
+    assert "Guided AI" in out
+    assert "PAYMENT_API_URL" in out and "(high confidence)" in out
     # Preuves citées (détail compris, crochets des logs intacts), signaux non cités comptés.
     assert "[E1]" in out and "Pod demo-shop-7d9f8b6c5-x2k4q : CrashLoopBackOff, 6 redémarrages" in out
     assert "14:02:10 [ERROR] KeyError" in out and "[error] Application startup failed." in out
     assert "[E4]" not in out
-    assert "+ 2 autres signaux collectés, non cités" in out
+    assert "+ 2 other signals collected, not cited" in out
     # Chronologie : déploiement suspect, dernière version saine, délai et corrélation.
-    assert "Déploiement de f4e5d6c7 [déploiement suspect]" in out
-    assert "Déploiement de a1b2c3d4 [dernière version saine, en service pendant 3 jours]" in out
-    assert "Panne apparue 1 min après le déploiement suspect · corrélation haute" in out
+    assert "Déploiement de f4e5d6c7 [suspect deployment]" in out
+    assert "Déploiement de a1b2c3d4 [last healthy version, in service for 3 days]" in out
+    assert "Failure appeared 1 min after the suspect deployment · high correlation" in out
     # Ce qui a changé.
-    assert "Ce qui a changé (a1b2c3d4 → f4e5d6c7)" in out
+    assert "What changed (a1b2c3d4 → f4e5d6c7)" in out
     assert "feat(payment): nouveau client de paiement" in out
-    assert "ajouté app/payment/client.py" in out
+    assert "added app/payment/client.py" in out
     assert "compare/a1b2c3d4...f4e5d6c7" in out
     # Actions, dans l'ordre, et la dernière ligne : rien n'est exécuté.
-    assert out.index("1. Revenir à la version a1b2c3d4 (principale)") < out.index("2. Voir ce qui a changé")
-    assert "La CLI n'exécute aucune action." in out
-    assert "onglet History de l'application, révision a1b2c3d4" in out
+    assert out.index("1. Revenir à la version a1b2c3d4 (primary)") < out.index("2. Voir ce qui a changé")
+    assert "The CLI does not run any action." in out
+    assert "History tab of the application, revision a1b2c3d4" in out
 
     assert state["calls"] == [("POST", DIAGNOSE_PATH, {"env": "prod"})]
 
@@ -251,8 +251,8 @@ def test_developer_sees_the_rollback_with_the_required_role(doctor_cli):
     result = run("7")
     assert result.exit_code == 0, result.output
     out = _flat(result.stdout)
-    assert "Revenir à la version a1b2c3d4 (principale) [non autorisée : rôle maintainer requis]" in out
-    assert "à demander à un maintainer" in out
+    assert "Revenir à la version a1b2c3d4 (primary) [not allowed: maintainer role required]" in out
+    assert "ask a maintainer" in out
 
 
 def test_fallback_says_the_ai_did_not_answer(doctor_cli):
@@ -261,7 +261,7 @@ def test_fallback_says_the_ai_did_not_answer(doctor_cli):
     result = run("7")
     assert result.exit_code == 0, result.output
     out = _flat(result.stdout)
-    assert "IA indisponible — diagnostic établi par la plateforme (quota du fournisseur IA atteint)" in out
+    assert "AI unavailable — diagnosis based on platform rules (AI provider quota reached)" in out
     assert "Régression probable du dernier déploiement" in out
     assert "Revenir à la version a1b2c3d4" in out
 
@@ -272,10 +272,10 @@ def test_obvious_case_is_answered_without_ai(doctor_cli):
     result = run("7")
     assert result.exit_code == 0, result.output
     out = _flat(result.stdout)
-    assert "Application saine" in out
-    assert "Sans IA" in out
-    assert "Cause probable" not in out and "Chronologie" not in out
-    assert "La CLI n'exécute aucune action." in out
+    assert "Healthy application" in out
+    assert "No AI" in out
+    assert "Probable cause" not in out and "Timeline" not in out
+    assert "The CLI does not run any action." in out
 
 
 def test_unavailable_comparison_and_missing_signals_are_shown(doctor_cli):
@@ -288,8 +288,8 @@ def test_unavailable_comparison_and_missing_signals_are_shown(doctor_cli):
     result = run("7")
     assert result.exit_code == 0, result.output
     out = _flat(result.stdout)
-    assert "Comparaison indisponible : Comparaison GitLab indisponible (403)." in out
-    assert "Signaux manquants" in out and "logs : Loki injoignable (délai dépassé)." in out
+    assert "Comparison unavailable: Comparaison GitLab indisponible (403)." in out
+    assert "Missing signals" in out and "logs: Loki injoignable (délai dépassé)." in out
 
 
 def test_json_output_is_the_raw_diagnosis(doctor_cli):

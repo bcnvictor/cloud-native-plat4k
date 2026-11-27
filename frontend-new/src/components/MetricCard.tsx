@@ -36,7 +36,7 @@ export function MetricCard({ label, value, unit, icon, sublabel, sparkline, exte
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-zinc-400 hover:text-zinc-200 transition-colors"
-                title="Voir dans Grafana"
+                title="View in Grafana"
               >
                 <IconExternalLink size={11} />
               </a>

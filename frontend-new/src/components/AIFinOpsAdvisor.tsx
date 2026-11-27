@@ -15,19 +15,23 @@ const RISK_VARIANT: Record<string, 'success' | 'warning' | 'danger'> = {
   élevé: 'danger',
 };
 
+// Valeurs renvoyées par l'API (contrat backend) → libellés affichés.
+const LEVEL_LABEL: Record<string, string> = { bas: 'low', moyen: 'medium', élevé: 'high' };
+const CONFIDENCE_LABEL: Record<string, string> = { haute: 'high', moyenne: 'medium', faible: 'low' };
+
 function usd(value: number | null | undefined): string {
   return value == null ? '—' : `$${value.toFixed(2)}`;
 }
 
 function qty(value: number | null | undefined, unit: string): string {
-  return value == null ? 'non défini' : `${Math.round(value * 100) / 100} ${unit}`;
+  return value == null ? 'not set' : `${Math.round(value * 100) / 100} ${unit}`;
 }
 
 function apiError(err: unknown): string {
   const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
   return typeof detail === 'string'
     ? detail
-    : "L'analyse n'a pas pu aboutir. Réessayez dans un instant.";
+    : 'The analysis could not be completed. Please try again in a moment.';
 }
 
 function EnvSizing({ s }: { s: FinOpsEnvSnapshot }) {
@@ -36,8 +40,8 @@ function EnvSizing({ s }: { s: FinOpsEnvSnapshot }) {
       <div className="mb-2 flex items-center justify-between">
         <span className="font-medium text-foreground">{s.env}</span>
         <span className="text-muted-foreground">
-          {s.pods} pod{s.pods > 1 ? 's' : ''} · {s.restarts} redémarrage{s.restarts > 1 ? 's' : ''} ·{' '}
-          {s.coverage_hours} h de métriques
+          {s.pods} pod{s.pods > 1 ? 's' : ''} · {s.restarts} restart{s.restarts > 1 ? 's' : ''} ·{' '}
+          {s.coverage_hours} h of metrics
         </span>
       </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
@@ -53,9 +57,9 @@ function EnvSizing({ s }: { s: FinOpsEnvSnapshot }) {
           <IconArrowRight size={12} className="text-muted-foreground" />
           <span className="font-medium text-foreground">{s.proposed_ram_request_mib} Mi</span>
         </dd>
-        <dt className="text-muted-foreground">Coût / mois</dt>
+        <dt className="text-muted-foreground">Cost / month</dt>
         <dd className="flex flex-wrap items-center gap-1">
-          réservé {usd(s.reserved_cost_month_usd)}
+          reserved {usd(s.reserved_cost_month_usd)}
           <IconArrowRight size={12} className="text-muted-foreground" />
           <span className="font-medium text-foreground">{usd(s.proposed_cost_month_usd)}</span>
           {s.potential_savings_month_usd != null && s.potential_savings_month_usd > 0 && (
@@ -73,10 +77,10 @@ function RecommendationItem({ r }: { r: FinOpsRecommendation }) {
       <div className="mb-1 flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium text-foreground">{r.title}</span>
         <Badge variant="muted">{r.env}</Badge>
-        <Badge variant={RISK_VARIANT[r.risk] ?? 'warning'}>risque {r.risk}</Badge>
-        <Badge variant="info">confiance {r.confidence}</Badge>
+        <Badge variant={RISK_VARIANT[r.risk] ?? 'warning'}>{LEVEL_LABEL[r.risk] ?? r.risk} risk</Badge>
+        <Badge variant="info">{CONFIDENCE_LABEL[r.confidence] ?? r.confidence} confidence</Badge>
         {r.monthly_savings_usd != null && r.monthly_savings_usd > 0 && (
-          <Badge variant="success">−{usd(r.monthly_savings_usd)}/mois</Badge>
+          <Badge variant="success">−{usd(r.monthly_savings_usd)}/month</Badge>
         )}
       </div>
       <p className="text-xs text-foreground">{r.action}</p>
@@ -117,7 +121,7 @@ function AdviceBody({ advice }: { advice: AIFinOpsAdvice }) {
       <p className="text-[11px] text-muted-foreground">
         {advice.model ?? advice.provider} · {advice.input_tokens + advice.output_tokens} tokens
         {advice.estimated_cost_usd != null && ` · ~$${advice.estimated_cost_usd.toFixed(4)}`} ·
-        Conseils uniquement : rien n'est appliqué automatiquement (à reporter dans le chart Helm).
+        Advice only: nothing is applied automatically (apply it in the Helm chart).
       </p>
     </div>
   );
@@ -142,16 +146,16 @@ export function AIFinOpsAdvisor({ appId, appName }: { appId: number; appName: st
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
           <IconCoin size={14} />
-          Conseiller FinOps IA
+          AI FinOps Advisor
         </h2>
         <div className="flex items-center gap-1">
           <AskAIButton
-            label="Approfondir avec l’assistant"
-            question={`L'application ${appName} est-elle bien dimensionnée ? Propose des économies de ressources.`}
+            label="Dig deeper with the assistant"
+            question={`Is the application ${appName} right-sized? Suggest resource savings.`}
           />
           {advice.data && !advice.isPending && (
             <Button variant="ghost" size="sm" icon={<IconRefresh size={13} />} onClick={() => advice.mutate()}>
-              Relancer
+              Run again
             </Button>
           )}
         </div>
@@ -160,13 +164,13 @@ export function AIFinOpsAdvisor({ appId, appName }: { appId: number; appName: st
       {advice.isPending ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Spinner size="sm" />
-          Analyse des 24 dernières heures de métriques et rédaction des recommandations…
+          Analyzing the last 24 hours of metrics and drafting recommendations…
         </div>
       ) : advice.isError ? (
         <div className="flex flex-col items-start gap-2">
           <p className="text-sm text-danger-text">{apiError(advice.error)}</p>
           <Button variant="secondary" size="sm" onClick={() => advice.mutate()}>
-            Réessayer
+            Retry
           </Button>
         </div>
       ) : advice.data ? (
@@ -174,11 +178,11 @@ export function AIFinOpsAdvisor({ appId, appName }: { appId: number; appName: st
       ) : (
         <div className="flex flex-col items-start gap-2">
           <p className="text-sm text-muted-foreground">
-            Analyse la consommation CPU/RAM réelle (Prometheus, 24 h) et propose des ajustements de
-            ressources pour réduire le coût, sans risque pour l'application.
+            Analyzes actual CPU/RAM usage (Prometheus, 24 h) and suggests resource adjustments
+            to reduce cost, without risk to the application.
           </p>
           <Button variant="primary" size="sm" icon={<IconSparkles size={13} />} onClick={() => advice.mutate()}>
-            Analyser la consommation
+            Analyze usage
           </Button>
         </div>
       )}

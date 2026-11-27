@@ -441,8 +441,8 @@ class PlatformTools:
         if self.page.group_slug:
             group = await self._resolve_group(None)
             if group is not None:
-                return await self.role_for_group(group), f"dans le groupe {group.name}"
-        return await self.max_role(), "rôle le plus élevé parmi ses groupes"
+                return await self.role_for_group(group), f"in group {group.name}"
+        return await self.max_role(), "highest role across their groups"
 
     # ── visibility helpers ────────────────────────────────────────────────
 

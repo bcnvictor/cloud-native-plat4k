@@ -32,29 +32,29 @@ export function pageContextFrom(pathname: string): ChatPageContext {
 export function suggestionsFor(page: ChatPageContext): Suggestion[] {
   if (page.app_slug) {
     return [
-      { label: 'État de cette app', question: "Quel est l'état de cette application ?" },
-      { label: 'Ses métriques', question: 'Quelles sont les métriques de cette application ?' },
-      { label: 'Voir les logs', question: 'Comment consulter les logs de cette application ?' },
+      { label: 'App status', question: 'What is the status of this application?' },
+      { label: 'Its metrics', question: 'What are the metrics of this application?' },
+      { label: 'View logs', question: 'How do I view the logs of this application?' },
     ];
   }
   if (page.group_slug) {
     return [
-      { label: 'État des apps', question: 'Quel est l’état des applications du groupe ?' },
-      { label: 'Voir les métriques', question: 'Quelles sont les métriques du groupe ?' },
-      { label: 'Membres du groupe', question: 'Qui sont les membres du groupe ?' },
+      { label: 'Apps status', question: 'What is the status of the applications in this group?' },
+      { label: 'View metrics', question: 'What are the metrics of this group?' },
+      { label: 'Group members', question: 'Who are the members of this group?' },
     ];
   }
   if (page.path?.startsWith('/admin')) {
     return [
-      { label: 'État des apps', question: 'Quel est l’état des applications de la plateforme ?' },
-      { label: 'Ajouter un cluster', question: 'Comment enregistrer un nouveau cluster ?' },
-      { label: 'Configurer l’IA', question: 'Comment configurer l’assistant IA ?' },
+      { label: 'Apps status', question: 'What is the status of the applications on the platform?' },
+      { label: 'Add a cluster', question: 'How do I register a new cluster?' },
+      { label: 'Configure AI', question: 'How do I configure the AI assistant?' },
     ];
   }
   return [
-    { label: 'Mes groupes', question: 'De quels groupes suis-je membre ?' },
-    { label: 'État des apps', question: 'Quel est l’état de mes applications ?' },
-    { label: 'Créer une app', question: 'Comment créer une nouvelle application ?' },
+    { label: 'My groups', question: 'Which groups am I a member of?' },
+    { label: 'Apps status', question: 'What is the status of my applications?' },
+    { label: 'Create an app', question: 'How do I create a new application?' },
   ];
 }
 
@@ -67,34 +67,34 @@ export function doctorSuggestionsFor(page: ChatPageContext): DoctorSuggestions {
     return {
       hint: null,
       items: [
-        { kind: 'diagnose', label: 'Diagnostiquer prod', env: 'prod' },
-        { kind: 'diagnose', label: 'Diagnostiquer dev', env: 'dev' },
+        { kind: 'diagnose', label: 'Diagnose prod', env: 'prod' },
+        { kind: 'diagnose', label: 'Diagnose dev', env: 'dev' },
         {
           kind: 'ask',
-          label: "Que s'est-il passé récemment ?",
-          question: "Que s'est-il passé récemment sur cette application ?",
+          label: 'What happened recently?',
+          question: 'What happened recently on this application?',
         },
       ],
     };
   }
   return {
-    hint: 'Ouvre une application pour lancer un diagnostic.',
+    hint: 'Open an application to run a diagnosis.',
     items: [
       {
         kind: 'ask',
-        label: 'Quelles apps sont en erreur ?',
-        question: 'Quelles applications sont en erreur en ce moment ?',
+        label: 'Which apps are failing?',
+        question: 'Which applications are failing right now?',
       },
     ],
   };
 }
 
 export const CHAT_GREETING =
-  "Salut 👋 Je suis l'assistant Plat4k. Pose-moi une question sur tes applications ou la plateforme.";
+  "Hi 👋 I'm the Plat4k assistant. Ask me anything about your applications or the platform.";
 
 export const DOCTOR_GREETING =
-  'Bonjour, je suis le CNP Doctor. Ouvre une application et je cherche ce qui ne va pas : ' +
-  'je regarde les déploiements, les conteneurs, les logs et le pipeline.';
+  "Hi, I'm the CNP Doctor. Open an application and I'll find what's wrong: " +
+  'I check deployments, containers, logs and the pipeline.';
 
 /** Premier message du fil selon le mode du robot. */
 export function greetingFor(mode: RobotMode, appName?: string | null): string {
@@ -105,12 +105,12 @@ export function greetingFor(mode: RobotMode, appName?: string | null): string {
 /** Message ajouté au fil quand le robot change de mode (la conversation est conservée). */
 export function modeNotice(mode: RobotMode, appName?: string | null): string {
   if (mode === 'chat') {
-    return 'Retour en mode assistant. Pose-moi une question sur tes applications ou la plateforme.';
+    return 'Back to assistant mode. Ask me anything about your applications or the platform.';
   }
   if (appName) {
     return (
-      `CNP Doctor en consultation sur **${appName}**. Choisis l'environnement à diagnostiquer : ` +
-      'je regarde les déploiements, les conteneurs, les logs et le pipeline.'
+      `CNP Doctor is looking at **${appName}**. Pick the environment to diagnose: ` +
+      'I check deployments, containers, logs and the pipeline.'
     );
   }
   return DOCTOR_GREETING;
@@ -139,9 +139,9 @@ export function docSources(citations: unknown): string[] {
  */
 export function waitHint(elapsedMs: number): string | null {
   if (elapsedMs >= 25_000) {
-    return 'Le fournisseur IA est très sollicité, la réponse peut prendre jusqu’à une minute…';
+    return 'The AI provider is under heavy load, the answer may take up to a minute…';
   }
-  if (elapsedMs >= 6_000) return 'Je consulte les données de la plateforme…';
+  if (elapsedMs >= 6_000) return 'Checking platform data…';
   return null;
 }
 

@@ -27,7 +27,7 @@ export function DoctorThreadMessage({ appId, env, appName, showAvatar, mode }: P
       <div className="mb-1.5 flex items-center gap-[9px]">
         {showAvatar && <BotAvatar mode={mode} />}
         <span className="truncate text-xs font-medium text-muted-foreground">
-          Diagnostic {env}
+          Diagnosis {env}
           {appName ? ` · ${appName}` : ''}
         </span>
       </div>
@@ -45,14 +45,14 @@ export function DoctorThreadMessage({ appId, env, appName, showAvatar, mode }: P
               className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:border-primary hover:text-primary"
             >
               <IconRefresh size={13} aria-hidden="true" />
-              Réessayer
+              Retry
             </button>
           </div>
         )}
         {run.status === 'idle' && (
           <div>
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              Ce diagnostic a été effacé.
+              This diagnosis was cleared.
             </p>
             <button
               type="button"
@@ -60,7 +60,7 @@ export function DoctorThreadMessage({ appId, env, appName, showAvatar, mode }: P
               className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:border-primary hover:text-primary"
             >
               <IconRefresh size={13} aria-hidden="true" />
-              Relancer le diagnostic
+              Run the diagnosis again
             </button>
           </div>
         )}

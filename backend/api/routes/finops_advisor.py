@@ -104,21 +104,20 @@ async def get_ai_advice(
             raise HTTPException(
                 status_code=429,
                 detail=(
-                    "Quota du fournisseur IA atteint. Réessayez dans une minute ; si cela "
-                    "persiste, un administrateur peut changer de provider dans "
-                    "Platform → Settings → AI assistant."
+                    "AI provider quota reached. Try again in a minute; if it persists, "
+                    "an administrator can change the provider in Platform → Settings → AI assistant."
                 ),
             ) from exc
         # 424, jamais 502 : Cloudflare remplace toute 502 de l'origine par sa propre
         # page d'erreur, et ce message n'arriverait pas à l'utilisateur.
         raise HTTPException(
             status_code=status.HTTP_424_FAILED_DEPENDENCY,
-            detail=f"Le fournisseur IA a renvoyé une erreur ({exc.response.status_code}). Réessayez.",
+            detail=f"The AI provider returned an error ({exc.response.status_code}). Please try again.",
         ) from exc
     except httpx.TransportError as exc:
         raise HTTPException(
             status_code=status.HTTP_424_FAILED_DEPENDENCY,
-            detail="Le fournisseur IA est injoignable.",
+            detail="The AI provider is unreachable.",
         ) from exc
 
     return AIAdviceResponse(**asdict(result))

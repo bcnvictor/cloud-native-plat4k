@@ -101,13 +101,13 @@ async def register_gitlab_group(
 
     gl = _build_gitlab_client()
     if not gl:
-        raise HTTPException(status_code=503, detail="GitLab non configuré (GITLAB_BOT_TOKEN manquant)")
+        raise HTTPException(status_code=503, detail="GitLab not configured (GITLAB_BOT_TOKEN missing)")
 
     identifier = body.gitlab_group_id or body.full_path
     try:
         gl_group = await asyncio.to_thread(gl.groups.get, identifier)
     except Exception:
-        raise HTTPException(status_code=404, detail=f"Groupe GitLab introuvable : {identifier}")
+        raise HTTPException(status_code=404, detail=f"GitLab group not found: {identifier}")
 
     result = await db.execute(
         select(GitLabGroup).where(GitLabGroup.gitlab_group_id == gl_group.id)
@@ -145,7 +145,7 @@ async def deregister_gitlab_group(
     )
     group = result.scalar_one_or_none()
     if not group:
-        raise HTTPException(status_code=404, detail="Groupe introuvable")
+        raise HTTPException(status_code=404, detail="Group not found")
     group_name = group.name
     await db.delete(group)
     await db.commit()

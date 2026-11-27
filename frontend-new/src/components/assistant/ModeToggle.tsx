@@ -37,7 +37,7 @@ export function ModeToggle({ mode, onChange, className }: Props) {
   return (
     <div
       role="radiogroup"
-      aria-label="Mode de l'assistant"
+      aria-label="Assistant mode"
       className={cn('inline-flex gap-0.5 rounded-lg border border-border bg-muted p-0.5', className)}
     >
       {OPTIONS.map(({ value, label, Icon }, i) => {

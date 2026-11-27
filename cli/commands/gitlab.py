@@ -55,14 +55,14 @@ def remove_credentials(
 def guide():
     """Show how to create a Personal Access Token on gitlab.com."""
     console.print("\n[bold orange1]GitLab Personal Access Token — guide[/bold orange1]\n")
-    console.print("[bold]1.[/bold] Ouvrir la page des tokens :")
+    console.print("[bold]1.[/bold] Open the tokens page:")
     console.print(f"   [blue underline]{GITLAB_PAT_URL}[/blue underline]\n")
-    console.print("[bold]2.[/bold] Créer un token")
-    console.print("   Nom : [italic]cnp-platform[/italic] — expiration : laissez vide.\n")
-    console.print("[bold]3.[/bold] Scopes requis")
+    console.print("[bold]2.[/bold] Create a token")
+    console.print("   Name: [italic]cnp-platform[/italic] — expiration: leave empty.\n")
+    console.print("[bold]3.[/bold] Required scopes")
     console.print("   [bold green]api[/bold green]   [bold green]write_repository[/bold green]\n")
-    console.print("[bold]4.[/bold] Copier le token (commence par [italic]glpat-[/italic]) — affiché une seule fois.\n")
-    console.print("[bold]5.[/bold] Enregistrer via la CLI :")
+    console.print("[bold]4.[/bold] Copy the token (starts with [italic]glpat-[/italic]) — shown only once.\n")
+    console.print("[bold]5.[/bold] Save it with the CLI:")
     console.print("   [bold]cnp gitlab set[/bold]\n")
 
 

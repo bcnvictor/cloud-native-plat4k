@@ -4,10 +4,10 @@ import { cn } from '@/utils/cn';
 import { formatDateTime, shortRev } from './doctorText';
 
 const CHANGE_META: Record<DoctorFileChange['change'], { mark: string; word: string; className: string }> = {
-  added: { mark: '+', word: 'ajouté', className: 'text-success-text' },
-  modified: { mark: '~', word: 'modifié', className: 'text-warning-text' },
-  deleted: { mark: '−', word: 'supprimé', className: 'text-danger-text' },
-  renamed: { mark: '→', word: 'renommé', className: 'text-info-text' },
+  added: { mark: '+', word: 'added', className: 'text-success-text' },
+  modified: { mark: '~', word: 'modified', className: 'text-warning-text' },
+  deleted: { mark: '−', word: 'deleted', className: 'text-danger-text' },
+  renamed: { mark: '→', word: 'renamed', className: 'text-info-text' },
 };
 
 /** Commits et fichiers entre la dernière version saine et la version suspecte. */
@@ -28,8 +28,8 @@ export function DoctorChanges({ changes }: { changes: Changes }) {
             className="inline-flex items-center gap-1 rounded-sm font-medium text-primary hover:underline"
           >
             <IconGitCompare size={13} aria-hidden="true" />
-            Comparer sur GitLab
-            <span className="sr-only"> (nouvel onglet)</span>
+            Compare on GitLab
+            <span className="sr-only"> (new tab)</span>
           </a>
         )}
       </p>
@@ -53,7 +53,7 @@ export function DoctorChanges({ changes }: { changes: Changes }) {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-0.5 rounded-sm font-mono hover:text-foreground hover:underline"
-                    aria-label={`Commit ${shortRev(c.sha)} sur GitLab (nouvel onglet)`}
+                    aria-label={`Commit ${shortRev(c.sha)} on GitLab (new tab)`}
                   >
                     {shortRev(c.sha)}
                     <IconExternalLink size={11} aria-hidden="true" />
@@ -70,7 +70,7 @@ export function DoctorChanges({ changes }: { changes: Changes }) {
       )}
 
       {changes.files.length > 0 && (
-        <ul className="flex flex-wrap gap-1.5" aria-label="Fichiers modifiés">
+        <ul className="flex flex-wrap gap-1.5" aria-label="Changed files">
           {changes.files.map((f) => {
             const meta = CHANGE_META[f.change] ?? CHANGE_META.modified;
             return (
@@ -92,13 +92,13 @@ export function DoctorChanges({ changes }: { changes: Changes }) {
 
       {changes.truncated && (
         <p className="text-xs text-muted-foreground">
-          Liste tronquée : seuls les premiers commits et fichiers sont affichés
-          {changes.compare_url ? ' ; la comparaison GitLab montre tout.' : '.'}
+          Truncated list: only the first commits and files are shown
+          {changes.compare_url ? '; the GitLab comparison shows everything.' : '.'}
         </p>
       )}
 
       {empty && !changes.unavailable_reason && (
-        <p className="text-xs text-muted-foreground">Aucun commit entre ces deux versions.</p>
+        <p className="text-xs text-muted-foreground">No commits between these two versions.</p>
       )}
     </div>
   );

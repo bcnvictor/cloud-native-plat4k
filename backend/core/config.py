@@ -161,7 +161,7 @@ class Settings(BaseSettings):
     # Scan and context defaults
     AI_SECURITY_SCAN_ENABLED: bool = True
     AI_DEFAULT_CONTEXT_MODE: str = "metadata_only"  # "metadata_only" | "metadata_and_code"
-    AI_DEFAULT_LANGUAGE: str = "fr"
+    AI_DEFAULT_LANGUAGE: str = "en"
     # Platform knowledge base (docs RAG) — grounds the "platform" agent on CNP docs.
     # Disabled by default: nothing changes until AI_PLATFORM_KB_ENABLED=true.
     AI_PLATFORM_KB_ENABLED: bool = False

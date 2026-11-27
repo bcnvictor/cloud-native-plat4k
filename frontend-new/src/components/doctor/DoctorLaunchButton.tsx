@@ -37,7 +37,7 @@ export function DoctorLaunchButton({ appId, env, appName, onBeforeLaunch, classN
     <button
       type="button"
       onClick={launch}
-      aria-label={appName ? `Diagnostiquer ${appName} en ${env}` : `Diagnostiquer ${env}`}
+      aria-label={appName ? `Diagnose ${appName} in ${env}` : `Diagnose ${env}`}
       className={cn(
         'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium',
         'text-primary hover:bg-primary-subtle',
@@ -45,7 +45,7 @@ export function DoctorLaunchButton({ appId, env, appName, onBeforeLaunch, classN
       )}
     >
       <IconStethoscope size={13} aria-hidden="true" />
-      Diagnostiquer
+      Diagnose
     </button>
   );
 }

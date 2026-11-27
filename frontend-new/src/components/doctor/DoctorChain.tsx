@@ -88,7 +88,7 @@ export function DoctorChain({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <ol aria-label="Chaîne de santé" className="flex items-start">
+      <ol aria-label="Health chain" className="flex items-start">
         {chain.map((s, i) => {
           const Icon = STEP_ICON[s.step];
           const style = STATUS_STYLE[s.status];
@@ -99,7 +99,7 @@ export function DoctorChain({
             <li key={s.step} className={cn('flex items-start', next ? 'min-w-0 flex-1' : 'flex-none')}>
               <button
                 type="button"
-                aria-label={`${CHAIN_STEP_LABEL[s.step]} : ${s.label}`}
+                aria-label={`${CHAIN_STEP_LABEL[s.step]}: ${s.label}`}
                 aria-pressed={on}
                 aria-controls={current ? panelId : undefined}
                 onClick={() => setSelected(s.step)}
@@ -164,7 +164,7 @@ export function DoctorChain({
             </ul>
           ) : (
             !current.detail && (
-              <p className="text-xs text-muted-foreground">Aucune preuve n’a été relevée pour cette étape.</p>
+              <p className="text-xs text-muted-foreground">No evidence was found for this step.</p>
             )
           )}
         </div>

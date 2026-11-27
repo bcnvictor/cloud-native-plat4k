@@ -348,37 +348,40 @@ class DoctorOutput(str, Enum):
 # Libellé et couleur de chaque verdict : rouge pour une panne, jaune pour un état à
 # surveiller, cyan pour un état sans panne de l'application, vert quand tout va bien.
 _DOCTOR_VERDICTS = {
-    "regression": ("Régression après un déploiement", "bold red"),
-    "failing": ("En panne", "bold red"),
-    "unstable": ("Instable", "bold yellow"),
-    "ci_failure": ("Dernier pipeline en échec", "bold yellow"),
-    "cluster_offline": ("Cluster hors ligne", "bold yellow"),
-    "inconclusive": ("Signaux insuffisants", "bold yellow"),
-    "deploying": ("Déploiement en cours", "bold cyan"),
-    "stopped": ("Environnement arrêté", "bold cyan"),
-    "not_deployed": ("Pas encore déployée", "bold cyan"),
-    "healthy": ("Application saine", "bold green"),
+    "regression": ("Regression after a deployment", "bold red"),
+    "failing": ("Failing", "bold red"),
+    "unstable": ("Unstable", "bold yellow"),
+    "ci_failure": ("Last pipeline failed", "bold yellow"),
+    "cluster_offline": ("Cluster offline", "bold yellow"),
+    "inconclusive": ("Not enough signals", "bold yellow"),
+    "deploying": ("Deploying", "bold cyan"),
+    "stopped": ("Environment stopped", "bold cyan"),
+    "not_deployed": ("Not deployed yet", "bold cyan"),
+    "healthy": ("Healthy application", "bold green"),
 }
 
 _DOCTOR_SOURCES = {
-    "ai": "IA encadrée",
-    "rules": "Sans IA",
-    "rules_fallback": "IA indisponible — diagnostic établi par la plateforme",
+    "ai": "Guided AI",
+    "rules": "No AI",
+    "rules_fallback": "AI unavailable — diagnosis based on platform rules",
 }
 
 _DOCTOR_AI_ERRORS = {
-    "quota": "quota du fournisseur IA atteint",
-    "provider_error": "fournisseur IA en erreur ou non configuré",
-    "unreachable": "fournisseur IA injoignable",
-    "limit": "limite d'usage IA de la plateforme atteinte",
+    "quota": "AI provider quota reached",
+    "provider_error": "AI provider error or not configured",
+    "unreachable": "AI provider unreachable",
+    "limit": "platform AI usage limit reached",
 }
 
 _DOCTOR_FILE_CHANGES = {
-    "added": "ajouté",
-    "modified": "modifié",
-    "deleted": "supprimé",
-    "renamed": "renommé",
+    "added": "added",
+    "modified": "modified",
+    "deleted": "deleted",
+    "renamed": "renamed",
 }
+
+# Niveaux renvoyés par l'API (contrat backend, en français) → libellés affichés.
+_DOCTOR_LEVELS = {"haute": "high", "moyenne": "medium", "faible": "low"}
 
 
 def _doctor_time(value: str | None) -> str:
@@ -403,7 +406,7 @@ def _doctor_duration(seconds: float | None) -> str:
     if s < 36 * 3600:
         return f"{round(s / 3600)} h"
     days = round(s / 86400)
-    return f"{days} jour{'s' if days > 1 else ''}"
+    return f"{days} day{'s' if days > 1 else ''}"
 
 
 def _say(*parts, indent: int = 0, hang: int = 0, wrap: bool = True) -> None:
@@ -440,9 +443,9 @@ def _doctor_evidence(evidence: list) -> None:
     if not evidence:
         return
     cited = [e for e in evidence if e.get("cited")]
-    _doctor_section("Preuves citées")
+    _doctor_section("Cited evidence")
     if not cited:
-        _say("Aucune preuve citée.", indent=2)
+        _say("No cited evidence.", indent=2)
     for e in cited:
         when = _doctor_time(e.get("at"))
         _say((f"[{e.get('id')}] ", "bold"), (f"{when} · " if when else "", "dim"), e.get("label") or "",
@@ -453,72 +456,72 @@ def _doctor_evidence(evidence: list) -> None:
             _say((e["url"], "dim"), indent=7, wrap=False)
     others = len(evidence) - len(cited)
     if others:
-        what = "autre signal collecté, non cité" if others == 1 else "autres signaux collectés, non cités"
-        _say((f"+ {others} {what} (--output json pour le détail)", "dim"), indent=2)
+        what = "other signal collected, not cited" if others == 1 else "other signals collected, not cited"
+        _say((f"+ {others} {what} (--output json for details)", "dim"), indent=2)
 
 
 def _doctor_timeline(t: dict) -> None:
-    _doctor_section("Chronologie")
+    _doctor_section("Timeline")
     last_healthy = t.get("last_healthy") or {}
     for e in t.get("entries") or []:
         marks = []
         if e.get("suspect"):
-            marks.append(("  [déploiement suspect]", "bold red"))
+            marks.append(("  [suspect deployment]", "bold red"))
         elif e.get("healthy") is True:
             ran = ""
             if last_healthy.get("ran_for_seconds") and last_healthy.get("history_id") == e.get("history_id"):
-                ran = f", en service pendant {_doctor_duration(last_healthy['ran_for_seconds'])}"
-            marks.append((f"  [dernière version saine{ran}]", "bold green"))
+                ran = f", in service for {_doctor_duration(last_healthy['ran_for_seconds'])}"
+            marks.append((f"  [last healthy version{ran}]", "bold green"))
         elif e.get("healthy") is False:
-            marks.append(("  [version en panne]", "yellow"))
+            marks.append(("  [failing version]", "yellow"))
         _say((f"{_doctor_time(e.get('at')):<13}", "dim"), e.get("label") or e.get("kind") or "", *marks,
              indent=2, hang=13)
 
     delay, correlation = t.get("onset_delay_seconds"), t.get("correlation")
     if correlation and delay is not None:
-        _say(f"Panne apparue {_doctor_duration(delay)} après le déploiement suspect · corrélation {correlation}",
+        _say(f"Failure appeared {_doctor_duration(delay)} after the suspect deployment · {_DOCTOR_LEVELS.get(correlation, correlation)} correlation",
              indent=2)
     elif delay is not None:
-        _say(f"Premier signal d'échec {_doctor_duration(delay)} après le dernier déploiement : "
-             "aucune corrélation retenue.", indent=2)
+        _say(f"First failure signal {_doctor_duration(delay)} after the last deployment: "
+             "no correlation retained.", indent=2)
     elif not correlation:
-        _say("Aucun déploiement récent n'est corrélé à la panne.", indent=2)
+        _say("No recent deployment is correlated with the failure.", indent=2)
 
 
 def _doctor_changes(c: dict) -> None:
-    _doctor_section(f"Ce qui a changé ({c.get('from_revision') or '?'} → {c.get('to_revision') or '?'})")
+    _doctor_section(f"What changed ({c.get('from_revision') or '?'} → {c.get('to_revision') or '?'})")
     if c.get("unavailable_reason"):
-        _say(("Comparaison indisponible : ", "yellow"), c["unavailable_reason"], indent=2)
+        _say(("Comparison unavailable: ", "yellow"), c["unavailable_reason"], indent=2)
         return
     commits, files = c.get("commits") or [], c.get("files") or []
     if not commits and not files:
-        _say("Aucun commit trouvé entre les deux versions.", indent=2)
+        _say("No commits found between the two versions.", indent=2)
     for commit in commits:
         author = commit.get("author")
         _say((f"{(commit.get('sha') or '')[:8]}  ", "bold"), commit.get("title") or "",
              (f"  ({author})" if author else "", "dim"), indent=2, hang=10)
     if files:
-        _say(f"{len(files)} fichier{'s' if len(files) > 1 else ''} modifié{'s' if len(files) > 1 else ''} :",
+        _say(f"{len(files)} file{'s' if len(files) > 1 else ''} changed:",
              indent=2)
         for f in files:
             change = f.get("change") or ""
             _say((f"{_DOCTOR_FILE_CHANGES.get(change, change):<9}", "dim"), f.get("path") or "", indent=4)
     if c.get("truncated"):
-        _say(("Liste tronquée par la plateforme (20 commits et 50 fichiers au plus).", "dim"), indent=2)
+        _say(("List truncated by the platform (at most 20 commits and 50 files).", "dim"), indent=2)
     if c.get("compare_url"):
-        _say(("Comparer : ", "dim"), c["compare_url"], indent=2, wrap=False)
+        _say(("Compare: ", "dim"), c["compare_url"], indent=2, wrap=False)
 
 
 def _doctor_actions(actions: list) -> None:
     if not actions:
         return
-    _doctor_section("Actions conseillées")
+    _doctor_section("Recommended actions")
     for i, a in enumerate(actions, 1):
         tags = []
         if a.get("primary"):
-            tags.append(("  (principale)", "bold"))
+            tags.append(("  (primary)", "bold"))
         if not a.get("allowed", True):
-            tags.append((f"  [non autorisée : rôle {a.get('required_role') or '?'} requis]", "yellow"))
+            tags.append((f"  [not allowed: {a.get('required_role') or '?'} role required]", "yellow"))
         _say(f"{i}. ", (a.get("label") or a.get("kind") or "", "bold"), *tags, indent=2, hang=3)
         if a.get("description"):
             _say(a["description"], indent=5)
@@ -528,7 +531,7 @@ def _doctor_actions(actions: list) -> None:
 
 def _doctor_how_to_apply(d: dict) -> str:
     """Dernière ligne : la CLI n'exécute rien, et voici où appliquer l'action principale."""
-    note = "La CLI n'exécute aucune action."
+    note = "The CLI does not run any action."
     actions = d.get("actions") or []
     primary = next((a for a in actions if a.get("primary")), actions[0] if actions else None)
     if primary is None:
@@ -538,26 +541,26 @@ def _doctor_how_to_apply(d: dict) -> str:
     kind = primary.get("kind")
     if kind == "rollback":
         rev = params.get("revision") or "?"
-        step = (f"Pour revenir à la version {rev} en {env} : interface web, onglet History de "
-                f"l'application, révision {rev}, Rollback puis Confirm (ou bouton de la carte "
-                "CNP Doctor, onglet Overview).")
+        step = (f"To roll back {env} to version {rev}: web UI, History tab of the "
+                f"application, revision {rev}, Rollback then Confirm (or the button on the "
+                "CNP Doctor card, Overview tab).")
     elif kind == "resume":
-        step = f"Pour relancer l'environnement {env} : interface web, onglet Overview, Resume."
+        step = f"To restart the {env} environment: web UI, Overview tab, Resume."
     elif kind == "view_logs":
-        step = f"Pour lire les erreurs complètes : interface web, onglet Logs de l'application ({env})."
+        step = f"To read the full errors: web UI, Logs tab of the application ({env})."
     elif kind == "view_history":
-        step = "Pour voir les déploiements : interface web, onglet History de l'application."
+        step = "To see the deployments: web UI, History tab of the application."
     elif kind in ("open_pipeline", "open_repo_compare") and primary.get("url"):
-        step = "Pour continuer : ouvrir le lien de l'action principale ci-dessus."
+        step = "To continue: open the link of the primary action above."
     elif kind == "retry_later":
-        step = f"Relancer « cnp app doctor {d.get('app_id')} --env {env} » dans une minute."
+        step = f"Run \"cnp app doctor {d.get('app_id')} --env {env}\" again in a minute."
     elif kind == "contact_maintainer":
-        step = "Prévenir un administrateur de la plateforme."
+        step = "Notify a platform administrator."
     else:
-        step = f"Action conseillée : {primary.get('label') or kind}."
+        step = f"Recommended action: {primary.get('label') or kind}."
     role = primary.get("required_role")
     if role and not primary.get("allowed", True):
-        step += f" Rôle {role} requis : à demander à un {role}."
+        step += f" Requires the {role} role: ask a {role}."
     return f"{note} {step}"
 
 
@@ -566,18 +569,18 @@ def _doctor_render(d: dict) -> None:
     label, style = _DOCTOR_VERDICTS.get(verdict, (verdict, "bold"))
     _say(("CNP Doctor", "bold"),
          f" — {d.get('app_name') or d.get('app_id')} ({d.get('env') or '?'})"
-         f" · {_doctor_time(d.get('generated_at'))} · rôle {d.get('user_role') or '?'}")
+         f" · {_doctor_time(d.get('generated_at'))} · role {d.get('user_role') or '?'}")
     console.print()
     _say((label, style))
     _say(d.get("headline") or "")
-    _say(("Source : ", "dim"), _doctor_source(d))
+    _say(("Source: ", "dim"), _doctor_source(d))
 
     cause = d.get("cause")
     if cause:
-        _doctor_section("Cause probable")
-        _say(cause.get("summary") or "", (f" (confiance {cause.get('confidence') or '?'})", "bold"), indent=2)
+        _doctor_section("Probable cause")
+        _say(cause.get("summary") or "", (f" ({_DOCTOR_LEVELS.get(cause.get('confidence'), cause.get('confidence') or '?')} confidence)", "bold"), indent=2)
     if d.get("explanation"):
-        _doctor_section("Explication")
+        _doctor_section("Explanation")
         _say(d["explanation"], indent=2)
 
     _doctor_evidence(d.get("evidence") or [])
@@ -589,11 +592,11 @@ def _doctor_render(d: dict) -> None:
 
     missing = d.get("missing_signals") or []
     if missing:
-        _doctor_section("Signaux manquants")
+        _doctor_section("Missing signals")
         for m in missing:
-            _say((f"{m.get('source') or '?'} : ", "bold"), m.get("reason") or "", indent=2)
+            _say((f"{m.get('source') or '?'}: ", "bold"), m.get("reason") or "", indent=2)
     if d.get("raw_text"):
-        _doctor_section("Réponse brute de l'IA (non structurée)")
+        _doctor_section("Raw AI response (unstructured)")
         _say((d["raw_text"], "dim"), indent=2)
 
     console.print()

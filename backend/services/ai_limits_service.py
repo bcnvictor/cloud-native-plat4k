@@ -53,21 +53,21 @@ class AILimitsService:
         per_minute = settings.AI_USER_REQUESTS_PER_MINUTE
         if per_minute > 0 and await self._count_since(user, now - timedelta(minutes=1)) >= per_minute:
             raise AILimitExceeded(
-                f"Trop de questions en peu de temps (limite : {per_minute} par minute). "
-                "Patientez une minute avant de relancer l'assistant."
+                f"Too many questions in a short time (limit: {per_minute} per minute). "
+                "Wait a minute before asking the assistant again."
             )
 
         per_day = settings.AI_USER_REQUESTS_PER_DAY
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         if per_day > 0 and await self._count_since(user, day_start) >= per_day:
             raise AILimitExceeded(
-                f"Limite quotidienne de questions atteinte ({per_day} par jour). "
-                "Elle sera réinitialisée demain."
+                f"Daily question limit reached ({per_day} per day). "
+                "It will be reset tomorrow."
             )
 
         budget = settings.AI_DAILY_BUDGET_USD
         if budget > 0 and await self.spent_today_usd() >= budget:
             raise AILimitExceeded(
-                "Le budget IA journalier de la plateforme est atteint. L'assistant sera à "
-                "nouveau disponible demain ; un administrateur peut relever AI_DAILY_BUDGET_USD."
+                "The platform's daily AI budget has been reached. The assistant will be "
+                "available again tomorrow; an administrator can raise AI_DAILY_BUDGET_USD."
             )

@@ -275,7 +275,7 @@ def test_changes_enter_the_ledger():
                       files=[{"path": "app/config.py", "change": "modified"}])
     ledger = build_ledger(s, verdict, timeline, changes)
     git = [e for e in ledger if e.source == DoctorEvidenceSource.GIT]
-    assert git[0].label == "Commit f4e5d6c7 : « feat(payment): nouveau client »"
+    assert git[0].label == 'Commit f4e5d6c7: "feat(payment): nouveau client"'
     assert "app/config.py" in git[1].detail
 
 
@@ -314,7 +314,7 @@ def test_rule_cause_for_a_regression_mentions_the_delay():
     verdict, timeline = _verdict(s)
     cause = rule_cause(s, verdict, timeline)
     assert cause.confidence == DoctorConfidence.HAUTE
-    assert "1 min après" in cause.summary
+    assert "1 min after" in cause.summary
 
 
 def test_degraded_event_before_the_deploy_lowers_confidence():
@@ -335,7 +335,7 @@ def test_a_degradation_of_the_other_env_is_ignored():
     assert timeline.correlation == DoctorConfidence.HAUTE
     assert all(e.kind != "degraded" for e in timeline.entries)
     ledger = build_ledger(s, DoctorVerdict.REGRESSION, timeline, None)
-    assert not any("dégradée" in ev.label for ev in ledger)
+    assert not any("degraded" in ev.label for ev in ledger)
 
 
 def test_a_degradation_without_env_only_counts_when_the_cluster_went_offline():
@@ -403,7 +403,7 @@ def test_errors_left_by_the_previous_version_do_not_make_a_rollback_unstable():
     verdict, timeline = _verdict(s)
     assert verdict == DoctorVerdict.HEALTHY
     labels = [e.label for e in build_ledger(s, verdict, timeline, None)]
-    assert "Aucune ligne d'erreur depuis le dernier déploiement" in labels
+    assert "No error lines since the latest deployment" in labels
     assert not any("PAYMENT_API_URL" in label or "BackOff" in label for label in labels)
 
 
@@ -411,8 +411,8 @@ def test_a_deployment_on_another_day_reads_naturally():
     s = _healthy(argo=ArgoState(available=True, sync="Synced", health="Healthy", image_tag="a1b2c3d4",
                                 history=[_dep(11, GOOD, NOW - timedelta(days=3))]))
     labels = [e.label for e in build_ledger(s, DoctorVerdict.UNSTABLE, build_timeline(s, False), None)]
-    deploy = next(label for label in labels if label.startswith("Dernier déploiement"))
-    assert " à le " not in deploy and " le 13/11 à " in deploy
+    deploy = next(label for label in labels if label.startswith("Latest deployment"))
+    assert " at on " not in deploy and " on 13/11 at " in deploy
 
 
 # ── Chaîne de santé ───────────────────────────────────────────────────────────
@@ -434,8 +434,8 @@ def test_chain_lists_the_five_steps_in_reading_order():
 def test_chain_of_a_healthy_app_is_all_ok():
     chain, _ = _chain(_healthy())
     assert {k: v.status for k, v in chain.items()} == dict.fromkeys(chain, "ok")
-    assert chain["pods"].label == "2/2 prêts"
-    assert chain["pipeline"].label == "Réussi"
+    assert chain["pods"].label == "2/2 ready"
+    assert chain["pipeline"].label == "Passed"
 
 
 def test_chain_of_a_regression_points_at_the_pods_and_their_logs():
@@ -443,9 +443,9 @@ def test_chain_of_a_regression_points_at_the_pods_and_their_logs():
     s.argo.health = "Progressing"
     chain, ledger = _chain(s)
 
-    assert (chain["pods"].status, chain["pods"].label) == ("failing", "Crash en boucle")
-    assert (chain["logs"].status, chain["logs"].label) == ("failing", "Erreurs")
-    assert (chain["argocd"].status, chain["argocd"].label) == ("warning", "En cours")
+    assert (chain["pods"].status, chain["pods"].label) == ("failing", "Crash loop")
+    assert (chain["logs"].status, chain["logs"].label) == ("failing", "Errors")
+    assert (chain["argocd"].status, chain["argocd"].label) == ("warning", "In progress")
     assert chain["cluster"].status == "ok" and chain["pipeline"].status == "ok"
     assert chain["pods"].evidence_ids
     assert {ledger[i].source for i in chain["pods"].evidence_ids} == {DoctorEvidenceSource.KUBERNETES}
@@ -467,12 +467,12 @@ def test_chain_when_the_cluster_is_offline_and_the_env_stopped():
     s.cluster.last_seen_at = NOW - timedelta(hours=12)
     chain, ledger = _chain(s)
 
-    assert (chain["cluster"].status, chain["cluster"].label) == ("failing", "Hors ligne")
-    assert any("hors ligne" in ledger[i].label for i in chain["cluster"].evidence_ids)
-    assert (chain["pods"].status, chain["pods"].label) == ("stopped", "Arrêtés")
-    assert any("arrêté" in ledger[i].label for i in chain["pods"].evidence_ids)
+    assert (chain["cluster"].status, chain["cluster"].label) == ("failing", "Offline")
+    assert any("offline" in ledger[i].label for i in chain["cluster"].evidence_ids)
+    assert (chain["pods"].status, chain["pods"].label) == ("stopped", "Stopped")
+    assert any("stopped" in ledger[i].label for i in chain["pods"].evidence_ids)
     for step in ("argocd", "logs", "pipeline"):
-        assert (chain[step].status, chain[step].label) == ("unknown", "Inconnu")
+        assert (chain[step].status, chain[step].label) == ("unknown", "Unknown")
     assert chain["argocd"].detail == "ArgoCD indisponible (ConnectTimeout)"
     assert chain["pipeline"].detail == "L'application n'est pas rattachée à un projet GitLab"
 
@@ -481,7 +481,7 @@ def test_chain_without_a_target_cluster():
     s = _healthy()
     s.cluster = None
     chain, _ = _chain(s)
-    assert (chain["cluster"].status, chain["cluster"].label) == ("failing", "Aucun cluster")
+    assert (chain["cluster"].status, chain["cluster"].label) == ("failing", "No cluster")
 
 
 def test_errors_in_the_logs_of_a_running_app_are_a_warning():
@@ -489,12 +489,12 @@ def test_errors_in_the_logs_of_a_running_app_are_a_warning():
         LogLine(at=NOW - timedelta(minutes=2), level="ERROR", msg="Timeout calling the payment API"),
     ]))
     chain, _ = _chain(s)
-    assert (chain["logs"].status, chain["logs"].label) == ("warning", "Erreurs")
+    assert (chain["logs"].status, chain["logs"].label) == ("warning", "Errors")
     assert chain["pods"].status == "ok"
 
 
 def test_failed_pipeline_breaks_the_first_step():
     s = _healthy(pipeline=PipelineState(available=True, id=490, status="failed", ref="main", sha="f4e5d6c7"))
     chain, _ = _chain(s)
-    assert (chain["pipeline"].status, chain["pipeline"].label) == ("failing", "En échec")
+    assert (chain["pipeline"].status, chain["pipeline"].label) == ("failing", "Failed")
 

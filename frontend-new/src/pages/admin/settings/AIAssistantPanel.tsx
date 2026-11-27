@@ -20,27 +20,27 @@ const PROVIDER_INFO: Record<
   mock: {
     label: 'Mock (local)',
     juridiction: 'Local',
-    risque: 'Aucune donnée ne sort de la CNP.',
-    avantages: 'Gratuit, pour tests/démo — aucune vraie capacité IA.',
+    risque: 'No data leaves the CNP.',
+    avantages: 'Free, for tests/demo — no real AI capability.',
   },
   mistral: {
-    label: 'Mistral (UE / France)',
-    juridiction: 'Union Européenne',
-    risque: 'Souverain, RGPD, hors CLOUD Act US.',
-    avantages: 'Meilleure protection des données. Coût moyen.',
+    label: 'Mistral (EU / France)',
+    juridiction: 'European Union',
+    risque: 'Sovereign, GDPR, outside the US CLOUD Act.',
+    avantages: 'Best data protection. Medium cost.',
   },
   gemini: {
     label: 'Gemini (Google, US)',
-    juridiction: 'États-Unis',
-    risque: 'Soumis au CLOUD Act US, données hors UE.',
-    avantages: 'Bon rapport qualité, free tier généreux.',
+    juridiction: 'United States',
+    risque: 'Subject to the US CLOUD Act, data outside the EU.',
+    avantages: 'Good value, generous free tier.',
   },
   deepseek: {
-    label: 'DeepSeek (Chine)',
-    juridiction: 'Chine',
+    label: 'DeepSeek (China)',
+    juridiction: 'China',
     risque:
-      'Aucune garantie de protection des données (risque de vol / accès État). À réserver au metadata_only non sensible.',
-    avantages: 'Le moins cher, meilleur rapport perf/prix.',
+      'No data protection guarantee (risk of theft / state access). Use only with non-sensitive metadata_only.',
+    avantages: 'Cheapest, best price/performance.',
   },
 };
 
@@ -106,7 +106,7 @@ export function AIAssistantPanel() {
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-medium text-foreground">Configuration</h2>
-          {aiSettings && <Badge variant="muted">source&nbsp;: {aiSettings.source}</Badge>}
+          {aiSettings && <Badge variant="muted">source: {aiSettings.source}</Badge>}
         </div>
         <div className="flex flex-col gap-4">
           <label className="flex items-start gap-2 text-sm cursor-pointer">
@@ -117,10 +117,10 @@ export function AIAssistantPanel() {
               className="mt-0.5"
             />
             <span>
-              <span className="font-medium text-foreground">Activer l’assistant IA</span>
+              <span className="font-medium text-foreground">Enable the AI assistant</span>
               <span className="block text-xs text-muted-foreground">
-                Active le chatbot sur toute la plateforme. Tant qu’il est désactivé, les
-                utilisateurs voient « Assistant IA inactif ».
+                Enables the chatbot across the whole platform. While it is disabled,
+                users see “AI assistant inactive”.
               </span>
             </span>
           </label>
@@ -133,9 +133,9 @@ export function AIAssistantPanel() {
               className="mt-0.5"
             />
             <span>
-              <span className="font-medium text-foreground">Afficher le bot graphique</span>
+              <span className="font-medium text-foreground">Show the graphical bot</span>
               <span className="block text-xs text-muted-foreground">
-                Affiche la mascotte flottante et les avatars du chatbot. Le bouton assistant de la sidebar reste disponible.
+                Shows the floating mascot and the chatbot avatars. The assistant button in the sidebar remains available.
               </span>
             </span>
           </label>
@@ -148,9 +148,9 @@ export function AIAssistantPanel() {
               className="mt-0.5"
             />
             <span>
-              <span className="font-medium text-foreground">Accès aux données de la CNP</span>
+              <span className="font-medium text-foreground">Access to CNP data</span>
               <span className="block text-xs text-muted-foreground">
-                Autorise l’assistant à répondre à partir de la documentation et des données de la plateforme.
+                Allows the assistant to answer using the platform documentation and data.
               </span>
             </span>
           </label>
@@ -164,10 +164,10 @@ export function AIAssistantPanel() {
             />
             <span>
               <span className="font-medium text-foreground">
-                Accès aux données d’une application / repo GitLab
+                Access to application / GitLab repo data
               </span>
               <span className="block text-xs text-muted-foreground">
-                Autorise l’assistant à lire les métadonnées des applications sélectionnées (selon les permissions de l’utilisateur).
+                Allows the assistant to read the metadata of the selected applications (according to the user's permissions).
               </span>
             </span>
           </label>
@@ -175,7 +175,7 @@ export function AIAssistantPanel() {
           {appAccess && (
             <div className="ml-6 border border-border rounded-md p-2 max-h-40 overflow-y-auto">
               {(apps ?? []).length === 0 && (
-                <p className="text-xs text-muted-foreground">Aucune application.</p>
+                <p className="text-xs text-muted-foreground">No applications.</p>
               )}
               {(apps ?? []).map((a) => (
                 <label key={a.id} className="flex items-center gap-2 text-sm py-0.5 cursor-pointer">
@@ -190,23 +190,23 @@ export function AIAssistantPanel() {
                 </label>
               ))}
               <p className="text-xs text-muted-foreground mt-1">
-                Sélectionnez les applications autorisées. Aucune sélection = aucune application accessible à l’assistant.
+                Select the allowed applications. No selection = no application accessible to the assistant.
               </p>
             </div>
           )}
 
           <div>
             <div className="flex items-center gap-1.5 mb-1">
-              <span className="text-sm font-medium text-foreground">Provider IA (souveraineté)</span>
+              <span className="text-sm font-medium text-foreground">AI provider (sovereignty)</span>
               <InfoPopover>
-                <p className="font-medium mb-2">Souveraineté des providers</p>
+                <p className="font-medium mb-2">Provider sovereignty</p>
                 <ul className="space-y-2">
                   {Object.values(PROVIDER_INFO).map((p) => (
                     <li key={p.label}>
                       <span className="font-medium">{p.label}</span>{' '}
                       <span className="text-muted-foreground">— {p.juridiction}</span>
-                      <span className="block">Risque : {p.risque}</span>
-                      <span className="block">Avantages : {p.avantages}</span>
+                      <span className="block">Risk: {p.risque}</span>
+                      <span className="block">Pros: {p.avantages}</span>
                     </li>
                   ))}
                 </ul>
@@ -219,21 +219,21 @@ export function AIAssistantPanel() {
             />
             {aiProvider === 'deepseek' && (
               <p className="text-xs text-danger mt-1">
-                ⚠️ DeepSeek (Chine) : aucune garantie de protection des données. À réserver au metadata_only non sensible.
+                ⚠️ DeepSeek (China): no data protection guarantee. Use only with non-sensitive metadata_only.
               </p>
             )}
           </div>
 
           <Input
-            label="Modèle"
+            label="Model"
             value={aiModel}
             onChange={(e) => setAiModel(e.target.value)}
-            placeholder="ex : mistral-small-latest, gemini-flash-latest, deepseek-v4-flash"
+            placeholder="e.g. mistral-small-latest, gemini-flash-latest, deepseek-v4-flash"
             mono
           />
 
           <Input
-            label={`Clé API${aiSettings?.api_key_set ? ' (définie)' : ''}`}
+            label={`API key${aiSettings?.api_key_set ? ' (set)' : ''}`}
             value={apiKeyVisible ? apiKey : apiKey ? '••••••••••••••••' : ''}
             onChange={(e) => {
               setApiKey(e.target.value);
@@ -242,7 +242,7 @@ export function AIAssistantPanel() {
             type={apiKeyVisible ? 'text' : 'password'}
             mono
             placeholder={
-              aiSettings?.api_key_set ? 'Clé enregistrée — saisir pour remplacer' : 'Coller la clé API'
+              aiSettings?.api_key_set ? 'Key saved — type to replace' : 'Paste the API key'
             }
             suffix={
               <button

@@ -60,11 +60,11 @@ describe('DoctorCard', () => {
   it('affiche au repos une description, le sélecteur prod/dev et « Diagnostiquer »', async () => {
     renderCard();
     expect(await screen.findByRole('heading', { name: 'CNP Doctor' })).toBeTruthy();
-    expect(screen.getByText(/Vérifie l’état de demo-shop/)).toBeTruthy();
-    expect(screen.getByRole('radiogroup', { name: 'Environnement à diagnostiquer' })).toBeTruthy();
+    expect(screen.getByText(/Checks the status of demo-shop/)).toBeTruthy();
+    expect(screen.getByRole('radiogroup', { name: 'Environment to diagnose' })).toBeTruthy();
     expect(radio('prod').getAttribute('aria-checked')).toBe('true');
     expect(radio('dev').getAttribute('aria-checked')).toBe('false');
-    expect(screen.getByRole('button', { name: 'Diagnostiquer prod' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Diagnose prod' })).toBeTruthy();
   });
 
   it("reste masquée quand l'assistant IA est désactivé", async () => {
@@ -75,22 +75,22 @@ describe('DoctorCard', () => {
 
   it("présélectionne l'environnement en erreur", async () => {
     renderCard({ status: runtime('Healthy', 'Degraded') });
-    expect(await screen.findByRole('button', { name: 'Diagnostiquer dev' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Diagnose dev' })).toBeTruthy();
     expect(radio('dev').getAttribute('aria-checked')).toBe('true');
-    expect(radio('dev').textContent).toContain('en erreur');
+    expect(radio('dev').textContent).toContain('failing');
   });
 
   it('préfère prod quand les deux environnements sont en erreur', async () => {
     renderCard({ status: runtime('Degraded', 'Missing') });
     await waitFor(() => expect(appsApi.getStatus).toHaveBeenCalled());
-    expect(await screen.findByRole('button', { name: 'Diagnostiquer prod' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Diagnose prod' })).toBeTruthy();
   });
 
   it("change d'environnement à la souris et au clavier", async () => {
     renderCard();
     await screen.findByRole('heading', { name: 'CNP Doctor' });
     fireEvent.click(radio('dev'));
-    expect(screen.getByRole('button', { name: 'Diagnostiquer dev' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Diagnose dev' })).toBeTruthy();
     expect(radio('dev').tabIndex).toBe(0);
     expect(radio('prod').tabIndex).toBe(-1);
 
@@ -106,16 +106,16 @@ describe('DoctorCard', () => {
       .mockReturnValue(new Promise((resolve) => (release = resolve)));
     renderCard();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Diagnostiquer prod' }));
-    expect(await screen.findByText('Collecte des signaux')).toBeTruthy();
-    expect(screen.getByText('Vérification des preuves')).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Diagnostiquer prod' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(await screen.findByRole('button', { name: 'Diagnose prod' }));
+    expect(await screen.findByText('Collecting signals')).toBeTruthy();
+    expect(screen.getByText('Checking evidence')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Diagnose prod' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: 'Autre action de la page' }) as HTMLButtonElement).disabled).toBe(false);
     expect(spy).toHaveBeenCalledWith(7, 'prod');
 
     await act(async () => release(REGRESSION_DIAGNOSIS));
     expect(await screen.findByText(REGRESSION_DIAGNOSIS.headline)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Relancer' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Run again' })).toBeTruthy();
   });
 
   it("affiche l'erreur de l'API et permet de réessayer", async () => {
@@ -125,10 +125,10 @@ describe('DoctorCard', () => {
       .mockResolvedValueOnce(REGRESSION_DIAGNOSIS);
     renderCard();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Diagnostiquer prod' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Diagnose prod' }));
     expect((await screen.findByRole('alert')).textContent).toBe('Accès refusé pour ce rôle.');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText(REGRESSION_DIAGNOSIS.headline)).toBeTruthy();
     expect(spy).toHaveBeenCalledTimes(2);
   });

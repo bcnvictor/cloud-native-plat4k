@@ -211,7 +211,7 @@ def parse_dt(value: Any) -> Optional[datetime]:
 def _why(exc: BaseException) -> str:
     """Raison lisible d'un échec de collecte, sans détail interne."""
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
-        return "délai dépassé"
+        return "timed out"
     detail = getattr(exc, "detail", None)
     if isinstance(detail, str) and detail:
         return detail[:160]
@@ -301,7 +301,7 @@ def _read_k8s_sync(app: Application, env: str, cluster: ClusterConnection) -> K8
 
     k8s = get_k8s_client_for_cluster(cluster)
     if not k8s.is_configured():
-        raise RuntimeError(f"accès Kubernetes non configuré pour le cluster {cluster.name}")
+        raise RuntimeError(f"Kubernetes access not configured for cluster {cluster.name}")
     try:
         diag = k8s.get_pod_diagnostics(env, sanitize_k8s_name(app.name))
     except Exception as exc:
@@ -345,7 +345,7 @@ def _read_k8s_sync(app: Application, env: str, cluster: ClusterConnection) -> K8
 async def _read_logs(app: Application, env: str, cluster: Optional[ClusterConnection]) -> LogsState:
     loki_url = (cluster.loki_url if cluster else None) or settings.LOKI_URL
     if not loki_url:
-        raise RuntimeError("Loki n'est pas configuré")
+        raise RuntimeError("Loki is not configured")
     entries = await get_logs(loki_url, namespace=env, app=app.slug, limit=_LOG_LINES)
     errors = [
         LogLine(at=parse_dt(e["ts"]) or datetime.now(timezone.utc), level=e["level"], msg=e["msg"])
@@ -424,7 +424,7 @@ async def collect_signals(db: AsyncSession, app: Application, env: str) -> Signa
     )
 
     if isinstance(argo, BaseException):
-        signals.missing.append(MissingSignal(DoctorEvidenceSource.ARGOCD, f"ArgoCD indisponible ({_why(argo)})."))
+        signals.missing.append(MissingSignal(DoctorEvidenceSource.ARGOCD, f"ArgoCD unavailable ({_why(argo)})."))
     else:
         signals.argo = argo
         if argo.raw_history:
@@ -434,7 +434,7 @@ async def collect_signals(db: AsyncSession, app: Application, env: str) -> Signa
             if isinstance(resolved, BaseException):
                 signals.missing.append(MissingSignal(
                     DoctorEvidenceSource.DEPLOYMENTS,
-                    f"Versions des déploiements illisibles dans le dépôt GitOps ({_why(resolved)}).",
+                    f"Deployment versions unreadable in the GitOps repository ({_why(resolved)}).",
                 ))
             else:
                 argo.history, unresolved = resolved
@@ -442,26 +442,26 @@ async def collect_signals(db: AsyncSession, app: Application, env: str) -> Signa
                     s = "s" if unresolved > 1 else ""
                     signals.missing.append(MissingSignal(
                         DoctorEvidenceSource.DEPLOYMENTS,
-                        f"{unresolved} déploiement{s} écarté{s} de la chronologie : "
-                        "image introuvable dans le dépôt GitOps.",
+                        f"{unresolved} deployment{s} left out of the timeline: "
+                        "image not found in the GitOps repository.",
                     ))
     if isinstance(k8s, BaseException):
         signals.missing.append(
-            MissingSignal(DoctorEvidenceSource.KUBERNETES, f"Kubernetes indisponible ({_why(k8s)})."))
+            MissingSignal(DoctorEvidenceSource.KUBERNETES, f"Kubernetes unavailable ({_why(k8s)})."))
     else:
         signals.k8s = k8s
     if isinstance(logs, BaseException):
-        signals.missing.append(MissingSignal(DoctorEvidenceSource.LOGS, f"Logs indisponibles ({_why(logs)})."))
+        signals.missing.append(MissingSignal(DoctorEvidenceSource.LOGS, f"Logs unavailable ({_why(logs)})."))
     else:
         signals.logs = logs
     if not has_ci:
         reason = (
-            "L'application n'est pas rattachée à un projet GitLab."
-            if not app.gitlab_project_id else "Accès GitLab non configuré."
+            "The application is not linked to a GitLab project."
+            if not app.gitlab_project_id else "GitLab access not configured."
         )
         signals.missing.append(MissingSignal(DoctorEvidenceSource.CI, reason))
     elif isinstance(pipeline, BaseException):
-        signals.missing.append(MissingSignal(DoctorEvidenceSource.CI, f"GitLab indisponible ({_why(pipeline)})."))
+        signals.missing.append(MissingSignal(DoctorEvidenceSource.CI, f"GitLab unavailable ({_why(pipeline)})."))
     elif pipeline is not None:
         signals.pipeline = pipeline
     return signals
@@ -475,10 +475,10 @@ async def collect_changes(app: Application, from_dep: Deployment, to_dep: Deploy
     """Commits et fichiers modifiés entre deux déploiements (titres et chemins, jamais le code)."""
     changes = Changes(from_revision=from_dep.revision, to_revision=to_dep.revision)
     if not app.gitlab_project_id:
-        changes.unavailable_reason = "L'application n'est pas rattachée à un projet GitLab."
+        changes.unavailable_reason = "The application is not linked to a GitLab project."
         return changes
     if not settings.GITLAB_BOT_TOKEN:
-        changes.unavailable_reason = "Accès GitLab non configuré."
+        changes.unavailable_reason = "GitLab access not configured."
         return changes
 
     def _compare() -> dict:
@@ -493,7 +493,7 @@ async def collect_changes(app: Application, from_dep: Deployment, to_dep: Deploy
     result = await _guarded(asyncio.to_thread(_compare), timeout=_COMPARE_TIMEOUT_S)
     if isinstance(result, BaseException):
         logger.info("Doctor: GitLab compare failed for app %s (%s)", app.id, type(result).__name__)
-        changes.unavailable_reason = f"Comparaison GitLab indisponible ({_why(result)})."
+        changes.unavailable_reason = f"GitLab comparison unavailable ({_why(result)})."
         return changes
     changes.compare_url = result.get("compare_url")
     changes.commits = result.get("commits") or []

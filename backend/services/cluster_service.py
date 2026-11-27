@@ -42,13 +42,13 @@ def _validate_kubeconfig(kubeconfig_yaml: str) -> None:
     except yaml.YAMLError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Kubeconfig invalide : YAML malformé — {e}",
+            detail=f"Invalid kubeconfig: malformed YAML — {e}",
         )
 
     if not isinstance(data, dict):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Kubeconfig invalide : la racine doit être un mapping YAML",
+            detail="Invalid kubeconfig: the root must be a YAML mapping",
         )
 
     required_keys = ("apiVersion", "clusters", "users", "contexts")
@@ -56,7 +56,7 @@ def _validate_kubeconfig(kubeconfig_yaml: str) -> None:
     if missing:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Kubeconfig invalide : champs requis manquants : {', '.join(missing)}",
+            detail=f"Invalid kubeconfig: missing required fields: {', '.join(missing)}",
         )
 
     # Le client Kubernetes exécute `exec` / `auth-provider` et lit les chemins de
@@ -71,8 +71,8 @@ def _validate_kubeconfig(kubeconfig_yaml: str) -> None:
     if forbidden:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Kubeconfig invalide : champs non autorisés : {', '.join(sorted(set(forbidden)))} "
-                   "(utiliser un token ou des champs *-data inline)",
+            detail=f"Invalid kubeconfig: forbidden fields: {', '.join(sorted(set(forbidden)))} "
+                   "(use a token or inline *-data fields)",
         )
 
 
@@ -143,7 +143,7 @@ class ClusterService:
                 await self.db.commit()
                 raise HTTPException(
                     status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                    detail="Vault timeout lors du stockage du kubeconfig (> 15 s)",
+                    detail="Vault timed out while storing the kubeconfig (> 15 s)",
                 )
         except HTTPException:
             raise
@@ -199,7 +199,7 @@ class ClusterService:
                 if cancel_scope.cancelled_caught:
                     raise HTTPException(
                         status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                        detail="Vault timeout lors de la mise à jour du kubeconfig (> 15 s)",
+                        detail="Vault timeout while updating the kubeconfig (> 15 s)",
                     )
             except HTTPException:
                 raise
